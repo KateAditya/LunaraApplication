@@ -230,11 +230,12 @@ function formatRequest(r: StrangersMeetRequest) {
 export const createRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const {
-            userId, venueId, subject, tagline, eventDateTime, numberOfPersons,
+            venueId, subject, tagline, eventDateTime, numberOfPersons,
             mobileNumber, alternateMobileNumber,
             bankName, accountNumber, accountHolderName, ifscCode, upiId, upiNumber,
             foodPreference, drinkPreference,
         } = req.body;
+        const userId = req.user!.id;
 
         const request = await StrangersMeetService.createMeetupRequest({
             userId,
@@ -304,6 +305,11 @@ export const getUserRequests = async (req: Request, res: Response): Promise<void
         const { userId } = req.params;
         const { status } = req.query;
 
+        if (userId !== req.user!.id) {
+            res.status(403).json({ success: false, message: 'You can only view your own requests' });
+            return;
+        }
+
         const user = await User.findByPk(userId, { attributes: ['id'] });
         if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
@@ -332,6 +338,10 @@ export const getUserRequests = async (req: Request, res: Response): Promise<void
 export const getUserJoinedMeets = async (req: Request, res: Response): Promise<void> => {
     try {
         const { userId } = req.params;
+        if (userId !== req.user!.id) {
+            res.status(403).json({ success: false, message: 'You can only view your own joined meets' });
+            return;
+        }
         const user = await User.findByPk(userId, { attributes: ['id'] });
         if (!user) { res.status(404).json({ success: false, message: 'User not found' }); return; }
 
@@ -384,12 +394,7 @@ export const getRequestById = async (req: Request, res: Response): Promise<void>
 export const initiatePayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -462,9 +467,9 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
 export const confirmPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const userId = req.user!.id;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-        if (!userId) { res.status(400).json({ success: false, message: 'userId is required' }); return; }
         if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
             res.status(400).json({ success: false, message: 'Razorpay payment verification details are required' });
             return;
@@ -927,12 +932,7 @@ export const rejectRequest = async (req: Request, res: Response): Promise<void> 
 export const initiateJoinPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1034,12 +1034,8 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
 export const confirmJoinPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1270,12 +1266,7 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
 export const completeMeet = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1387,12 +1378,8 @@ export const getMeetFinancials = async (req: Request, res: Response): Promise<vo
 export const sendJoinRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, foodPreference, drinkPreference } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { foodPreference, drinkPreference } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1514,12 +1501,9 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
 export const handleJoinRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id, joinerId } = req.params;
-        const { action, userId } = req.body; // userId is the host user verifying authorization
+        const { action } = req.body;
+        const userId = req.user!.id; // verified host identity
 
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId (host) is required' });
-            return;
-        }
         if (!action || !['accept', 'reject'].includes(action)) {
             res.status(400).json({ success: false, message: 'action must be accept or reject' });
             return;
@@ -1680,12 +1664,8 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
 export const submitSettlementRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, bankDetails, accountNumber, bankName, accountHolderName, ifscCode, upiId, mobileNumber } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { bankDetails, accountNumber, bankName, accountHolderName, ifscCode, upiId, mobileNumber } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1880,12 +1860,8 @@ export const paySettlement = async (req: Request, res: Response): Promise<void> 
 export const updateChargesPerHead = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, chargesPerHead } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { chargesPerHead } = req.body;
 
         if (chargesPerHead === undefined || chargesPerHead === null || isNaN(Number(chargesPerHead))) {
             res.status(400).json({ success: false, message: 'chargesPerHead must be a valid number' });
@@ -2052,12 +2028,8 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
 export const startMeetup = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, durationHours, customEndDateTime } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { durationHours, customEndDateTime } = req.body;
 
         const request = await StrangersMeetService.confirmMeetupStarted(
             id,
@@ -2081,12 +2053,8 @@ export const startMeetup = async (req: Request, res: Response): Promise<void> =>
 export const extendMeetup = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, additionalHours, customEndDateTime } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { additionalHours, customEndDateTime } = req.body;
 
         const request = await StrangersMeetService.extendMeetupDuration(
             id,
@@ -2110,12 +2078,7 @@ export const extendMeetup = async (req: Request, res: Response): Promise<void> =
 export const confirmEndedMeetup = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const request = await StrangersMeetService.confirmMeetupEnded(id, userId);
 
@@ -2184,12 +2147,8 @@ export const adminMarkSettled = async (req: Request, res: Response): Promise<voi
 export const postNotStarted = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { userId, reason } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
+        const { reason } = req.body;
 
         const request = await StrangersMeetService.hostReportNotStarted(id, userId, reason ? String(reason) : undefined);
 

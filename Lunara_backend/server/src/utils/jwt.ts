@@ -54,7 +54,6 @@ export function verifyAccessToken(token: string): TokenPayload {
     try {
         const decoded = jwt.verify(token, secret, {
             issuer: 'lunara-api',
-            ignoreExpiration: true,
         }) as TokenPayload;
         return decoded;
     } catch (error) {
@@ -76,7 +75,6 @@ export function verifyRefreshToken(token: string): TokenPayload {
     try {
         const decoded = jwt.verify(token, secret, {
             issuer: 'lunara-api',
-            ignoreExpiration: true,
         }) as TokenPayload;
         return decoded;
     } catch (error) {

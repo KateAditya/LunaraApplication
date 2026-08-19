@@ -14,6 +14,144 @@ import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage from '../models/SubscriptionPackage';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
+import Booking, { AdminApprovalStatus, BookingStatus } from '../models/Booking';
+import GroupParty, { GroupPartyStatus } from '../models/GroupParty';
+
+/**
+ * Sweeps large-party Bookings and small GroupParty requests that were approved
+ * (or had a payment link sent) but whose `expiresAt` deadline — the party's own
+ * scheduled start time — has passed without payment. Flips them to 'expired' and
+ * notifies the requester over push + socket, reusing the same notification shape
+ * as `adminBookingController.approveLargePartyRequest`.
+ */
+async function expireUnpaidLargePartyRequests(now: Date): Promise<void> {
+    const expiredBookings = await Booking.findAll({
+        where: {
+            isLargePartyRequest: true,
+            adminApprovalStatus: { [Op.in]: [AdminApprovalStatus.APPROVED, AdminApprovalStatus.PAYMENT_SENT] },
+            paymentStatus: { [Op.ne]: 'paid' },
+            expiresAt: { [Op.lt]: now },
+        },
+    });
+
+    for (const booking of expiredBookings) {
+        await booking.update({
+            adminApprovalStatus: AdminApprovalStatus.EXPIRED,
+            status: BookingStatus.CANCELLED,
+        });
+
+        try {
+            const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
+            const venueName = venue?.name || 'Venue';
+            const title = 'Large Party Request Expired ⌛';
+            const body = `Your party request at ${venueName} expired because payment wasn't completed before the event started.`;
+
+            try {
+                const NotificationModel = (await import('../models/Notification')).default;
+                await NotificationModel.create({
+                    recipientUserId: booking.userId,
+                    eventType: 'large_party_expired',
+                    category: 'bookings' as any,
+                    entityType: 'booking',
+                    entityId: booking.id,
+                    title,
+                    body,
+                    priority: 'HIGH' as any,
+                    isRead: false,
+                    metadata: { bookingId: booking.id, venueName },
+                });
+            } catch (dbErr) {
+                logger.warn('[Cron] Failed to save DB notification for large party expiry: ' + dbErr);
+            }
+
+            if (host?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title,
+                    body,
+                    data: { type: 'large_party_expired', bookingId: booking.id },
+                });
+            }
+
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${booking.userId}`).emit('large_party_status_update', {
+                    bookingId: booking.id,
+                    status: booking.adminApprovalStatus,
+                });
+                try {
+                    const { GroupPartyService } = await import('../services/GroupPartyService');
+                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                    io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                } catch (cardErr) {}
+            }
+
+            try {
+                const AuditLog = (await import('../models/AuditLog')).default;
+                await AuditLog.logAction({
+                    userId: booking.userId,
+                    action: 'LARGE_PARTY_EXPIRED',
+                    bookingId: booking.id,
+                    metadata: { venueName },
+                }).catch(() => {});
+            } catch (aErr) {}
+        } catch (notifyErr: any) {
+            logger.warn(`[Cron] Failed to notify user for expired large party booking ${booking.id}: ` + notifyErr.message);
+        }
+
+        logger.info(`[Cron] Expired unpaid large party booking ${booking.id}`);
+    }
+
+    const expiredGroupParties = await GroupParty.findAll({
+        where: {
+            status: GroupPartyStatus.APPROVED,
+            paymentStatus: { [Op.ne]: 'paid' },
+            expiresAt: { [Op.lt]: now },
+        },
+    });
+
+    for (const groupParty of expiredGroupParties) {
+        await groupParty.update({ status: GroupPartyStatus.EXPIRED });
+
+        try {
+            const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
+            const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
+            const venueName = venue?.name || 'Venue';
+            const title = 'Group Party Request Expired ⌛';
+            const body = `Your group party request at ${venueName} expired because payment wasn't completed before the event started.`;
+
+            if (host?.fcmToken) {
+                const { sendPushNotification } = require('../services/fcmService');
+                await sendPushNotification(host.fcmToken, {
+                    title,
+                    body,
+                    data: { type: 'group_party_expired', partyId: groupParty.id },
+                });
+            }
+
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${groupParty.userId}`).emit('large_party_status_update', {
+                    bookingId: groupParty.id,
+                    status: groupParty.status,
+                });
+                io.to(`user_${groupParty.userId}`).emit('notification_created', {
+                    id: `group_party_${groupParty.id}_expired`,
+                    title,
+                    body,
+                    createdAt: new Date().toISOString(),
+                    read: false,
+                    data: { type: 'group_party_expired', partyId: groupParty.id },
+                });
+            }
+        } catch (notifyErr: any) {
+            logger.warn(`[Cron] Failed to notify user for expired group party ${groupParty.id}: ` + notifyErr.message);
+        }
+
+        logger.info(`[Cron] Expired unpaid group party ${groupParty.id}`);
+    }
+}
 
 // Run every 5 minutes with overlap protection
 let isPartyPlanCronRunning = false;
@@ -121,6 +259,14 @@ export const startPartyPlanCron = () => {
                 await checkExpiredOrAutoApprovedRequests();
             } catch (cancelCronErr: any) {
                 logger.warn('[Cron] checkExpiredOrAutoApprovedRequests warning:', cancelCronErr.message);
+            }
+
+            // 1.6 Expire large/group party requests that were approved (or sent a
+            // payment link) but never paid before the party's own scheduled start time.
+            try {
+                await expireUnpaidLargePartyRequests(now);
+            } catch (expiryErr: any) {
+                logger.warn('[Cron] expireUnpaidLargePartyRequests warning:', expiryErr.message);
             }
 
 
@@ -1054,8 +1200,7 @@ export const startPartyPlanCron = () => {
             });
 
             const { ReliabilityService, ReliabilityAction } = await import('../services/reliabilityService');
-            const WalletTransaction = (await import('../models/WalletTransaction')).default;
-            const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
+            const { WalletService } = await import('../services/walletService');
 
             for (const plan of candidatePlans) {
                 const acceptedReq = await PartyPlanRequest.findOne({
@@ -1100,46 +1245,30 @@ export const startPartyPlanCron = () => {
                     logger.info(`[RefundEngine Case 1] Both Host and Guest confirmed arrival for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}` } });
-                        if (!existingHostTx) {
-                            const hOld = Number(hostUser.walletBalance || 0);
-                            const hNew = hOld + hostDeposit;
-                            await hostUser.update({ walletBalance: hNew });
-                            await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
-                            await WalletTransaction.logTransaction({
-                                userId: hostUser.id,
-                                partyPlanId: plan.id,
-                                amount: hostDeposit,
-                                openingBalance: hOld,
-                                closingBalance: hNew,
-                                transactionType: WalletTransactionType.REFUND,
-                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
-                            });
-                            await ReliabilityService.updateScore({
-                                userId: hostUser.id,
-                                action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
-                                partyPlanId: plan.id,
-                            });
-                        }
+                        await WalletService.creditRefund({
+                            userId: hostUser.id,
+                            amount: hostDeposit,
+                            referenceId: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
+                            reason: 'Party Plan arrival confirmed — host deposit refund',
+                            partyPlanId: plan.id,
+                        });
+                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
                     }
 
                     if (guestUser && guestDeposit > 0) {
-                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}` } });
-                        if (!existingGuestTx) {
-                            const gOld = Number(guestUser.walletBalance || 0);
-                            const gNew = gOld + guestDeposit;
-                            await guestUser.update({ walletBalance: gNew });
-                            await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
-                            await WalletTransaction.logTransaction({
-                                userId: guestUser.id,
-                                partyPlanId: plan.id,
-                                amount: guestDeposit,
-                                openingBalance: gOld,
-                                closingBalance: gNew,
-                                transactionType: WalletTransactionType.REFUND,
-                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
-                            });
-                        }
+                        await WalletService.creditRefund({
+                            userId: guestUser.id,
+                            amount: guestDeposit,
+                            referenceId: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
+                            reason: 'Party Plan arrival confirmed — guest deposit refund',
+                            partyPlanId: plan.id,
+                        });
+                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
                     }
 
                     if (guestUser) {
@@ -1161,27 +1290,19 @@ export const startPartyPlanCron = () => {
                     logger.info(`[RefundEngine Case 2] Host YES, Guest NO for plan ${plan.id}`);
 
                     if (hostUser) {
-                        const existingHostTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}` } });
-                        if (!existingHostTx) {
-                            const hOld = Number(hostUser.walletBalance || 0);
-                            const hNew = hOld + hostDeposit;
-                            await hostUser.update({ walletBalance: hNew });
-                            await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
-                            await WalletTransaction.logTransaction({
-                                userId: hostUser.id,
-                                partyPlanId: plan.id,
-                                amount: hostDeposit,
-                                openingBalance: hOld,
-                                closingBalance: hNew,
-                                transactionType: WalletTransactionType.REFUND,
-                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
-                            });
-                            await ReliabilityService.updateScore({
-                                userId: hostUser.id,
-                                action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
-                                partyPlanId: plan.id,
-                            });
-                        }
+                        await WalletService.creditRefund({
+                            userId: hostUser.id,
+                            amount: hostDeposit,
+                            referenceId: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${hostUser.id}`,
+                            reason: 'Party Plan arrival confirmed — host deposit refund',
+                            partyPlanId: plan.id,
+                        });
+                        await plan.update({ hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED });
+                        await ReliabilityService.updateScore({
+                            userId: hostUser.id,
+                            action: ReliabilityAction.SUCCESSFUL_ATTENDANCE,
+                            partyPlanId: plan.id,
+                        });
                     }
 
                     if (guestUser) {
@@ -1203,22 +1324,14 @@ export const startPartyPlanCron = () => {
                     logger.info(`[RefundEngine Case 3] Host NO, Guest YES for plan ${plan.id}`);
 
                     if (guestUser && guestDeposit > 0) {
-                        const existingGuestTx = await WalletTransaction.findOne({ where: { reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}` } });
-                        if (!existingGuestTx) {
-                            const gOld = Number(guestUser.walletBalance || 0);
-                            const gNew = gOld + guestDeposit;
-                            await guestUser.update({ walletBalance: gNew });
-                            await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
-                            await WalletTransaction.logTransaction({
-                                userId: guestUser.id,
-                                partyPlanId: plan.id,
-                                amount: guestDeposit,
-                                openingBalance: gOld,
-                                closingBalance: gNew,
-                                transactionType: WalletTransactionType.REFUND,
-                                reference: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
-                            });
-                        }
+                        await WalletService.creditRefund({
+                            userId: guestUser.id,
+                            amount: guestDeposit,
+                            referenceId: `PARTY_PLAN:${plan.id}:ARRIVAL_REFUND:${guestUser.id}`,
+                            reason: 'Party Plan arrival confirmed — guest deposit refund',
+                            partyPlanId: plan.id,
+                        });
+                        await acceptedReq.update({ joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED });
                     }
 
                     if (guestUser) {

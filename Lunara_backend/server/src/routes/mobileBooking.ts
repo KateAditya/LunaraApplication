@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import ctrl from '../controllers/mobileBookingController';
 
 const router = Router();
@@ -41,6 +42,7 @@ router.get(
 router.post(
     '/',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('venueId').notEmpty().withMessage('venueId is required'),
         body('bookingDate').isISO8601().withMessage('bookingDate must be YYYY-MM-DD'),
@@ -72,6 +74,7 @@ router.post(
 router.post(
     '/party-event',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('partyEventId').notEmpty().withMessage('partyEventId is required'),
         body('quantity').isInt({ min: 1 }).withMessage('quantity must be at least 1'),
@@ -84,7 +87,7 @@ router.post(
  * GET /api/mobile/bookings
  * List all bookings for a user. Query: ?userId=<uuid>
  */
-router.get('/', ctrl.listMyBookings);
+router.get('/', authenticate, ctrl.listMyBookings);
 
 // ─── Payment actions ──────────────────────────────────────────────────────────
 // NOTE: All specific /:id/sub-routes MUST be declared before GET /:id
@@ -96,7 +99,7 @@ router.get('/', ctrl.listMyBookings);
  */
 router.post(
     '/:id/pay-now',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.payNow
 );
 
@@ -106,7 +109,7 @@ router.post(
  */
 router.post(
     '/:id/initiate-large-party-payment',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.initiateLargePartyPayment
 );
 
@@ -117,6 +120,7 @@ router.post(
 router.post(
     '/:id/verify-large-party-payment',
     [
+        authenticate,
         param('id').isUUID(),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
@@ -133,6 +137,7 @@ router.post(
 router.post(
     '/:id/split-bill',
     [
+        authenticate,
         param('id').isUUID(),
         body('members').isArray({ min: 1 }).withMessage('members must be a non-empty array'),
         body('members.*.name').notEmpty().withMessage('Each member must have a name'),
@@ -149,6 +154,7 @@ router.post(
 router.post(
     '/:id/split-bill/pay',
     [
+        authenticate,
         param('id').isUUID(),
         body('memberId').isUUID().withMessage('memberId must be a UUID'),
         validate,
@@ -162,7 +168,7 @@ router.post(
  */
 router.post(
     '/:id/secure-reservation',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.secureReservation
 );
 
@@ -174,7 +180,7 @@ router.post(
  */
 router.get(
     '/:id/ticket',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.getTicket
 );
 
@@ -184,7 +190,7 @@ router.get(
  */
 router.post(
     '/:id/add-to-wallet',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.addToWallet
 );
 
@@ -194,6 +200,6 @@ router.post(
  * GET /api/mobile/bookings/:id
  * Full booking detail including group/split members.
  */
-router.get('/:id', [param('id').isUUID(), validate], ctrl.getBookingDetail);
+router.get('/:id', [authenticate, param('id').isUUID(), validate], ctrl.getBookingDetail);
 
 export default router;

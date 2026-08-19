@@ -241,11 +241,17 @@ export class GroupPartyService {
     public static async verifySmallPartyPayment(
         razorpay_order_id: string,
         razorpay_payment_id: string,
-        razorpay_signature: string
+        razorpay_signature: string,
+        callerUserId: string
     ): Promise<GroupParty> {
         const groupParty = await GroupParty.findOne({ where: { paymentId: razorpay_order_id } });
         if (!groupParty) {
             throw new Error('Group party booking not found');
+        }
+        if (groupParty.userId !== callerUserId) {
+            const err: any = new Error('You can only verify payment for your own group party');
+            err.statusCode = 403;
+            throw err;
         }
 
         // Idempotency check: if already confirmed/paid, return directly
@@ -526,6 +532,10 @@ export class GroupPartyService {
             const isCompleted = isLargeBooking
                 ? (bookingRecord.status === 'completed')
                 : (gp as any)?.status === 'completed';
+            const isExpired = isLargeBooking
+                ? (bookingRecord.adminApprovalStatus === 'expired')
+                : (gp?.status === GroupPartyStatus.EXPIRED);
+            const expiresAt = isLargeBooking ? bookingRecord.expiresAt : gp?.expiresAt;
 
             const reminder2h = isLargeBooking ? false : (gp?.reminder2hSent || false);
             const reminder1h = isLargeBooking ? false : (gp?.reminder1hSent || false);
@@ -575,10 +585,14 @@ export class GroupPartyService {
                 title = `Group Party Completed ✨`;
                 body = `Hope you had an amazing night at ${venueName}!`;
                 statusText = 'Completed';
+            } else if (isExpired) {
+                title = `Group Party Expired ⌛`;
+                body = `Your party request at ${venueName} expired because payment wasn't completed before the event started.`;
+                statusText = 'Expired';
             }
 
             const actionButtons = [];
-            if (isApproved || (isPending && gp?.paymentStatus === GroupPartyPaymentStatus.PENDING)) {
+            if (!isExpired && (isApproved || (isPending && gp?.paymentStatus === GroupPartyPaymentStatus.PENDING))) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
             }
             if (isConfirmed) {
@@ -601,12 +615,14 @@ export class GroupPartyService {
                 isRead: false,
                 category: 'bookings',
                 // Top-level status fields so Flutter can resolve status without parsing data
-                status: isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending'))),
+                status: isExpired ? 'expired' : (isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending')))),
                 paymentStatus: isLargeBooking
                     ? (bookingRecord?.paymentStatus || 'pending')
                     : (gp?.paymentStatus || 'pending'),
                 totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
                 isSmallGroupParty: !isLargeBooking,
+                isExpired,
+                expiresAt,
                 data: {
                     type: 'group_party_timeline',
                     partyId,
@@ -614,12 +630,14 @@ export class GroupPartyService {
                     guestCount,
                     partyDate,
                     statusText,
-                    status: isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending'))),
+                    status: isExpired ? 'expired' : (isConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isCancelled ? 'cancelled' : 'pending')))),
                     paymentStatus: isLargeBooking
                         ? (bookingRecord?.paymentStatus || 'pending')
                         : (gp?.paymentStatus || 'pending'),
                     totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
                     isSmallGroupParty: !isLargeBooking,
+                    isExpired,
+                    expiresAt,
                     timelineProgress: progressPercentage,
                     currentStatusStep: isCompleted ? 10 : (isConfirmed ? 6 : (isApproved ? 4 : 2)),
                     timelineSteps,
@@ -663,7 +681,8 @@ export class GroupPartyService {
                 bookingRecord.paymentStatus === 'paid';
             const isChatEnabled = isPaymentConfirmed;
             const isCompleted = bookingRecord.status === 'completed';
-            const isRejected = bookingRecord.adminApprovalStatus === 'rejected' || bookingRecord.status === 'cancelled';
+            const isExpired = bookingRecord.adminApprovalStatus === 'expired';
+            const isRejected = (bookingRecord.adminApprovalStatus === 'rejected' || bookingRecord.status === 'cancelled') && !isExpired;
 
             const reminder2h = bookingRecord.reminder2hSent || false;
             const reminder1h = bookingRecord.reminder1hSent || false;
@@ -709,10 +728,14 @@ export class GroupPartyService {
                 title = `Large Party Request Rejected ❌`;
                 body = `Your request for ${guestCount} guests at ${venueName} could not be approved.`;
                 statusText = 'Rejected';
+            } else if (isExpired) {
+                title = `Large Party Request Expired ⌛`;
+                body = `Your request for ${guestCount} guests at ${venueName} expired because payment wasn't completed before the event started.`;
+                statusText = 'Expired';
             }
 
             const actionButtons = [];
-            if (isPaymentPending) {
+            if (isPaymentPending && !isExpired) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW', paymentAmount: bookingRecord.adminPaymentAmount });
             }
             if (isPaymentConfirmed) {
@@ -732,6 +755,10 @@ export class GroupPartyService {
                 read: false,
                 isRead: false,
                 category: 'bookings',
+                status: isExpired ? 'expired' : (isPaymentConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isRejected ? 'cancelled' : 'pending')))),
+                paymentStatus: bookingRecord.paymentStatus || 'pending',
+                isExpired,
+                expiresAt: bookingRecord.expiresAt,
                 data: {
                     type: 'large_party_timeline',
                     bookingId,
@@ -739,6 +766,8 @@ export class GroupPartyService {
                     guestCount,
                     partyDate,
                     statusText,
+                    isExpired,
+                    expiresAt: bookingRecord.expiresAt,
                     timelineProgress: progressPercentage,
                     currentStatusStep: isCompleted ? 10 : (isPaymentConfirmed ? 6 : (isPaymentPending ? 4 : (isApproved ? 3 : 2))),
                     timelineSteps,

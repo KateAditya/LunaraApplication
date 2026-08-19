@@ -7,6 +7,7 @@ export enum GroupPartyStatus {
     REJECTED = 'rejected',
     CONFIRMED = 'confirmed',
     CANCELLED = 'cancelled',
+    EXPIRED = 'expired',
 }
 
 export enum GroupPartyPaymentStatus {
@@ -29,6 +30,7 @@ export interface GroupPartyAttributes {
     ticketCode?: string;
     ticketUrl?: string;
     partyDate: Date;
+    expiresAt?: Date;
     mobileNumber: string;
     optionalMobileNumber?: string;
     foodPreference?: string;
@@ -43,7 +45,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'expiresAt' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
     > { }
 
 class GroupParty
@@ -62,6 +64,7 @@ class GroupParty
     public ticketCode?: string;
     public ticketUrl?: string;
     public partyDate!: Date;
+    public expiresAt?: Date;
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
     public foodPreference?: string;
@@ -148,6 +151,11 @@ GroupParty.init(
             type: DataTypes.DATEONLY,
             allowNull: false,
             field: 'party_date',
+        },
+        expiresAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'expires_at',
         },
         mobileNumber: {
             type: DataTypes.STRING,

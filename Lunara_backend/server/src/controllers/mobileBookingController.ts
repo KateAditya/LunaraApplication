@@ -106,7 +106,6 @@ export const getTimeSlots = async (req: Request, res: Response) => {
 export const createBooking = async (req: Request, res: Response): Promise<void> => {
     try {
         const {
-            userId,
             venueId,
             bookingDate,
             startTime,
@@ -121,11 +120,12 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             optionalMobileNumber,
             isUpcomingNight,
         } = req.body;
+        const userId = req.user!.id;
 
-        if (!userId || !venueId || !bookingDate || !startTime || !packageName) {
+        if (!venueId || !bookingDate || !startTime || !packageName) {
             res.status(400).json({
                 success: false,
-                message: 'Required: userId, venueId, bookingDate, startTime, tablePackage',
+                message: 'Required: venueId, bookingDate, startTime, tablePackage',
             });
             return;
         }
@@ -176,8 +176,9 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 // ─── POST /party-event — Create Party Event Booking ──────────────────────────
 export const createPartyBooking = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, partyEventId, quantity } = req.body;
-        
+        const { partyEventId, quantity } = req.body;
+        const userId = req.user!.id;
+
         const ad = await Ad.findByPk(partyEventId);
         if (!ad || ad.type !== 'Party' || !ad.isActive) {
             res.status(404).json({ success: false, message: 'Active Party Event not found' });
@@ -291,11 +292,15 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
 export const payNow = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId, paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const { paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const userId = req.user!.id;
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        
+        if (booking.userId !== userId) {
+            return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
+        }
+
         if (booking.status === BookingStatus.CONFIRMED && booking.paymentStatus === PaymentStatus.PAID) {
             const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
             return res.json({
@@ -386,7 +391,8 @@ export const payNow = async (req: Request, res: Response) => {
 export const setupSplitBill = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId, members } = req.body;
+        const { members } = req.body;
+        const userId = req.user!.id;
         // members: [{ name: string, userId?: string, shareAmount: number }]
 
         if (!Array.isArray(members) || members.length < 1) {
@@ -395,13 +401,16 @@ export const setupSplitBill = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.userId !== userId) {
+            return res.status(403).json({ success: false, message: 'You can only set up split billing on your own booking' });
+        }
         if (booking.status === BookingStatus.CONFIRMED) {
             return res.status(400).json({ success: false, message: 'Booking already confirmed' });
         }
 
         const groupBooking = await GroupBooking.create({
             bookingId: id,
-            organizerId: userId || booking.userId,
+            organizerId: userId,
             totalMembers: members.length,
             confirmedMembers: 0,
             paidMembers: 0,
@@ -456,7 +465,8 @@ export const setupSplitBill = async (req: Request, res: Response) => {
 export const payMySplit = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { memberId, userId } = req.body;
+        const { memberId } = req.body;
+        const userId = req.user!.id;
 
         if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
 
@@ -541,6 +551,9 @@ export const secureReservation = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only secure your own booking' });
+        }
 
         const ticketCode = (booking as any).ticketCode || uuidv4();
         await (booking as any).update({
@@ -578,6 +591,9 @@ export const getTicket = async (req: Request, res: Response) => {
             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
         });
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only view your own ticket' });
+        }
 
         const ticketCode = (booking as any).ticketCode;
         if (!ticketCode) {
@@ -601,6 +617,9 @@ export const addToWallet = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only add your own booking to wallet' });
+        }
 
         await (booking as any).update({
             addedToWallet: true,
@@ -626,8 +645,7 @@ export const addToWallet = async (req: Request, res: Response) => {
 // ─── GET / — List user's bookings ─────────────────────────────────────────────
 export const listMyBookings = async (req: Request, res: Response) => {
     try {
-        const userId = (req.query.userId || req.body.userId) as string;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+        const userId = req.user!.id;
 
         const bookings = await Booking.findAll({
             where: { userId },
@@ -671,6 +689,9 @@ export const getBookingDetail = async (req: Request, res: Response) => {
             ],
         });
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only view your own booking' });
+        }
 
         return res.json({ success: true, data: booking });
     } catch (err: any) {
@@ -688,6 +709,9 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             const groupParty = await GroupParty.findByPk(id);
             if (!groupParty) {
                 return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
+            }
+            if (groupParty.userId !== req.user!.id) {
+                return res.status(403).json({ success: false, message: 'You can only pay for your own group party' });
             }
             const pStatus = (groupParty.status || '').toLowerCase();
             const pPayStatus = (groupParty.paymentStatus || '').toLowerCase();
@@ -721,6 +745,10 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             });
         }
         
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
+        }
+
         const goingMode = (booking.goingMode || '').toLowerCase();
         const isLargeParty = booking.isLargePartyRequest || goingMode === 'party_request' || goingMode === 'group_party' || (booking.numberOfGuests || 0) > 20;
 
@@ -787,13 +815,23 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
         const { id } = req.params;
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
+        // Wallet payments never create a real Razorpay order on the record, so the
+        // Flutter wallet callback sends a synthetic order id (e.g. 'order_mock_wallet').
+        // Skip the order-id equality check for these, same as Party Plan / Strangers Meet.
+        const isMockOrWalletOrder = !razorpay_order_id ||
+            razorpay_order_id.startsWith('order_mock_') ||
+            razorpay_order_id.startsWith('wallet_');
+
         let booking = await Booking.findByPk(id);
         if (!booking) {
             const groupParty = await GroupParty.findByPk(id);
             if (!groupParty) {
                 return res.status(404).json({ success: false, message: 'Booking/GroupParty not found' });
             }
-            if (groupParty.paymentId !== razorpay_order_id) {
+            if (groupParty.userId !== req.user!.id) {
+                return res.status(403).json({ success: false, message: 'You can only verify payment for your own group party' });
+            }
+            if (!isMockOrWalletOrder && groupParty.paymentId !== razorpay_order_id) {
                 return res.status(400).json({ success: false, message: 'Invalid order ID' });
             }
 
@@ -864,7 +902,11 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
             }
         }
 
-        if (booking.razorpayOrderId !== razorpay_order_id) {
+        if (booking.userId !== req.user!.id) {
+            return res.status(403).json({ success: false, message: 'You can only verify payment for your own booking' });
+        }
+
+        if (!isMockOrWalletOrder && booking.razorpayOrderId !== razorpay_order_id) {
             return res.status(400).json({ success: false, message: 'Invalid order ID' });
         }
 

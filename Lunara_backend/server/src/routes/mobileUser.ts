@@ -48,7 +48,7 @@ const profileSetupValidation = [
  * Public/Testing — userId must be provided in body.
  * Upload multiple photos (multipart/form-data) under the field "photos".
  */
-router.post('/photos', uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
+router.post('/photos', authenticate, uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
 
 /**
  * PUT /api/mobile/user/profile-setup
@@ -56,7 +56,7 @@ router.post('/photos', uploadTempPhotos.array('photos', 6), mobileUserController
  * Public/Testing — userId must be provided in body.
  * Save JSON data for the onboarding steps 2, 3, and 4.
  */
-router.put('/profile-setup', profileSetupValidation, mobileUserController.completeProfileSetup);
+router.put('/profile-setup', authenticate, profileSetupValidation, mobileUserController.completeProfileSetup);
 
 /**
  * GET /api/mobile/user/userprofile
@@ -89,7 +89,7 @@ router.get('/customers', optionalAuth, mobileUserController.getAllCustomers);
  * GET /api/mobile/user/:id/status
  * Returns the online status and last active timestamp for a specific user
  */
-router.get('/:id/status', [param('id').isUUID(), validate], mobileUserController.getUserStatus);
+router.get('/:id/status', [authenticate, param('id').isUUID(), validate], mobileUserController.getUserStatus);
 
 /**
  * POST /api/mobile/user/fcm-token
@@ -100,6 +100,7 @@ router.get('/:id/status', [param('id').isUUID(), validate], mobileUserController
 router.post(
     '/fcm-token',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('token').notEmpty().withMessage('token is required'),
         validate,
@@ -109,6 +110,7 @@ router.post(
 
 router.post(
     '/unregister-fcm-token',
+    authenticate,
     mobileUserController.unregisterFcmToken
 );
 
@@ -116,6 +118,7 @@ router.post(
  * POST /api/mobile/user/block
  */
 router.post('/block', [
+    authenticate,
     body('userId').optional().isUUID(),
     body('targetUserId').notEmpty().isUUID(),
     validate
@@ -125,6 +128,7 @@ router.post('/block', [
  * POST /api/mobile/user/unblock
  */
 router.post('/unblock', [
+    authenticate,
     body('userId').optional().isUUID(),
     body('targetUserId').notEmpty().isUUID(),
     validate
@@ -134,6 +138,7 @@ router.post('/unblock', [
  * POST /api/mobile/user/report
  */
 router.post('/report', [
+    authenticate,
     body('userId').optional().isUUID(),
     body('targetUserId').notEmpty().isUUID(),
     body('reason').optional().isString(),
@@ -143,7 +148,7 @@ router.post('/report', [
 /**
  * GET /api/mobile/user/blocks
  */
-router.get('/blocks', mobileUserController.getBlockedUsers);
+router.get('/blocks', authenticate, mobileUserController.getBlockedUsers);
 
 /**
  * GET /api/mobile/user/blocks/details
@@ -1081,54 +1086,55 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
     }
 });
-router.post('/swipe', mobileUserController.swipeUser);
+router.post('/swipe', authenticate, mobileUserController.swipeUser);
 
 /**
  * GET /api/mobile/user/likes-matches
  * Fetch all likes/matches for a user
  */
-router.get('/likes-matches', mobileUserController.getMyLikesAndMatches);
+router.get('/likes-matches', authenticate, mobileUserController.getMyLikesAndMatches);
 
 /**
  * GET /api/mobile/user/swipe-status
  * Check if current user already liked/superliked a target today, and get plan limits.
  * Query: userId, targetUserId
  */
-router.get('/swipe-status', mobileUserController.getSwipeStatus);
+router.get('/swipe-status', authenticate, mobileUserController.getSwipeStatus);
 
 /**
  * POST /api/mobile/user/backtrack
  * Backtrack the last swipe action on a target user, subject to subscription limit.
  */
-router.post('/backtrack', mobileUserController.backtrackSwipe);
+router.post('/backtrack', authenticate, mobileUserController.backtrackSwipe);
 
 // ── Chat Subscription Routes ──────────────────────────────────────────────────
 import * as chatSubCtrl from '../controllers/chatSubscriptionController';
 
 /** GET /api/mobile/chat/session-status/:conversationId */
-router.get('/chat/session-status/:conversationId', chatSubCtrl.getSessionStatus);
+router.get('/chat/session-status/:conversationId', authenticate, chatSubCtrl.getSessionStatus);
 
 /** POST /api/mobile/chat/init-free */
-router.post('/chat/init-free', chatSubCtrl.initFreeChat);
+router.post('/chat/init-free', authenticate, chatSubCtrl.initFreeChat);
 
 /** POST /api/mobile/chat/extend */
-router.post('/chat/extend', chatSubCtrl.extendChat);
+router.post('/chat/extend', authenticate, chatSubCtrl.extendChat);
 
 /** POST /api/mobile/chat/request-extension */
-router.post('/chat/request-extension', chatSubCtrl.requestExtension);
+router.post('/chat/request-extension', authenticate, chatSubCtrl.requestExtension);
 
 /** POST /api/mobile/chat/accept-extension-request */
-router.post('/chat/accept-extension-request', chatSubCtrl.acceptExtensionRequest);
+router.post('/chat/accept-extension-request', authenticate, chatSubCtrl.acceptExtensionRequest);
 
 /**
  * POST /api/mobile/user/safety-check
  * Submits safety check report
  */
-router.post('/safety-check', async (req, res) => {
+router.post('/safety-check', authenticate, async (req, res) => {
     try {
-        const { userId, partnerId, feltSafe, prebuiltAnswers, opinion } = req.body;
-        if (!userId || !partnerId || feltSafe === undefined) {
-            return res.status(400).json({ success: false, message: 'userId, partnerId, and feltSafe are required.' });
+        const { partnerId, feltSafe, prebuiltAnswers, opinion } = req.body;
+        const userId = req.user!.id;
+        if (!partnerId || feltSafe === undefined) {
+            return res.status(400).json({ success: false, message: 'partnerId and feltSafe are required.' });
         }
         
         const safetyCheck = await SafetyCheck.create({
@@ -1169,6 +1175,7 @@ router.post('/safety-check', async (req, res) => {
 router.post(
     '/delete-account',
     [
+        authenticate,
         body('userId').optional().isUUID().withMessage('userId must be a valid UUID'),
         body('password').optional().isString(),
         body('reason').optional().isString().isLength({ max: 500 }),
@@ -1181,12 +1188,9 @@ router.post(
  * GET /api/mobile/user/profile-summary
  * Returns comprehensive profile statistics, reliability level, streaks, and platform metrics
  */
-router.get('/profile-summary', async (req, res) => {
+router.get('/profile-summary', authenticate, async (req, res) => {
     try {
-        const userId = (req.query.userId as string) || (req.user as any)?.id;
-        if (!userId) {
-            return res.status(400).json({ success: false, message: 'userId required' });
-        }
+        const userId = req.user!.id;
 
         const user = await User.findByPk(userId);
         if (!user) {

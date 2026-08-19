@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import {
     createPartyPlan,
     verifyHostPayment,
@@ -51,6 +52,7 @@ const router = Router();
 router.post(
     '/',
     [
+        authenticate,
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
         body('message')
@@ -77,11 +79,15 @@ router.post(
 router.post(
     '/:id/host-pay',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
-        body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
+        // Razorpay's Flutter SDK can hand back a null signature for some payment
+        // methods; the controller already treats an empty signature as a valid
+        // mock-payment signal, so the validator must not reject it upstream.
+        body('razorpay_signature').optional({ checkFalsy: true }).isString().withMessage('razorpay_signature must be a string'),
         validate,
     ],
     verifyHostPayment
@@ -102,7 +108,7 @@ router.post(
  * Response 200:
  *   { success, total, page, limit, pages, data: [...plans] }
  */
-router.get('/', getAllPartyPlans);
+router.get('/', optionalAuth, getAllPartyPlans);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/party-plans/user/:userId
@@ -119,7 +125,7 @@ router.get('/', getAllPartyPlans);
  */
 router.get(
     '/user/:userId',
-    [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
+    [optionalAuth, param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
     getPlansByUser
 );
 
@@ -129,7 +135,7 @@ router.get(
 // ─────────────────────────────────────────────────────────────────────────────
 router.get(
     '/:id',
-    [param('id').isUUID().withMessage('id must be a valid UUID'), validate],
+    [optionalAuth, param('id').isUUID().withMessage('id must be a valid UUID'), validate],
     getPartyPlanById
 );
 
@@ -145,6 +151,7 @@ router.get(
 router.patch(
     '/:id/status',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('status').isIn(['active', 'inactive', 'cancelled']).withMessage('status must be active, inactive, or cancelled'),
@@ -164,6 +171,7 @@ router.patch(
 router.delete(
     '/:id',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -178,6 +186,7 @@ router.delete(
 router.post(
     '/:id/cancel',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -192,6 +201,7 @@ router.post(
 router.post(
     '/:id/repost',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('newDateTime').notEmpty().withMessage('newDateTime is required').isISO8601().withMessage('newDateTime must be a valid ISO 8601 date string'),
@@ -208,6 +218,7 @@ router.post(
 router.post(
     '/:id/requests',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -222,6 +233,7 @@ router.post(
 router.get(
     '/:id/requests',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         validate,
     ],
@@ -235,6 +247,7 @@ router.get(
 router.post(
     '/requests/:reqId/accept',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -246,6 +259,7 @@ router.post(
 router.post(
     '/requests/:reqId/cancel',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('reason').optional().isString().isLength({ max: 500 }),
@@ -258,6 +272,7 @@ router.post(
 router.post(
     '/requests/:reqId/withdraw',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('reason').optional().isString().isLength({ max: 500 }),
@@ -268,6 +283,7 @@ router.post(
 router.post(
     '/requests/:reqId/revoke',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('reason').optional().isString().isLength({ max: 500 }),
@@ -283,6 +299,7 @@ router.post(
 router.post(
     '/requests/:reqId/accept-invite',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -297,6 +314,7 @@ router.post(
 router.post(
     '/requests/:reqId/confirm-self-paid',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -311,6 +329,7 @@ router.post(
 router.get(
     '/requests/user/:userId',
     [
+        authenticate,
         param('userId').isUUID().withMessage('userId must be a valid UUID'),
         validate,
     ],
@@ -324,11 +343,14 @@ router.get(
 router.post(
     '/requests/:reqId/joiner-pay',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
-        body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
+        // Same rationale as host-pay above — an empty signature is a valid
+        // mock-payment signal to the controller and must not 400 here.
+        body('razorpay_signature').optional({ checkFalsy: true }).isString().withMessage('razorpay_signature must be a string'),
         validate,
     ],
     verifyJoinerPayment
@@ -341,6 +363,7 @@ router.post(
 router.post(
     '/requests/:reqId/reject',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -354,6 +377,7 @@ router.post(
 router.post(
     '/:id/initiate-host-payment',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -367,6 +391,7 @@ router.post(
 router.post(
     '/requests/:reqId/initiate-joiner-payment',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         body('userId').optional({ checkFalsy: true }).isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -381,6 +406,7 @@ router.post(
 router.get(
     '/requests/:reqId/ticket',
     [
+        authenticate,
         param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
         validate,
     ],
@@ -390,13 +416,13 @@ router.get(
 // Safety Check Endpoints
 import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobileSafetyCheckController';
 
-router.post('/safety-checks/respond', respondToSafetyCheck);
-router.get('/safety-checks/pending', getPendingSafetyCheck);
+router.post('/safety-checks/respond', authenticate, respondToSafetyCheck);
+router.get('/safety-checks/pending', authenticate, getPendingSafetyCheck);
 
 // Phase 2 & 3 Routes
-router.post('/:id/confirm-arrival', confirmArrival);
-router.post('/:planId/arrival-confirm', confirmArrival);
-router.get('/:planId/summary', getPlanSummary);
-router.post('/:id/review', submitPartyReview);
+router.post('/:id/confirm-arrival', authenticate, confirmArrival);
+router.post('/:planId/arrival-confirm', authenticate, confirmArrival);
+router.get('/:planId/summary', authenticate, getPlanSummary);
+router.post('/:id/review', authenticate, submitPartyReview);
 
 export default router;

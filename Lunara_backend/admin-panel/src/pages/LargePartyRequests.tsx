@@ -9,6 +9,9 @@ export const LargePartyRequests: React.FC = () => {
     const [search, setSearch] = useState('');
     const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
     const [amount, setAmount] = useState<string>('');
+    const [linkRequest, setLinkRequest] = useState<any | null>(null);
+    const [paymentLink, setPaymentLink] = useState<string>('');
+    const [paymentLinkAmount, setPaymentLinkAmount] = useState<string>('');
 
     useEffect(() => {
         fetchRequests();
@@ -68,6 +71,35 @@ export const LargePartyRequests: React.FC = () => {
             }
         } catch (error) {
             toast.error('Failed to mark payment as done');
+        }
+    };
+
+    const openSendLink = (req: any) => {
+        setLinkRequest(req);
+        setPaymentLinkAmount(String(req.totalAmount || ''));
+        setPaymentLink('');
+    };
+
+    const handleSendPaymentLink = async () => {
+        if (!linkRequest || !paymentLink.trim() || !paymentLink.trim().startsWith('http')) {
+            toast.error('Please enter a valid payment link URL');
+            return;
+        }
+        if (!paymentLinkAmount || isNaN(Number(paymentLinkAmount)) || Number(paymentLinkAmount) <= 0) {
+            toast.error('Please enter a valid amount');
+            return;
+        }
+        try {
+            const res = await bookingsApi.sendPaymentLink(linkRequest.id, paymentLink.trim(), Number(paymentLinkAmount));
+            if (res.success) {
+                toast.success('Payment link sent to user');
+                setLinkRequest(null);
+                setPaymentLink('');
+                setPaymentLinkAmount('');
+                fetchRequests();
+            }
+        } catch (error) {
+            toast.error('Failed to send payment link');
         }
     };
 
@@ -137,7 +169,8 @@ export const LargePartyRequests: React.FC = () => {
                                                 req.adminApprovalStatus === 'payment_done' ? 'success' :
                                                 req.adminApprovalStatus === 'payment_sent' ? 'info' :
                                                 req.adminApprovalStatus === 'approved' ? 'primary' :
-                                                req.adminApprovalStatus === 'rejected' ? 'danger' : 'warning'
+                                                req.adminApprovalStatus === 'rejected' ? 'danger' :
+                                                req.adminApprovalStatus === 'expired' ? 'secondary' : 'warning'
                                             }`}>
                                                 {(req.adminApprovalStatus === 'approved' ? 'approved (awaiting payment)' : req.adminApprovalStatus || 'PENDING').toUpperCase().replace('_', ' ')}
                                             </span>
@@ -152,14 +185,15 @@ export const LargePartyRequests: React.FC = () => {
                                             {req.adminApprovalStatus === 'approved' && (
                                                 <div className="d-flex flex-column gap-1">
                                                     <span className="fw-bold text-primary">Approved: ₹{req.totalAmount}</span>
-                                                    <button className="btn btn-sm btn-warning" onClick={() => handleMarkPaymentDone(req.id)}>Mark Paid</button>
+                                                    <button className="btn btn-sm btn-info" onClick={() => openSendLink(req)}>Send Payment Link</button>
+                                                    <button className="btn btn-sm btn-warning" onClick={() => handleMarkPaymentDone(req.id)}>Mark Paid (Offline)</button>
                                                 </div>
                                             )}
                                             {req.adminApprovalStatus === 'payment_sent' && (
                                                 <div className="d-flex flex-column gap-1">
                                                     <span className="fw-bold text-info">Amt: ₹{req.adminPaymentAmount || req.totalAmount}</span>
                                                     <a href={req.adminPaymentLink} target="_blank" rel="noopener noreferrer" className="text-truncate d-inline-block text-primary" style={{ maxWidth: '120px', fontSize: '11px' }}>Link</a>
-                                                    <button className="btn btn-sm btn-warning" onClick={() => handleMarkPaymentDone(req.id)}>Mark Paid</button>
+                                                    <button className="btn btn-sm btn-warning" onClick={() => handleMarkPaymentDone(req.id)}>Mark Paid (Offline)</button>
                                                 </div>
                                             )}
                                             {req.adminApprovalStatus === 'payment_done' && (
@@ -170,6 +204,9 @@ export const LargePartyRequests: React.FC = () => {
                                             )}
                                             {req.adminApprovalStatus === 'rejected' && (
                                                 <span className="text-danger fw-bold">Rejected</span>
+                                            )}
+                                            {req.adminApprovalStatus === 'expired' && (
+                                                <span className="text-muted fw-bold">Expired — payment window passed</span>
                                             )}
                                         </td>
                                     </tr>
@@ -223,6 +260,37 @@ export const LargePartyRequests: React.FC = () => {
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={() => setSelectedRequest(null)}>Cancel</button>
                                 <button type="button" className="btn btn-primary" onClick={handleApprove}>Confirm & Approve</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {linkRequest && (
+                <div className="modal show d-block" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content">
+                            <div className="modal-header">
+                                <h5 className="modal-title">Send Payment Link</h5>
+                                <button type="button" className="btn-close" onClick={() => setLinkRequest(null)}></button>
+                            </div>
+                            <div className="modal-body">
+                                <div className="mb-3">
+                                    <label className="form-label">User</label>
+                                    <input type="text" className="form-control" value={`${linkRequest.customer?.firstName} ${linkRequest.customer?.lastName}`} disabled />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label text-primary fw-bold">Payment Amount (₹)</label>
+                                    <input type="number" className="form-control" placeholder="Enter amount" value={paymentLinkAmount} onChange={(e) => setPaymentLinkAmount(e.target.value)} />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label text-primary fw-bold">Payment Link URL</label>
+                                    <input type="text" className="form-control" placeholder="https://..." value={paymentLink} onChange={(e) => setPaymentLink(e.target.value)} />
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setLinkRequest(null)}>Cancel</button>
+                                <button type="button" className="btn btn-primary" onClick={handleSendPaymentLink}>Send Link</button>
                             </div>
                         </div>
                     </div>

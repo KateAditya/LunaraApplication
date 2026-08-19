@@ -4,14 +4,15 @@ import { logger } from '../config/logger';
 
 export const checkUserInterest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, eventDate } = req.query;
-        if (!userId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'userId, venueId, and eventDate are required' });
+        const { venueId, eventDate } = req.query;
+        const userId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
         const isInterested = await NightPartnerService.checkUserInterest(
-            String(userId),
+            userId,
             String(venueId),
             String(eventDate)
         );
@@ -24,9 +25,10 @@ export const checkUserInterest = async (req: Request, res: Response): Promise<vo
 
 export const markInterested = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, eventDate, eventTime } = req.body;
-        if (!userId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'userId, venueId, and eventDate are required' });
+        const { venueId, eventDate, eventTime } = req.body;
+        const userId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
@@ -40,9 +42,10 @@ export const markInterested = async (req: Request, res: Response): Promise<void>
 
 export const removeInterest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, eventDate } = req.body;
-        if (!userId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'userId, venueId, and eventDate are required' });
+        const { venueId, eventDate } = req.body;
+        const userId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
@@ -56,14 +59,15 @@ export const removeInterest = async (req: Request, res: Response): Promise<void>
 
 export const getInterestedPartners = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { hostId, venueId, eventDate } = req.query;
-        if (!hostId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'hostId, venueId, and eventDate query parameters are required' });
+        const { venueId, eventDate } = req.query;
+        const hostId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate query parameters are required' });
             return;
         }
 
         const partners = await NightPartnerService.getInterestedPartners(
-            String(hostId),
+            hostId,
             String(venueId),
             String(eventDate)
         );
@@ -76,14 +80,15 @@ export const getInterestedPartners = async (req: Request, res: Response): Promis
 
 export const getAvailableInvitees = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { hostId, venueId, eventDate, search } = req.query;
-        if (!hostId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'hostId, venueId, and eventDate query parameters are required' });
+        const { venueId, eventDate, search } = req.query;
+        const hostId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate query parameters are required' });
             return;
         }
 
         const invitees = await NightPartnerService.getAvailableInvitees(
-            String(hostId),
+            hostId,
             String(venueId),
             String(eventDate),
             search ? String(search) : undefined
@@ -113,9 +118,10 @@ export const getPartnerProfilePreview = async (req: Request, res: Response): Pro
 
 export const sendPartnerRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { hostId, partnerId, venueId, eventDate, eventTime } = req.body;
-        if (!hostId || !partnerId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'hostId, partnerId, venueId, and eventDate are required' });
+        const { partnerId, venueId, eventDate, eventTime } = req.body;
+        const hostId = req.user!.id;
+        if (!partnerId || !venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'partnerId, venueId, and eventDate are required' });
             return;
         }
 
@@ -136,9 +142,10 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
 export const respondToRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { partnerId, action } = req.body;
-        if (!id || !partnerId || !['accept', 'decline'].includes(action)) {
-            res.status(400).json({ success: false, message: 'requestId, partnerId, and valid action (accept/decline) are required' });
+        const { action } = req.body;
+        const partnerId = req.user!.id;
+        if (!id || !['accept', 'decline'].includes(action)) {
+            res.status(400).json({ success: false, message: 'requestId and valid action (accept/decline) are required' });
             return;
         }
 
@@ -153,9 +160,9 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
 export const cancelRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { hostId } = req.body;
-        if (!id || !hostId) {
-            res.status(400).json({ success: false, message: 'requestId and hostId are required' });
+        const hostId = req.user!.id;
+        if (!id) {
+            res.status(400).json({ success: false, message: 'requestId is required' });
             return;
         }
 
@@ -170,9 +177,9 @@ export const cancelRequest = async (req: Request, res: Response): Promise<void> 
 export const initiateMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { hostId } = req.body;
-        if (!id || !hostId) {
-            res.status(400).json({ success: false, message: 'matchId and hostId are required' });
+        const hostId = req.user!.id;
+        if (!id) {
+            res.status(400).json({ success: false, message: 'matchId is required' });
             return;
         }
 
@@ -205,7 +212,8 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
             id,
             razorpay_order_id,
             razorpay_payment_id,
-            razorpay_signature
+            razorpay_signature,
+            req.user!.id
         );
 
         res.json({
@@ -215,7 +223,7 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
         });
     } catch (err: any) {
         logger.error('verifyMatchPayment error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to verify payment' });
+        res.status(err.statusCode || 400).json({ success: false, message: err.message || 'Failed to verify payment' });
     }
 };
 

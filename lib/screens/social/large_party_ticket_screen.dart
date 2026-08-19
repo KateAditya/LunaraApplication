@@ -1,14 +1,19 @@
+// ignore_for_file: use_build_context_synchronously
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../services/google_places_service.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
+import '../../widgets/smart_checkout_sheet.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
+
+enum _LargePartyPaymentState { loading, paid, awaitingPayment, expired }
 
 class LargePartyTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic> booking;
@@ -44,9 +49,23 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   Map<String, dynamic>? _freshVenue;
   final GlobalKey _ticketKey = GlobalKey();
 
+  // Server-verified payment/expiry state — the single source of truth for
+  // whether this screen shows a Pay Now button, an Expired notice, or the ticket.
+  _LargePartyPaymentState _paymentState = _LargePartyPaymentState.loading;
+  double? _amountDue;
+  String? _bookingId;
+
+  Razorpay? _razorpay;
+  bool _isPaying = false;
+
   @override
   void initState() {
     super.initState();
+    _paymentState = _computeInitialStateFromLocalMap();
+    _razorpay = Razorpay();
+    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
+    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError);
+    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
     _initLocation();
     _initCountdown();
     _fetchTicketData();
@@ -56,7 +75,19 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   void dispose() {
     _positionStreamSubscription?.cancel();
     _countdownTimer?.cancel();
+    _razorpay?.clear();
     super.dispose();
+  }
+
+  /// Best-effort guess from whatever the caller passed in, shown only until the
+  /// authoritative server fetch in [_fetchTicketData] resolves and overwrites it.
+  _LargePartyPaymentState _computeInitialStateFromLocalMap() {
+    final amount = double.tryParse((widget.booking['totalAmount'] ?? widget.booking['depositAmount'] ?? widget.booking['approvedAmount'] ?? widget.booking['charges'] ?? 0).toString()) ?? 0.0;
+    if (amount <= 0) return _LargePartyPaymentState.paid;
+    final localStatus = (widget.booking['adminApprovalStatus'] ?? widget.booking['status'])?.toString().toLowerCase();
+    if (localStatus == 'expired') return _LargePartyPaymentState.expired;
+    if (localStatus == 'approved' || localStatus == 'payment_sent') return _LargePartyPaymentState.awaitingPayment;
+    return _LargePartyPaymentState.paid;
   }
 
   void _initCountdown() {
@@ -95,10 +126,59 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Future<void> _fetchTicketData() async {
-    final gpId = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'] ?? widget.booking['bookingId'])?.toString();
-    if (gpId == null) return;
+    final id = (widget.booking['id'] ?? widget.booking['partyId'] ?? widget.booking['groupPartyId'] ?? widget.booking['bookingId'])?.toString();
+    if (id == null) return;
+    _bookingId = id;
+
+    // Try the large-party Booking record first (ungated — works pre-payment too).
     try {
-      final response = await ApiService.get('/api/mobile/group-parties/$gpId/ticket');
+      final response = await ApiService.get('/api/mobile/bookings/$id');
+      if (response.statusCode == 200 && mounted) {
+        final mapData = jsonDecode(response.body);
+        final booking = mapData is Map ? mapData['data'] : null;
+        if (booking is Map) {
+          setState(() {
+            if (booking['venue'] is Map) {
+              _freshVenue = Map<String, dynamic>.from(booking['venue']);
+            }
+            final adminAmount = double.tryParse((booking['adminPaymentAmount'] ?? '').toString());
+            final totalAmount = double.tryParse((booking['totalAmount'] ?? '').toString());
+            _freshTotalAmount = (adminAmount != null && adminAmount > 0) ? adminAmount : totalAmount;
+            _freshPaymentStatus = booking['paymentStatus']?.toString();
+            _canonicalTicketCode = booking['ticketCode']?.toString();
+            _ticketUrl = booking['ticketUrl']?.toString();
+            _amountDue = _freshTotalAmount;
+
+            final adminApprovalStatus = booking['adminApprovalStatus']?.toString();
+            final bookingStatus = booking['status']?.toString();
+            final isPaid = (_freshTotalAmount ?? 0) <= 0 || _freshPaymentStatus == 'paid';
+            final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
+            final isAwaitingPayment = !isPaid && (adminApprovalStatus == 'approved' || adminApprovalStatus == 'payment_sent');
+
+            if (isPaid) {
+              _paymentState = _LargePartyPaymentState.paid;
+            } else if (isExpired) {
+              _paymentState = _LargePartyPaymentState.expired;
+            } else if (isAwaitingPayment) {
+              _paymentState = _LargePartyPaymentState.awaitingPayment;
+            } else {
+              _paymentState = _LargePartyPaymentState.paid;
+            }
+          });
+          return;
+        }
+      }
+      if (response.statusCode != 404) {
+        debugPrint('_fetchTicketData: unexpected status ${response.statusCode} for booking $id');
+      }
+    } catch (e) {
+      debugPrint('_fetchTicketData error for Booking: $e');
+    }
+
+    // Fall back to the small GroupParty ticket endpoint (already ungated, always
+    // returns status/paymentStatus regardless of payment state).
+    try {
+      final response = await ApiService.get('/api/mobile/group-parties/$id/ticket');
       if (response.statusCode == 200 && mounted) {
         final mapData = jsonDecode(response.body);
         if (mapData != null && mapData['data'] != null) {
@@ -125,6 +205,22 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               }
               _freshPaymentStatus = groupParty['paymentStatus']?.toString();
               _freshPaymentMethod = groupParty['paymentMethod']?.toString();
+              _amountDue = _freshTotalAmount;
+
+              final gpStatus = groupParty['status']?.toString();
+              final isPaid = (_freshTotalAmount ?? 0) <= 0 || _freshPaymentStatus == 'paid' || gpStatus == 'confirmed';
+              final isExpired = gpStatus == 'expired';
+              final isAwaitingPayment = !isPaid && gpStatus == 'approved';
+
+              if (isPaid) {
+                _paymentState = _LargePartyPaymentState.paid;
+              } else if (isExpired) {
+                _paymentState = _LargePartyPaymentState.expired;
+              } else if (isAwaitingPayment) {
+                _paymentState = _LargePartyPaymentState.awaitingPayment;
+              } else {
+                _paymentState = _LargePartyPaymentState.paid;
+              }
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString();
             _ticketUrl = ticketObj['ticketUrl']?.toString();
@@ -133,6 +229,135 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
       }
     } catch (e) {
       debugPrint('_fetchTicketData error for GroupParty: $e');
+    }
+  }
+
+  Future<void> _initiatePayment() async {
+    final id = _bookingId;
+    if (id == null || _isPaying) return;
+    final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : <String, dynamic>{});
+    final venueName = venueMap['name']?.toString() ?? 'Venue';
+    final amount = _amountDue ?? 0.0;
+    if (amount <= 0) return;
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Group Party Payment',
+      subtitle: 'Complete payment for your party at $venueName',
+      itemPrice: amount,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(amount: amount, bookingId: id, paymentType: 'group_party');
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmed = await ApiService.verifyLargePartyPayment(
+            id,
+            razorpayOrderId: 'order_mock_wallet',
+            razorpayPaymentId: 'wallet_$transactionId',
+            razorpaySignature: 'mock_signature',
+          );
+          if (confirmed && mounted) {
+            await _fetchTicketData();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('🎉 Paid via Smart Credit Wallet! Your ticket is ready.'), backgroundColor: Colors.green),
+            );
+            return true;
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(res?['message']?.toString() ?? 'Wallet payment failed'), backgroundColor: Colors.redAccent),
+          );
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        setState(() => _isPaying = true);
+        final result = await ApiService.initiateLargePartyPayment(id);
+        if (result != null && result['success'] == true) {
+          final orderData = result['order'] ?? result['data'] ?? result;
+          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
+          final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
+
+          if (orderId.startsWith('order_mock_')) {
+            final success = await ApiService.verifyLargePartyPayment(
+              id,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: 'mock_payment',
+              razorpaySignature: 'mock_signature',
+            );
+            if (mounted) setState(() => _isPaying = false);
+            if (success) await _fetchTicketData();
+            return;
+          }
+
+          _razorpay?.open({
+            'key': razorpayKey,
+            'order_id': orderId,
+            'amount': orderData['amount'],
+            'name': 'Lunara – Group Party',
+            'description': 'Group Party at $venueName',
+            'prefill': {'contact': widget.booking['mobileNumber']?.toString() ?? ''},
+            'theme': {'color': '#7C3AED'},
+          });
+        } else if (mounted) {
+          setState(() => _isPaying = false);
+        }
+      },
+      onHybridPayment: (shortfall) async {
+        setState(() => _isPaying = true);
+        final result = await ApiService.initiateLargePartyPayment(id);
+        if (result != null && result['success'] == true) {
+          final orderData = result['order'] ?? result['data'] ?? result;
+          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
+          _razorpay?.open({
+            'key': razorpayKey,
+            'order_id': orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString(),
+            'amount': (shortfall * 100).toInt(),
+            'name': 'Lunara – Group Party Shortfall',
+            'description': 'Group Party Shortfall at $venueName',
+            'prefill': {'contact': widget.booking['mobileNumber']?.toString() ?? ''},
+            'theme': {'color': '#7C3AED'},
+          });
+        } else if (mounted) {
+          setState(() => _isPaying = false);
+        }
+      },
+    );
+  }
+
+  Future<void> _onPaymentSuccess(PaymentSuccessResponse response) async {
+    final id = _bookingId;
+    if (id == null) return;
+    try {
+      final verified = await ApiService.verifyLargePartyPayment(
+        id,
+        razorpayOrderId: response.orderId ?? '',
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpaySignature: response.signature ?? '',
+      );
+      if (mounted) {
+        setState(() => _isPaying = false);
+        if (verified) {
+          await _fetchTicketData();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('🎉 Payment successful! Your ticket is ready.'), backgroundColor: Colors.green),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_onPaymentSuccess error: $e');
+      if (mounted) setState(() => _isPaying = false);
+    }
+  }
+
+  void _onPaymentError(PaymentFailureResponse response) {
+    if (mounted) {
+      setState(() => _isPaying = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payment failed: ${response.message ?? 'Please try again'}'), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -175,6 +400,33 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Widget _buildCountdownBadge() {
+    if (_paymentState == _LargePartyPaymentState.expired) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFCA5A5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.timer_off_rounded, color: Color(0xFFB91C1C), size: 12),
+            SizedBox(width: 4),
+            Text(
+              'EXPIRED',
+              style: TextStyle(
+                color: Color(0xFFB91C1C),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_timeRemaining == Duration.zero) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -331,10 +583,17 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
 
     final bool isFreeParty = totalAmount <= 0;
+    final bool isAwaitingPayment = _paymentState == _LargePartyPaymentState.awaitingPayment;
+    final bool isExpired = _paymentState == _LargePartyPaymentState.expired;
+    final double amountDue = _amountDue ?? totalAmount;
     final paymentMethodLabel = isFreeParty
         ? 'FREE (Complimentary)'
-        : (_freshPaymentMethod ??
-            (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay'));
+        : isAwaitingPayment
+            ? 'Awaiting Payment'
+            : isExpired
+                ? 'Expired — Not Paid'
+                : (_freshPaymentMethod ??
+                    (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay'));
 
     const lightBgColor = Color(0xFFF6F7FB);
     const darkTextColor = Color(0xFF0F172A);
@@ -715,9 +974,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                const Text(
-                                  'TOTAL PAID',
-                                  style: TextStyle(
+                                Text(
+                                  isAwaitingPayment || isExpired ? 'AMOUNT DUE' : 'TOTAL PAID',
+                                  style: const TextStyle(
                                     color: grayTextColor,
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w800,
@@ -729,9 +988,15 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      isFreeParty ? 'FREE' : '₹${totalAmount.toStringAsFixed(totalAmount.truncateToDouble() == totalAmount ? 0 : 2)}',
+                                      isFreeParty ? 'FREE' : '₹${amountDue.toStringAsFixed(amountDue.truncateToDouble() == amountDue ? 0 : 2)}',
                                       style: TextStyle(
-                                        color: isFreeParty ? const Color(0xFF1D4ED8) : const Color(0xFF15803D),
+                                        color: isFreeParty
+                                            ? const Color(0xFF1D4ED8)
+                                            : isAwaitingPayment
+                                                ? const Color(0xFFB45309)
+                                                : isExpired
+                                                    ? const Color(0xFFB91C1C)
+                                                    : const Color(0xFF15803D),
                                         fontSize: 14,
                                         fontWeight: FontWeight.w900,
                                       ),
@@ -740,13 +1005,31 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: isFreeParty ? const Color(0xFFDEEBFF) : const Color(0xFFDCFCE7),
+                                        color: isFreeParty
+                                            ? const Color(0xFFDEEBFF)
+                                            : isAwaitingPayment
+                                                ? const Color(0xFFFEF3C7)
+                                                : isExpired
+                                                    ? const Color(0xFFFEE2E2)
+                                                    : const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        isFreeParty ? 'FREE' : 'PAID',
+                                        isFreeParty
+                                            ? 'FREE'
+                                            : isAwaitingPayment
+                                                ? 'PENDING'
+                                                : isExpired
+                                                    ? 'EXPIRED'
+                                                    : 'PAID',
                                         style: TextStyle(
-                                          color: isFreeParty ? const Color(0xFF1D4ED8) : const Color(0xFF15803D),
+                                          color: isFreeParty
+                                              ? const Color(0xFF1D4ED8)
+                                              : isAwaitingPayment
+                                                  ? const Color(0xFFB45309)
+                                                  : isExpired
+                                                      ? const Color(0xFFB91C1C)
+                                                      : const Color(0xFF15803D),
                                           fontSize: 8,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.5,
@@ -995,6 +1278,62 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
               const SizedBox(height: 28),
 
+              if (isExpired) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.timer_off_rounded, color: Color(0xFFB91C1C), size: 20),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'This request expired because payment wasn\'t completed before the party started.',
+                          style: TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.w700, fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else if (isAwaitingPayment) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _isPaying ? null : _initiatePayment,
+                    icon: _isPaying
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.payment_rounded, color: Colors.white, size: 20),
+                    label: Text(
+                      _isPaying ? 'PROCESSING...' : 'PAY NOW ₹${amountDue.toStringAsFixed(amountDue.truncateToDouble() == amountDue ? 0 : 2)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -1040,31 +1379,32 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton.icon(
-                  onPressed: () => _shareTicket(context),
-                  icon: const Icon(Icons.share_rounded, color: darkTextColor, size: 18),
-                  label: const Text(
-                    'SHARE TICKET',
-                    style: TextStyle(
-                      color: darkTextColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      letterSpacing: 0.8,
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _shareTicket(context),
+                    icon: const Icon(Icons.share_rounded, color: darkTextColor, size: 18),
+                    label: const Text(
+                      'SHARE TICKET',
+                      style: TextStyle(
+                        color: darkTextColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
                     ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text(

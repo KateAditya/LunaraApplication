@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import { calculatePricing, createGroupParty, verifyPayment, getMyGroupParties, getGroupPartyTicket } from '../controllers/mobileGroupPartyController';
 
 const router = Router();
 
-router.get('/', getMyGroupParties);
-router.get('/:id/ticket', getGroupPartyTicket);
+router.get('/', authenticate, getMyGroupParties);
+router.get('/:id/ticket', authenticate, getGroupPartyTicket);
 
 router.post(
     '/calculate-pricing',
@@ -21,6 +22,7 @@ router.post(
 router.post(
     '/',
     [
+        authenticate,
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
         body('numberOfFriends').isInt({ min: 1, max: 20 }).withMessage('numberOfFriends must be between 1 and 20'),
@@ -34,6 +36,7 @@ router.post(
 router.post(
     '/verify',
     [
+        authenticate,
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),

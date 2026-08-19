@@ -34,7 +34,8 @@ export const calculatePricing = async (req: Request, res: Response): Promise<voi
 // Create Group Party & Razorpay Order
 export const createGroupParty = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime } = req.body;
+        const { venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime } = req.body;
+        const userId = req.user!.id;
 
         const result = await GroupPartyService.createParty({
             userId,
@@ -96,26 +97,24 @@ export const verifyPayment = async (req: Request, res: Response): Promise<void> 
         const groupParty = await GroupPartyService.verifySmallPartyPayment(
             razorpay_order_id,
             razorpay_payment_id,
-            razorpay_signature
+            razorpay_signature,
+            req.user!.id
         );
 
         res.json({ success: true, message: 'Payment verified successfully', data: groupParty });
     } catch (err: any) {
         logger.error('verifyPayment error:', err);
-        res.status(err.message === 'Group party booking not found' ? 404 : 400).json({ success: false, message: err.message });
+        const status = err.statusCode || (err.message === 'Group party booking not found' ? 404 : 400);
+        res.status(status).json({ success: false, message: err.message });
     }
 };
 
 export const getMyGroupParties = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId } = req.query;
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const groupParties = await GroupParty.findAll({
-            where: { userId: userId as string },
+            where: { userId },
             include: [
                 {
                     model: Venue,
@@ -175,6 +174,10 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
 
         if (!groupParty) {
             res.status(404).json({ success: false, message: 'Group party not found' });
+            return;
+        }
+        if (groupParty.userId !== req.user!.id) {
+            res.status(403).json({ success: false, message: 'You can only view your own group party ticket' });
             return;
         }
 

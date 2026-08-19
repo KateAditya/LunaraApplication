@@ -11,7 +11,8 @@ import { logger } from '../config/logger';
  */
 export const respondToSafetyCheck = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { checkId, userId, safetyStatus, notes, locationLat, locationLng } = req.body;
+        const { checkId, safetyStatus, notes, locationLat, locationLng } = req.body;
+        const userId = req.user!.id;
 
         if (!checkId || !safetyStatus) {
             return res.status(400).json({ success: false, message: 'checkId and safetyStatus are required' });
@@ -20,6 +21,9 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
         const safetyCheck = await PartySafetyCheck.findByPk(checkId);
         if (!safetyCheck) {
             return res.status(404).json({ success: false, message: 'Safety check record not found' });
+        }
+        if (safetyCheck.userId !== userId) {
+            return res.status(403).json({ success: false, message: 'You can only respond to your own safety check' });
         }
 
         const isEmergency = safetyStatus === SafetyStatus.NEED_HELP;
@@ -37,7 +41,7 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
         if (isEmergency) {
             try {
                 const { io } = require('../server');
-                const user = await User.findByPk(userId || safetyCheck.userId, { attributes: ['id', 'firstName', 'lastName', 'phone'] });
+                const user = await User.findByPk(userId, { attributes: ['id', 'firstName', 'lastName', 'phone'] });
                 io.to('admin').emit('admin_safety_alert', {
                     alertId: safetyCheck.id,
                     type: 'EMERGENCY_HELP_REQUEST',
@@ -74,10 +78,7 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
  */
 export const getPendingSafetyCheck = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId || req.body.userId) as string;
-        if (!userId) {
-            return res.status(400).json({ success: false, message: 'userId is required' });
-        }
+        const userId = req.user!.id;
 
         const pendingCheck = await PartySafetyCheck.findOne({
             where: {

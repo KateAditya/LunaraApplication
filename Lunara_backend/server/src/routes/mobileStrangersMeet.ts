@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import {
     createRequest,
     getUserRequests,
@@ -26,7 +27,7 @@ import {
 
 const router = Router();
 
-router.get('/requests/:id/ticket', getStrangersMeetTicket);
+router.get('/requests/:id/ticket', authenticate, getStrangersMeetTicket);
 router.get('/:id/financials', getMeetFinancials);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ router.get('/:id/financials', getMeetFinancials);
 router.post(
     '/',
     [
+        authenticate,
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
         body('subject').notEmpty().isLength({ min: 1, max: 200 }).withMessage('subject is required (max 200 chars)'),
@@ -63,7 +65,7 @@ router.post(
 // ─────────────────────────────────────────────────────────────────────────────
 router.get(
     '/my-requests/:userId',
-    [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
+    [authenticate, param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
     getUserRequests
 );
 
@@ -73,7 +75,7 @@ router.get(
 // ─────────────────────────────────────────────────────────────────────────────
 router.get(
     '/my-joined/:userId',
-    [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
+    [authenticate, param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
     getUserJoinedMeets
 );
 
@@ -113,6 +115,7 @@ router.get(
 router.post(
     '/:id/initiate-payment',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -127,6 +130,7 @@ router.post(
 router.post(
     '/:id/pay',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
@@ -144,6 +148,7 @@ router.post(
 router.post(
     '/:id/join/initiate-payment',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -158,6 +163,7 @@ router.post(
 router.post(
     '/:id/join/confirm',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -172,6 +178,7 @@ router.post(
 router.patch(
     '/:id/complete',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -186,6 +193,7 @@ router.patch(
 router.post(
     '/:id/join-request',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -200,6 +208,7 @@ router.post(
 router.patch(
     '/:id/join-request/:joinerId',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         param('joinerId').isUUID().withMessage('joinerId must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
@@ -216,6 +225,7 @@ router.patch(
 router.post(
     '/:id/settlement-request',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('bankDetails').notEmpty().withMessage('bankDetails is required'),
@@ -231,6 +241,7 @@ router.post(
 router.patch(
     '/:id/charges',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('chargesPerHead').notEmpty().isFloat({ min: 0 }).withMessage('chargesPerHead is required and must be >= 0'),
@@ -246,6 +257,7 @@ router.patch(
 router.post(
     '/:id/start',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('durationHours').optional().isFloat({ min: 0.25, max: 24 }).withMessage('durationHours must be between 0.25 and 24'),
@@ -262,6 +274,7 @@ router.post(
 router.post(
     '/:id/extend',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('additionalHours').optional().isFloat({ min: 0.25, max: 12 }).withMessage('additionalHours must be between 0.25 and 12'),
@@ -278,6 +291,7 @@ router.post(
 router.post(
     '/:id/confirm-ended',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         validate,
@@ -292,6 +306,7 @@ router.post(
 router.post(
     '/:id/not-started',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a valid UUID'),
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('reason').optional().isString(),

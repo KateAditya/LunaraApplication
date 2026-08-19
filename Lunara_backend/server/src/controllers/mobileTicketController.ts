@@ -14,12 +14,8 @@ export class MobileTicketController {
      */
     public static async getUserTickets(req: Request, res: Response): Promise<Response> {
         try {
-            const userId = (req.query.userId || req.body?.userId) as string;
+            const userId = req.user!.id;
             const tab = (req.query.tab as string) || 'all';
-
-            if (!userId) {
-                return res.status(400).json({ success: false, message: 'userId parameter is required' });
-            }
 
             const whereClause: any = { userId };
             const now = new Date();
@@ -99,7 +95,7 @@ export class MobileTicketController {
     public static async getTicketById(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.query.userId as string;
+            const userId = req.user!.id;
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -113,7 +109,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (userId && ticket.userId !== userId) {
+            if (ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized ticket access' });
             }
 
@@ -164,7 +160,7 @@ export class MobileTicketController {
     public static async getTicketDownloadUrl(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.query.userId as string;
+            const userId = req.user!.id;
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -174,7 +170,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (userId && ticket.userId !== userId) {
+            if (ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized access' });
             }
 
@@ -210,7 +206,7 @@ export class MobileTicketController {
     public static async createShareToken(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.body?.userId || req.query?.userId;
+            const userId = req.user!.id;
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -220,7 +216,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (userId && ticket.userId !== userId) {
+            if (ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized' });
             }
 

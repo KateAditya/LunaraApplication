@@ -1091,7 +1091,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ),
     );
     try {
-      final success = await ApiService.cancelPartyPlanRequest(reqId);
+      bool success = await ApiService.cancelPartyPlanRequest(reqId);
+      if (!success) {
+        success = await ApiService.withdrawPartyPlanRequest(reqId);
+      }
       Navigator.pop(context);
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1747,6 +1750,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     bool isPending = false;
     bool isCancelled = false;
     bool isCompleted = false;
+    bool isExpiredFromServer = false;
 
     for (final e in entries) {
       final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? e['adminApprovalStatus'] ?? '').toString().toLowerCase();
@@ -1755,7 +1759,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final body = (e['body'] ?? '').toString().toLowerCase();
       final eventType = (e['type'] ?? e['eventType'] ?? '').toString().toLowerCase();
 
-      if (status == 'confirmed' || status == 'paid' || status == 'payment_done' ||
+      if (status == 'expired' || e['isExpired'] == true || e['data']?['isExpired'] == true) {
+        isExpiredFromServer = true;
+      } else if (status == 'confirmed' || status == 'paid' || status == 'payment_done' ||
           paymentStatus == 'paid' || paymentStatus == 'free' ||
           title.contains('confirmed') || eventType.contains('confirmed') || eventType.contains('payment_success')) {
         isConfirmed = true;
@@ -1848,15 +1854,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String? actionButtonText;
     VoidCallback? onActionTap;
 
-    bool isExpired = false;
-    final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
-    if (rawPartyDate != null) {
-      try {
-        final pTime = DateTime.parse(rawPartyDate.toString()).toLocal();
-        if (pTime.isBefore(DateTime.now())) {
-          isExpired = true;
-        }
-      } catch (_) {}
+    // Prefer the server-persisted expiry flag (set once the cron sweep flips an
+    // unpaid approved request to 'expired'); fall back to a client-side date-only
+    // guess only when the server hasn't reported one yet (e.g. stale card).
+    bool isExpired = isExpiredFromServer;
+    if (!isExpired) {
+      final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
+      if (rawPartyDate != null) {
+        try {
+          final pTime = DateTime.parse(rawPartyDate.toString()).toLocal();
+          if (pTime.isBefore(DateTime.now())) {
+            isExpired = true;
+          }
+        } catch (_) {}
+      }
     }
 
     if (isExpired) {
@@ -2106,7 +2117,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           acceptedJoinerRequest = e;
         }
       }
-      if (status == 'confirmed' || status == 'paid') {
+      if (isHost && (status == 'confirmed' || status == 'paid')) {
+        // Only the host's own view of "who got matched" may trust a bare
+        // confirmed/paid status from any entry — for a non-host viewer this
+        // must never be inferred from an entry that isn't their own request
+        // (see myRequest above), otherwise a rejected/pending/uninvolved user
+        // could see someone else's match rendered as their own.
         acceptedJoinerRequest = e;
       }
     }
@@ -2161,10 +2177,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         parsedEventDate.difference(DateTime.now()).inMinutes <= 15 &&
         parsedEventDate.difference(DateTime.now()).inHours >= -3;
 
-    final bool isConfirmed = lifecycleStatus == 'match_confirmed' ||
-        lifecycleStatus == 'chat_enabled' ||
-        (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid')) ||
-        (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid'));
+    // A plan-level lifecycleStatus/acceptedJoinerRequest only genuinely reflects
+    // the current viewer's own match when they're the host (there's only one
+    // host per plan, so the plan's own state IS their state). A non-host viewer
+    // must only trust their own myRequest — otherwise a rejected/pending/
+    // uninvolved user viewing a plan that got matched with someone else would
+    // incorrectly see "Match Confirmed" with working Chat/Ticket buttons.
+    final bool isConfirmed = (isHost && (lifecycleStatus == 'match_confirmed' ||
+            lifecycleStatus == 'chat_enabled' ||
+            (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid')))) ||
+        (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid'));
 
     String countdownLabel = '30m';
     String timeRemainingText = '';
@@ -4398,19 +4420,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           ),
                         ],
 
-                        // Action Buttons Row (Accept/Decline/Pay/View Ticket/Chat)
+                        // Action Buttons Wrap (Accept/Decline/Pay/View Ticket/Chat)
                         if (item.actions != null && item.actions!.isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: item.actions!.map((action) {
-                              final isPrimary = action.isPrimary;
-                              final btnColor = action.color ?? (isPrimary ? item.accentColor : Colors.grey[200]!);
-                              final textColor = isPrimary ? Colors.white : Colors.black87;
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.end,
+                              children: item.actions!.map((action) {
+                                final isPrimary = action.isPrimary;
+                                final btnColor = action.color ?? (isPrimary ? item.accentColor : Colors.grey[200]!);
+                                final textColor = isPrimary ? Colors.white : Colors.black87;
 
-                              return Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: ElevatedButton.icon(
+                                return ElevatedButton.icon(
                                   onPressed: action.onTap,
                                   icon: action.icon != null
                                       ? Icon(action.icon, size: 15, color: textColor)
@@ -4427,8 +4451,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                     backgroundColor: btnColor,
                                     foregroundColor: textColor,
                                     elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                    minimumSize: const Size(90, 42),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    minimumSize: const Size(80, 40),
                                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
@@ -4437,9 +4461,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                           : BorderSide.none,
                                     ),
                                   ),
-                                ),
-                              );
-                            }).toList(),
+                                );
+                              }).toList(),
+                            ),
                           ),
                         ],
                       ],

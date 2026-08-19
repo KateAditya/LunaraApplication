@@ -28,12 +28,7 @@ import WalletTransaction from '../models/WalletTransaction';
 // ─────────────────────────────────────────────────────────────────────────────
 export const getWalletData = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req.query.userId || req.body.userId) as string;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         // ── 1. Incomplete Events ─────────────────────────────────────────────
         //
@@ -858,10 +853,11 @@ import WalletService from '../services/walletService';
 // ─────────────────────────────────────────────────────────────────────────────
 export const payWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, planId, bookingId, paymentType = 'booking_payment' } = req.body;
+        const { amount, planId, bookingId, paymentType = 'booking_payment' } = req.body;
+        const userId = req.user!.id;
 
-        if (!userId || !amount) {
-            res.status(400).json({ success: false, message: 'userId and amount are required' });
+        if (!amount) {
+            res.status(400).json({ success: false, message: 'amount is required' });
             return;
         }
 
@@ -942,9 +938,10 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRechargeOrder = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, autoContinueSession } = req.body;
-        if (!userId || !amount) {
-            res.status(400).json({ success: false, message: 'userId and amount are required' });
+        const { amount, autoContinueSession } = req.body;
+        const userId = req.user!.id;
+        if (!amount) {
+            res.status(400).json({ success: false, message: 'amount is required' });
             return;
         }
 
@@ -1002,7 +999,8 @@ export const createRechargeOrder = async (req: Request, res: Response): Promise<
 // ─────────────────────────────────────────────────────────────────────────────
 export const verifyRechargePayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, razorpayOrderId, razorpayPaymentId, razorpaySignature, autoContinueSession } = req.body;
+        const { amount, razorpayOrderId, razorpayPaymentId, razorpaySignature, autoContinueSession } = req.body;
+        const userId = req.user!.id;
         const result = await WalletService.rechargeWalletWithRazorpay({
             userId,
             amount: Number(amount),
@@ -1023,7 +1021,8 @@ export const verifyRechargePayment = async (req: Request, res: Response): Promis
 // ─────────────────────────────────────────────────────────────────────────────
 export const rechargeWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, amount, paymentId = `PAY_${Date.now()}` } = req.body;
+        const { amount, paymentId = `PAY_${Date.now()}` } = req.body;
+        const userId = req.user!.id;
         const result = await WalletService.rechargeWalletWithRazorpay({
             userId,
             amount: Number(amount),
@@ -1042,12 +1041,8 @@ export const rechargeWallet = async (req: Request, res: Response): Promise<void>
 // ─────────────────────────────────────────────────────────────────────────────
 export const payVipWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, packageId, tier = 'PRO', price = 199 } = req.body;
-
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const { packageId, tier = 'PRO', price = 199 } = req.body;
+        const userId = req.user!.id;
 
         const requiredPrice = Number(price);
 
@@ -1142,7 +1137,8 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
 // ─────────────────────────────────────────────────────────────────────────────
 export const paySuperLikesWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, count = 5, price = 49 } = req.body;
+        const { count = 5, price = 49 } = req.body;
+        const userId = req.user!.id;
         const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
 
         const purchaseResult = await WalletService.purchaseFeatureWithCredit({
@@ -1172,7 +1168,8 @@ export const paySuperLikesWithWallet = async (req: Request, res: Response): Prom
 // ─────────────────────────────────────────────────────────────────────────────
 export const payBoostWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { userId, count = 1, price = 99 } = req.body;
+        const { count = 1, price = 99 } = req.body;
+        const userId = req.user!.id;
         const WalletTransactionType = (await import('../models/WalletTransaction')).WalletTransactionType;
 
         const purchaseResult = await WalletService.purchaseFeatureWithCredit({
@@ -1202,11 +1199,7 @@ export const payBoostWithWallet = async (req: Request, res: Response): Promise<v
 // ─────────────────────────────────────────────────────────────────────────────
 export const getWalletTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req.query.userId || req.body.userId) as string;
-        if (!userId) {
-            res.status(400).json({ success: false, message: 'userId is required' });
-            return;
-        }
+        const userId = req.user!.id;
 
         const WalletTransaction = (await import('../models/WalletTransaction')).default;
         const transactions = await WalletTransaction.findAll({

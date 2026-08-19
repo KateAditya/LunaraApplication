@@ -30,6 +30,7 @@ export enum AdminApprovalStatus {
     REJECTED = 'rejected',
     PAYMENT_SENT = 'payment_sent',
     PAYMENT_DONE = 'payment_done',
+    EXPIRED = 'expired',
 }
 
 export enum BookingPaymentMode {
@@ -78,6 +79,7 @@ export interface BookingAttributes {
     adminPaymentLink?: string;
     adminPaymentAmount?: number;
     razorpayOrderId?: string;
+    expiresAt?: Date;
     reminder2hSent?: boolean;
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
@@ -116,6 +118,7 @@ export interface BookingCreationAttributes
         | 'adminPaymentLink'
         | 'adminPaymentAmount'
         | 'razorpayOrderId'
+        | 'expiresAt'
         | 'reminder2hSent'
         | 'reminder1hSent'
         | 'reminder30mSent'
@@ -161,6 +164,7 @@ class Booking extends Model<BookingAttributes, BookingCreationAttributes> implem
     public adminPaymentLink?: string;
     public adminPaymentAmount?: number;
     public razorpayOrderId?: string;
+    public expiresAt?: Date;
     public reminder2hSent!: boolean;
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
@@ -392,6 +396,11 @@ Booking.init(
             type: DataTypes.STRING(255),
             allowNull: true,
             field: 'razorpay_order_id',
+        },
+        expiresAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'expires_at',
         },
         reminder2hSent: {
             type: DataTypes.BOOLEAN,

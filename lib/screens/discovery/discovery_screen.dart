@@ -2503,6 +2503,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           final String? coverImageUrl =
               ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
 
+          final bool isSecretVenue = feed['venueMap'] is Map &&
+              (feed['venueMap'] as Map)['isSecret'] == true;
+
           return RepaintBoundary(
             child: Container(
               width: 240,
@@ -2671,9 +2674,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(
-                                            Icons.star_rounded,
-                                            color: Colors.amber,
+                                          Icon(
+                                            isSecretVenue ? Icons.lock_rounded : Icons.star_rounded,
+                                            color: isSecretVenue ? Colors.white70 : Colors.amber,
                                             size: 12,
                                           ),
                                           const SizedBox(width: 4),

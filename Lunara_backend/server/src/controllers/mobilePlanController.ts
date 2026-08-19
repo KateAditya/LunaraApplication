@@ -98,7 +98,6 @@ async function seedPackages(venueId: string) {
 export const postPlan = async (req: Request, res: Response) => {
     try {
         const {
-            userId,
             venueId,
             planDate,
             startTime,
@@ -106,6 +105,7 @@ export const postPlan = async (req: Request, res: Response) => {
             paymentOption = PlanPaymentOption.SPLIT,
             description,
         } = req.body;
+        const userId = req.user!.id;
 
         if (!userId || !venueId || !planDate || !startTime || !packageName) {
             return res.status(400).json({
@@ -907,9 +907,8 @@ export const getPlanDetail = async (req: Request, res: Response) => {
 export const joinPlan = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { requesterId, message } = req.body;
-
-        if (!requesterId) return res.status(400).json({ success: false, message: 'requesterId is required' });
+        const { message } = req.body;
+        const requesterId = req.user!.id;
 
         const plan = await Plan.findByPk(id);
         if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
@@ -995,6 +994,17 @@ export const joinPlan = async (req: Request, res: Response) => {
 };
 
 // ─── GET /:id/split-status — Split payment screen data ───────────────────────
+// A plan's private data (split status, ticket, wallet state) may only be viewed
+// by its host or one of its (non-cancelled) joiners.
+async function isPlanMember(planId: string, planHostId: string, userId: string): Promise<boolean> {
+    if (planHostId === userId) return true;
+    const joinRequest = await PlanJoinRequest.findOne({
+        where: { planId, requesterId: userId, status: { [Op.ne]: JoinRequestStatus.CANCELLED } },
+        attributes: ['id'],
+    });
+    return !!joinRequest;
+}
+
 export const getSplitStatus = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
@@ -1012,6 +1022,9 @@ export const getSplitStatus = async (req: Request, res: Response) => {
             ],
         });
         if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        if (!(await isPlanMember(id, plan.userId, req.user!.id))) {
+            return res.status(403).json({ success: false, message: 'You can only view split status for a plan you are part of' });
+        }
 
         const joinRequests = (plan as any).joinRequests ?? [];
         const participants = 1 + joinRequests.length; // host + joiners
@@ -1057,12 +1070,15 @@ export const getSplitStatus = async (req: Request, res: Response) => {
 export const securePlanReservation = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const { userId } = req.body; // the user clicking (host or joiner)
+        const userId = req.user!.id; // the user clicking (host or joiner)
 
         const plan = await Plan.findByPk(id, {
             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
         });
         if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        if (!(await isPlanMember(id, plan.userId, userId))) {
+            return res.status(403).json({ success: false, message: 'You can only secure a reservation for a plan you are part of' });
+        }
         if (plan.status === PlanStatus.SECURED) {
             // Already secured — just return ticket
             if (plan.bookingId) {
@@ -1135,6 +1151,9 @@ export const getPlanTicket = async (req: Request, res: Response) => {
             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
         });
         if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        if (!(await isPlanMember(id, plan.userId, req.user!.id))) {
+            return res.status(403).json({ success: false, message: 'You can only view a ticket for a plan you are part of' });
+        }
         if (!plan.bookingId) {
             return res.status(400).json({ success: false, message: 'Ticket not yet generated. Secure reservation first.' });
         }
@@ -1156,6 +1175,9 @@ export const addPlanToWallet = async (req: Request, res: Response) => {
 
         const plan = await Plan.findByPk(id);
         if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        if (!(await isPlanMember(id, plan.userId, req.user!.id))) {
+            return res.status(403).json({ success: false, message: 'You can only add your own plan to wallet' });
+        }
         if (!plan.bookingId) {
             return res.status(400).json({ success: false, message: 'Secure reservation before adding to wallet' });
         }
@@ -1179,8 +1201,7 @@ export const addPlanToWallet = async (req: Request, res: Response) => {
 // ─── GET /my-plans — User's posted plans ─────────────────────────────────────
 export const getMyPlans = async (req: Request, res: Response) => {
     try {
-        const userId = (req.query.userId || req.body.userId) as string;
-        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+        const userId = req.user!.id;
 
         const plans = await Plan.findAll({
             where: { userId },
@@ -1198,8 +1219,7 @@ export const getMyPlans = async (req: Request, res: Response) => {
 // ─── GET /my-joins — Plans the user has joined ───────────────────────────────
 export const getMyJoins = async (req: Request, res: Response) => {
     try {
-        const requesterId = (req.query.userId || req.body.userId) as string;
-        if (!requesterId) return res.status(400).json({ success: false, message: 'userId is required' });
+        const requesterId = req.user!.id;
 
         const joinRequests = await PlanJoinRequest.findAll({
             where: { requesterId, status: { [Op.ne]: JoinRequestStatus.CANCELLED } },

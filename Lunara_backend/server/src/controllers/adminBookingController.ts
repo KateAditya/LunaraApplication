@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import Booking, { AdminApprovalStatus } from '../models/Booking';
+import Booking, { AdminApprovalStatus, BookingStatus, PaymentStatus } from '../models/Booking';
 import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import User from '../models/User';
 import Venue from '../models/Venue';
@@ -7,6 +7,26 @@ import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models
 import Payment from '../models/Payment';
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
+import { v4 as uuidv4 } from 'uuid';
+import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
+
+/**
+ * Combines a DATEONLY (or Date) party date with a "HH:mm" start time (defaulting to
+ * 20:00, the same fallback used elsewhere in this file) into a single deadline used
+ * for the large-party payment expiry window.
+ */
+function computePartyDeadline(partyDate: any, startTime?: string | null): Date | null {
+    if (!partyDate) return null;
+    const base = new Date(partyDate);
+    if (isNaN(base.getTime())) return null;
+
+    const timeStr = (startTime && /^\d{1,2}:\d{2}/.test(startTime)) ? startTime : '20:00';
+    const [hoursStr, minutesStr] = timeStr.split(':');
+    const hours = parseInt(hoursStr, 10) || 0;
+    const minutes = parseInt(minutesStr, 10) || 0;
+
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), hours, minutes, 0, 0);
+}
 
 export const getLargePartyRequests = async (_req: Request, res: Response) => {
     try {
@@ -56,7 +76,8 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                 }
                 await groupParty.update({
                     status: GroupPartyStatus.APPROVED,
-                    totalAmount: Number(totalAmount)
+                    totalAmount: Number(totalAmount),
+                    expiresAt: computePartyDeadline(groupParty.partyDate) ?? undefined,
                 });
             } else if (status === 'rejected') {
                 await groupParty.update({
@@ -123,6 +144,7 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             }
             booking.totalAmount = Number(totalAmount);
             booking.commissionAmount = Math.round(booking.totalAmount * 0.1 * 100) / 100;
+            (booking as any).expiresAt = computePartyDeadline(booking.bookingDate, booking.startTime);
         }
 
         await booking.save();
@@ -307,6 +329,15 @@ export const markPaymentDone = async (req: Request, res: Response) => {
                 paymentStatus: GroupPartyPaymentStatus.PAID
             });
 
+            // Generate digital ticket in background, same as a real verified payment would
+            setImmediate(async () => {
+                try {
+                    await generateTicketForGroupPartyHelper(groupParty.id);
+                } catch (ticketErr) {
+                    logger.error(`Background ticket generation failed for GroupParty ${groupParty.id} (admin mark-paid):`, ticketErr);
+                }
+            });
+
             try {
                 const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
                 const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
@@ -345,8 +376,21 @@ export const markPaymentDone = async (req: Request, res: Response) => {
             return res.json({ success: true, message: 'Group Party payment marked as done', data: groupParty });
         }
 
+        const ticketCode = booking.ticketCode || uuidv4();
         await (booking as any).update({
             adminApprovalStatus: AdminApprovalStatus.PAYMENT_DONE,
+            paymentStatus: PaymentStatus.PAID,
+            status: BookingStatus.CONFIRMED,
+            ticketCode,
+        });
+
+        // Generate digital ticket in background, same as a real verified payment would
+        setImmediate(async () => {
+            try {
+                await generateTicketForBookingHelper(booking.id);
+            } catch (ticketErr) {
+                logger.error(`Background ticket generation failed for booking ${booking.id} (admin mark-paid):`, ticketErr);
+            }
         });
 
         try {

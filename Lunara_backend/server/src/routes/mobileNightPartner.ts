@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import ctrl from '../controllers/mobileNightPartnerController';
 
 const router = Router();
@@ -12,6 +13,7 @@ const router = Router();
 router.get(
     '/check-interest',
     [
+        authenticate,
         query('userId').notEmpty().withMessage('userId is required'),
         query('venueId').notEmpty().withMessage('venueId is required'),
         query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
@@ -27,6 +29,7 @@ router.get(
 router.post(
     '/interested',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('venueId').notEmpty().withMessage('venueId is required'),
         body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
@@ -42,6 +45,7 @@ router.post(
 router.delete(
     '/interested',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('venueId').notEmpty().withMessage('venueId is required'),
         body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
@@ -57,6 +61,7 @@ router.delete(
 router.get(
     '/interested-partners',
     [
+        authenticate,
         query('hostId').notEmpty().withMessage('hostId is required'),
         query('venueId').isUUID().withMessage('venueId must be a UUID'),
         query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
@@ -72,6 +77,7 @@ router.get(
 router.get(
     '/available-invitees',
     [
+        authenticate,
         query('hostId').notEmpty().withMessage('hostId is required'),
         query('venueId').isUUID().withMessage('venueId must be a UUID'),
         query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
@@ -86,7 +92,7 @@ router.get(
  */
 router.get(
     '/partners/:userId/profile',
-    [param('userId').isUUID().withMessage('userId must be a UUID'), validate],
+    [authenticate, param('userId').isUUID().withMessage('userId must be a UUID'), validate],
     ctrl.getPartnerProfilePreview
 );
 
@@ -97,6 +103,7 @@ router.get(
 router.post(
     '/requests',
     [
+        authenticate,
         body('hostId').notEmpty().withMessage('hostId is required'),
         body('partnerId').isUUID().withMessage('partnerId must be a UUID'),
         body('venueId').isUUID().withMessage('venueId must be a UUID'),
@@ -113,6 +120,7 @@ router.post(
 router.patch(
     '/requests/:id',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
         body('partnerId').notEmpty().withMessage('partnerId is required'),
         body('action').isIn(['accept', 'decline']).withMessage('action must be accept or decline'),
@@ -128,6 +136,7 @@ router.patch(
 router.delete(
     '/requests/:id',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
         body('hostId').notEmpty().withMessage('hostId is required'),
         validate,
@@ -142,6 +151,7 @@ router.delete(
 router.post(
     '/matches/:id/pay',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
         body('hostId').notEmpty().withMessage('hostId is required'),
         validate,
@@ -156,6 +166,7 @@ router.post(
 router.post(
     '/matches/:id/verify',
     [
+        authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),

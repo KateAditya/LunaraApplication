@@ -624,10 +624,16 @@ export class NightPartnerService {
         matchId: string,
         razorpayOrderId: string,
         razorpayPaymentId: string,
-        razorpaySignature: string
+        razorpaySignature: string,
+        callerUserId: string
     ): Promise<{ match: NightPartnerMatch; booking: Booking; conversation: Conversation }> {
         const match = await NightPartnerMatch.findByPk(matchId);
         if (!match) throw new Error('MATCH_NOT_FOUND');
+        if (match.hostId !== callerUserId) {
+            const err: any = new Error('UNAUTHORIZED');
+            err.statusCode = 403;
+            throw err;
+        }
 
         // Idempotency: return cleanly if already confirmed
         if (match.status === NightPartnerMatchStatus.CONFIRMED && match.bookingId && match.conversationId) {

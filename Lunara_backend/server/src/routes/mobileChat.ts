@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import ctrl from '../controllers/mobileChatController';
 
 const router = Router();
@@ -20,7 +21,7 @@ router.get('/icebreakers', ctrl.getIcebreakers);
  * Returns all conversations for the user (chat list screen).
  * Sorted by lastMessageAt DESC.
  */
-router.get('/conversations', ctrl.getConversations);
+router.get('/conversations', authenticate, ctrl.getConversations);
 
 /**
  * POST /api/mobile/chat/conversations
@@ -30,6 +31,7 @@ router.get('/conversations', ctrl.getConversations);
 router.post(
     '/conversations',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('otherUserId').isUUID().withMessage('otherUserId must be a UUID'),
         validate,
@@ -47,7 +49,7 @@ router.post(
  */
 router.get(
     '/conversations/:id/messages',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.getMessages
 );
 
@@ -57,7 +59,7 @@ router.get(
  */
 router.get(
     '/conversations/:id/search',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.searchMessages
 );
 
@@ -73,6 +75,7 @@ router.get(
 router.post(
     '/conversations/:id/messages',
     [
+        authenticate,
         param('id').isUUID(),
         body('senderId').notEmpty().withMessage('senderId is required'),
         body('type')
@@ -92,6 +95,7 @@ router.post(
 router.patch(
     '/conversations/:id/messages/:msgId/invitation',
     [
+        authenticate,
         param('id').isUUID(),
         param('msgId').isUUID(),
         body('userId').notEmpty().withMessage('userId is required'),
@@ -109,6 +113,7 @@ router.patch(
 router.delete(
     '/conversations/:id/messages/:msgId',
     [
+        authenticate,
         param('id').isUUID(),
         param('msgId').isUUID(),
         body('userId').notEmpty().withMessage('userId is required'),
@@ -125,6 +130,7 @@ router.delete(
 router.delete(
     '/conversations/:id/messages',
     [
+        authenticate,
         param('id').isUUID(),
         body('userId').notEmpty().withMessage('userId is required'),
         validate,
@@ -140,6 +146,7 @@ router.delete(
 router.post(
     '/conversations/:id/clear',
     [
+        authenticate,
         param('id').isUUID(),
         body('userId').notEmpty().withMessage('userId is required'),
         validate,
@@ -155,6 +162,7 @@ router.post(
 router.delete(
     '/conversations/:id',
     [
+        authenticate,
         param('id').isUUID(),
         body('userId').notEmpty().withMessage('userId is required'),
         validate,
@@ -169,7 +177,7 @@ router.delete(
  */
 router.patch(
     '/conversations/:id/read',
-    [param('id').isUUID(), body('userId').notEmpty(), validate],
+    [authenticate, param('id').isUUID(), body('userId').notEmpty(), validate],
     ctrl.markConversationRead
 );
 

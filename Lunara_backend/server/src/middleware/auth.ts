@@ -32,8 +32,10 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
-        // If in development mode and using demo-access-token, bypass verification and use a mock admin user
-        if (process.env.NODE_ENV === 'development' && token === 'demo-access-token') {
+        // If in development mode and using demo-access-token, bypass verification and use a mock admin user.
+        // Requires BOTH NODE_ENV=development AND an explicit opt-in flag, so a
+        // misconfigured/unset NODE_ENV in production can never satisfy this alone.
+        if (process.env.NODE_ENV === 'development' && process.env.ALLOW_DEMO_TOKEN === 'true' && token === 'demo-access-token') {
             const adminUser = await User.findOne({ where: { role: UserRole.ADMIN } });
             req.user = {
                 id: adminUser?.id || 'demo-admin-001',

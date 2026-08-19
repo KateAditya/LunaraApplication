@@ -1,26 +1,26 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { optionalAuth } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import ctrl from '../controllers/mobilePlanController';
 
 const router = Router();
 
 // ─── User's own plans ────────────────────────────────────────────────────────
 
-router.get('/eligibility', ctrl.checkEligibility);
+router.get('/eligibility', authenticate, ctrl.checkEligibility);
 
 /**
  * GET /api/mobile/plans/my-plans?userId=<uuid>
  * Lists all plans the calling user has posted.
  */
-router.get('/my-plans', ctrl.getMyPlans);
+router.get('/my-plans', authenticate, ctrl.getMyPlans);
 
 /**
  * GET /api/mobile/plans/my-joins?userId=<uuid>
  * Lists all plans the calling user has joined.
  */
-router.get('/my-joins', ctrl.getMyJoins);
+router.get('/my-joins', authenticate, ctrl.getMyJoins);
 
 // ─── Live Feed ───────────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ router.get('/live-feed', optionalAuth, ctrl.getLiveFeed);
 router.post(
     '/',
     [
+        authenticate,
         body('userId').notEmpty().withMessage('userId is required'),
         body('venueId').isUUID().withMessage('venueId must be a UUID'),
         body('planDate').isISO8601().withMessage('planDate must be YYYY-MM-DD'),
@@ -67,6 +68,7 @@ router.post(
 router.post(
     '/:id/join',
     [
+        authenticate,
         param('id').isUUID(),
         body('requesterId').notEmpty().withMessage('requesterId is required'),
         validate,
@@ -78,7 +80,7 @@ router.post(
  * GET /api/mobile/plans/:id/split-status
  * Returns current split payment status for the plan's payment screen.
  */
-router.get('/:id/split-status', [param('id').isUUID(), validate], ctrl.getSplitStatus);
+router.get('/:id/split-status', [authenticate, param('id').isUUID(), validate], ctrl.getSplitStatus);
 
 /**
  * POST /api/mobile/plans/:id/secure-reservation
@@ -87,7 +89,7 @@ router.get('/:id/split-status', [param('id').isUUID(), validate], ctrl.getSplitS
  */
 router.post(
     '/:id/secure-reservation',
-    [param('id').isUUID(), body('userId').optional(), validate],
+    [authenticate, param('id').isUUID(), body('userId').optional(), validate],
     ctrl.securePlanReservation
 );
 
@@ -95,7 +97,7 @@ router.post(
  * GET /api/mobile/plans/:id/ticket
  * Returns the digital ticket for a secured plan.
  */
-router.get('/:id/ticket', [param('id').isUUID(), validate], ctrl.getPlanTicket);
+router.get('/:id/ticket', [authenticate, param('id').isUUID(), validate], ctrl.getPlanTicket);
 
 /**
  * POST /api/mobile/plans/:id/add-to-wallet
@@ -103,7 +105,7 @@ router.get('/:id/ticket', [param('id').isUUID(), validate], ctrl.getPlanTicket);
  */
 router.post(
     '/:id/add-to-wallet',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     ctrl.addPlanToWallet
 );
 
@@ -119,7 +121,7 @@ import {
  */
 router.post(
     '/:id/cancellation-request',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     createCancellationRequest
 );
 
@@ -129,7 +131,7 @@ router.post(
  */
 router.get(
     '/:id/cancellation-request',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     getCancellationRequest
 );
 
@@ -139,7 +141,7 @@ router.get(
  */
 router.post(
     '/:id/cancellation-request/respond',
-    [param('id').isUUID(), validate],
+    [authenticate, param('id').isUUID(), validate],
     respondToCancellationRequest
 );
 

@@ -33,7 +33,7 @@ const PHOTO_QUALITY = 92;       // High JPEG quality (92/100) to prevent blur & 
 // ─────────────────────────────────────────────────────────────────────────────
 export const uploadPhotos = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         if (!userId) {
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
@@ -224,7 +224,7 @@ interface ProfileSetupBody {
 
 export const completeProfileSetup = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         if (!userId) {
             return res.status(401).json({ success: false, message: 'Unauthorized: userId is required in body' });
         }
@@ -303,7 +303,9 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         if (rawQueryId === 'undefined' || rawQueryId === 'null' || !rawQueryId?.trim()) {
             rawQueryId = '';
         }
-        const userId = rawQueryId || req.user?.id;
+        // Verified token identity must win whenever present; the query param only
+        // covers the legacy/testing path when no token was sent at all.
+        const userId = req.user?.id || rawQueryId;
         if (!userId) {
             return res.status(401).json({ success: false, message: 'Unauthorized: userId query param is required' });
         }
@@ -1021,7 +1023,7 @@ export const unregisterFcmToken = async (req: Request, res: Response): Promise<R
 // ─────────────────────────────────────────────────────────────────────────────
 export const blockUser = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         const targetUserId = req.body.targetUserId;
 
         if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
@@ -1093,7 +1095,7 @@ export const blockUser = async (req: Request, res: Response): Promise<Response> 
 // ─────────────────────────────────────────────────────────────────────────────
 export const unblockUser = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         const targetUserId = req.body.targetUserId;
 
         if (!userId || !targetUserId) return res.status(400).json({ success: false, message: 'userId and targetUserId required' });
@@ -1147,7 +1149,7 @@ export const unblockUser = async (req: Request, res: Response): Promise<Response
 // ─────────────────────────────────────────────────────────────────────────────
 export const reportUser = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         const targetUserId = req.body.targetUserId;
         const reason = req.body.reason || 'No reason provided';
 
@@ -1225,7 +1227,7 @@ export const reportUser = async (req: Request, res: Response): Promise<Response>
 // ─────────────────────────────────────────────────────────────────────────────
 export const getBlockedUsers = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId as string) || req.user?.id;
+        const userId = req.user?.id || (req.query.userId as string);
         if (!userId) return res.status(401).json({ success: false, message: 'userId query param required' });
 
         const blocks = await SocialConnection.findAll({
@@ -1249,7 +1251,7 @@ export const getBlockedUsers = async (req: Request, res: Response): Promise<Resp
 
 export const getBlockedUsersDetails = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId as string) || req.user?.id;
+        const userId = req.user?.id || (req.query.userId as string);
         if (!userId) return res.status(401).json({ success: false, message: 'userId required' });
 
         // Retrieve connections where the current user blocked the receiver user
@@ -1727,7 +1729,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 // ─────────────────────────────────────────────────────────────────────────────
 export const getMyLikesAndMatches = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId as string) || req.user?.id;
+        const userId = req.user?.id || (req.query.userId as string);
         if (!userId) {
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
@@ -1794,7 +1796,7 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
 // ─────────────────────────────────────────────────────────────────────────────
 export const getSwipeStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = (req.query.userId as string) || req.user?.id;
+        const userId = req.user?.id || (req.query.userId as string);
         const targetUserId = req.query.targetUserId as string;
 
         if (!userId || !targetUserId) {
@@ -1908,7 +1910,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
 // ─────────────────────────────────────────────────────────────────────────────
 export const backtrackSwipe = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         const { targetUserId } = req.body;
 
         if (!userId || !targetUserId) {
@@ -1986,7 +1988,7 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
 
 export const deleteAccount = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.body.userId || req.user?.id;
+        const userId = req.user?.id || req.body.userId;
         const { password, reason } = req.body;
 
         if (!userId) {

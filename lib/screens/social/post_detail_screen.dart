@@ -1782,7 +1782,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         widget.post['userId']?.toString() == ApiService.currentUserId ||
         (widget.post['user'] != null &&
             widget.post['user']['id']?.toString() == ApiService.currentUserId);
-    final bool hasConfirmedBooking = widget.post['hasConfirmedBooking'] == true ||
+    // canSeeVenue is authoritative from the backend (host, or accepted joiner).
+    // Fall back to the old client-side signals for Strangers Meet posts, which
+    // don't carry canSeeVenue.
+    final bool hasConfirmedBooking = widget.post['canSeeVenue'] == true ||
+        widget.post['hasConfirmedBooking'] == true ||
         widget.post['isMatched'] == true ||
         _alreadyRequested && (_meetRequest?.joiners != null);
     final bool isSecretVenue = widget.post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;
@@ -2135,33 +2139,43 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _isProcessing
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.bolt, color: Colors.white),
-                              const SizedBox(width: 12),
-                              Text(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
                                 _isProcessing
-                                    ? 'SENDING REQUEST...'
-                                    : 'JOIN THE VIBE',
-                                style: const TextStyle(
-                                  fontFamily: 'AllroundGothic',
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(hideVenue ? Icons.lock_rounded : Icons.bolt, color: Colors.white),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Text(
+                                    _isProcessing
+                                        ? 'SENDING REQUEST...'
+                                        : (hideVenue
+                                            ? 'SEND REQUEST TO SEE VENUE & DETAILS'
+                                            : 'JOIN THE VIBE'),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: 'AllroundGothic',
+                                      color: Colors.white,
+                                      fontSize: hideVenue ? 13 : 16,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -2183,7 +2197,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         post['userId']?.toString() == ApiService.currentUserId ||
         (post['user'] != null &&
             post['user']['id']?.toString() == ApiService.currentUserId);
-    final bool hasConfirmedBooking = post['hasConfirmedBooking'] == true ||
+    final bool hasConfirmedBooking = post['canSeeVenue'] == true ||
+        post['hasConfirmedBooking'] == true ||
         post['isMatched'] == true ||
         _alreadyRequested && (_meetRequest?.joiners != null);
     final bool isSecretVenue = post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;

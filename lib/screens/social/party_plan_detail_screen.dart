@@ -32,6 +32,41 @@ class _VenueImageFallback extends StatelessWidget {
   }
 }
 
+class _SecretVenueImagePlaceholder extends StatelessWidget {
+  const _SecretVenueImagePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_rounded, color: Colors.white.withValues(alpha: 0.7), size: 56),
+            const SizedBox(height: 8),
+            Text(
+              'SECRET VENUE 🔒',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
 
@@ -954,10 +989,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Widget _buildArrivalConfirmationCard() {
-    final isConfirmed = widget.plan['hasConfirmedBooking'] == true ||
-        widget.plan['lifecycleStatus'] == 'match_confirmed' ||
-        widget.plan['lifecycleStatus'] == 'chat_enabled' ||
-        widget.plan['lifecycleStatus'] == 'plan_completed';
+    final bool isHost = _isHostPlan(widget.plan);
+    // A host's own plan-level fields genuinely reflect their own match (there's
+    // only one host per plan). A non-host must only trust their own per-user
+    // _requestStatus (set exclusively from their own payment verification
+    // response) — otherwise a rejected/uninvolved viewer of a plan that got
+    // matched with someone else could be shown an arrival prompt that isn't theirs.
+    final isConfirmed = isHost
+        ? (widget.plan['hasConfirmedBooking'] == true ||
+            widget.plan['lifecycleStatus'] == 'match_confirmed' ||
+            widget.plan['lifecycleStatus'] == 'chat_enabled' ||
+            widget.plan['lifecycleStatus'] == 'plan_completed')
+        : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
     if (!isConfirmed) return const SizedBox.shrink();
 
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
@@ -972,7 +1015,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         widget.plan['lifecycleStatus'] == 'plan_completed' ||
         widget.plan['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
 
-    final bool isHost = _isHostPlan(widget.plan);
     final userReached = isHost ? hostReached : guestReached;
     final partnerReached = isHost ? guestReached : hostReached;
 
@@ -1554,6 +1596,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       razorpay.open(options);
     } catch (e) {
       debugPrint('Error opening Razorpay: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open payment screen. Please try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -1631,37 +1681,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         _startRazorpayDirectPayment(reqId, venueName);
       },
       onHybridPayment: (shortfall) async {
-        final res = await ApiService.post('/api/mobile/party-plans/requests/$reqId/joiner-pay', body: {
-          'userId': ApiService.currentUserId ?? '',
-          'razorpay_order_id': 'order_mock_hybrid',
-          'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-          'razorpay_signature': 'mock_signature',
-        });
-        if (res.statusCode == 200 && mounted) {
-          setState(() {
-            _requestStatus = 'confirmed';
-          });
-          _refreshPlanDetails();
-          _checkRequestStatus();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else if (mounted) {
-          String msg = 'Payment Failed';
-          try {
-            final b = jsonDecode(res.body);
-            msg = b['message'] ?? b['error'] ?? msg;
-          } catch (_) {}
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Payment Failed: $msg'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
+        // The shortfall must actually be charged — reuse the same real Razorpay
+        // checkout the "Direct Payment" option uses, just for the shortfall amount,
+        // mirroring how the host's own hybrid payment already works correctly.
+        _startRazorpayDirectPayment(reqId, venueName, depositAmount: shortfall > 0 ? shortfall : 99.0);
       },
     );
   }
@@ -1812,6 +1835,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       razorpay.open(options);
     } catch (e) {
       debugPrint('Error opening Razorpay for Host Payment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open payment screen. Please try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -2052,6 +2083,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     // to a participant request and previously made role inference ambiguous.
     final isMyPost = _isHostPlan(plan);
 
+    // canSeeVenue is the backend-authoritative flag (host, or a joiner the
+    // host has accepted). Hosts always see their own venue regardless.
+    final bool hideVenueDetails = plan['showVenueDetails'] == false && !isMyPost && plan['canSeeVenue'] != true;
+
     final hostName = _extractHostName(host, plan);
     final hostAge = host['age'] ?? plan['hostAge'];
     final hostOccupation = host['occupation'] as String? ?? plan['hostOccupation'] as String? ?? '';
@@ -2116,8 +2151,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ),
                   ),
-                  // Venue Image if available
-                  if (venueImageUrl != null && venueImageUrl.isNotEmpty)
+                  // Venue Image if available (hidden until this viewer can see the venue)
+                  if (hideVenueDetails)
+                    const _SecretVenueImagePlaceholder()
+                  else if (venueImageUrl != null && venueImageUrl.isNotEmpty)
                     Image.network(
                       venueImageUrl,
                       fit: BoxFit.cover,
@@ -2314,19 +2351,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
                   // Venue Card with Privacy Masking (Step 3)
                   _infoCard(
-                    icon: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
-                        ? Icons.visibility_off_rounded
-                        : Icons.location_on_rounded,
+                    icon: hideVenueDetails ? Icons.visibility_off_rounded : Icons.location_on_rounded,
                     title: 'VENUE',
-                    value: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
-                        ? '${venue['area'] ?? venue['city'] ?? 'Near Area'} (Exact venue hidden until booking)'
+                    value: hideVenueDetails
+                        ? '${venue['area'] ?? venue['city'] ?? 'Near Area'} (Exact venue hidden until host approval)'
                         : venueName,
-                    subtitle: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
+                    subtitle: hideVenueDetails
                         ? 'Locality: ${venue['area'] ?? venue['city'] ?? 'Local Area'}'
                         : venueAddress,
-                    iconColor: (plan['showVenueDetails'] == false && !isMyPost && plan['hasConfirmedBooking'] != true)
-                        ? Colors.amber
-                        : LunaraTheme.electricViolet,
+                    iconColor: hideVenueDetails ? Colors.amber : LunaraTheme.electricViolet,
                   ),
 
                   // Arrival Confirmation Card (30m Window)

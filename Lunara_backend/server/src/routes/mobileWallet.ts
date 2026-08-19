@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { query } from 'express-validator';
 import { validate } from '../middleware/validate';
+import { authenticate } from '../middleware/auth';
 import * as ctrl from '../controllers/walletController';
 
 const router = Router();
+
+// Every wallet endpoint deals with real money — require a verified caller on all of them.
+router.use(authenticate);
 
 /**
  * GET /api/mobile/wallet

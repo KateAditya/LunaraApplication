@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
 import { MobileTicketController } from '../controllers/mobileTicketController';
 
 const router = Router();
@@ -7,7 +8,7 @@ const router = Router();
  * GET /api/mobile/tickets
  * Query: userId, tab ('upcoming' | 'active' | 'used' | 'expired' | 'cancelled')
  */
-router.get('/', MobileTicketController.getUserTickets);
+router.get('/', authenticate, MobileTicketController.getUserTickets);
 
 /**
  * GET /api/mobile/tickets/share/:token
@@ -25,24 +26,24 @@ router.get('/share/:token/pdf', MobileTicketController.getShareTicketPdf);
  * POST /api/mobile/tickets/verify
  * Gate scanner verification endpoint for venue staff
  */
-router.post('/verify', MobileTicketController.verifyGateScanTicket);
+router.post('/verify', authenticate, MobileTicketController.verifyGateScanTicket);
 
 /**
  * GET /api/mobile/tickets/:id
  * Get single ticket metadata
  */
-router.get('/:id', MobileTicketController.getTicketById);
+router.get('/:id', authenticate, MobileTicketController.getTicketById);
 
 /**
  * GET /api/mobile/tickets/:id/download
  * Generate time-limited signed PDF download URL
  */
-router.get('/:id/download', MobileTicketController.getTicketDownloadUrl);
+router.get('/:id/download', authenticate, MobileTicketController.getTicketDownloadUrl);
 
 /**
  * POST /api/mobile/tickets/:id/share
  * Generate/retrieve secure share link token
  */
-router.post('/:id/share', MobileTicketController.createShareToken);
+router.post('/:id/share', authenticate, MobileTicketController.createShareToken);
 
 export default router;
