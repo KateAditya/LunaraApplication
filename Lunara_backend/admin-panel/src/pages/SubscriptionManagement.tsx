@@ -248,13 +248,6 @@ export const SubscriptionManagement: React.FC = () => {
             dailyMatchRequests: -1,
             dailyLikes: -1,
             dailyPosts: -1,
-            superlikesPerCycle: 0,
-            boostsPerCycle: 0,
-            hasHideProfile: false,
-            hasPriorityVisibility: false,
-            hasTrustBadge: false,
-            hasEliteBadge: false,
-            canSeeWhoLiked: false,
         });
         setShowPlanModal(true);
     };
