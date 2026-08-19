@@ -32,6 +32,13 @@ class PaymentConfirmationScreen extends StatefulWidget {
   final Future<void> Function(double shortfallAmount)? onCustomHybridPayment;
   final Future<void> Function()? onPaymentCancelled;
   final Widget Function(BuildContext)? ticketScreenBuilder;
+  // When true, the wallet/gateway checkout sheet opens automatically as soon
+  // as this screen renders, instead of requiring an extra tap on this
+  // screen's own 'PAY NOW' button first. Defaults to false so every existing
+  // caller keeps its current two-step behavior unchanged; opt in per call
+  // site where the summary shown here would otherwise duplicate a price
+  // screen the user already confirmed just before navigating here.
+  final bool autoOpenPayment;
 
   const PaymentConfirmationScreen({
     super.key,
@@ -56,6 +63,7 @@ class PaymentConfirmationScreen extends StatefulWidget {
     this.onCustomHybridPayment,
     this.onPaymentCancelled,
     this.ticketScreenBuilder,
+    this.autoOpenPayment = false,
   });
 
   @override
@@ -75,6 +83,11 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    if (widget.autoOpenPayment) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handlePayment(context);
+      });
+    }
   }
 
   @override

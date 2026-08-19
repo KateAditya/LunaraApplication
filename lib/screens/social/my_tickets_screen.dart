@@ -636,7 +636,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                                 'bookingId': ticket['bookingId'],
                                 'bookingDate': ticket['eventStartAt'],
                                 'partyDate': ticket['eventStartAt'],
-                                'startTime': '08:00 PM',
+                                'startTime': ticket['startTime'] ?? '08:00 PM',
                                 'status': 'confirmed',
                                 'paymentStatus': 'paid',
                                 'venue': ticket['venue'] ?? {},
@@ -645,6 +645,10 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                                 'ticketCode': ticket['ticketId'],
                                 'ticketUrl': ticket['pdfUrl'],
                                 'numberOfGuests': ticket['numberOfGuests'] ?? '?',
+                                // Without this, the ticket screen's initial
+                                // (pre-refetch) render defaults totalAmount to
+                                // 0 and shows "FREE" even for a paid booking.
+                                'totalAmount': ticket['totalAmount'],
                               },
                               venue: ticket['venue'] is Map
                                   ? Map<dynamic, dynamic>.from(ticket['venue'] as Map)

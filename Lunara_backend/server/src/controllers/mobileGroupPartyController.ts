@@ -253,6 +253,7 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
                 groupParty: {
                     id: groupParty.id,
                     partyDate: groupParty.partyDate,
+                    startTime: groupParty.startTime,
                     totalParticipants,
                     hostCount,
                     memberCount,

@@ -15,7 +15,12 @@ router.post(
     '/calculate-pricing',
     [
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
-        body('numberOfFriends').isInt({ min: 1, max: 20 }).withMessage('numberOfFriends must be between 1 and 20'),
+        // This route serves both small (<=20) and large (>20) group party
+        // requests — GroupPartyService.resolvePartyType/calculateAuthoritativePricing
+        // enforces the real per-venue capacity ceiling. A hardcoded max:20
+        // here previously rejected every large-party request outright before
+        // it ever reached that logic.
+        body('numberOfFriends').isInt({ min: 1, max: 500 }).withMessage('numberOfFriends must be a positive number'),
         validate,
     ],
     calculatePricing
@@ -27,7 +32,9 @@ router.post(
         authenticate,
         body('userId').notEmpty().isUUID().withMessage('userId must be a valid UUID'),
         body('venueId').notEmpty().isUUID().withMessage('venueId must be a valid UUID'),
-        body('numberOfFriends').isInt({ min: 1, max: 20 }).withMessage('numberOfFriends must be between 1 and 20'),
+        // Same reasoning as calculate-pricing above — the true ceiling is the
+        // venue's actual capacity, enforced in GroupPartyService.resolvePartyType.
+        body('numberOfFriends').isInt({ min: 1, max: 500 }).withMessage('numberOfFriends must be a positive number'),
         body('partyDate').isISO8601().withMessage('partyDate must be a valid date'),
         body('mobileNumber').notEmpty().withMessage('mobileNumber is required'),
         validate,

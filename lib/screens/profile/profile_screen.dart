@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
@@ -5,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../widgets/bumble_swipe_widget.dart';
 import 'profile_detail_view.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../../services/subscription_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User? user;
@@ -377,6 +379,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     });
 
+    // SubscriptionProvider (used by profile_hub_screen.dart and others to
+    // display remaining likes/superlikes) is a process-lifetime singleton
+    // with its own cache — nothing else in the swipe flow ever invalidated
+    // it, so those displays could keep showing a stale count long after it
+    // actually changed. Force a refetch so it stays accurate.
+    unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
+
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
 
     if (res['matched'] == true) {
@@ -423,6 +432,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _dailyLikesUsed++;
       }
     });
+
+    unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
 
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
 

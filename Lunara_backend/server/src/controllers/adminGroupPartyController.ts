@@ -13,7 +13,16 @@ export const getAdminGroupParties = async (req: Request, res: Response): Promise
             numberOfFriends: { [Op.lte]: 20 }
         };
         if (venueId) where.venueId = venueId;
-        if (status) {
+        // A small (<=20) GroupParty has no admin-approval step at all — the
+        // 'pending' status literally just means "payment not completed yet,"
+        // which is either still in progress or abandoned. There is nothing
+        // for an admin to approve/reject here (unlike the >20 Large Party
+        // flow, which uses a completely separate Booking/adminApprovalStatus
+        // model). Requesting status=pending previously returned every raw
+        // pending row, including abandoned checkouts, with Approve/Reject
+        // actions that don't apply to them — so pending/unpaid rows are
+        // never surfaced to admins regardless of the requested filter.
+        if (status && status !== 'pending') {
             if (status === 'confirmed') {
                 where[Op.or] = [
                     { status: 'confirmed' },
@@ -23,8 +32,9 @@ export const getAdminGroupParties = async (req: Request, res: Response): Promise
                 where.status = status;
             }
         } else {
-            // Default: Only display genuine confirmed/paid bookings in admin view
-            // (exclude incomplete pending drafts and cancelled attempts)
+            // Default (and explicit 'pending' request): only genuine
+            // confirmed/paid bookings — exclude incomplete pending drafts
+            // and cancelled attempts.
             where[Op.or] = [
                 { status: 'confirmed' },
                 { paymentStatus: 'paid' }

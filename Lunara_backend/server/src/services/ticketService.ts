@@ -605,7 +605,14 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         }
 
         const ticketCode = booking.ticketCode || generateUniqueTicketCode('BK');
-        const eventStartAt = new Date(booking.bookingDate);
+        // Combine date + time — using bookingDate alone (a DATEONLY column)
+        // defaults to midnight, so a 12h expiry window from there could
+        // already have elapsed by the time the party actually starts in the
+        // evening, showing the ticket as EXPIRED before the event even began.
+        const combinedStart = booking.startTime
+            ? new Date(`${booking.bookingDate} ${booking.startTime}`)
+            : new Date(booking.bookingDate);
+        const eventStartAt = isNaN(combinedStart.getTime()) ? new Date(booking.bookingDate) : combinedStart;
         const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
@@ -693,8 +700,20 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         const venueImg = await VenueImage.findOne({ where: { venueId: groupParty.venueId, isPrimary: true } });
 
         const ticketCode = groupParty.ticketCode || generateUniqueTicketCode('GP');
-        const eventStartAt = new Date(groupParty.partyDate);
-        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        // groupParty.startTime (added for real bookings going forward) holds
+        // the actual time the user picked; partyDate alone is DATEONLY
+        // (always midnight). Rows created before this column existed have no
+        // start time — for those, fall back to covering the whole calendar
+        // day rather than guessing a time or expiring at a fixed offset from
+        // midnight (which previously expired at noon, hours before an
+        // evening party had even started).
+        const combinedStart = groupParty.startTime
+            ? new Date(`${groupParty.partyDate} ${groupParty.startTime}`)
+            : null;
+        const eventStartAt = combinedStart && !isNaN(combinedStart.getTime()) ? combinedStart : new Date(groupParty.partyDate);
+        const eventEndAt = combinedStart && !isNaN(combinedStart.getTime())
+            ? new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000)
+            : new Date(eventStartAt.getFullYear(), eventStartAt.getMonth(), eventStartAt.getDate(), 23, 59, 59);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
         const verificationToken = generateHMACSignature(ticketCode, groupParty.userId, groupParty.partyDate.toString());
@@ -722,7 +741,7 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             venueImageUrl: venueImg?.filePath || null,
             numberOfGuests: groupParty.numberOfFriends,
             eventDate: groupParty.partyDate,
-            startTime: '08:00 PM',
+            startTime: groupParty.startTime || '08:00 PM',
             paymentAmount: Number(groupParty.totalAmount),
             paymentStatus: groupParty.paymentStatus,
         });

@@ -172,6 +172,7 @@ export class GroupPartyService {
                         discountAmount: pricing.discountAmount,
                         totalAmount: pricing.totalAmount,
                         partyDate: new Date(partyDate),
+                        startTime: startTime ? normalizeStartTime(startTime) : undefined,
                         mobileNumber: mobileNumber.trim(),
                         optionalMobileNumber: optionalMobileNumber?.trim(),
                         foodPreference: foodPreference?.trim(),

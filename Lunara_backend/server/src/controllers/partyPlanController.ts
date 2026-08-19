@@ -175,7 +175,10 @@ async function autoOpenChat(hostId: string, joinerId: string, planId: string) {
     }
 }
 
-async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanRequest, transaction?: Transaction) {
+// Returns the created (or pre-existing) booking's id, or null on failure —
+// callers use this to schedule ticket generation only AFTER their enclosing
+// transaction actually commits (see the race-condition note below).
+async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanRequest, transaction?: Transaction): Promise<string | null> {
     try {
         const planDate = plan.planDateTime ? new Date(plan.planDateTime) : new Date();
         const isValidDate = !isNaN(planDate.getTime());
@@ -205,7 +208,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
                 io.to(`user_${plan.userId}`).emit('party_plan_ticket_generated', ticketData);
                 io.to(`user_${request.requesterId}`).emit('party_plan_ticket_generated', ticketData);
             } catch (_) { }
-            return;
+            return existingBooking.id;
         }
 
         const bookingDate = validDateObj.toISOString().split('T')[0];
@@ -249,14 +252,14 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             specialRequests: ticketMetadata,
         }, { transaction });
 
-        // Generate digital ticket in background
-        setImmediate(async () => {
-            try {
-                await generateTicketForBookingHelper(booking.id);
-            } catch (ticketErr) {
-                logger.error(`Background ticket generation failed for matched party booking ${booking.id}:`, ticketErr);
-            }
-        });
+        // Ticket generation is deliberately NOT scheduled here. This function
+        // runs mid-transaction — a setImmediate fired at this point races the
+        // still-open, uncommitted outer transaction: ticketService's
+        // Booking.findByPk read is non-transactional, so under Postgres'
+        // read-committed isolation it cannot see this row yet and throws
+        // "Booking not found" (confirmed happening in production via
+        // logs/error.log). The caller schedules generation using the
+        // returned booking id, only after the transaction actually commits.
 
         // Create Payment record for Host
         await Payment.create({
@@ -301,12 +304,16 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             logger.warn('Socket emission failed for party_plan_ticket_generated:', socketErr);
         }
 
-        // Unlock Chat!
-        await autoOpenChat(plan.userId, request.requesterId, plan.id);
+        // Chat unlock is also deferred to the caller for the same
+        // transaction-visibility reason as ticket generation above —
+        // autoOpenChat re-reads the PartyPlan from the DB to verify its
+        // lifecycleStatus, which races this same uncommitted transaction.
 
         logger.info(`Successfully created Booking ${booking.id} (ticket: ${ticketCode}) for plan ${plan.id}`);
+        return booking.id;
     } catch (err) {
         logger.error('Error in createBookingAndPayments:', err);
+        return null;
     }
 }
 
@@ -397,8 +404,16 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
 // confirmMatch — atomic helper: both parties paid → MATCH_CONFIRMED
 // Creates booking, opens chat, notifies both parties.
 // Must be called AFTER transaction is committed or within one.
+//
+// Returns a callback that MUST be invoked (via setImmediate) by the caller
+// only AFTER `transaction` has been committed — it triggers ticket
+// generation and chat-unlock, both of which re-read this plan/booking from
+// the DB and would otherwise race the still-open transaction (confirmed via
+// production logs: a premature setImmediate here caused ticket generation to
+// throw "Booking not found" and silently fail, leaving paid bookings with no
+// ticket at all).
 // ─────────────────────────────────────────────────────────────────────────────
-async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transaction: Transaction) {
+async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transaction: Transaction): Promise<() => Promise<void>> {
     // 1. Update plan to MATCH_CONFIRMED (single source of truth)
     await plan.update({
         lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED,
@@ -415,21 +430,12 @@ async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transact
     }, { transaction });
 
     // 3. Create booking and payment records
-    await createBookingAndPayments(plan, request, transaction);
+    const bookingId = await createBookingAndPayments(plan, request, transaction);
 
     // 4. Reject and notify all remaining WAITING/PENDING requests
     await rejectAndNotifyStaleRequests(plan, request.id, transaction);
 
-    // 5. Post-commit: open chat (async, gated by lifecycleStatus)
-    setImmediate(async () => {
-        try {
-            await autoOpenChat(plan.userId, request.requesterId, plan.id);
-        } catch (err: any) {
-            logger.error('confirmMatch: autoOpenChat failed:', err.message);
-        }
-    });
-
-    // 6. Socket events
+    // 5. Socket events
     setImmediate(async () => {
         try {
             const { io } = require('../server');
@@ -486,6 +492,23 @@ async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transact
     });
 
     logger.info(`[confirmMatch] MATCH_CONFIRMED for plan ${plan.id}, request ${request.id}`);
+
+    // Post-commit tasks — the caller must invoke this only after committing
+    // `transaction` (see doc comment above).
+    return async () => {
+        if (bookingId) {
+            try {
+                await generateTicketForBookingHelper(bookingId);
+            } catch (ticketErr: any) {
+                logger.error(`confirmMatch: ticket generation failed for booking ${bookingId}:`, ticketErr.message);
+            }
+        }
+        try {
+            await autoOpenChat(plan.userId, request.requesterId, plan.id);
+        } catch (err: any) {
+            logger.error('confirmMatch: autoOpenChat failed:', err.message);
+        }
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,6 +772,30 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         if (!timingValidation.isValid) {
             res.status(400).json({ success: false, message: timingValidation.reason });
             return;
+        }
+
+        // Clear the user's own abandoned/unpaid party plan attempt(s) for this
+        // exact date first. A PartyPlan row is created below with
+        // hostPaymentStatus UNPAID and a fresh Razorpay order BEFORE the host
+        // actually pays the deposit — its `status` stays ACTIVE the whole
+        // time, so checkExistingBookingForDate below would otherwise treat a
+        // never-paid, abandoned attempt as a real commitment and permanently
+        // block every retry for that date.
+        const staleDayStart = new Date(partyDate);
+        staleDayStart.setHours(0, 0, 0, 0);
+        const staleDayEnd = new Date(partyDate);
+        staleDayEnd.setHours(23, 59, 59, 999);
+        const staleSameDayPlans = await PartyPlan.findAll({
+            where: {
+                userId,
+                planDateTime: { [Op.between]: [staleDayStart, staleDayEnd] },
+                status: { [Op.ne]: PartyPlanStatus.CANCELLED },
+                hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
+            },
+        });
+        for (const stale of staleSameDayPlans) {
+            await stale.update({ status: PartyPlanStatus.CANCELLED });
+            await PlanEligibilityService.releaseLock(stale.id);
         }
 
         // ── Check for 1 plan per day limit (Stranger Meet / Party Plan / Group Party) ──
@@ -1100,8 +1147,9 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                         const innerTransaction = await sequelize.transaction();
                         try {
                             await plan.reload({ lock: innerTransaction.LOCK.UPDATE, transaction: innerTransaction });
-                            await confirmMatch(plan, activeReq, innerTransaction);
+                            const postCommit = await confirmMatch(plan, activeReq, innerTransaction);
                             await innerTransaction.commit();
+                            setImmediate(postCommit);
                         } catch (matchErr: any) {
                             await innerTransaction.rollback();
                             logger.error('verifyHostPayment: confirmMatch failed:', matchErr);
@@ -1292,7 +1340,7 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
                 status: p.status,
                 visibility: p.visibility,
                 selectedUsers: p.selectedUsers,
-                message: p.message,
+                message: redactVenueNameFromText(p.message, (p as any).venue?.name, !!venueData?.isSecret),
                 planDateTime: isSecretDate ? 'Flexible Date & Time 🔒' : p.planDateTime,
                 actualPlanDateTime: p.planDateTime,
                 isSecretDate,
@@ -1417,7 +1465,7 @@ export const getPlansByUser = async (req: Request, res: Response): Promise<void>
                 status: p.status,
                 visibility: p.visibility,
                 selectedUsers: p.selectedUsers,
-                message: p.message,
+                message: redactVenueNameFromText(p.message, (p as any).venue?.name, !!venueData?.isSecret),
                 planDateTime: p.planDateTime,
                 createdAt: p.createdAt,
                 hostPaymentStatus: p.hostPaymentStatus,
@@ -1563,8 +1611,8 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 lifecycleStatus: plan.lifecycleStatus,
                 visibility: plan.visibility,
                 selectedUsers: plan.selectedUsers,
-                message: plan.message,
-                description: plan.message,
+                message: redactVenueNameFromText(plan.message, (plan as any).venue?.name, !!venueData?.isSecret),
+                description: redactVenueNameFromText(plan.message, (plan as any).venue?.name, !!venueData?.isSecret),
                 planDateTime: plan.planDateTime,
                 eventDateTime: plan.planDateTime,
                 createdAt: plan.createdAt,
@@ -2115,8 +2163,9 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         if (plan.paymentType === 'self_pay') {
             if (hostAlreadyPaid) {
                 // Self-pay + host already paid = instant match. confirmMatch handles everything atomically.
-                await confirmMatch(plan, request, transaction);
+                const postCommit = await confirmMatch(plan, request, transaction);
                 await transaction.commit();
+                setImmediate(postCommit);
 
                 res.json({ success: true, message: 'Request accepted & booking confirmed immediately (Self-Paid) 🎉', data: request });
                 return;
@@ -2872,8 +2921,9 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
 
             if (hostPaid) {
                 // Both parties have paid → MATCH_CONFIRMED
-                await confirmMatch(plan, request, transaction);
+                const postCommit = await confirmMatch(plan, request, transaction);
                 await transaction.commit();
+                setImmediate(postCommit);
 
                 if (!isWalletPaid) {
                     await logDepositLedgerEntry({
@@ -4019,6 +4069,18 @@ function buildUserData(plan: PartyPlan, currentUserId?: string, isAcceptedJoiner
         city: creator.profile?.city ?? null,
         isSecretHost: isSecretName || isSecretPhoto,
     };
+}
+
+// Strips the real venue name out of a host-authored free-text field (message/
+// description) whenever the venue is secret for this viewer. The client can
+// never safely do this redaction itself — it's only ever told the masked
+// "Secret Venue" name, never the real one, so it has nothing to search for.
+// Only the backend, which still holds the real name, can do this correctly.
+function redactVenueNameFromText(text: string | null | undefined, realVenueName: string | null | undefined, isSecret: boolean): string | null {
+    if (text === null || text === undefined) return null;
+    if (!isSecret || !realVenueName || !realVenueName.trim()) return text;
+    const escaped = realVenueName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(escaped, 'gi'), 'a Secret Venue 🔒');
 }
 
 function buildVenueData(plan: PartyPlan, currentUserId?: string, isAcceptedJoiner: boolean = false) {

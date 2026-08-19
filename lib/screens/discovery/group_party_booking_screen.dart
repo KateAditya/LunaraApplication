@@ -1823,6 +1823,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                             venueId: widget.venue.id,
                             numberOfFriends: parsed,
                             partyDate: partyDateStr,
+                            startTime: formattedTime,
                             mobileNumber: _mobileController.text.trim(),
                             optionalMobileNumber: _optMobileController.text.trim().isEmpty
                                 ? null
@@ -1895,6 +1896,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               guests: '$parsed Friends',
                               totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
                               showSplitBill: false,
+                              autoOpenPayment: true,
                               mobileNumber: _mobileController.text.trim(),
                               optionalMobileNumber: _optMobileController.text.trim().isEmpty
                                   ? null
@@ -1921,6 +1923,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   venueId: widget.venue.id,
                                   numberOfFriends: parsed,
                                   partyDate: partyDateStr,
+                                  startTime: formattedTime,
                                   mobileNumber: _mobileController.text.trim(),
                                   optionalMobileNumber: _optMobileController.text.trim().isEmpty
                                       ? null
@@ -1992,6 +1995,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   venueId: widget.venue.id,
                                   numberOfFriends: parsed,
                                   partyDate: partyDateStr,
+                                  startTime: formattedTime,
                                   mobileNumber: _mobileController.text.trim(),
                                   optionalMobileNumber: _optMobileController.text.trim().isEmpty
                                       ? null
@@ -2115,6 +2119,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                         venueId: widget.venue.id,
                                         numberOfFriends: parsed,
                                         partyDate: partyDateStr,
+                                        startTime: formattedTime,
                                         mobileNumber: _mobileController.text.trim(),
                                         optionalMobileNumber: _optMobileController.text.trim().isEmpty
                                             ? null

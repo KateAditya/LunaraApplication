@@ -30,6 +30,7 @@ export interface GroupPartyAttributes {
     ticketCode?: string;
     ticketUrl?: string;
     partyDate: Date;
+    startTime?: string;
     expiresAt?: Date;
     mobileNumber: string;
     optionalMobileNumber?: string;
@@ -45,7 +46,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'expiresAt' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'startTime' | 'expiresAt' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
     > { }
 
 class GroupParty
@@ -64,6 +65,7 @@ class GroupParty
     public ticketCode?: string;
     public ticketUrl?: string;
     public partyDate!: Date;
+    public startTime?: string;
     public expiresAt?: Date;
     public mobileNumber!: string;
     public optionalMobileNumber?: string;
@@ -151,6 +153,13 @@ GroupParty.init(
             type: DataTypes.DATEONLY,
             allowNull: false,
             field: 'party_date',
+        },
+        startTime: {
+            // 'HH:mm' 24h string, same convention as Booking.startTime.
+            // Nullable/additive — existing rows have no time captured.
+            type: DataTypes.STRING(5),
+            allowNull: true,
+            field: 'start_time',
         },
         expiresAt: {
             type: DataTypes.DATE,

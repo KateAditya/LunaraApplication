@@ -1911,23 +1911,38 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   createdBookingId ??= bookingRes['bookingId']
                                       ?.toString();
                                 } else if (bookingRes != null &&
-                                    (bookingRes['reasonCode'] ==
-                                            'TIME_LOCK_ACTIVE' ||
-                                        bookingRes['code'] ==
-                                            'PLAN_TIME_LOCK_ACTIVE')) {
+                                    const [
+                                      'PLAN_TIME_LOCKED',
+                                      'PLAN_DAILY_LIMIT_REACHED',
+                                      'PLAN_ACTIVE_LIMIT_REACHED',
+                                      'PLAN_WEEKLY_LIMIT_REACHED',
+                                    ].contains(bookingRes['code'])) {
+                                  // These are the actual reasonCode values
+                                  // PlanEligibilityService returns (backend
+                                  // serializes them under 'code', with the
+                                  // full eligibility detail — including
+                                  // remainingSeconds — nested under 'lock').
+                                  // The previous check here matched codes the
+                                  // backend never sends, so this modal was
+                                  // unreachable and every time-lock/daily-
+                                  // limit rejection silently fell through to
+                                  // a plain SnackBar instead.
                                   if (!outerContext.mounted) return;
                                   TimeLockModal.show(
                                     context: outerContext,
-                                    reasonCode:
-                                        bookingRes['reasonCode'] ??
-                                        bookingRes['code'],
+                                    reasonCode: bookingRes['code'].toString(),
                                     message:
                                         bookingRes['message'] ??
                                         'Please wait before booking again.',
                                     remainingSeconds:
-                                        bookingRes['remainingSeconds'] ??
                                         bookingRes['lock']?['remainingSeconds'] ??
                                         60,
+                                    existingPlanId:
+                                        bookingRes['lock']?['existingPlanId']
+                                            ?.toString(),
+                                    existingPlanType:
+                                        bookingRes['lock']?['existingPlanType']
+                                            ?.toString(),
                                   );
                                   return;
                                 } else {

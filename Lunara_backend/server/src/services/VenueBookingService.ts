@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, AdminApprovalStatus } from '../models/Booking';
 import Venue from '../models/Venue';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
@@ -116,6 +117,32 @@ export class VenueBookingService {
             const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate);
             if (bookingConflictMsg) {
                 throw new Error('You already have an active plan or booking scheduled on this day.');
+            }
+        }
+
+        // Clear the user's own abandoned/unpaid solo or small-party booking
+        // attempts for this exact date before proceeding. A PENDING Booking
+        // row (with a Razorpay order) is created below BEFORE payment
+        // completes — same pattern as GroupParty — so a dismissed payment
+        // sheet or a failed charge would otherwise leave a stale row (and
+        // its PlanTimeLock) that blocks every subsequent retry for the rest
+        // of the cooldown window. Deliberately excludes large-party rows,
+        // whose PENDING status means "awaiting admin approval," a genuine
+        // wait state that must not be auto-cancelled.
+        if (!isLargeParty) {
+            const staleSameDayBookings = await Booking.findAll({
+                where: {
+                    userId,
+                    bookingDate: new Date(bookingDate),
+                    status: BookingStatus.PENDING,
+                    paymentStatus: { [Op.ne]: PaymentStatus.PAID },
+                    isLargePartyRequest: false,
+                    razorpayOrderId: { [Op.ne]: null as any },
+                },
+            });
+            for (const stale of staleSameDayBookings) {
+                await stale.update({ status: BookingStatus.CANCELLED });
+                await PlanEligibilityService.releaseLock(stale.id);
             }
         }
 

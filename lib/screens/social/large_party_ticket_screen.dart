@@ -47,6 +47,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   String? _freshPaymentStatus;
   String? _freshPaymentMethod;
   Map<String, dynamic>? _freshVenue;
+  DateTime? _freshPartyDate;
+  String? _freshStartTime;
   final GlobalKey _ticketKey = GlobalKey();
 
   // Server-verified payment/expiry state — the single source of truth for
@@ -214,6 +216,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               }
               if (groupParty['totalAmount'] != null) {
                 _freshTotalAmount = double.tryParse(groupParty['totalAmount'].toString());
+              }
+              if (groupParty['partyDate'] != null) {
+                _freshPartyDate = DateTime.tryParse(groupParty['partyDate'].toString())?.toLocal();
+              }
+              final rawStartTime = groupParty['startTime']?.toString();
+              if (rawStartTime != null && rawStartTime.trim().isNotEmpty) {
+                _freshStartTime = rawStartTime.trim();
               }
               _freshPaymentStatus = groupParty['paymentStatus']?.toString();
               _freshPaymentMethod = groupParty['paymentMethod']?.toString();
@@ -517,6 +526,21 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         planDateTime = DateTime.parse(rawDate.toString()).toLocal();
       } catch (_) {}
     }
+    // Prefer the server-refreshed date/time — widget.booking is only ever
+    // the caller's initial guess (often just a bare date, defaulting to
+    // midnight — "12:00 AM"). _freshPartyDate/_freshStartTime come from the
+    // actual GroupParty record once _fetchTicketData resolves.
+    if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
+    if (_freshStartTime != null) {
+      final tp = _freshStartTime!.split(':');
+      if (tp.length >= 2) {
+        final h = int.tryParse(tp[0]);
+        final m = int.tryParse(tp[1]);
+        if (h != null && m != null) {
+          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
+        }
+      }
+    }
     final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime);
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'LP-PASS').toString().toUpperCase();
     final hostUser = _resolveHostUser();
@@ -553,6 +577,21 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
       try {
         planDateTime = DateTime.parse(rawDate.toString()).toLocal();
       } catch (_) {}
+    }
+    // Prefer the server-refreshed date/time — widget.booking is only ever
+    // the caller's initial guess (often just a bare date, defaulting to
+    // midnight — "12:00 AM"). _freshPartyDate/_freshStartTime come from the
+    // actual GroupParty record once _fetchTicketData resolves.
+    if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
+    if (_freshStartTime != null) {
+      final tp = _freshStartTime!.split(':');
+      if (tp.length >= 2) {
+        final h = int.tryParse(tp[0]);
+        final m = int.tryParse(tp[1]);
+        if (h != null && m != null) {
+          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
+        }
+      }
     }
 
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'GP-TICKET').toString().toUpperCase();
@@ -1358,6 +1397,17 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                         try {
                           planDateTime = DateTime.parse(rawDate.toString()).toLocal();
                         } catch (_) {}
+                      }
+                      if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
+                      if (_freshStartTime != null) {
+                        final tp = _freshStartTime!.split(':');
+                        if (tp.length >= 2) {
+                          final h = int.tryParse(tp[0]);
+                          final m = int.tryParse(tp[1]);
+                          if (h != null && m != null) {
+                            planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
+                          }
+                        }
                       }
                       final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime);
                       final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'LP-PASS').toString().toUpperCase();
