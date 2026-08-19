@@ -622,6 +622,9 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT false;
                 ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;
                 ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);
+            `);
+            await sequelize.query(`ALTER TYPE enum_group_parties_status ADD VALUE IF NOT EXISTS 'completed';`).catch(() => {});
+            await sequelize.query(`
 
                 ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT false;
                 ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;

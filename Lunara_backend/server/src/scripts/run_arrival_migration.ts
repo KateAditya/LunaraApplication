@@ -20,8 +20,15 @@ async function runMigration() {
             ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT false;
             ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;
             ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);
+
+            DO $$
+            BEGIN
+                ALTER TYPE enum_group_parties_status ADD VALUE IF NOT EXISTS 'completed';
+            EXCEPTION
+                WHEN duplicate_object THEN null;
+            END $$;
         `);
-        console.log('✅ party_plans arrival columns migration completed successfully!');
+        console.log('✅ party_plans arrival columns and group_parties enum migration completed successfully!');
         process.exit(0);
     } catch (err) {
         console.error('❌ Migration failed:', err);

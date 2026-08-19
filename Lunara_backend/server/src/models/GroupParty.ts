@@ -8,6 +8,7 @@ export enum GroupPartyStatus {
     CONFIRMED = 'confirmed',
     CANCELLED = 'cancelled',
     EXPIRED = 'expired',
+    COMPLETED = 'completed',
 }
 
 export enum GroupPartyPaymentStatus {
