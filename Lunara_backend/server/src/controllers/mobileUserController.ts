@@ -303,12 +303,17 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         if (rawQueryId === 'undefined' || rawQueryId === 'null' || !rawQueryId?.trim()) {
             rawQueryId = '';
         }
-        // Verified token identity must win whenever present; the query param only
-        // covers the legacy/testing path when no token was sent at all.
-        const userId = req.user?.id || rawQueryId;
+        // The userId query param names WHICH profile is being viewed — it must
+        // stay authoritative, since this endpoint is used both for "my own
+        // profile" and for viewing any other user's profile (e.g. tapping a
+        // card in Discovery/All Profiles). The verified token identity is only
+        // the fallback target when no explicit profile was requested.
+        const viewerId = req.user?.id;
+        const userId = rawQueryId || viewerId || '';
         if (!userId) {
             return res.status(401).json({ success: false, message: 'Unauthorized: userId query param is required' });
         }
+        const isOwnProfile = !!viewerId && viewerId === userId;
 
         // Fetch all profile components concurrently in parallel
         const [user, profile, preferences, allPhotos] = await Promise.all([
@@ -448,17 +453,19 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 firstName: user.firstName,
                 lastName: user.lastName,
                 fullName: `${user.firstName} ${user.lastName}`,
-                email: user.email,
-                phone: user.phone,
+                // Private contact/security fields are only ever returned to
+                // the profile's own owner — never to another viewer.
+                email: isOwnProfile ? user.email : null,
+                phone: isOwnProfile ? user.phone : null,
                 role: user.role,
                 isVerified: user.isVerified,
                 isActive: user.isActive,
-                mfaEnabled: user.mfaEnabled,
+                mfaEnabled: isOwnProfile ? user.mfaEnabled : null,
                 dateOfBirth: (user as any).dateOfBirth ?? null,
                 age,
                 createdAt: user.createdAt,
                 updatedAt: user.updatedAt,
-                lastLoginAt: (user as any).lastLoginAt ?? null,
+                lastLoginAt: isOwnProfile ? ((user as any).lastLoginAt ?? null) : null,
 
                 // ── Profile photo (primary / best) ────────────────────────────
                 profilePhotoUrl,
