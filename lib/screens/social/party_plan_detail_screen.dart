@@ -97,7 +97,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final syncRequested = ApiService.isPartyPlanRequestedSync(targetPlanId);
     final syncReqData = ApiService.getCachedPartyPlanRequestSync(targetPlanId);
 
-    String? initialReqStatus = (syncReqData?['status'] ?? syncReqData?['joinerPaymentStatus'] ?? 'pending')?.toString().toLowerCase();
+    // The backend has no distinct terminal 'confirmed' status for a joiner
+    // request — a fully paid request stays 'accepted' forever, signalling
+    // completion only via joinerPaymentStatus == 'paid'. Normalize that here
+    // (mirrors live_feed_screen.dart's isConfirmed computation) so the same
+    // 'confirmed'/'paid' string checks used below actually match.
+    final syncRawStatus = (syncReqData?['status'] ?? 'pending')?.toString().toLowerCase();
+    final syncJoinerPaid = (syncReqData?['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
+    String? initialReqStatus = syncJoinerPaid ? 'confirmed' : syncRawStatus;
     bool initialRequested = syncRequested;
     if (initialReqStatus == 'cancelled' || initialReqStatus == 'rejected' || initialReqStatus == 'declined' || initialReqStatus == 'payment_failed') {
       initialRequested = false;
@@ -1297,12 +1304,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       bool isInvited = _isInvitedUser;
       String? reqStatus;
       String? reqId;
+      bool foundInFreshList = false;
 
       for (final req in myRequests) {
         final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
         if (planId == targetPlanId) {
+          foundInFreshList = true;
           reqId = req['id']?.toString();
-          reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+          final rawStatus = (req['status'] ?? 'pending').toString().toLowerCase();
+          final joinerPaid = (req['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
+          // Same normalization as the constructor guess above: 'accepted' +
+          // joinerPaymentStatus == 'paid' means the request is actually
+          // confirmed, not still awaiting deposit.
+          reqStatus = joinerPaid ? 'confirmed' : rawStatus;
 
           bool isPaymentExpired = false;
           final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
@@ -1315,10 +1329,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             } catch (_) {}
           }
 
-          if (reqStatus != 'cancelled' &&
-              reqStatus != 'rejected' &&
-              reqStatus != 'declined' &&
-              reqStatus != 'payment_failed' &&
+          if (rawStatus != 'cancelled' &&
+              rawStatus != 'rejected' &&
+              rawStatus != 'declined' &&
+              rawStatus != 'payment_failed' &&
               !isPaymentExpired) {
             requested = true;
           } else {
@@ -1326,7 +1340,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
             requested = false;
             reqId = null;
-            reqStatus = isPaymentExpired ? 'payment_failed' : reqStatus;
+            reqStatus = isPaymentExpired ? 'payment_failed' : rawStatus;
           }
 
           final reqIsInvite = req['isPrivateInvite'] == true ||
@@ -1338,6 +1352,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           }
           break;
         }
+      }
+
+      // Safety net: if this specific plan simply wasn't present in the fresh
+      // list (as opposed to being explicitly found with a cancelled/rejected
+      // status), that's ambiguous — it could mean the request genuinely
+      // doesn't exist, or it could be a transient/incomplete fetch. Don't
+      // regress a known-active request (constructor/sync-cache data already
+      // gave us an id) down to "Request to Join" on ambiguous data alone.
+      if (!foundInFreshList && _activeRequestId != null && _alreadyRequested) {
+        requested = true;
+        reqStatus = _requestStatus;
+        reqId = _activeRequestId;
       }
 
       final planData = widget.plan;

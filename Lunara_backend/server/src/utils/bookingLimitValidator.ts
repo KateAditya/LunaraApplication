@@ -57,10 +57,15 @@ export const checkExistingBookingForDate = async (
         }
 
         // 3. Check GroupParty
+        // 'pending' (payment not yet completed) and 'expired' (payment window
+        // passed) rows are abandoned/incomplete attempts, not real
+        // commitments — they must not block a fresh payment attempt on the
+        // same date, otherwise a single dismissed/failed payment permanently
+        // blocks every subsequent retry (wallet or Razorpay) for that day.
         const existingGroupParty = await GroupParty.findOne({
             where: {
                 userId,
-                status: { [Op.notIn]: ['cancelled', 'rejected'] },
+                status: { [Op.notIn]: ['cancelled', 'rejected', 'pending', 'expired'] },
                 partyDate: dateStr
             }
         });

@@ -123,6 +123,25 @@ export class GroupPartyService {
         const partyType = this.resolvePartyType(numberOfFriends, venue.capacity || 500);
 
         if (partyType === PartyType.SMALL) {
+            // Clear out the user's own abandoned/unpaid attempt(s) for this exact
+            // date before retrying. A PlanTimeLock is created as soon as the
+            // PENDING GroupParty row exists — before payment ever completes —
+            // so a dismissed Razorpay sheet or a failed wallet debit would
+            // otherwise leave a stale lock that rejects every subsequent retry
+            // (wallet or gateway) as "already have a plan scheduled" for hours.
+            const staleSameDayParties = await GroupParty.findAll({
+                where: {
+                    userId,
+                    partyDate: new Date(partyDate),
+                    status: GroupPartyStatus.PENDING,
+                    paymentStatus: { [Op.ne]: GroupPartyPaymentStatus.PAID },
+                },
+            });
+            for (const stale of staleSameDayParties) {
+                await stale.update({ status: GroupPartyStatus.CANCELLED });
+                await PlanEligibilityService.releaseLock(stale.id);
+            }
+
             // SMALL PARTY FLOW
             const pricing = await this.calculateAuthoritativePricing(venueId, numberOfFriends);
             
@@ -333,7 +352,7 @@ export class GroupPartyService {
     /**
      * Helper to dispatch Socket & Push Notifications idempotently and persist DB records.
      */
-    private static async emitNotifications(
+    public static async emitNotifications(
         userId: string,
         venueName: string,
         eventType: 'free_confirmed' | 'small_paid' | 'large_submitted',

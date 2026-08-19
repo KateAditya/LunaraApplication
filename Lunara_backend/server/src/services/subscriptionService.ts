@@ -38,6 +38,12 @@ interface CacheEntry {
     plan: SubscriptionPackage | null;
     features: Map<string, any>;
     expiresAt: number;
+    // The active UserSubscription's own endDate (distinct from `expiresAt`,
+    // which is just this cache entry's TTL) — checked on every cache hit so
+    // a subscription that expires mid-window can't keep granting VIP limits
+    // (e.g. unlimited likes/superlikes) until the cache entry's TTL happens
+    // to lapse.
+    subscriptionEndDate: Date | null;
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -78,6 +84,12 @@ export class SubscriptionService {
     private static async getFromCache(userId: string): Promise<CacheEntry | null> {
         const entry = planCache.get(userId);
         if (entry && entry.expiresAt > Date.now()) {
+            if (entry.subscriptionEndDate && entry.subscriptionEndDate <= new Date()) {
+                // The subscription expired since this entry was cached — do not
+                // keep serving VIP-tier limits from a stale cache hit.
+                planCache.delete(userId);
+                return null;
+            }
             return entry;
         }
         planCache.delete(userId);
@@ -200,6 +212,7 @@ export class SubscriptionService {
             plan,
             features,
             expiresAt: Date.now() + CACHE_TTL_MS,
+            subscriptionEndDate: subscription ? (subscription as any).endDate : null,
         };
         planCache.set(userId, entry);
         return entry;

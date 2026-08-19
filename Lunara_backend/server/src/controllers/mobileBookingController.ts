@@ -857,22 +857,18 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                 const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
                 try {
-                    const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
                     const venueName = venue?.name || 'Venue';
-                    if (host && host.fcmToken) {
-                        const { sendPushNotification } = require('../services/fcmService');
-                        await sendPushNotification(host.fcmToken, {
-                            title: 'Group Party Booked! 🎉',
-                            body: `Your payment is verified. Group party at ${venueName} is confirmed!`,
-                            data: {
-                                type: 'group_party_confirmed',
-                                partyId: groupParty.id,
-                            }
-                        });
-                    }
+                    // Reuse the same DB-record + push + notification_updated/live_feed_update
+                    // pattern used by the free/instant-confirm path, instead of the ad-hoc
+                    // FCM-only notification this branch previously sent.
+                    const { GroupPartyService } = await import('../services/GroupPartyService');
+                    await GroupPartyService.emitNotifications(groupParty.userId, venueName, 'small_paid', groupParty.id, groupParty.numberOfFriends);
+
                     const { io } = require('../server');
-                    io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
-                    io.to(`user_${groupParty.userId}`).emit('large_party_payment_success', { bookingId: groupParty.id });
+                    if (io) {
+                        io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
+                        io.to(`user_${groupParty.userId}`).emit('large_party_payment_success', { bookingId: groupParty.id });
+                    }
                 } catch (pushErr) {
                     logger.warn('Failed to send push/socket for group party verification: ' + pushErr);
                 }
@@ -949,20 +945,55 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
             const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
             try {
+                const venueName = venue?.name || 'Venue';
+                const notifTitle = 'Party Confirmed! 🎉';
+                const notifBody = `Your payment for the party at ${venueName} is verified. Booking confirmed!`;
+                const notifType = 'large_party_payment_success';
+
+                // Create DB Notification Record — same pattern as admin approval,
+                // required for the Notification Center / Live Feed to show anything.
+                try {
+                    const NotificationModel = (await import('../models/Notification')).default;
+                    await NotificationModel.create({
+                        recipientUserId: booking.userId,
+                        eventType: notifType,
+                        category: 'bookings' as any,
+                        entityType: 'booking',
+                        entityId: booking.id,
+                        title: notifTitle,
+                        body: notifBody,
+                        priority: 'HIGH' as any,
+                        isRead: false,
+                        metadata: { bookingId: booking.id, venueName },
+                    });
+                } catch (dbErr) {
+                    logger.warn('Failed to save DB notification for large party payment success: ' + dbErr);
+                }
+
                 const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
                 if (host && host.fcmToken) {
                     const { sendPushNotification } = require('../services/fcmService');
                     await sendPushNotification(host.fcmToken, {
-                        title: 'Party Confirmed! 🎉',
-                        body: `Your payment for the party at ${venue?.name || 'Venue'} is verified. Booking confirmed!`,
+                        title: notifTitle,
+                        body: notifBody,
                         data: {
-                            type: 'large_party_payment_success',
+                            type: notifType,
                             bookingId: booking.id,
                         }
                     });
                 }
+
                 const { io } = require('../server');
-                io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
+                if (io) {
+                    io.to(`user_${booking.userId}`).emit('large_party_payment_success', { bookingId: booking.id });
+
+                    try {
+                        const { GroupPartyService } = await import('../services/GroupPartyService');
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to('live_feed').emit('live_feed_update', { type: 'large_party_activity', bookingId: booking.id, venueName, status: 'payment_done', timestamp: new Date().toISOString() });
+                    } catch (cardErr) {}
+                }
             } catch (socketErr) {
                 logger.warn('Socket/Push emission failed for large_party_payment_success:', socketErr);
             }
