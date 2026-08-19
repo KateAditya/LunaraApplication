@@ -14,10 +14,10 @@ import '../models/help_article.dart';
 import '../models/community_guideline.dart';
 import '../models/legal_document.dart';
 import '../models/strangers_meet_request.dart';
-import 'package:intl/intl.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'notification_navigator.dart';
 import 'push_notification_service.dart';
+import 'subscription_provider.dart';
 import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
@@ -258,13 +258,23 @@ class ApiService {
     _authToken = token;
     cachedCurrentUser = null;
     _ensureLocalStateForCurrentUser();
-    if (previousUserId != currentUserId) authSessionNotifier.value++;
+    final isNewSession = previousUserId != currentUserId;
+    if (isNewSession) authSessionNotifier.value++;
 
     final prefs = await SharedPreferences.getInstance();
     if (token != null && token.trim().isNotEmpty) {
       await prefs.setString('auth_token', token.trim());
       await loadLocalReadIds();
       initSocket();
+      if (isNewSession) {
+        // SubscriptionProvider is a process-lifetime singleton — without
+        // this, a freshly registered/logged-in account would keep showing
+        // whichever tier the PREVIOUS session on this device last cached
+        // (e.g. a brand-new user appearing to already have VIP because the
+        // account that was logged out a moment ago was a paying member).
+        // Fire-and-forget: don't block the login/registration flow on it.
+        unawaited(SubscriptionProvider.instance.refresh());
+      }
     } else {
       await prefs.remove('auth_token');
       disconnectSocket();
@@ -279,6 +289,7 @@ class ApiService {
     selectedCity = null;
     _ensureLocalStateForCurrentUser();
     if (previousUserId != null) authSessionNotifier.value++;
+    SubscriptionProvider.instance.reset();
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -770,218 +781,29 @@ class ApiService {
   }
 
   /// Fetches ALL tickets for current user across standard bookings, group parties (<= 20), and confirmed party plans.
+  /// Reads directly from the backend `Ticket` table (`GET /api/mobile/tickets`)
+  /// — the actual source of truth every real ticket-generation helper writes
+  /// to. Previously this reconstructed a synthetic list from four unrelated
+  /// endpoints (bookings/group-parties/party-plans/strangers-meets), each
+  /// with its own brittle status filtering, which silently dropped real,
+  /// already-generated tickets whenever a source status string didn't match
+  /// exactly what the aggregator expected.
   static Future<List<Map<String, dynamic>>> fetchAllUserTickets() async {
     final userId = currentUserId;
     if (userId == null) return [];
 
-    final Map<String, Map<String, dynamic>> ticketMap = {};
-
-    // 1. Fetch standard bookings
     try {
-      final rawBookings = await fetchBookings();
-      if (rawBookings != null) {
-        for (final item in rawBookings) {
-          if (item is Map) {
-            final mapItem = Map<String, dynamic>.from(item);
-            final key = mapItem['id']?.toString() ?? UniqueKey().toString();
-            ticketMap[key] = mapItem;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchAllUserTickets standard bookings error: $e');
-    }
-
-    // 2. Fetch group parties (<= 20 members as well as all sizes)
-    try {
-      final response = await get(
-        '/api/mobile/group-parties',
-        queryParameters: {'userId': userId},
-      );
+      final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all'});
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          final List rawList = data['data'];
-          for (final gp in rawList) {
-            if (gp is Map) {
-              final gpStatus = gp['status']?.toString().toLowerCase() ?? 'pending';
-              // Only show confirmed/paid group parties in ticket pocket
-              if (gpStatus != 'confirmed' && gpStatus != 'paid') continue;
-
-              final key = 'gp_${gp['id']}';
-              final rawAmount = gp['totalAmount'] ?? gp['tableBookingCharge'];
-              final double parsedAmount = double.tryParse(rawAmount?.toString() ?? '') ?? 0.0;
-
-              // Build eventStartAt and eventEndAt for timeline bar
-              String? eventStartAt;
-              String? eventEndAt;
-              final rawPartyDate = gp['partyDate'];
-              if (rawPartyDate != null) {
-                try {
-                  final partyDt = DateTime.parse(rawPartyDate.toString()).toLocal();
-                  final timeStr = gp['startTime']?.toString() ?? '20:00';
-                  final parts = timeStr.split(':');
-                  final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
-                  final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-                  final eventStart = DateTime(partyDt.year, partyDt.month, partyDt.day, h, m);
-                  final eventEnd = eventStart.add(const Duration(hours: 12));
-                  eventStartAt = eventStart.toIso8601String();
-                  eventEndAt = eventEnd.toIso8601String();
-                } catch (_) {}
-              }
-
-              ticketMap[key] = {
-                'id': gp['id'],
-                'bookingId': gp['id'],
-                'ticketCode': gp['ticketCode'] ?? 'GP-${gp['id'].toString().substring(0, 8).toUpperCase()}',
-                'ticketUrl': gp['ticketUrl'],
-                'ticket_url': gp['ticketUrl'],
-                'venue': gp['venue'],
-                'venueName': gp['venue']?['name'] ?? 'Group Party Venue',
-                'status': gpStatus,
-                'bookingStatus': gpStatus,
-                'paymentStatus': gp['paymentStatus']?.toString() ?? (parsedAmount <= 0 ? 'FREE' : 'paid'),
-                'numberOfGuests': gp['numberOfFriends'] ?? 1,
-                'tablePackage': 'GROUP PARTY (${gp['numberOfFriends'] ?? 1} FRIENDS)',
-                'bookingDate': gp['partyDate'],
-                'eventStartAt': eventStartAt,
-                'eventEndAt': eventEndAt,
-                'expiresAt': eventEndAt,
-                'startTime': gp['startTime'] ?? '08:00 PM',
-                'totalAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
-                'paymentAmount': parsedAmount == 0 ? '0' : rawAmount?.toString(),
-                'createdAt': gp['createdAt'],
-                'mobileNumber': gp['mobileNumber'],
-                'optionalMobileNumber': gp['optionalMobileNumber'],
-                'foodPreference': gp['foodPreference'],
-                'drinkPreference': gp['drinkPreference'],
-                'isGroupParty': true,
-                'isSmallGroupParty': true,
-              };
-            }
-          }
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
         }
       }
     } catch (e) {
-      debugPrint('fetchAllUserTickets group parties error: $e');
+      debugPrint('fetchAllUserTickets error: $e');
     }
-
-    // 3. Fetch user party plans (confirmed / matched)
-    try {
-      final myPlans = await fetchMyPartyPlans();
-      for (final plan in myPlans) {
-        final status = plan['status']?.toString().toLowerCase();
-        if (status == 'confirmed' || status == 'active' || status == 'booked') {
-          final key = 'plan_${plan['id']}';
-          
-          final rawDateTime = plan['planDateTime'] ?? plan['eventDateTime'] ?? plan['planDate'] ?? plan['partyDate'] ?? plan['bookingDate'] ?? plan['eventDate'] ?? plan['date'];
-          String bDate = '';
-          String sTime = plan['eventTime'] ?? plan['time'] ?? '08:00 PM';
-          
-          if (rawDateTime != null) {
-            try {
-              final dt = DateTime.parse(rawDateTime.toString()).toLocal();
-              bDate = dt.toIso8601String().split('T')[0];
-              sTime = DateFormat('hh:mm a').format(dt);
-            } catch (_) {
-              bDate = rawDateTime.toString().split('T')[0];
-            }
-          }
-
-          ticketMap[key] = {
-            'id': plan['id'],
-            'bookingId': plan['id'],
-            'ticketCode': plan['ticketCode'] ?? 'PP-${plan['id'].toString().substring(0, 8)}',
-            'venue': plan['venue'],
-            'venueName': plan['venue']?['name'] ?? plan['venueName'] ?? 'Party Venue',
-            'status': status,
-            'bookingStatus': status,
-            'numberOfGuests': (plan['selectedUserIds'] is List ? (plan['selectedUserIds'] as List).length : 2),
-            'tablePackage': 'PARTY PLAN MATCH',
-            'bookingDate': bDate,
-            'startTime': sTime,
-            'totalAmount': plan['depositAmount'] ?? 198,
-            'createdAt': plan['createdAt'],
-            'isPartyPlan': true,
-          };
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchAllUserTickets party plans error: $e');
-    }
-
-    // 4. Fetch Strangers Meet Requests created by the user
-    try {
-      final myMeets = await fetchMyStrangersMeetRequests();
-      for (final sm in myMeets) {
-        final status = sm.status.toLowerCase();
-        final payStatus = sm.paymentStatus.toLowerCase();
-        if (payStatus == 'paid' || status == 'approved' || status == 'confirmed') {
-          final key = 'sm_host_${sm.id}';
-          ticketMap[key] = {
-            'id': sm.id,
-            'bookingId': sm.id,
-            'ticketCode': sm.ticketId ?? 'SM-${sm.id.substring(0, 8)}',
-            'venue': sm.venue,
-            'venueName': sm.venue?['name'] ?? 'Stranger Meet Venue',
-            'status': sm.status.toLowerCase(),
-            'bookingStatus': sm.status.toLowerCase(),
-            'numberOfGuests': sm.numberOfPersons,
-            'tablePackage': 'STRANGER MEET HOST',
-            'bookingDate': sm.eventDateTime.toIso8601String().split('T')[0],
-            'startTime': DateFormat('hh:mm a').format(sm.eventDateTime),
-            'totalAmount': sm.paymentAmount ?? 0.0,
-            'createdAt': sm.createdAt?.toIso8601String(),
-            'isStrangerMeet': true,
-            'ticketUrl': sm.ticketUrl,
-          };
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchAllUserTickets strangers meets error: $e');
-    }
-
-    // 5. Fetch Strangers Meets joined by the user
-    try {
-      final joinedMeets = await fetchJoinedStrangersMeets();
-      for (final sm in joinedMeets) {
-        final userJoiner = sm.joiners?.firstWhere(
-          (j) => j['userId'] == userId && (j['paymentStatus'] == 'paid' || j['status'] == 'paid' || j['status'] == 'accepted'),
-          orElse: () => null,
-        );
-        if (userJoiner != null) {
-          final key = 'sm_join_${sm.id}';
-          ticketMap[key] = {
-            'id': sm.id,
-            'bookingId': sm.id,
-            'ticketCode': sm.ticketId ?? 'SMJ-${sm.id.substring(0, 8)}',
-            'venue': sm.venue,
-            'venueName': sm.venue?['name'] ?? 'Stranger Meet Venue',
-            'status': sm.status.toLowerCase(),
-            'bookingStatus': sm.status.toLowerCase(),
-            'numberOfGuests': 1,
-            'tablePackage': 'STRANGER MEET GUEST',
-            'bookingDate': sm.eventDateTime.toIso8601String().split('T')[0],
-            'startTime': DateFormat('hh:mm a').format(sm.eventDateTime),
-            'totalAmount': userJoiner['paymentAmount'] ?? sm.chargesPerHead,
-            'createdAt': sm.createdAt?.toIso8601String(),
-            'isStrangerMeet': true,
-            'ticketUrl': sm.ticketUrl,
-          };
-        }
-      }
-    } catch (e) {
-      debugPrint('fetchAllUserTickets joined strangers meets error: $e');
-    }
-
-    final List<Map<String, dynamic>> results = ticketMap.values.toList();
-    results.sort((a, b) {
-      final da = DateTime.tryParse(a['createdAt']?.toString() ?? a['bookingDate']?.toString() ?? '') ?? DateTime(0);
-      final db = DateTime.tryParse(b['createdAt']?.toString() ?? b['bookingDate']?.toString() ?? '') ?? DateTime(0);
-      return db.compareTo(da);
-    });
-
-    return results;
+    return [];
   }
 
 
@@ -4009,6 +3831,22 @@ class ApiService {
       }
     } catch (e) {
       debugPrint('verifyGroupPartyPayment error: $e');
+    }
+    return false;
+  }
+
+  static Future<bool> cancelPendingGroupParty(String groupPartyId) async {
+    try {
+      final response = await post(
+        '/api/mobile/group-parties/cancel-pending',
+        body: {'partyId': groupPartyId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('cancelPendingGroupParty error: $e');
     }
     return false;
   }

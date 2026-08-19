@@ -2316,48 +2316,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           fit: StackFit.expand,
           children: [
             if (hideVenue)
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
+              Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/images/secretimag.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                          border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 2),
-                        ),
-                        child: const Icon(Icons.lock_rounded, color: Colors.white, size: 44),
+                  Container(color: Colors.black.withValues(alpha: 0.45)),
+                ],
+              ),
+            if (hideVenue)
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.5), width: 2),
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'SECRET VENUE 🔒',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 2,
-                        ),
+                      child: const Icon(Icons.lock_rounded, color: Colors.white, size: 44),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'SECRET VENUE 🔒',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Photo & exact location revealed upon host approval',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Photo & exact location revealed upon host approval',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               )
             else

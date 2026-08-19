@@ -667,6 +667,11 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     ],
                     where: {
                         user2Id: { [Op.in]: allUserIds },
+                        // Same status filter as the superlike count below —
+                        // without it, this counted every swipe including
+                        // 'declined' (nope) and stale 'expired' rows, inflating
+                        // the displayed likes-received total.
+                        status: { [Op.in]: ['pending', 'connected'] },
                         createdAt: { [Op.gte]: recencyDate }
                     },
                     group: ['user2Id']
@@ -1642,41 +1647,44 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     } catch (planErr) {
                         logger.warn('[swipeUser] Failed to fetch sender posted plans:', planErr);
                     }
+                }
 
-                    // Persist DB notification record idempotently
-                    try {
-                        await Notification.findOrCreate({
-                            where: {
-                                recipientUserId: targetUserId,
-                                entityType: 'user_match',
-                                entityId: match.id,
+                // Persist DB notification record idempotently for BOTH like and
+                // superlike — previously only superlike was persisted, so a
+                // plain like left no durable trace for a recipient who was
+                // offline with no FCM token registered at the moment it fired.
+                try {
+                    await Notification.findOrCreate({
+                        where: {
+                            recipientUserId: targetUserId,
+                            entityType: 'user_match',
+                            entityId: match.id,
+                        },
+                        defaults: {
+                            recipientUserId: targetUserId,
+                            actorUserId: currentUser.id,
+                            title,
+                            body,
+                            category: isSuper ? 'super_like' : 'likes',
+                            eventType: isSuper ? 'super_like' : 'like',
+                            actionType: 'view_profile',
+                            entityType: 'user_match',
+                            entityId: match.id,
+                            isRead: false,
+                            priority: (isSuper ? 'HIGH' : 'NORMAL') as any,
+                            deepLink: `/profile/${currentUser.id}`,
+                            metadata: {
+                                matchId: match.id,
+                                senderId: currentUser.id,
+                                senderName,
+                                senderImage: currentUser.profileImageUrl || '',
+                                postedPlans,
+                                action: isSuper ? 'superlike' : 'like',
                             },
-                            defaults: {
-                                recipientUserId: targetUserId,
-                                actorUserId: currentUser.id,
-                                title,
-                                body,
-                                category: 'super_like',
-                                eventType: 'super_like',
-                                actionType: 'view_profile',
-                                entityType: 'user_match',
-                                entityId: match.id,
-                                isRead: false,
-                                priority: 'HIGH' as any,
-                                deepLink: `/profile/${currentUser.id}`,
-                                metadata: {
-                                    matchId: match.id,
-                                    senderId: currentUser.id,
-                                    senderName,
-                                    senderImage: currentUser.profileImageUrl || '',
-                                    postedPlans,
-                                    action: 'superlike',
-                                },
-                            }
-                        });
-                    } catch (dbNotifErr) {
-                        logger.warn('[swipeUser] Failed to persist superlike notification:', dbNotifErr);
-                    }
+                        }
+                    });
+                } catch (dbNotifErr) {
+                    logger.warn('[swipeUser] Failed to persist like/superlike notification:', dbNotifErr);
                 }
 
                 const { io } = require('../server');

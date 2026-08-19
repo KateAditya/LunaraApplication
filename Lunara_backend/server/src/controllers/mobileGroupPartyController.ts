@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Op } from 'sequelize';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
@@ -109,12 +110,32 @@ export const verifyPayment = async (req: Request, res: Response): Promise<void> 
     }
 };
 
+export const cancelPendingGroupParty = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const partyId = id || req.body.partyId || req.body.id;
+        if (!partyId) {
+            res.status(400).json({ success: false, message: 'Party ID is required' });
+            return;
+        }
+
+        const success = await GroupPartyService.cancelPendingParty(partyId, req.user!.id);
+        res.json({ success, message: success ? 'Pending group party cancelled successfully' : 'No pending group party found to cancel' });
+    } catch (err: any) {
+        logger.error('cancelPendingGroupParty error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 export const getMyGroupParties = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user!.id;
 
         const groupParties = await GroupParty.findAll({
-            where: { userId },
+            where: {
+                userId,
+                status: { [Op.ne]: GroupPartyStatus.CANCELLED }
+            },
             include: [
                 {
                     model: Venue,

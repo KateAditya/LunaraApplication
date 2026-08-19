@@ -22,6 +22,13 @@ export const getAdminGroupParties = async (req: Request, res: Response): Promise
             } else {
                 where.status = status;
             }
+        } else {
+            // Default: Only display genuine confirmed/paid bookings in admin view
+            // (exclude incomplete pending drafts and cancelled attempts)
+            where[Op.or] = [
+                { status: 'confirmed' },
+                { paymentStatus: 'paid' }
+            ];
         }
         if (paymentStatus) where.paymentStatus = paymentStatus;
 

@@ -1123,7 +1123,11 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
         }
         await request.reload();
 
-        // Send notifications via push and socket
+        // Notifications — same canonical DB+push+socket pattern used
+        // elsewhere in this file, instead of the previous bespoke
+        // notification_created-only emits (no DB persistence, so none of
+        // these showed in the Notification Center and were lost if the
+        // recipient wasn't connected at the moment they fired).
         try {
             const host = await User.findByPk(request.userId);
             const participant = await User.findByPk(joiner.userId);
@@ -1131,64 +1135,30 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             const venueName = venue?.name || 'Venue';
 
             if (participant) {
-                if (participant.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(participant.fcmToken, {
-                        title: '💳 Payment Successful',
-                        body: `Your payment of ₹${request.chargesPerHead} for "${request.subject}" was successful!`,
-                        data: {
-                            type: 'strangers_meet_payment_success',
-                            requestId: request.id,
-                        }
-                    });
-                }
-
-                // Emit socket event to participant
-                const { io } = require('../server');
-                io.to(`user_${joiner.userId}`).emit('notification_created', {
-                    id: `sm_payment_success_${joiner.id}`,
-                    title: 'Booking Confirmed',
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: joiner.userId,
+                    eventType: 'strangers_meet_payment_success',
+                    title: '💳 Payment Successful',
                     body: `Your payment for "${request.subject}" at ${venueName} was successful. Spot confirmed!`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: {
-                        type: 'strangers_meet_payment_success',
-                        requestId: request.id,
-                    }
+                    entityId: request.id,
+                    metadata: { requestId: request.id, joinerId: joiner.id },
                 });
             }
 
             if (host && participant) {
-                if (host.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(host.fcmToken, {
-                        title: '👥 New Participant Joined',
-                        body: `${participant.firstName} paid and joined your "${request.subject}" meet.`,
-                        data: {
-                            type: 'strangers_meet_participant_joined',
-                            requestId: request.id,
-                        }
-                    });
-                }
-
-                // Emit socket event to host
-                const { io } = require('../server');
-                io.to(`user_${request.userId}`).emit('notification_created', {
-                    id: `sm_incoming_${joiner.id}`,
-                    title: 'Participant Joined',
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: request.userId,
+                    eventType: 'strangers_meet_participant_joined',
+                    title: '👥 New Participant Joined',
                     body: `${participant.firstName} ${participant.lastName} paid and joined your "${request.subject}" meet.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    sender: {
-                        id: participant.id,
-                        firstName: participant.firstName,
-                        lastName: participant.lastName,
-                        profileImageUrl: participant.profileImageUrl,
-                    },
-                    data: {
-                        type: 'strangers_meet_participant_joined',
+                    entityId: request.id,
+                    metadata: {
                         requestId: request.id,
-                    }
+                        joinerId: joiner.id,
+                        participantId: participant.id,
+                        participantName: `${participant.firstName} ${participant.lastName}`,
+                        participantPhoto: participant.profileImageUrl,
+                    },
                 });
             }
 
@@ -1197,30 +1167,13 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
                 where: { strangersMeetRequestId: request.id, paymentStatus: 'paid' }
             });
             if (paidCount >= request.numberOfPersons && host) {
-                if (host.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(host.fcmToken, {
-                        title: '🔥 Stranger Meet Full!',
-                        body: `Your Stranger Meet "${request.subject}" has reached full capacity of ${request.numberOfPersons} persons!`,
-                        data: {
-                            type: 'strangers_meet_full',
-                            requestId: request.id,
-                        }
-                    });
-                }
-
-                // Emit socket event for meet full
-                const { io } = require('../server');
-                io.to(`user_${request.userId}`).emit('notification_created', {
-                    id: `sm_full_${request.id}`,
-                    title: 'Stranger Meet Full!',
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: request.userId,
+                    eventType: 'strangers_meet_full',
+                    title: '🔥 Stranger Meet Full!',
                     body: `Your Stranger Meet "${request.subject}" has reached full capacity of ${request.numberOfPersons} persons!`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: {
-                        type: 'strangers_meet_full',
-                        requestId: request.id,
-                    }
+                    entityId: request.id,
+                    metadata: { requestId: request.id },
                 });
             }
         } catch (notifErr: any) {
@@ -1441,42 +1394,27 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
             });
         }
 
-        // Notify host via push and socket
+        // Notify host — same canonical DB+push+socket pattern used by
+        // accept/reject below, instead of the previous bespoke
+        // notification_created-only emit (which left no DB Notification
+        // row, so it never showed in the persisted Notification Center and
+        // was lost entirely if the host wasn't connected at the moment it fired).
         try {
-            const host = await User.findByPk(request.userId);
             const requester = await User.findByPk(userId);
             if (requester) {
-                if (host?.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(host.fcmToken, {
-                        title: '✨ Join Request Received',
-                        body: `${requester.firstName} wants to join your "${request.subject}" meet.`,
-                        data: {
-                            type: 'strangers_meet_join_request',
-                            requestId: request.id,
-                            joinerId: joiner.id,
-                        }
-                    });
-                }
-
-                // Emit socket event notification_created
-                const { io } = require('../server');
-                io.to(`user_${request.userId}`).emit('notification_created', {
-                    id: `sm_incoming_${joiner.id}`,
-                    title: 'New Join Request',
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: request.userId,
+                    eventType: 'strangers_meet_join_request',
+                    title: '✨ Join Request Received',
                     body: `${requester.firstName} ${requester.lastName} requested to join your "${request.subject}" meet.`,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    sender: {
-                        id: requester.id,
-                        firstName: requester.firstName,
-                        lastName: requester.lastName,
-                        profileImageUrl: requester.profileImageUrl,
-                    },
-                    data: {
-                        type: 'strangers_meet_join_request',
+                    entityId: request.id,
+                    metadata: {
                         requestId: request.id,
-                    }
+                        joinerId: joiner.id,
+                        requesterId: requester.id,
+                        requesterName: `${requester.firstName} ${requester.lastName}`,
+                        requesterPhoto: requester.profileImageUrl,
+                    },
                 });
             }
         } catch (notifErr: any) {

@@ -27,6 +27,11 @@ class PaymentConfirmationScreen extends StatefulWidget {
   final String? razorpayKeyId;
   final String? mobileNumber;
   final String? optionalMobileNumber;
+  final Future<bool> Function()? onCustomWalletPayment;
+  final Future<void> Function()? onCustomDirectPayment;
+  final Future<void> Function(double shortfallAmount)? onCustomHybridPayment;
+  final Future<void> Function()? onPaymentCancelled;
+  final Widget Function(BuildContext)? ticketScreenBuilder;
 
   const PaymentConfirmationScreen({
     super.key,
@@ -46,6 +51,11 @@ class PaymentConfirmationScreen extends StatefulWidget {
     this.razorpayKeyId,
     this.mobileNumber,
     this.optionalMobileNumber,
+    this.onCustomWalletPayment,
+    this.onCustomDirectPayment,
+    this.onCustomHybridPayment,
+    this.onPaymentCancelled,
+    this.ticketScreenBuilder,
   });
 
   @override
@@ -130,9 +140,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       _isProcessingDialogOpen = false;
       Navigator.pop(context); // Close the processing dialog
     }
+    if (widget.onPaymentCancelled != null) {
+      widget.onPaymentCancelled!();
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Payment failed: ${response.message}')),
+        SnackBar(content: Text('Payment cancelled / failed: ${response.message}')),
       );
     }
   }
@@ -153,29 +166,37 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 12),
-                    _buildSummaryCard(),
-                    const SizedBox(height: 32),
-                    _buildWarningSection(),
-                    const SizedBox(height: 32),
-                  ],
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop && widget.onPaymentCancelled != null) {
+          widget.onPaymentCancelled!();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(context),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 12),
+                      _buildSummaryCard(),
+                      const SizedBox(height: 32),
+                      _buildWarningSection(),
+                      const SizedBox(height: 32),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            _buildFooter(context),
-          ],
+              _buildFooter(context),
+            ],
+          ),
         ),
       ),
     );
@@ -188,7 +209,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              if (widget.onPaymentCancelled != null) {
+                widget.onPaymentCancelled!();
+              }
+              Navigator.pop(context);
+            },
           ),
           const Expanded(
             child: Center(
@@ -532,6 +558,18 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       subtitle: widget.package,
       itemPrice: itemPrice,
       onWalletPayment: () async {
+        if (widget.onCustomWalletPayment != null) {
+          final success = await widget.onCustomWalletPayment!();
+          if (success && mounted && widget.ticketScreenBuilder != null) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: widget.ticketScreenBuilder!),
+              (route) => route.isFirst,
+            );
+          }
+          return success;
+        }
+
         final res = await ApiService.payWithWallet(
           amount: itemPrice,
           bookingId: widget.bookingId,
@@ -559,6 +597,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             );
             if (widget.package == 'Party Plan Safety Deposit') {
               Navigator.pop(context);
+            } else if (widget.ticketScreenBuilder != null) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: widget.ticketScreenBuilder!),
+                (route) => route.isFirst,
+              );
             } else {
               Navigator.pushReplacement(
                 context,
@@ -589,9 +633,17 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         return false;
       },
       onDirectPayment: () async {
+        if (widget.onCustomDirectPayment != null) {
+          await widget.onCustomDirectPayment!();
+          return;
+        }
         _executeDirectRazorpay(amountInPaise);
       },
       onHybridPayment: (shortfallAmount) async {
+        if (widget.onCustomHybridPayment != null) {
+          await widget.onCustomHybridPayment!(shortfallAmount);
+          return;
+        }
         final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
         if (orderData != null) {
           final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';

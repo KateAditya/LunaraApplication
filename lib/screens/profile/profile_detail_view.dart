@@ -14,8 +14,10 @@ class ProfileDetailView extends StatefulWidget {
   final User user;
   final bool isMe;
   final VoidCallback? onNope;
-  final VoidCallback? onLike;
-  final VoidCallback? onSuper;
+  // Returns a Future so this widget can wait for the real server-confirmed
+  // outcome before showing the liked/superliked state, instead of guessing.
+  final Future<void> Function()? onLike;
+  final Future<void> Function()? onSuper;
   final VoidCallback? onBacktrack;
   final bool canBacktrack;
 
@@ -52,6 +54,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   late User _currentUser;
   String? _localSwipedAction;
   bool _isLoadingSwipeStatus = false;
+  bool _isLikeProcessing = false;
+  bool _isSuperProcessing = false;
 
   @override
   void initState() {
@@ -1121,16 +1125,30 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     color: Colors.white,
                   ),
                   iconSize: isLiked ? 34 : 32,
-                  // Only allow tap if not already liked/superliked AND not limit-hit
-                  onPressed: (isActed || likeDisabled)
+                  // Only allow tap if not already liked/superliked, not limit-hit,
+                  // and not already waiting on a previous tap's result.
+                  onPressed: (isActed || likeDisabled || _isLikeProcessing)
                       ? null
                       : () async {
                           if (widget.onLike != null) {
-                            setState(() => _localSwipedAction = 'like');
-                            widget.onLike!.call();
+                            // Delegate to the parent's handler and wait for its
+                            // real, server-confirmed outcome — never mark this
+                            // button as liked ourselves. The parent updates
+                            // `swipedAction` on success, which this widget
+                            // picks up via didUpdateWidget; on failure (e.g.
+                            // limit reached) nothing here changes, so the
+                            // button correctly stays un-liked.
+                            setState(() => _isLikeProcessing = true);
+                            try {
+                              await widget.onLike!.call();
+                            } finally {
+                              if (mounted) setState(() => _isLikeProcessing = false);
+                            }
                           } else {
+                            setState(() => _isLikeProcessing = true);
                             final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
                             if (!mounted) return;
+                            setState(() => _isLikeProcessing = false);
                             if (res == null || res['limitReached'] == true) {
                               showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
                               return;
@@ -1214,16 +1232,25 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  // Allow tap if: not already superliked, AND (not acted at all OR user only liked — to upgrade)
-                  onPressed: (isSuperLiked || superLikeDisabled)
+                  // Allow tap if: not already superliked, AND (not acted at all OR user only liked — to upgrade), AND not already processing.
+                  onPressed: (isSuperLiked || superLikeDisabled || _isSuperProcessing)
                       ? null
                       : () async {
                           if (widget.onSuper != null) {
-                            setState(() => _localSwipedAction = 'superlike');
-                            widget.onSuper!.call();
+                            // Delegate to the parent's handler and wait for its
+                            // real, server-confirmed outcome — same reasoning
+                            // as the Like button above.
+                            setState(() => _isSuperProcessing = true);
+                            try {
+                              await widget.onSuper!.call();
+                            } finally {
+                              if (mounted) setState(() => _isSuperProcessing = false);
+                            }
                           } else {
+                            setState(() => _isSuperProcessing = true);
                             final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
                             if (!mounted) return;
+                            setState(() => _isSuperProcessing = false);
                             if (res == null || res['limitReached'] == true) {
                               showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
                               return;

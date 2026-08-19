@@ -111,9 +111,14 @@ export class SubscriptionService {
             }
         );
 
-        // 2. See if there is any CURRENTLY active subscription
+        // 2. See if there is any CURRENTLY active PAID subscription.
+        // Excludes the lifetime FREE-tier stub (created for à-la-carte
+        // credit purchases before ever subscribing, endDate ~2099,
+        // status ACTIVE) — otherwise its permanent presence would block
+        // every queued UPCOMING paid subscription from ever activating.
         const activeSub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE }
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         if (!activeSub) {

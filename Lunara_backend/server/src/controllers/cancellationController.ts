@@ -9,8 +9,8 @@ import Ticket, { TicketStatus } from '../models/Ticket';
 import Payment, { PaymentMethod } from '../models/Payment';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
-import SmartWallet from '../models/SmartWallet';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
+import { WalletService } from '../services/walletService';
 import ReliabilityHistory from '../models/ReliabilityHistory';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
@@ -471,36 +471,39 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             });
             let hostWalletTxId: string | null = null;
             if (!existingHostCredit) {
-                const hostWallet = await SmartWallet.findOne({ where: { userId: lockedPlan.userId }, transaction: t });
-                if (hostWallet) {
-                    const hOld = Number(hostWallet.balance || 0);
-                    const hNew = hOld + hostDeposit;
-                    await hostWallet.update({
-                        balance: hNew,
-                        lifetimeRefunds: Number(hostWallet.lifetimeRefunds || 0) + hostDeposit,
-                    }, { transaction: t });
-                    const hostTx = await WalletTransaction.logTransaction({
-                        walletId: hostWallet.id,
-                        userId: lockedPlan.userId,
-                        partyPlanId: lockedPlan.id,
-                        amount: hostDeposit,
-                        openingBalance: hOld,
-                        closingBalance: hNew,
-                        transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
-                        status: WalletTransactionStatus.SUCCESS,
-                        reference: hostCreditRef,
-                        source: 'party_plan_cancellation',
-                        metadata: {
-                            cancellationId: cancellationRequest.id,
-                            role: 'host',
-                            reason: cancellationRequest.reason,
-                            creditType: 'commitment_deposit',
-                        },
-                    }, t);
-                    hostWalletTxId = hostTx.id;
-                    // Keep User.walletBalance in sync
-                    await User.update({ walletBalance: hNew }, { where: { id: lockedPlan.userId }, transaction: t });
-                }
+                // getOrCreateWallet (rather than a plain findOne) so a host who
+                // paid their deposit via Razorpay and never opened the Wallet
+                // screen — and so never had a SmartWallet row provisioned —
+                // still actually receives their refund instead of it being
+                // silently skipped.
+                const hostWallet = await WalletService.getOrCreateWallet(lockedPlan.userId, t);
+                const hOld = Number(hostWallet.balance || 0);
+                const hNew = hOld + hostDeposit;
+                await hostWallet.update({
+                    balance: hNew,
+                    lifetimeRefunds: Number(hostWallet.lifetimeRefunds || 0) + hostDeposit,
+                }, { transaction: t });
+                const hostTx = await WalletTransaction.logTransaction({
+                    walletId: hostWallet.id,
+                    userId: lockedPlan.userId,
+                    partyPlanId: lockedPlan.id,
+                    amount: hostDeposit,
+                    openingBalance: hOld,
+                    closingBalance: hNew,
+                    transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
+                    status: WalletTransactionStatus.SUCCESS,
+                    reference: hostCreditRef,
+                    source: 'party_plan_cancellation',
+                    metadata: {
+                        cancellationId: cancellationRequest.id,
+                        role: 'host',
+                        reason: cancellationRequest.reason,
+                        creditType: 'commitment_deposit',
+                    },
+                }, t);
+                hostWalletTxId = hostTx.id;
+                // Keep User.walletBalance in sync
+                await User.update({ walletBalance: hNew }, { where: { id: lockedPlan.userId }, transaction: t });
             } else {
                 hostWalletTxId = existingHostCredit.id;
                 logger.info(`[CancellationApprove] Host wallet credit already exists (idempotent): ${hostCreditRef}`);
@@ -513,35 +516,34 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             });
             let joinerWalletTxId: string | null = null;
             if (!existingJoinerCredit) {
-                const joinerWallet = await SmartWallet.findOne({ where: { userId: joinerId }, transaction: t });
-                if (joinerWallet) {
-                    const jOld = Number(joinerWallet.balance || 0);
-                    const jNew = jOld + joinerDeposit;
-                    await joinerWallet.update({
-                        balance: jNew,
-                        lifetimeRefunds: Number(joinerWallet.lifetimeRefunds || 0) + joinerDeposit,
-                    }, { transaction: t });
-                    const joinerTx = await WalletTransaction.logTransaction({
-                        walletId: joinerWallet.id,
-                        userId: joinerId,
-                        partyPlanId: lockedPlan.id,
-                        amount: joinerDeposit,
-                        openingBalance: jOld,
-                        closingBalance: jNew,
-                        transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
-                        status: WalletTransactionStatus.SUCCESS,
-                        reference: joinerCreditRef,
-                        source: 'party_plan_cancellation',
-                        metadata: {
-                            cancellationId: cancellationRequest.id,
-                            role: 'joiner',
-                            reason: cancellationRequest.reason,
-                            creditType: 'commitment_deposit',
-                        },
-                    }, t);
-                    joinerWalletTxId = joinerTx.id;
-                    await User.update({ walletBalance: jNew }, { where: { id: joinerId }, transaction: t });
-                }
+                // Same getOrCreateWallet reasoning as the host credit above.
+                const joinerWallet = await WalletService.getOrCreateWallet(joinerId, t);
+                const jOld = Number(joinerWallet.balance || 0);
+                const jNew = jOld + joinerDeposit;
+                await joinerWallet.update({
+                    balance: jNew,
+                    lifetimeRefunds: Number(joinerWallet.lifetimeRefunds || 0) + joinerDeposit,
+                }, { transaction: t });
+                const joinerTx = await WalletTransaction.logTransaction({
+                    walletId: joinerWallet.id,
+                    userId: joinerId,
+                    partyPlanId: lockedPlan.id,
+                    amount: joinerDeposit,
+                    openingBalance: jOld,
+                    closingBalance: jNew,
+                    transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
+                    status: WalletTransactionStatus.SUCCESS,
+                    reference: joinerCreditRef,
+                    source: 'party_plan_cancellation',
+                    metadata: {
+                        cancellationId: cancellationRequest.id,
+                        role: 'joiner',
+                        reason: cancellationRequest.reason,
+                        creditType: 'commitment_deposit',
+                    },
+                }, t);
+                joinerWalletTxId = joinerTx.id;
+                await User.update({ walletBalance: jNew }, { where: { id: joinerId }, transaction: t });
             } else {
                 joinerWalletTxId = existingJoinerCredit.id;
                 logger.info(`[CancellationApprove] Joiner wallet credit already exists (idempotent): ${joinerCreditRef}`);

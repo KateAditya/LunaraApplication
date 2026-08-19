@@ -15,7 +15,7 @@ import { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/
 import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import SubscriptionTransaction from '../models/SubscriptionTransaction';
-import SubscriptionPackage from '../models/SubscriptionPackage';
+import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import WalletTransaction from '../models/WalletTransaction';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1080,8 +1080,15 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
             order: [['endDate', 'DESC']]
         });
         
+        // Exclude the lifetime FREE-tier stub subscription (created by
+        // findOrCreateSubscriptionForCredit for à-la-carte credit purchases,
+        // endDate ~2099) from counting as "an active plan to stack behind" —
+        // otherwise every real purchase after ever buying a single boost/
+        // superlike credit gets queued as UPCOMING for the year 2099 and can
+        // never activate.
         const activeSubForDate = await UserSubscriptionModel.findOne({
-            where: { userId, status: SubscriptionStatusEnum.ACTIVE, endDate: { [Op.gt]: new Date() } }
+            where: { userId, status: SubscriptionStatusEnum.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         const startDate = new Date();

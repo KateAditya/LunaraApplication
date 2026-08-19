@@ -114,6 +114,21 @@ export class GroupPartyService {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date or timing');
         }
 
+        // Clear out the user's own abandoned/unpaid attempt(s) for this exact
+        // date before checking conflict or creating lock.
+        const staleSameDayParties = await GroupParty.findAll({
+            where: {
+                userId,
+                partyDate: new Date(partyDate),
+                status: GroupPartyStatus.PENDING,
+                paymentStatus: { [Op.ne]: GroupPartyPaymentStatus.PAID },
+            },
+        });
+        for (const stale of staleSameDayParties) {
+            await stale.update({ status: GroupPartyStatus.CANCELLED, paymentStatus: GroupPartyPaymentStatus.FAILED });
+            await PlanEligibilityService.releaseLock(stale.id);
+        }
+
         // Check user booking conflict for date
         const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate);
         if (bookingConflictMsg) {
@@ -123,25 +138,6 @@ export class GroupPartyService {
         const partyType = this.resolvePartyType(numberOfFriends, venue.capacity || 500);
 
         if (partyType === PartyType.SMALL) {
-            // Clear out the user's own abandoned/unpaid attempt(s) for this exact
-            // date before retrying. A PlanTimeLock is created as soon as the
-            // PENDING GroupParty row exists — before payment ever completes —
-            // so a dismissed Razorpay sheet or a failed wallet debit would
-            // otherwise leave a stale lock that rejects every subsequent retry
-            // (wallet or gateway) as "already have a plan scheduled" for hours.
-            const staleSameDayParties = await GroupParty.findAll({
-                where: {
-                    userId,
-                    partyDate: new Date(partyDate),
-                    status: GroupPartyStatus.PENDING,
-                    paymentStatus: { [Op.ne]: GroupPartyPaymentStatus.PAID },
-                },
-            });
-            for (const stale of staleSameDayParties) {
-                await stale.update({ status: GroupPartyStatus.CANCELLED });
-                await PlanEligibilityService.releaseLock(stale.id);
-            }
-
             // SMALL PARTY FLOW
             const pricing = await this.calculateAuthoritativePricing(venueId, numberOfFriends);
             
@@ -319,6 +315,38 @@ export class GroupPartyService {
         this.emitNotifications(groupParty.userId, venue?.name || 'Venue', 'small_paid', groupParty.id, groupParty.numberOfFriends);
 
         return groupParty;
+    }
+
+    /**
+     * Cancel an uncompleted/pending group party payment attempt and release any time locks immediately.
+     */
+    public static async cancelPendingParty(partyId: string, userId: string): Promise<boolean> {
+        try {
+            const groupParty = await GroupParty.findOne({
+                where: {
+                    id: partyId,
+                    userId,
+                    status: GroupPartyStatus.PENDING,
+                    paymentStatus: { [Op.ne]: GroupPartyPaymentStatus.PAID },
+                }
+            });
+
+            if (!groupParty) {
+                return false;
+            }
+
+            await groupParty.update({
+                status: GroupPartyStatus.CANCELLED,
+                paymentStatus: GroupPartyPaymentStatus.FAILED
+            });
+
+            await PlanEligibilityService.releaseLock(partyId);
+            logger.info(`[GroupPartyService] Cancelled pending GroupParty ${partyId} and released lock for user ${userId}`);
+            return true;
+        } catch (err: any) {
+            logger.error(`[GroupPartyService] Error cancelling pending GroupParty ${partyId}:`, err);
+            return false;
+        }
     }
 
     /**

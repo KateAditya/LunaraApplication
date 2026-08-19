@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { authenticate } from '../middleware/auth';
-import { calculatePricing, createGroupParty, verifyPayment, getMyGroupParties, getGroupPartyTicket } from '../controllers/mobileGroupPartyController';
+import { calculatePricing, createGroupParty, verifyPayment, getMyGroupParties, getGroupPartyTicket, cancelPendingGroupParty } from '../controllers/mobileGroupPartyController';
 
 const router = Router();
 
 router.get('/', authenticate, getMyGroupParties);
 router.get('/:id/ticket', authenticate, getGroupPartyTicket);
+router.post('/cancel-pending', authenticate, cancelPendingGroupParty);
+router.delete('/:id/cancel', authenticate, cancelPendingGroupParty);
 
 router.post(
     '/calculate-pricing',

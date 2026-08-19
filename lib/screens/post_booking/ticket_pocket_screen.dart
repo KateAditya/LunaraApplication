@@ -239,7 +239,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (status == 'pending') return 'PENDING';
       return 'CONFIRMED';
     } else {
-      if (status == 'completed') return 'USED';
+      if (status == 'completed' || status == 'used') return 'USED';
       return 'EXPIRED';
     }
   }

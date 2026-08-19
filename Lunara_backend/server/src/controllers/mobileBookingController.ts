@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
+import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
+import PartyPlanRequest, { PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
@@ -647,26 +649,90 @@ export const listMyBookings = async (req: Request, res: Response) => {
     try {
         const userId = req.user!.id;
 
-        const bookings = await Booking.findAll({
-            where: { userId },
+        const venueInclude = {
+            model: Venue,
+            as: 'venue',
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
             include: [
                 {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
-                    include: [
-                        {
-                            model: VenueImage,
-                            as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                        }
-                    ]
+                    model: VenueImage,
+                    as: 'images',
+                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
                 }
-            ],
+            ]
+        };
+
+        const bookings = await Booking.findAll({
+            where: { userId },
+            include: [venueInclude],
             order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
         });
 
-        return res.json({ success: true, data: bookings });
+        // "Your Nights" / booking history is meant to reflect every night the
+        // user actually paid for — but a Party Plan deposit payment only ever
+        // produces a `Booking` row lazily, once BOTH host and joiner have
+        // paid and matched, and even then that single row is stamped under
+        // the HOST's userId only. A joiner who paid their own deposit (or a
+        // host whose plan hasn't matched yet) would otherwise never see that
+        // night here despite the payment having succeeded — surface those
+        // directly from PartyPlan/PartyPlanRequest as synthesized entries,
+        // the same union pattern the Wallet screen already uses for its
+        // "Purchases" tab.
+        const hostPlans = await PartyPlan.findAll({
+            where: { userId, hostPaymentStatus: PartyPlanPaymentStatus.PAID },
+            include: [venueInclude],
+        });
+
+        const joinerRequests = await PartyPlanRequest.findAll({
+            where: { requesterId: userId, joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID },
+            include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
+        });
+
+        const synthesized: any[] = [];
+
+        for (const plan of hostPlans) {
+            const venue = (plan as any).venue;
+            const planDateTime = new Date(plan.planDateTime);
+            synthesized.push({
+                id: `party_plan_host_${plan.id}`,
+                bookingId: plan.id,
+                bookingType: 'party_plan',
+                status: plan.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                bookingDate: planDateTime.toISOString(),
+                startTime: planDateTime.toTimeString().substring(0, 5),
+                totalAmount: Number(plan.depositAmount),
+                tablePackage: 'PARTY PLAN (HOST)',
+                numberOfGuests: 2,
+                venue,
+                isPartyPlan: true,
+            });
+        }
+
+        for (const request of joinerRequests) {
+            const plan = (request as any).plan;
+            if (!plan) continue;
+            const venue = (plan as any).venue;
+            const planDateTime = new Date(plan.planDateTime);
+            synthesized.push({
+                id: `party_plan_joiner_${request.id}`,
+                bookingId: plan.id,
+                bookingType: 'party_plan',
+                status: request.status === 'cancelled' || request.status === 'rejected' ? 'cancelled' : 'confirmed',
+                bookingDate: planDateTime.toISOString(),
+                startTime: planDateTime.toTimeString().substring(0, 5),
+                totalAmount: Number(plan.depositAmount ?? 99),
+                tablePackage: 'PARTY PLAN (JOINER)',
+                numberOfGuests: 2,
+                venue,
+                isPartyPlan: true,
+            });
+        }
+
+        const combined = [...bookings.map(b => b.toJSON()), ...synthesized].sort((a, b) => {
+            return new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime();
+        });
+
+        return res.json({ success: true, data: combined });
     } catch (err: any) {
         logger.error('listMyBookings:', err);
         return res.status(500).json({ success: false, message: err.message });

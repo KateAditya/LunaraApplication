@@ -342,6 +342,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
                 final targetVenueId =
                     (plan['venueId'] ?? venue['id'])?.toString() ?? '';
+                final bool isSecretVenuePost = venue['isSecret'] == true;
 
                 // Resolve venue cover image from multiple possible fields
                 dynamic rawImg =
@@ -360,10 +361,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               : (venue['images'] as List).first)
                         : null);
 
+                // A secret-venue post still carries the venue's real id (the
+                // backend needs it for e.g. distance/city grouping) even
+                // though name/image are masked — never use that id to look
+                // up the real cover photo from the full venue directory, or
+                // the masking is trivially bypassed.
                 if ((rawImg == null ||
                         rawImg.toString().isEmpty ||
                         rawImg.toString().startsWith('Instance of')) &&
-                    targetVenueId.isNotEmpty) {
+                    targetVenueId.isNotEmpty &&
+                    !isSecretVenuePost) {
                   try {
                     final matchedV = _allVenues.firstWhere(
                       (v) => v.id == targetVenueId,
@@ -2530,14 +2537,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: LunaraNetworkImage(
-                        imageUrl: coverImageUrl,
-                        fit: BoxFit.cover,
-                        colorFilter: ColorFilter.mode(
-                          Colors.black.withValues(alpha: 0.6),
-                          BlendMode.darken,
-                        ),
-                      ),
+                      child: isSecretVenue
+                          ? Image.asset(
+                              'assets/images/secretimag.png',
+                              fit: BoxFit.cover,
+                              colorBlendMode: BlendMode.darken,
+                              color: Colors.black.withValues(alpha: 0.6),
+                            )
+                          : LunaraNetworkImage(
+                              imageUrl: coverImageUrl,
+                              fit: BoxFit.cover,
+                              colorFilter: ColorFilter.mode(
+                                Colors.black.withValues(alpha: 0.6),
+                                BlendMode.darken,
+                              ),
+                            ),
                     ),
                     Positioned.fill(
                       child: InkWell(

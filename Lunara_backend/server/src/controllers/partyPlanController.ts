@@ -25,6 +25,47 @@ import { generateTicketForBookingHelper } from '../services/ticketService';
 import { NotificationService } from '../services/NotificationService';
 import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
+import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
+// Razorpay never touch the Smart Credit Wallet balance (money went straight
+// to the gateway, not out of the wallet), so they previously left no
+// WalletTransaction row at all — only the wallet-balance-based payment path
+// did. This meant the real ledger (used by admin/analytics tooling) silently
+// missed every Razorpay-paid deposit; the mobile Wallet screen only ever
+// showed them via a separate, ad-hoc reconstruction from PartyPlan/
+// PartyPlanRequest. This logs a proper record-keeping entry (balance
+// unchanged — openingBalance === closingBalance) so every deposit payment,
+// regardless of payment method, has one real, queryable history row.
+// ─────────────────────────────────────────────────────────────────────────────
+async function logDepositLedgerEntry(params: {
+    userId: string;
+    partyPlanId: string;
+    amount: number;
+    reference: string;
+    metadata: object;
+}): Promise<void> {
+    try {
+        const wallet = await WalletService.getOrCreateWallet(params.userId);
+        const balance = Math.round(wallet.totalAvailableBalance * 100) / 100;
+        await WalletTransaction.logTransaction({
+            userId: params.userId,
+            partyPlanId: params.partyPlanId,
+            amount: params.amount,
+            openingBalance: balance,
+            closingBalance: balance,
+            transactionType: WalletTransactionType.COMMITMENT_DEPOSIT,
+            status: WalletTransactionStatus.SUCCESS,
+            reference: params.reference,
+            source: 'razorpay',
+            destination: 'party_plan_deposit',
+            metadata: params.metadata,
+        });
+    } catch (err) {
+        logger.warn('[logDepositLedgerEntry] Failed to log deposit ledger entry:', err);
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // autoOpenChat — ONLY called after MATCH_CONFIRMED. Guarded by lifecycleStatus.
@@ -1020,6 +1061,19 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                 isLive: updatedIsLive,
                 paymentStatus: 'Awaiting Participant Payment',
             });
+
+            // Only Razorpay-gateway payments need a new ledger entry here —
+            // a 'wallet_'-prefixed order id means this was already paid (and
+            // logged) via the Smart Credit Wallet balance debit path.
+            if (!razorpay_order_id || !(razorpay_order_id as string).startsWith('wallet_')) {
+                await logDepositLedgerEntry({
+                    userId: plan.userId,
+                    partyPlanId: plan.id,
+                    amount: Number(plan.depositAmount || 99),
+                    reference: razorpay_payment_id || `host_deposit_${plan.id}_${Date.now()}`,
+                    metadata: { role: 'host', partyPlanId: plan.id, razorpayPaymentId: razorpay_payment_id },
+                });
+            }
 
             // FCM push to host confirming payment
             setImmediate(async () => {
@@ -2811,10 +2865,25 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
 
             const hostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
 
+            // Only Razorpay-gateway payments need a new ledger entry — a
+            // 'wallet_'-prefixed order id means this was already paid (and
+            // logged) via the Smart Credit Wallet balance debit path.
+            const isWalletPaid = !!razorpay_order_id && (razorpay_order_id as string).startsWith('wallet_');
+
             if (hostPaid) {
                 // Both parties have paid → MATCH_CONFIRMED
                 await confirmMatch(plan, request, transaction);
                 await transaction.commit();
+
+                if (!isWalletPaid) {
+                    await logDepositLedgerEntry({
+                        userId: request.requesterId,
+                        partyPlanId: plan.id,
+                        amount: Number(plan.depositAmount || 99),
+                        reference: razorpay_payment_id || `joiner_deposit_${request.id}_${Date.now()}`,
+                        metadata: { role: 'joiner', partyPlanId: plan.id, requestId: request.id, razorpayPaymentId: razorpay_payment_id },
+                    });
+                }
 
                 res.json({ success: true, message: 'Both paid! Match Successful & Chat Opened 🎉', data: request });
             } else {
@@ -2824,6 +2893,16 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 }, { transaction });
 
                 await transaction.commit();
+
+                if (!isWalletPaid) {
+                    await logDepositLedgerEntry({
+                        userId: request.requesterId,
+                        partyPlanId: plan.id,
+                        amount: Number(plan.depositAmount || 99),
+                        reference: razorpay_payment_id || `joiner_deposit_${request.id}_${Date.now()}`,
+                        metadata: { role: 'joiner', partyPlanId: plan.id, requestId: request.id, razorpayPaymentId: razorpay_payment_id },
+                    });
+                }
 
                 // Notify host that joiner has paid and they need to pay
                 setImmediate(async () => {

@@ -229,9 +229,13 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             }
         }
 
-        // Determine transaction type
+        // Determine transaction type — exclude the lifetime FREE-tier stub
+        // subscription (created for à-la-carte credit purchases before ever
+        // subscribing) from counting as a real existing plan, same reasoning
+        // as the stacking query below.
         const existingSub = await UserSubscription.findOne({
             where: { userId, status: SubscriptionStatus.ACTIVE },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
@@ -241,9 +245,13 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             where: { userId, status: SubscriptionStatus.UPCOMING },
             order: [['endDate', 'DESC']]
         });
-        
+
+        // Same FREE-stub exclusion as `existingSub` above — otherwise this
+        // brand-new purchase gets queued as UPCOMING for the stub's ~2099
+        // endDate and can never activate.
         const activeSubForDate = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } }
+            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         const startDate = new Date();
@@ -325,10 +333,14 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
         if (packageId) {
             pkg = await SubscriptionPackage.findByPk(packageId);
         } else {
+            // Exclude the lifetime FREE-tier stub subscription — otherwise a
+            // user who bought a single à-la-carte credit before subscribing
+            // could have that stub picked as "current" and get silently
+            // renewed onto FREE instead of their real paid tier.
             const current = await UserSubscription.findOne({
                 where: { userId },
                 order: [['createdAt', 'DESC']],
-                include: [{ model: SubscriptionPackage, as: 'package' }],
+                include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
             });
             pkg = current ? (current as any).package : null;
         }
@@ -355,7 +367,8 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
         });
         
         const activeSubForDate = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } }
+            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         const startDate = new Date();

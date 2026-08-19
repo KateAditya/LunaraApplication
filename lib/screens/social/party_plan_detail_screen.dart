@@ -37,32 +37,38 @@ class _SecretVenueImagePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.lock_rounded, color: Colors.white.withValues(alpha: 0.7), size: 56),
-            const SizedBox(height: 8),
-            Text(
-              'SECRET VENUE 🔒',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                letterSpacing: 1,
-              ),
+    return Image.asset(
+      'assets/images/secretimag.png',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF2D0060), Color(0xFF0D001C)],
             ),
-          ],
-        ),
-      ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_rounded, color: Colors.white.withValues(alpha: 0.7), size: 56),
+                const SizedBox(height: 8),
+                Text(
+                  'SECRET VENUE 🔒',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

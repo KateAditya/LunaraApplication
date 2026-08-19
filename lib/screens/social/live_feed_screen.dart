@@ -1210,7 +1210,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final pendingReqs = item.rawData['pendingIncomingRequests'];
 
     if (category.contains('stranger') || category.contains('meet')) {
-      if (pendingReqs is List && pendingReqs.length > 1) {
+      // Any pending incoming join request(s) — including exactly one — must
+      // open the review modal so the host can actually accept/reject it.
+      // Previously this only triggered for >1 requests; a single pending
+      // request fell through to the status-based branch below, which reads
+      // the MEET's own admin-approval status (e.g. 'approved', since the
+      // meet is already live) rather than the joiner's request status —
+      // landing the host on the unrelated Pending/Approved meet-moderation
+      // screen with no way to review the new request at all.
+      if (pendingReqs is List && pendingReqs.isNotEmpty) {
         final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
         _showReviewStrangersMeetRequestsModal(
           Map<String, dynamic>.from(meetData),
@@ -2759,14 +2767,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       } else {
         final bool superLikedYou = planMap['superLikedYou'] == true;
-        title = superLikedYou ? '⭐ Let\'s party at $venueName!' : '🎉 Party Plan at $venueName';
-        badge = superLikedYou ? 'SUPER LIKED YOU' : 'PARTY PLAN';
-        accent = superLikedYou ? const Color(0xFF8B5CF6) : accent;
+        final bool iSuperlikedThem = planMap['iSuperlikedThem'] == true;
+        title = superLikedYou
+            ? '⭐ Let\'s party at $venueName!'
+            : (iSuperlikedThem ? '💫 $hostName just posted a plan!' : '🎉 Party Plan at $venueName');
+        badge = superLikedYou ? 'SUPER LIKED YOU' : (iSuperlikedThem ? 'YOU SUPER LIKED THEM' : 'PARTY PLAN');
+        accent = (superLikedYou || iSuperlikedThem) ? const Color(0xFF8B5CF6) : accent;
         body = superLikedYou
             ? '💜 $hostName Super Liked you • $formattedDateTime'
-            : (formattedDateTime.isNotEmpty
-                ? '$hostName is hosting • $formattedDateTime'
-                : '$hostName is hosting a Party Plan at $venueName.');
+            : (iSuperlikedThem
+                ? '💫 Someone you Super Liked is hosting • $formattedDateTime'
+                : (formattedDateTime.isNotEmpty
+                    ? '$hostName is hosting • $formattedDateTime'
+                    : '$hostName is hosting a Party Plan at $venueName.'));
         actionsList = [
           NotificationAction(
             label: 'Request to Join',

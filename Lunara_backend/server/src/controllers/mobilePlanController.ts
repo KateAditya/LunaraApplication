@@ -224,6 +224,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
 
         // Find users who have Super Liked viewerId (excluding blocked relationships)
         let superLikedUserIds: string[] = [];
+        // Users the viewer has superliked (reverse direction — see below)
+        let mySuperlikedUserIds: string[] = [];
         if (viewerId) {
             try {
                 const blockedConnections = await SocialConnection.findAll({
@@ -250,6 +252,21 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 superLikedUserIds = superLikes
                     .map(m => m.user1Id)
                     .filter(id => id && !blockedIds.has(id));
+
+                // The reverse relationship: users the VIEWER has superliked.
+                // When one of them later posts a party plan, it should be
+                // surfaced in the viewer's feed and visually distinguished
+                // from the "they superliked you" case above.
+                const mySuperlikes = await UserMatch.findAll({
+                    where: {
+                        user1Id: viewerId as string,
+                        matchReason: 'superlike',
+                    },
+                    attributes: ['user2Id']
+                });
+                mySuperlikedUserIds = mySuperlikes
+                    .map(m => m.user2Id)
+                    .filter(id => id && !blockedIds.has(id));
             } catch (slErr) {
                 logger.warn('[getLiveFeed] Error fetching superliked users:', slErr);
             }
@@ -264,6 +281,9 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     { userId: viewerId as string },
                     ...(superLikedUserIds.length > 0
                         ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
+                        : []),
+                    ...(mySuperlikedUserIds.length > 0
+                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public' }]
                         : [])
                 ]
             }
@@ -576,6 +596,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         const partyFeed = partyPlans.map(p => {
             const creator = (p as any).creator;
             const isSuperLiked = superLikedUserIds.includes(p.userId) && p.userId !== viewerId;
+            const iSuperlikedThem = mySuperlikedUserIds.includes(p.userId) && p.userId !== viewerId;
             const matchScore = viewerId
                 ? calcMatchScore(viewerId as string, p.userId)
                 : Math.floor(Math.random() * 46) + 50;
@@ -613,6 +634,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 userId: p.userId,
                 role: viewerId && p.userId === viewerId ? 'host' : 'viewer',
                 superLikedYou: isSuperLiked,
+                iSuperlikedThem,
                 host: hostObj,
                 creator: hostObj,
                 user: hostObj,
@@ -643,7 +665,14 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             };
         });
 
+        // Plans from people the viewer superliked are boosted to the top of
+        // the feed (above the "they superliked you" case, which is a passive
+        // signal rather than something the viewer actively acted on), then
+        // everything else falls back to plain recency.
         const combinedFeed = [...tableFeed, ...partyFeed].sort((a, b) => {
+            const aBoost = (a as any).iSuperlikedThem ? 1 : 0;
+            const bBoost = (b as any).iSuperlikedThem ? 1 : 0;
+            if (aBoost !== bBoost) return bBoost - aBoost;
             return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
         });
 

@@ -335,7 +335,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── LIKE handler — stay on same page, change button colour ───────────────────
-  void _handleLike() {
+  // Returns a Future so callers (e.g. ProfileDetailView's own button) can
+  // await the real server-confirmed outcome instead of guessing/optimistically
+  // marking themselves as liked before this resolves.
+  Future<void> _handleLike() async {
     if (_displayUser == null) return;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
@@ -356,34 +359,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Fire API first — only apply optimistic UI once the server confirms
     // the like was actually accepted (previously this mutated state before
     // the call resolved, so a rejected like still showed as successful).
-    ApiService.swipeUser(targetUserId: targetId, action: 'like').then((res) {
-      if (!mounted) return;
+    final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
+    if (!mounted) return;
 
-      if (res == null || res['limitReached'] == true) {
-        _showLimitReachedSnack();
-        return;
-      }
+    if (res == null || res['limitReached'] == true) {
+      _showLimitReachedSnack();
+      return;
+    }
 
-      setState(() {
-        _swipedActions[targetId] = 'like';
-        if (currentAction == 'superlike') {
-          // Return the superlike count
-          if (_superlikesPerCycle > 0) _superlikesRemaining++;
-        } else {
-          _dailyLikesUsed++;
-        }
-      });
-
-      _showLikeNotification(targetUser.firstName, isSuperLike: false);
-
-      if (res['matched'] == true) {
-        _showMatchDialog(targetUser);
+    setState(() {
+      _swipedActions[targetId] = 'like';
+      if (currentAction == 'superlike') {
+        // Return the superlike count
+        if (_superlikesPerCycle > 0) _superlikesRemaining++;
+      } else {
+        _dailyLikesUsed++;
       }
     });
+
+    _showLikeNotification(targetUser.firstName, isSuperLike: false);
+
+    if (res['matched'] == true) {
+      _showMatchDialog(targetUser);
+    }
   }
 
   // ── SUPERLIKE handler ─────────────────────────────────────────────────────────
-  void _handleSuperLike() {
+  Future<void> _handleSuperLike() async {
     if (_displayUser == null) return;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
@@ -403,31 +405,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // Fire API first — only apply optimistic UI once the server confirms
     // the superlike was actually accepted.
-    ApiService.swipeUser(targetUserId: targetId, action: 'superlike').then((res) {
-      if (!mounted) return;
+    final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
+    if (!mounted) return;
 
-      if (res == null || res['limitReached'] == true) {
-        _showSuperLikeLimitSnack();
-        return;
-      }
+    if (res == null || res['limitReached'] == true) {
+      _showSuperLikeLimitSnack();
+      return;
+    }
 
-      setState(() {
-        _swipedActions[targetId] = 'superlike';
-        if (currentAction == 'like') {
-          // Upgrading: consume one superlike
-          if (_superlikesPerCycle > 0) _superlikesRemaining--;
-        } else {
-          if (_superlikesPerCycle > 0) _superlikesRemaining--;
-          _dailyLikesUsed++;
-        }
-      });
-
-      _showLikeNotification(targetUser.firstName, isSuperLike: true);
-
-      if (res['matched'] == true) {
-        _showMatchDialog(targetUser);
+    setState(() {
+      _swipedActions[targetId] = 'superlike';
+      if (currentAction == 'like') {
+        // Upgrading: consume one superlike
+        if (_superlikesPerCycle > 0) _superlikesRemaining--;
+      } else {
+        if (_superlikesPerCycle > 0) _superlikesRemaining--;
+        _dailyLikesUsed++;
       }
     });
+
+    _showLikeNotification(targetUser.firstName, isSuperLike: true);
+
+    if (res['matched'] == true) {
+      _showMatchDialog(targetUser);
+    }
   }
 
   // ── NOPE handler — go to next profile ────────────────────────────────────────

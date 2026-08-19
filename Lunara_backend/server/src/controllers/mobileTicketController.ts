@@ -5,6 +5,8 @@ import sequelize from '../config/database';
 import Ticket, { TicketStatus } from '../models/Ticket';
 import Venue from '../models/Venue';
 import User from '../models/User';
+import Booking from '../models/Booking';
+import GroupParty from '../models/GroupParty';
 import { logger } from '../config/logger';
 
 export class MobileTicketController {
@@ -42,13 +44,35 @@ export class MobileTicketController {
                 order: [['eventStartAt', 'ASC']],
             });
 
+            // Ticket.bookingId points at a source record whose table depends on
+            // bookingType/how it was generated (a Booking row for solo/large-party/
+            // some group-party tickets, a GroupParty row for small-party tickets) —
+            // batch-fetch both so the card can show real amount/guests/table info
+            // instead of the fallback defaults.
+            const bookingIds = tickets.map(t => t.bookingId);
+            const [sourceBookings, sourceGroupParties] = await Promise.all([
+                Booking.findAll({
+                    where: { id: { [Op.in]: bookingIds } },
+                    attributes: ['id', 'totalAmount', 'numberOfGuests', 'tablePackage'],
+                }),
+                GroupParty.findAll({
+                    where: { id: { [Op.in]: bookingIds } },
+                    attributes: ['id', 'totalAmount', 'numberOfFriends'],
+                }),
+            ]);
+            const bookingById = new Map(sourceBookings.map(b => [b.id, b]));
+            const groupPartyById = new Map(sourceGroupParties.map(g => [g.id, g]));
+
             const formattedTickets = tickets.map(t => {
+                const sourceBooking = bookingById.get(t.bookingId);
+                const sourceGroupParty = groupPartyById.get(t.bookingId);
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || new Date(t.expiresAt) < now;
                 const startDate = t.eventStartAt ? new Date(t.eventStartAt) : null;
                 const startTimeStr = startDate ? startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '08:00 PM';
                 return {
                     id: t.id,
                     ticketId: t.ticketId,
+                    ticketCode: t.ticketId,
                     bookingId: t.bookingId,
                     bookingType: t.bookingType,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
@@ -61,6 +85,12 @@ export class MobileTicketController {
                     usedAt: t.usedAt,
                     pdfUrl: isExpired ? null : t.pdfUrl, // Hide PDF for expired tickets
                     qrToken: isExpired ? null : t.qrToken,
+                    ticketUrl: isExpired ? null : t.pdfUrl,
+                    totalAmount: sourceBooking ? Number(sourceBooking.totalAmount) : (sourceGroupParty ? Number(sourceGroupParty.totalAmount) : null),
+                    numberOfGuests: sourceBooking ? sourceBooking.numberOfGuests : (sourceGroupParty ? sourceGroupParty.numberOfFriends : null),
+                    tablePackage: sourceBooking ? sourceBooking.tablePackage : null,
+                    isPartyPlan: t.bookingType === 'party_plan',
+                    isGroupParty: t.bookingType === 'group_party',
                     venueName: t.venue?.name || 'Lunara Venue',
                     venueAddress: `${t.venue?.area || t.venue?.addressLine1 || ''}, ${t.venue?.city || ''}`.trim(),
                     venue: t.venue ? {
