@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
+import '../../models/strangers_meet_request.dart';
 import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
 import '../social/large_party_ticket_screen.dart';
 import '../social/party_plan_ticket_screen.dart';
+import '../social/strangers_meet_ticket_screen.dart';
 
 enum HistoryFilterType {
   all,
@@ -62,6 +64,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     final dateStr = booking['bookedAt']?.toString() ??
         booking['createdAt']?.toString() ??
         booking['partyDate']?.toString() ??
+        booking['eventDateTime']?.toString() ??
         booking['bookingDate']?.toString();
     if (dateStr == null || dateStr.isEmpty) return null;
     try {
@@ -72,7 +75,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   DateTime? _getEventDateTime(Map<String, dynamic> booking) {
-    final dateStr = booking['bookingDate']?.toString() ??
+    final dateStr = booking['eventDateTime']?.toString() ??
+        booking['bookingDate']?.toString() ??
         booking['partyDate']?.toString() ??
         booking['createdAt']?.toString();
     if (dateStr == null || dateStr.isEmpty) return null;
@@ -788,6 +792,22 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           ),
                         );
                         return;
+                      }
+
+                      final isStrangersMeet = booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
+                      if (isStrangersMeet) {
+                        try {
+                          final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking));
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => StrangersMeetTicketScreen(request: req),
+                            ),
+                          );
+                          return;
+                        } catch (e) {
+                          debugPrint('Error opening Strangers Meet ticket: $e');
+                        }
                       }
 
                       Navigator.push(

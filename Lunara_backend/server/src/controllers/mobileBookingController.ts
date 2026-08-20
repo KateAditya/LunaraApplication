@@ -6,6 +6,8 @@ import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import PartyPlan from '../models/PartyPlan';
 import PartyPlanRequest from '../models/PartyPlanRequest';
+import StrangersMeetRequest from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
@@ -714,6 +716,28 @@ export const listMyBookings = async (req: Request, res: Response) => {
             include: [venueInclude],
         });
 
+        const smHostRequests = await StrangersMeetRequest.findAll({
+            where: {
+                userId,
+                [Op.or]: [
+                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                    { status: { [Op.in]: ['approved', 'matched', 'confirmed', 'chat_enabled', 'in_progress', 'completed', 'active', 'pending'] } },
+                ],
+            },
+            include: [venueInclude],
+        });
+
+        const smJoinerRequests = await StrangersMeetJoiner.findAll({
+            where: {
+                userId,
+                [Op.or]: [
+                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                    { status: { [Op.in]: ['paid', 'accepted', 'confirmed', 'completed', 'active'] } },
+                ],
+            },
+            include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude] }],
+        });
+
         const synthesized: any[] = [];
 
         for (const plan of hostPlans) {
@@ -783,13 +807,78 @@ export const listMyBookings = async (req: Request, res: Response) => {
             });
         }
 
+        for (const sm of smHostRequests) {
+            const venue = (sm as any).venue;
+            const eventDt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date((sm as any).createdAt || Date.now());
+            const bookedDate = (sm as any).createdAt ? new Date((sm as any).createdAt).toISOString() : eventDt.toISOString();
+            synthesized.push({
+                id: `strangers_meet_host_${sm.id}`,
+                bookingId: sm.id,
+                bookingType: 'strangers_meet',
+                type: 'strangers_meet',
+                isStrangersMeet: true,
+                status: sm.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                createdAt: bookedDate,
+                bookedAt: bookedDate,
+                bookingDate: eventDt.toISOString(),
+                eventDateTime: eventDt.toISOString(),
+                startTime: eventDt.toTimeString().substring(0, 5),
+                totalAmount: Number(sm.paymentAmount || 0),
+                tablePackage: 'STRANGERS MEET (HOST)',
+                numberOfGuests: sm.numberOfPersons || 2,
+                venue,
+                ticketCode: sm.ticketId,
+                ticketUrl: sm.ticketUrl,
+                rawRequest: sm.toJSON(),
+            });
+        }
+
+        for (const joiner of smJoinerRequests) {
+            const sm = (joiner as any).strangersMeetRequest;
+            if (!sm) continue;
+            const venue = sm.venue;
+            const eventDt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date(sm.createdAt || Date.now());
+            const bookedDate = (joiner as any).createdAt ? new Date((joiner as any).createdAt).toISOString() : (sm.createdAt ? new Date(sm.createdAt).toISOString() : eventDt.toISOString());
+            synthesized.push({
+                id: `strangers_meet_joiner_${joiner.id}`,
+                bookingId: sm.id,
+                bookingType: 'strangers_meet',
+                type: 'strangers_meet',
+                isStrangersMeet: true,
+                status: (joiner.status as string) === 'cancelled' || (joiner.status as string) === 'rejected' ? 'cancelled' : 'confirmed',
+                createdAt: bookedDate,
+                bookedAt: bookedDate,
+                bookingDate: eventDt.toISOString(),
+                eventDateTime: eventDt.toISOString(),
+                startTime: eventDt.toTimeString().substring(0, 5),
+                totalAmount: Number(joiner.paymentAmount || sm.chargesPerHead || 0),
+                tablePackage: 'STRANGERS MEET (JOINER)',
+                numberOfGuests: 1,
+                venue,
+                ticketCode: sm.ticketId,
+                ticketUrl: sm.ticketUrl,
+                rawRequest: sm.toJSON(),
+            });
+        }
+
         const normalizedBookings = bookings.map(b => {
             const json: any = b.toJSON();
             json.bookedAt = json.createdAt ? new Date(json.createdAt).toISOString() : json.bookingDate;
             return json;
         });
 
-        const combined = [...normalizedBookings, ...synthesized].sort((a, b) => {
+        const seenKeys = new Set<string>();
+        const combined: any[] = [];
+
+        for (const item of [...normalizedBookings, ...synthesized]) {
+            const key = `${item.bookingType || 'normal'}_${item.bookingId || item.id}`;
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                combined.push(item);
+            }
+        }
+
+        combined.sort((a, b) => {
             const timeB = new Date(b.bookedAt || b.createdAt || b.bookingDate).getTime();
             const timeA = new Date(a.bookedAt || a.createdAt || a.bookingDate).getTime();
             return timeB - timeA;
