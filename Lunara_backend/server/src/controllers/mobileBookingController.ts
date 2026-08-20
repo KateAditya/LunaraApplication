@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
-import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
-import PartyPlanRequest, { PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
+import PartyPlan from '../models/PartyPlan';
+import PartyPlanRequest from '../models/PartyPlanRequest';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
@@ -680,21 +680,35 @@ export const listMyBookings = async (req: Request, res: Response) => {
         // the same union pattern the Wallet screen already uses for its
         // "Purchases" tab.
         const hostPlans = await PartyPlan.findAll({
-            where: { userId, hostPaymentStatus: PartyPlanPaymentStatus.PAID },
+            where: {
+                userId,
+                [Op.or]: [
+                    { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                    { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
+                ],
+            },
             include: [venueInclude],
         });
 
         const joinerRequests = await PartyPlanRequest.findAll({
-            where: { requesterId: userId, joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID },
+            where: {
+                requesterId: userId,
+                [Op.or]: [
+                    { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                    { status: { [Op.in]: ['accepted', 'confirmed', 'paid'] } },
+                ],
+            },
             include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
         });
 
         const groupParties = await GroupParty.findAll({
             where: {
                 userId,
+                status: { [Op.ne]: 'cancelled' },
                 [Op.or]: [
-                    { paymentStatus: 'paid' },
-                    { status: { [Op.in]: ['confirmed', 'completed', 'active'] } },
+                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                    { status: { [Op.in]: ['confirmed', 'completed', 'active', 'approved'] } },
+                    { totalAmount: 0 },
                 ],
             },
             include: [venueInclude],

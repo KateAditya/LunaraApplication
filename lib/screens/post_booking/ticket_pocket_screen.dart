@@ -98,34 +98,39 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (dt != null) return dt;
     }
     if (eventStart != null) {
-      return DateTime(eventStart.year, eventStart.month, eventStart.day + 1, 6, 0, 0);
+      return eventStart.add(const Duration(hours: 30));
     }
     return null;
   }
 
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
-      final status = booking['status']?.toString().toLowerCase();
+      final status = booking['status']?.toString().toLowerCase() ?? '';
       if (status == 'cancelled' ||
-          status == 'completed' ||
           status == 'no_show' ||
-          status == 'expired' ||
-          status == 'used' ||
-          status == 'rejected') {
+          status == 'rejected' ||
+          status == 'void') {
         return false;
       }
+      if (status == 'completed' || status == 'used' || status == 'expired') {
+        return false;
+      }
+
       final eventStart = _extractEventStartDateTime(booking);
       final expirationTime = _extractExpirationDateTime(booking, eventStart);
-      if (expirationTime != null) {
-        return DateTime.now().isBefore(expirationTime);
-      }
-      if (booking['isExpired'] == true) return false;
+      final now = DateTime.now();
 
-      final dateStr = booking['bookingDate']?.toString() ?? booking['partyDate']?.toString();
+      if (expirationTime != null) {
+        return now.isBefore(expirationTime);
+      }
+
+      final dateStr = booking['bookingDate']?.toString() ??
+          booking['partyDate']?.toString() ??
+          booking['eventStartAt']?.toString() ??
+          booking['date']?.toString();
       if (dateStr == null || dateStr.isEmpty) return true;
 
       final bookingDate = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final bookingDateStart = DateTime(
         bookingDate.year,

@@ -28,13 +28,14 @@ function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: strin
 }
 
 function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | null): Date {
-    if (expAt && expAt.getTime() > startAt.getTime() + 6 * 60 * 60 * 1000) {
+    if (expAt && expAt.getTime() > startAt.getTime()) {
         return expAt;
     }
-    if (endAt && endAt.getTime() > startAt.getTime() + 6 * 60 * 60 * 1000) {
+    if (endAt && endAt.getTime() > startAt.getTime()) {
         return endAt;
     }
-    return new Date(startAt.getFullYear(), startAt.getMonth(), startAt.getDate() + 1, 6, 0, 0);
+    // Expiration is at least 30 hours after event start to ensure full event day coverage
+    return new Date(startAt.getTime() + 30 * 60 * 60 * 1000);
 }
 
 export class MobileTicketController {
@@ -71,10 +72,11 @@ export class MobileTicketController {
                 Booking.findAll({
                     where: {
                         userId,
+                        status: { [Op.ne]: BookingStatus.CANCELLED },
                         [Op.or]: [
-                            { paymentStatus: 'paid' },
-                            { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED, 'active' as any] } },
-                            { adminApprovalStatus: 'approved' },
+                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                            { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED, 'active', 'confirmed', 'completed'] } },
+                            { adminApprovalStatus: { [Op.in]: ['approved', 'payment_done'] } },
                         ],
                     },
                     include: [
@@ -85,8 +87,12 @@ export class MobileTicketController {
                 GroupParty.findAll({
                     where: {
                         userId,
-                        paymentStatus: GroupPartyPaymentStatus.PAID,
-                        status: { [Op.in]: [GroupPartyStatus.CONFIRMED, 'completed' as any] },
+                        status: { [Op.ne]: GroupPartyStatus.CANCELLED },
+                        [Op.or]: [
+                            { paymentStatus: { [Op.in]: [GroupPartyPaymentStatus.PAID, 'paid', 'PAID', 'successful', 'free'] } },
+                            { status: { [Op.in]: [GroupPartyStatus.CONFIRMED, GroupPartyStatus.COMPLETED, GroupPartyStatus.APPROVED, 'confirmed', 'completed', 'approved'] } },
+                            { totalAmount: 0 },
+                        ],
                     },
                     include: [
                         { model: Venue, as: 'venue', attributes: venueAttributes },
@@ -96,9 +102,10 @@ export class MobileTicketController {
                 PartyPlanRequest.findAll({
                     where: {
                         requesterId: userId,
+                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
                         [Op.or]: [
-                            { joinerPaymentStatus: 'paid' },
-                            { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any] } },
+                            { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                            { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'accepted', 'confirmed', 'paid'] } },
                         ],
                     },
                     include: [
@@ -116,9 +123,10 @@ export class MobileTicketController {
                 PartyPlan.findAll({
                     where: {
                         userId,
+                        status: { [Op.ne]: 'cancelled' },
                         [Op.or]: [
-                            { hostPaymentStatus: 'paid' },
-                            { lifecycleStatus: { [Op.in]: ['match_confirmed', 'chat_enabled', 'plan_completed'] } },
+                            { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                            { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
                         ],
                     },
                     include: [
@@ -129,9 +137,10 @@ export class MobileTicketController {
                 StrangersMeetJoiner.findAll({
                     where: {
                         userId,
+                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
                         [Op.or]: [
-                            { paymentStatus: 'paid' },
-                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed'] } },
+                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid'] } },
                         ],
                     },
                     include: [
@@ -148,9 +157,10 @@ export class MobileTicketController {
                 StrangersMeetRequest.findAll({
                     where: {
                         userId,
+                        status: { [Op.ne]: 'cancelled' },
                         [Op.or]: [
-                            { paymentStatus: 'paid' },
-                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed'] } },
+                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid'] } },
                         ],
                     },
                     include: [
