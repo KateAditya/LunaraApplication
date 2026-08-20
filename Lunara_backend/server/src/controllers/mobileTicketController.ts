@@ -5,12 +5,12 @@ import sequelize from '../config/database';
 import Ticket, { TicketStatus } from '../models/Ticket';
 import Venue from '../models/Venue';
 import User from '../models/User';
-import Booking, { BookingStatus } from '../models/Booking';
-import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
+import Booking from '../models/Booking';
+import GroupParty from '../models/GroupParty';
 import PartyPlan from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
-import StrangersMeetRequest from '../models/StrangersMeetRequest';
-import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
+import StrangersMeetRequest, { StrangersMeetStatus } from '../models/StrangersMeetRequest';
+import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 
@@ -91,33 +91,17 @@ export class MobileTicketController {
                     return [];
                 }),
                 Booking.findAll({
-                    where: {
-                        userId,
-                        status: { [Op.ne]: BookingStatus.CANCELLED },
-                        [Op.or]: [
-                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED, 'active', 'confirmed', 'completed'] } },
-                            { adminApprovalStatus: { [Op.in]: ['approved', 'payment_done'] } },
-                        ],
-                    },
+                    where: { userId },
                     include: [venueInclude],
-                    order: [['bookingDate', 'DESC']],
+                    order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets Booking query error:', err);
                     return [];
                 }),
                 GroupParty.findAll({
-                    where: {
-                        userId,
-                        status: { [Op.ne]: GroupPartyStatus.CANCELLED },
-                        [Op.or]: [
-                            { paymentStatus: { [Op.in]: [GroupPartyPaymentStatus.PAID, 'paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: [GroupPartyStatus.CONFIRMED, GroupPartyStatus.COMPLETED, GroupPartyStatus.APPROVED, 'confirmed', 'completed', 'approved'] } },
-                            { totalAmount: 0 },
-                        ],
-                    },
+                    where: { userId },
                     include: [venueInclude],
-                    order: [['partyDate', 'DESC']],
+                    order: [['partyDate', 'DESC'], ['startTime', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets GroupParty query error:', err);
                     return [];
@@ -125,11 +109,7 @@ export class MobileTicketController {
                 PartyPlanRequest.findAll({
                     where: {
                         requesterId: userId,
-                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
-                        [Op.or]: [
-                            { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'accepted', 'confirmed', 'paid'] } },
-                        ],
+                        status: { [Op.ne]: PartyPlanRequestStatus.PAYMENT_FAILED },
                     },
                     include: [
                         {
@@ -147,14 +127,7 @@ export class MobileTicketController {
                     return [];
                 }),
                 PartyPlan.findAll({
-                    where: {
-                        userId,
-                        status: { [Op.ne]: 'cancelled' },
-                        [Op.or]: [
-                            { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
-                        ],
-                    },
+                    where: { userId },
                     include: [venueInclude],
                     order: [['planDateTime', 'DESC']],
                 }).catch(err => {
@@ -164,11 +137,7 @@ export class MobileTicketController {
                 StrangersMeetJoiner.findAll({
                     where: {
                         userId,
-                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
-                        [Op.or]: [
-                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid'] } },
-                        ],
+                        status: { [Op.ne]: StrangersMeetJoinerStatus.REJECTED },
                     },
                     include: [
                         {
@@ -185,11 +154,7 @@ export class MobileTicketController {
                 StrangersMeetRequest.findAll({
                     where: {
                         userId,
-                        status: { [Op.ne]: 'cancelled' },
-                        [Op.or]: [
-                            { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid', 'pending'] } },
-                        ],
+                        status: { [Op.ne]: StrangersMeetStatus.REJECTED },
                     },
                     include: [venueInclude],
                     order: [['createdAt', 'DESC']],

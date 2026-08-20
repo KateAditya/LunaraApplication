@@ -687,14 +687,9 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 return [];
             }),
             PartyPlan.findAll({
-                where: {
-                    userId,
-                    [Op.or]: [
-                        { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                        { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
-                    ],
-                },
+                where: { userId },
                 include: [venueInclude],
+                order: [['planDateTime', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings PartyPlan host query error:', err);
                 return [];
@@ -702,27 +697,18 @@ export const listMyBookings = async (req: Request, res: Response) => {
             PartyPlanRequest.findAll({
                 where: {
                     requesterId: userId,
-                    [Op.or]: [
-                        { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                        { status: { [Op.in]: ['accepted', 'confirmed', 'paid'] } },
-                    ],
+                    status: { [Op.ne]: 'payment_failed' },
                 },
                 include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
+                order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings PartyPlanRequest joiner query error:', err);
                 return [];
             }),
             GroupParty.findAll({
-                where: {
-                    userId,
-                    status: { [Op.ne]: 'cancelled' },
-                    [Op.or]: [
-                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                        { status: { [Op.in]: ['confirmed', 'completed', 'active', 'approved'] } },
-                        { totalAmount: 0 },
-                    ],
-                },
+                where: { userId },
                 include: [venueInclude],
+                order: [['partyDate', 'DESC'], ['startTime', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings GroupParty query error:', err);
                 return [];
@@ -730,12 +716,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
             StrangersMeetRequest.findAll({
                 where: {
                     userId,
-                    [Op.or]: [
-                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                        { status: { [Op.in]: ['approved', 'matched', 'confirmed', 'chat_enabled', 'in_progress', 'completed', 'active', 'pending'] } },
-                    ],
+                    status: { [Op.ne]: 'rejected' },
                 },
                 include: [venueInclude],
+                order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings StrangersMeetRequest query error:', err);
                 return [];
@@ -743,12 +727,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
             StrangersMeetJoiner.findAll({
                 where: {
                     userId,
-                    [Op.or]: [
-                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                        { status: { [Op.in]: ['paid', 'accepted', 'confirmed', 'completed', 'active'] } },
-                    ],
+                    status: { [Op.ne]: 'rejected' },
                 },
                 include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude] }],
+                order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings StrangersMeetJoiner query error:', err);
                 return [];

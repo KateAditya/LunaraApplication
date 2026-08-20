@@ -240,10 +240,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatTablePackage(String? tablePackage) {
-    if (tablePackage == null || tablePackage.toLowerCase() == 'none') {
+    if (tablePackage == null || tablePackage.toLowerCase() == 'none' || tablePackage.trim().isEmpty) {
       return 'GENERAL';
     }
-    return tablePackage.toUpperCase();
+    final clean = tablePackage.trim();
+    if (clean.toLowerCase().contains('confirmation')) {
+      return 'STANDARD';
+    }
+    return clean.toUpperCase();
   }
 
   String _getBookingStatus(Map<String, dynamic> booking, bool isActive) {
@@ -347,15 +351,20 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      isExpired ? 'TICKET EXPIRED' : 'EXPIRES ON',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.8,
-                        color: themeColor,
+                    Flexible(
+                      child: Text(
+                        isExpired ? 'TICKET EXPIRED' : 'EXPIRES ON',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.8,
+                          color: themeColor,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
@@ -600,15 +609,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       child: GestureDetector(
         onTap: () {
           // Party plan tickets have dedicated matched UI
-          final isPartyPlan = booking['isPartyPlan'] == true || booking['type'] == 'party_plan';
+          final isPartyPlan = booking['isPartyPlan'] == true ||
+              booking['type'] == 'party_plan' ||
+              booking['bookingType'] == 'party_plan';
           if (isPartyPlan) {
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => PartyPlanTicketScreen(
-                  request: booking,
-                  plan: booking,
-                  isHost: true,
+                  request: Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking),
+                  plan: Map<String, dynamic>.from(booking['plan'] ?? booking),
+                  isHost: booking['isHost'] == true,
                 ),
               ),
             );
@@ -616,7 +627,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
 
           // Group party tickets have richer data via LargePartyTicketScreen
-          final isGroupParty = booking['isGroupParty'] == true || booking['isSmallGroupParty'] == true || booking['bookingType'] == 'group_party';
+          final isGroupParty = booking['isGroupParty'] == true ||
+              booking['isSmallGroupParty'] == true ||
+              booking['bookingType'] == 'group_party';
           if (isGroupParty) {
             Navigator.push(
               context,
@@ -631,10 +644,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
 
           // Strangers meet tickets
-          final isStrangersMeet = booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
+          final isStrangersMeet = booking['bookingType'] == 'strangers_meet' ||
+              booking['type'] == 'strangers_meet' ||
+              booking['isStrangersMeet'] == true;
           if (isStrangersMeet) {
             try {
-              final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking));
+              final req = StrangersMeetRequest.fromJson(
+                  Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking));
               Navigator.push(
                 context,
                 MaterialPageRoute(
