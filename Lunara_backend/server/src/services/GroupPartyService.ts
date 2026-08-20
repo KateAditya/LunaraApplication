@@ -614,16 +614,19 @@ export class GroupPartyService {
             const venueName = isLargeBooking ? (bookingRecord.venue?.name || 'Venue') : ((gp as any)?.venue?.name || 'Venue');
             const partyDate = isLargeBooking ? bookingRecord.bookingDate : gp?.partyDate;
             const guestCount = isLargeBooking ? bookingRecord.numberOfGuests : gp?.numberOfFriends;
+            const isPaid = isLargeBooking
+                ? (bookingRecord.paymentStatus === 'paid' || bookingRecord.adminApprovalStatus === 'payment_done')
+                : (gp?.paymentStatus === GroupPartyPaymentStatus.PAID || Number(gp?.totalAmount ?? 0) <= 0);
+
             const isConfirmed = isLargeBooking 
-                ? (bookingRecord.status === 'confirmed' || bookingRecord.adminApprovalStatus === 'payment_done')
-                // Free parties: status=CONFIRMED even if paymentStatus=pending; paid parties: need PAID too
-                : (gp?.status === GroupPartyStatus.CONFIRMED && (gp?.paymentStatus === GroupPartyPaymentStatus.PAID || Number(gp?.totalAmount ?? 0) <= 0));
+                ? (isPaid && (bookingRecord.status === 'confirmed' || bookingRecord.adminApprovalStatus === 'payment_done'))
+                : (gp?.status === GroupPartyStatus.CONFIRMED && isPaid);
             const isPending = isLargeBooking 
                 ? (bookingRecord.adminApprovalStatus === 'pending')
                 : (gp?.status === GroupPartyStatus.PENDING);
             const isApproved = isLargeBooking 
-                ? (bookingRecord.adminApprovalStatus === 'approved')
-                : (gp?.status === GroupPartyStatus.APPROVED);
+                ? (bookingRecord.adminApprovalStatus === 'approved' && !isPaid)
+                : (gp?.status === GroupPartyStatus.APPROVED && !isPaid);
             const isRejected = isLargeBooking 
                 ? (bookingRecord.adminApprovalStatus === 'rejected')
                 : (gp?.status === GroupPartyStatus.REJECTED);
@@ -642,7 +645,7 @@ export class GroupPartyService {
             const reminder1h = isLargeBooking ? false : (gp?.reminder1hSent || false);
             const reminder30m = isLargeBooking ? false : (gp?.reminder30mSent || false);
 
-            const totalAmt = isLargeBooking ? Number(bookingRecord.totalAmount || 0) : Number(gp?.totalAmount || 0);
+            const totalAmt = isLargeBooking ? Number(bookingRecord.adminPaymentAmount || bookingRecord.totalAmount || 0) : Number(gp?.totalAmount || 0);
 
             const timelineSteps = isLargeBooking
                 ? [
@@ -676,7 +679,7 @@ export class GroupPartyService {
                 statusText = 'Confirmed';
             } else if (isApproved) {
                 title = isLargeBooking ? `Large Party Approved! 💳` : `Group Party Approved! 💳`;
-                body = `Your request for ${guestCount} guests at ${venueName} is approved. Complete payment now.`;
+                body = `Action Required: Complete payment${totalAmt > 0 ? ` of ₹${totalAmt}` : ''} to confirm your party at ${venueName}.`;
                 statusText = 'Approved - Pending Payment';
             } else if (isPending) {
                 if (isLargeBooking) {
@@ -733,7 +736,7 @@ export class GroupPartyService {
                 paymentStatus: isLargeBooking
                     ? (bookingRecord?.paymentStatus || 'pending')
                     : (gp?.paymentStatus || 'pending'),
-                totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
+                totalAmount: totalAmt,
                 isSmallGroupParty: !isLargeBooking,
                 isExpired,
                 expiresAt,
@@ -748,7 +751,7 @@ export class GroupPartyService {
                     paymentStatus: isLargeBooking
                         ? (bookingRecord?.paymentStatus || 'pending')
                         : (gp?.paymentStatus || 'pending'),
-                    totalAmount: isLargeBooking ? 0 : Number(gp?.totalAmount || 0),
+                    totalAmount: totalAmt,
                     isSmallGroupParty: !isLargeBooking,
                     isExpired,
                     expiresAt,

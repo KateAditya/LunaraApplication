@@ -122,46 +122,41 @@ export const LargePartyRequests: React.FC = () => {
                                         <td>{req.partySubject}</td>
                                         <td>
                                             <span className={`badge bg-${
-                                                req.adminApprovalStatus === 'payment_done' ? 'success' :
+                                                (req.adminApprovalStatus === 'payment_done' || req.paymentStatus === 'paid') ? 'success' :
                                                 req.adminApprovalStatus === 'payment_sent' ? 'info' :
                                                 req.adminApprovalStatus === 'approved' ? 'primary' :
                                                 req.adminApprovalStatus === 'rejected' ? 'danger' :
                                                 req.adminApprovalStatus === 'expired' ? 'secondary' : 'warning'
                                             }`}>
-                                                {(req.adminApprovalStatus === 'approved' ? 'approved (awaiting payment)' : req.adminApprovalStatus || 'PENDING').toUpperCase().replace('_', ' ')}
+                                                {((req.adminApprovalStatus === 'payment_done' || req.paymentStatus === 'paid') ? 'PAID' : (req.adminApprovalStatus === 'approved' ? 'approved (awaiting payment)' : req.adminApprovalStatus || 'PENDING')).toUpperCase().replace('_', ' ')}
                                             </span>
                                         </td>
                                         <td>
-                                            {(!req.adminApprovalStatus || req.adminApprovalStatus === 'pending') && (
-                                                <div className="d-flex gap-2">
-                                                    <button className="btn btn-sm btn-success" onClick={() => setSelectedRequest(req)}>Approve</button>
-                                                    <button className="btn btn-sm btn-danger" onClick={() => handleReject(req.id)}>Reject</button>
+                                            {(req.adminApprovalStatus === 'payment_done' || req.paymentStatus === 'paid') ? (
+                                                <div className="text-success fw-bold d-flex flex-column">
+                                                    <span>Paid: ₹{req.adminPaymentAmount || req.totalAmount}</span>
+                                                    <span style={{ fontSize: '10px' }} className="text-success">Payment Done</span>
                                                 </div>
-                                            )}
-                                            {req.adminApprovalStatus === 'approved' && (
+                                            ) : req.adminApprovalStatus === 'approved' ? (
                                                 <div className="d-flex flex-column gap-1">
                                                     <span className="fw-bold text-primary">Approved: ₹{req.totalAmount}</span>
                                                     <span className="text-muted" style={{ fontSize: '11px' }}>Awaiting payment from user in-app</span>
                                                 </div>
-                                            )}
-                                            {req.adminApprovalStatus === 'payment_sent' && (
+                                            ) : req.adminApprovalStatus === 'payment_sent' ? (
                                                 <div className="d-flex flex-column gap-1">
                                                     <span className="fw-bold text-info">Amt: ₹{req.adminPaymentAmount || req.totalAmount}</span>
                                                     <span className="text-muted" style={{ fontSize: '11px' }}>Awaiting payment from user in-app</span>
                                                 </div>
-                                            )}
-                                            {req.adminApprovalStatus === 'payment_done' && (
-                                                <div className="text-success fw-bold d-flex flex-column">
-                                                    <span>Paid: ₹{req.adminPaymentAmount || req.totalAmount}</span>
-                                                    <span style={{ fontSize: '10px' }} className="text-muted">Payment Done</span>
+                                            ) : (!req.adminApprovalStatus || req.adminApprovalStatus === 'pending') ? (
+                                                <div className="d-flex gap-2">
+                                                    <button className="btn btn-sm btn-success" onClick={() => setSelectedRequest(req)}>Approve</button>
+                                                    <button className="btn btn-sm btn-danger" onClick={() => handleReject(req.id)}>Reject</button>
                                                 </div>
-                                            )}
-                                            {req.adminApprovalStatus === 'rejected' && (
+                                            ) : req.adminApprovalStatus === 'rejected' ? (
                                                 <span className="text-danger fw-bold">Rejected</span>
-                                            )}
-                                            {req.adminApprovalStatus === 'expired' && (
+                                            ) : req.adminApprovalStatus === 'expired' ? (
                                                 <span className="text-muted fw-bold">Expired — payment window passed</span>
-                                            )}
+                                            ) : null}
                                         </td>
                                     </tr>
                                 ))

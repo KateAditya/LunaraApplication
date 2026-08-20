@@ -236,6 +236,16 @@ export class MobileTicketController {
             for (const b of confirmedBookings) {
                 const bAny = b as any;
                 if (seenBookingIds.has(b.id) || (bAny.ticketCode && seenTicketIds.has(bAny.ticketCode))) continue;
+
+                const isLargePaid = b.paymentStatus === 'paid' || b.adminApprovalStatus === 'payment_done';
+                if (b.isLargePartyRequest && !isLargePaid) {
+                    continue; // Large party must be paid before ticket is generated/shown
+                }
+                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || b.status === 'confirmed' || b.status === 'completed';
+                if (!isPaidBooking) {
+                    continue;
+                }
+
                 seenBookingIds.add(b.id);
                 if (bAny.ticketCode) seenTicketIds.add(bAny.ticketCode);
 

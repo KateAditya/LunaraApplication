@@ -1838,7 +1838,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Extract total amount to determine if this party is paid or free
     double totalAmount = 0.0;
     for (final e in entries) {
-      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['approvedAmount'] ?? e['charges'] ?? e['data']?['totalAmount'];
+      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['approvedAmount'] ?? e['adminPaymentAmount'] ?? e['charges'] ?? e['data']?['totalAmount'] ?? e['data']?['amount'];
       if (rawAmt is num && rawAmt > 0) {
         totalAmount = rawAmt.toDouble();
         break;
@@ -1849,6 +1849,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           break;
         }
       }
+    }
+    if (totalAmount > 0) {
+      partyMap['totalAmount'] = totalAmount;
     }
 
     // Determine status from entries
@@ -1871,7 +1874,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         isCancelled = true;
       } else if (status == 'completed' || title.contains('completed')) {
         isCompleted = true;
-      } else if (paymentStatus == 'paid' || eventType == 'payment_success' || (totalAmount <= 0 && (status == 'confirmed' || status == 'paid'))) {
+      } else if (paymentStatus == 'paid' || eventType == 'payment_success' || status == 'payment_done' || e['adminApprovalStatus'] == 'payment_done') {
         isConfirmed = true;
       } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
         isApproved = true;
@@ -1880,18 +1883,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // Status precedence: If cancelled, it is cancelled; If unpaid when totalAmount > 0, it must be pending
+    // Status precedence: If cancelled, it is cancelled; If approved and not yet paid, it must be approved
     String overallStatus;
     if (isCancelled) {
       overallStatus = 'cancelled';
     } else if (isExpiredFromServer) {
       overallStatus = 'expired';
-    } else if (isConfirmed && (totalAmount <= 0 || !isPending)) {
+    } else if (isApproved && !isConfirmed) {
+      overallStatus = 'approved';
+    } else if (isConfirmed) {
       overallStatus = 'confirmed';
     } else if (isCompleted) {
       overallStatus = 'completed';
-    } else if (isApproved) {
-      overallStatus = 'approved';
     } else {
       overallStatus = 'pending';
     }
@@ -2013,7 +2016,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       };
     } else if (overallStatus == 'approved') {
       cardTitle = isLargeParty ? 'Large Party Approved! 💳' : 'Payment Required 💳';
-      cardBody = 'Action Required: Complete payment to confirm your party at $venueName.';
+      cardBody = 'Action Required: Complete payment${totalAmount > 0 ? " of ₹${totalAmount.toInt()}" : ""} to confirm your party at $venueName.';
       badgeText = 'ACTION REQUIRED';
       accentColor = const Color(0xFFF59E0B);
       actionButtonText = 'Pay Now';

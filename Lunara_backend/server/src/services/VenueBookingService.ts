@@ -205,8 +205,8 @@ export class VenueBookingService {
                     partyDescription: isLargeParty ? (partyDescription || undefined) : undefined,
                     mobileNumber: isLargeParty ? (mobileNumber?.trim() || undefined) : undefined,
                     optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || undefined) : undefined,
-                    status: razorpayOrder ? BookingStatus.PENDING : (isLargeParty && numberOfGuests > 20 ? BookingStatus.PENDING : BookingStatus.CONFIRMED),
-                    paymentStatus: razorpayOrder ? PaymentStatus.PENDING : PaymentStatus.PAID,
+                    status: (isLargeParty || razorpayOrder) ? BookingStatus.PENDING : (pricing.totalAmount > 0 ? BookingStatus.PENDING : BookingStatus.CONFIRMED),
+                    paymentStatus: (isLargeParty || razorpayOrder || pricing.totalAmount > 0) ? PaymentStatus.PENDING : PaymentStatus.PAID,
                     razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined
                 }, { transaction });
             }

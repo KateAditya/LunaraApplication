@@ -143,6 +143,8 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                 return res.status(400).json({ success: false, message: 'Valid totalAmount is required when approving' });
             }
             booking.totalAmount = Number(totalAmount);
+            booking.paymentStatus = PaymentStatus.PENDING;
+            booking.status = BookingStatus.PENDING;
             booking.commissionAmount = Math.round(booking.totalAmount * 0.1 * 100) / 100;
             (booking as any).expiresAt = computePartyDeadline(booking.bookingDate, booking.startTime);
         }
@@ -153,9 +155,9 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
             const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
             const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
             const venueName = venue?.name || 'Venue';
-            const notifTitle = status === 'approved' ? 'Large Party Approved! 🎉' : 'Large Party Rejected ❌';
+            const notifTitle = status === 'approved' ? 'Large Party Approved! 💳' : 'Large Party Rejected ❌';
             const notifBody = status === 'approved'
-                ? `Your large party request at ${venueName} has been approved! Complete payment to confirm.`
+                ? `Your large party request at ${venueName} has been approved! Complete payment of ₹${booking.totalAmount} to confirm.`
                 : `Your large party request at ${venueName} was rejected by the admin.`;
             const notifType = status === 'approved' ? 'large_party_approved' : 'large_party_rejected';
 
@@ -172,7 +174,7 @@ export const approveLargePartyRequest = async (req: Request, res: Response) => {
                     body: notifBody,
                     priority: 'HIGH' as any,
                     isRead: false,
-                    metadata: { bookingId: booking.id, status, venueName }
+                    metadata: { bookingId: booking.id, status, venueName, totalAmount: booking.totalAmount }
                 });
             } catch (dbErr) {
                 logger.warn('Failed to save DB notification for admin approval: ' + dbErr);

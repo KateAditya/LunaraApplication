@@ -89,7 +89,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         ? (widget.booking['totalAmount'] ?? widget.booking['amount'] ?? 0.0).toDouble()
         : (double.tryParse((widget.booking['totalAmount'] ?? widget.booking['amount'] ?? '0').toString()) ?? 0.0);
     if (localStatus == 'expired') return _LargePartyPaymentState.expired;
-    if (paymentStatus == 'paid' || localStatus == 'payment_done' || (localStatus == 'confirmed' && paymentStatus != 'pending' && localAmt <= 0)) {
+    if (paymentStatus == 'paid' || localStatus == 'payment_done') {
       return _LargePartyPaymentState.paid;
     }
     // Any other/unknown status: never assume paid — wait for server fetch to confirm
@@ -178,7 +178,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
             final adminApprovalStatus = booking['adminApprovalStatus']?.toString();
             final bookingStatus = booking['status']?.toString();
-            final isPaid = _freshPaymentStatus == 'paid' || adminApprovalStatus == 'payment_done' || (bookingStatus == 'confirmed' && _freshPaymentStatus != 'pending' && (_freshTotalAmount == null || _freshTotalAmount! <= 0));
+            final isPaid = _freshPaymentStatus == 'paid' || adminApprovalStatus == 'payment_done';
             final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
 
             if (isPaid) {
