@@ -23,7 +23,7 @@ export const getAdminGroupParties = async (req: Request, res: Response): Promise
         // actions that don't apply to them — so pending/unpaid rows are
         // never surfaced to admins regardless of the requested filter.
         where.status = { [Op.in]: ['confirmed', 'completed'] };
-        where.paymentStatus = { [Op.in]: ['paid', 'free'] };
+        where.paymentStatus = 'paid';
         if (paymentStatus && paymentStatus !== 'pending') where.paymentStatus = paymentStatus;
 
         const pageNum = Math.max(1, parseInt(page as string));

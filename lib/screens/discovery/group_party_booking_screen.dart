@@ -1931,6 +1931,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                 razorpayOrderId: 'order_mock_wallet',
                                 razorpayPaymentId: 'wallet_$transactionId',
                                 razorpaySignature: 'mock_signature',
+                                partyId: createdGroupPartyId,
                               );
 
                               if (verifySuccess && parentContext.mounted) {
@@ -2025,6 +2026,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   razorpayOrderId: orderId,
                                   razorpayPaymentId: response.paymentId ?? 'mock_payment',
                                   razorpaySignature: response.signature ?? 'mock_signature',
+                                  partyId: createdGroupPartyId,
                                 );
                                 if (success && parentContext.mounted) {
                                   TopNotificationBanner.show(
@@ -2134,6 +2136,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                       razorpayOrderId: 'order_mock_wallet',
                                       razorpayPaymentId: 'wallet_$transactionId',
                                       razorpaySignature: 'mock_signature',
+                                      partyId: createdGroupPartyId,
                                     );
                                     if (parentContext.mounted) {
                                       TopNotificationBanner.show(

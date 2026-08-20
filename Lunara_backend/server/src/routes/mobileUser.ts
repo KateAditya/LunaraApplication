@@ -593,12 +593,11 @@ async function getUserNotifications(
     try {
         const { GroupPartyService } = await import('../services/GroupPartyService');
         const Venue = (await import('../models/Venue')).default;
-        // Single query with venue included — eliminates N+1 (was: 1 query + N findByPk calls)
+        // Single query with venue included — eliminates N+1
         const groupParties = await GroupParty.findAll({
             where: {
                 userId: uId,
-                status: { [Op.in]: ['confirmed', 'completed'] },
-                paymentStatus: { [Op.in]: ['paid', 'free'] }
+                status: { [Op.ne]: 'cancelled' }
             },
             include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],
@@ -704,8 +703,9 @@ async function getUserNotifications(
             (isGp ? (data.bookingId?.toString() || n.entityId?.toString()) : null);
 
         const bookingId = data.bookingId?.toString() ||
+            (n.entityType === 'booking' || n.entityType === 'Booking' ? n.entityId?.toString() : null) ||
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
-            (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_([^_]+).*/, '$1') : null);
+            (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_(?:timeline_)?([^_]+).*/, '$1') : null);
 
         let key: string | null = null;
         if (groupPartyId) key = `gp_${groupPartyId}`;

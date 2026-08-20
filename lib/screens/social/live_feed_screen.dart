@@ -1953,16 +1953,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    // Distinguish Large Party (>20) vs Group Party (<=20)
+    final bool isLargeParty = guestCount > 20 ||
+        partyMap['isLargePartyRequest'] == true ||
+        partyMap['isLargeBooking'] == true ||
+        partyMap['type'] == 'large_party_timeline';
+
     if (isExpired) {
       accentColor = const Color(0xFF9CA3AF);
       badgeText = 'EXPIRED';
-      cardTitle = 'Group Party Expired ⌛';
-      cardBody = 'Your group party request at $venueName has expired.';
+      cardTitle = isLargeParty ? 'Large Party Expired ⌛' : 'Group Party Expired ⌛';
+      cardBody = 'Your party request at $venueName has expired.';
       actionButtonText = null;
       onActionTap = null;
     } else if (overallStatus == 'confirmed') {
-      cardTitle = 'Group Party Confirmed! 🎉';
-      cardBody = 'Your group party of $guestCount friends at $venueName is fully confirmed. Get ready!';
+      cardTitle = isLargeParty ? 'Large Party Confirmed! 🎉' : 'Group Party Confirmed! 🎉';
+      cardBody = 'Your party of $guestCount guests at $venueName is fully confirmed. Get ready!';
       badgeText = 'CONFIRMED';
       accentColor = const Color(0xFF10B981);
       actionButtonText = 'View Ticket';
@@ -1980,8 +1986,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       };
     } else if (overallStatus == 'approved') {
-      cardTitle = 'Group Party Approved! 💳';
-      cardBody = 'Your request for $guestCount guests at $venueName is approved. Complete payment now.';
+      cardTitle = isLargeParty ? 'Large Party Approved! 💳' : 'Payment Required 💳';
+      cardBody = 'Action Required: Complete payment to confirm your party at $venueName.';
       badgeText = 'ACTION REQUIRED';
       accentColor = const Color(0xFFF59E0B);
       actionButtonText = 'Pay Now';
@@ -1990,15 +1996,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _initiateLargePartyPayment(partyMap);
       };
     } else if (overallStatus == 'cancelled') {
-      cardTitle = 'Group Party Cancelled ❌';
-      cardBody = 'Your group party at $venueName was cancelled.';
+      cardTitle = isLargeParty ? 'Large Party Cancelled ❌' : 'Group Party Cancelled ❌';
+      cardBody = 'Your party request at $venueName was cancelled.';
       badgeText = 'CANCELLED';
       accentColor = const Color(0xFFEF4444);
     } else {
-      cardTitle = 'Group Party Request Pending ⏳';
-      cardBody = 'Your party request of $guestCount friends at $venueName is pending admin verification.';
-      badgeText = 'PENDING';
-      accentColor = const Color(0xFF8B5CF6);
+      if (isLargeParty) {
+        cardTitle = 'Large Party Submitted ⏳';
+        cardBody = 'Your request for $guestCount guests at $venueName is waiting for admin approval.';
+        badgeText = 'PENDING APPROVAL';
+        accentColor = const Color(0xFF8B5CF6);
+        actionButtonText = null;
+        onActionTap = null;
+      } else {
+        cardTitle = 'Payment Required 💳';
+        cardBody = 'Action Required: Complete payment to confirm your group party at $venueName.';
+        badgeText = 'PAYMENT REQUIRED';
+        accentColor = const Color(0xFFF59E0B);
+        actionButtonText = 'Pay Now';
+        onActionTap = () {
+          _markGroupPartyAsRead(entries);
+          _initiateLargePartyPayment(partyMap);
+        };
+      }
     }
 
     List<NotificationAction>? actions;
@@ -2008,7 +2028,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           label: actionButtonText,
           onTap: onActionTap,
           isPrimary: true,
-          icon: overallStatus == 'approved' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
+          icon: actionButtonText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
         ),
       ];
     }

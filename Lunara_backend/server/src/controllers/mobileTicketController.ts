@@ -62,7 +62,7 @@ export class MobileTicketController {
                     where: {
                         userId,
                         [Op.or]: [
-                            { paymentStatus: { [Op.in]: [GroupPartyPaymentStatus.PAID, 'free' as any] } },
+                            { paymentStatus: GroupPartyPaymentStatus.PAID },
                             { status: { [Op.in]: [GroupPartyStatus.CONFIRMED, 'completed' as any] } },
                         ],
                     },

@@ -258,9 +258,25 @@ export class GroupPartyService {
         razorpay_order_id: string,
         razorpay_payment_id: string,
         razorpay_signature: string,
-        callerUserId: string
+        callerUserId: string,
+        partyId?: string
     ): Promise<GroupParty> {
-        const groupParty = await GroupParty.findOne({ where: { paymentId: razorpay_order_id } });
+        let groupParty: GroupParty | null = null;
+        if (partyId) {
+            groupParty = await GroupParty.findByPk(partyId);
+        }
+        if (!groupParty && razorpay_order_id) {
+            groupParty = await GroupParty.findOne({ where: { paymentId: razorpay_order_id } });
+        }
+        if (!groupParty && razorpay_order_id) {
+            groupParty = await GroupParty.findByPk(razorpay_order_id);
+        }
+        if (!groupParty) {
+            groupParty = await GroupParty.findOne({
+                where: { userId: callerUserId, status: GroupPartyStatus.PENDING },
+                order: [['createdAt', 'DESC']]
+            });
+        }
         if (!groupParty) {
             throw new Error('Group party booking not found');
         }
@@ -296,6 +312,23 @@ export class GroupPartyService {
             status: GroupPartyStatus.CONFIRMED,
             paymentId: razorpay_payment_id || razorpay_order_id,
         });
+
+        // Create Payment record for transaction tracking
+        try {
+            const { default: Payment, PaymentMethod, PaymentStatus: TxnStatus } = await import('../models/Payment');
+            await Payment.create({
+                transactionId: razorpay_payment_id || `gp_pay_${Date.now()}`,
+                userId: groupParty.userId,
+                amount: Number(groupParty.totalAmount),
+                currency: 'INR',
+                paymentMethod: razorpay_payment_id?.startsWith('wallet_') ? PaymentMethod.WALLET : PaymentMethod.RAZORPAY,
+                paymentGateway: razorpay_payment_id?.startsWith('wallet_') ? 'wallet' : 'razorpay',
+                status: TxnStatus.SUCCESSFUL,
+                refundAmount: 0,
+            } as any);
+        } catch (pErr) {
+            logger.warn(`[GroupPartyService] Failed to create Payment record: ${pErr}`);
+        }
 
         try {
             const AuditLog = (await import('../models/AuditLog')).default;
@@ -423,6 +456,9 @@ export class GroupPartyService {
                     priority: 'HIGH' as any,
                     isRead: false,
                     metadata: {
+                        partyId: entityId,
+                        groupPartyId: entityId,
+                        bookingId: entityId,
                         venueName,
                         guestCount,
                         eventType,
@@ -618,9 +654,16 @@ export class GroupPartyService {
                 body = `Your request for ${guestCount} guests at ${venueName} is approved. Complete payment now.`;
                 statusText = 'Approved - Pending Payment';
             } else if (isPending) {
-                title = `Group Party Request Pending ⏳`;
-                body = `Your party request at ${venueName} is pending admin/venue verification.`;
-                statusText = 'Pending Approval';
+                if (isLargeBooking) {
+                    title = `Large Party Request Submitted ⏳`;
+                    body = `Your request of ${guestCount} guests at ${venueName} is waiting for admin approval.`;
+                    statusText = 'Pending Approval';
+                } else {
+                    const totalAmt = Number(gp?.totalAmount || 0);
+                    title = `Payment Required 💳`;
+                    body = `Action Required: Complete payment${totalAmt > 0 ? ` of ₹${totalAmt}` : ''} to confirm your group party at ${venueName}.`;
+                    statusText = 'Payment Required';
+                }
             } else if (isRejected) {
                 title = `Group Party Rejected ❌`;
                 body = `Your party request at ${venueName} could not be approved.`;

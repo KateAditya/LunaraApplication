@@ -93,13 +93,14 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
 
 export const verifyPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, partyId, groupPartyId, id } = req.body;
 
         const groupParty = await GroupPartyService.verifySmallPartyPayment(
             razorpay_order_id,
             razorpay_payment_id,
             razorpay_signature,
-            req.user!.id
+            req.user!.id,
+            partyId || groupPartyId || id
         );
 
         res.json({ success: true, message: 'Payment verified successfully', data: groupParty });
@@ -234,8 +235,11 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
         let ticketUrl = groupParty.ticketUrl ?? null;
         let ticketCode = groupParty.ticketCode || groupParty.paymentId || `GP-${groupParty.id.substring(0, 8).toUpperCase()}`;
 
-        // Generate ticket on-the-fly for confirmed parties (PAID status covers both paid and free confirmed)
-        if (!ticketUrl && (groupParty.paymentStatus === GroupPartyPaymentStatus.PAID || groupParty.status === GroupPartyStatus.CONFIRMED)) {
+        // Generate ticket on-the-fly ONLY for verified paid parties or zero-cost confirmed parties
+        const isVerifiedPaid = groupParty.paymentStatus === GroupPartyPaymentStatus.PAID ||
+            (groupParty.status === GroupPartyStatus.CONFIRMED && Number(groupParty.totalAmount) <= 0);
+
+        if (!ticketUrl && isVerifiedPaid) {
             try {
                 ticketUrl = await generateTicketForGroupPartyHelper(groupParty.id);
             } catch (tErr: any) {

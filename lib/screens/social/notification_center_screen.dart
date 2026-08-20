@@ -765,29 +765,53 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ? item['data']
           : (item['metadata'] is Map ? item['metadata'] : {});
 
+      final itemId = item['id']?.toString() ?? '';
+
       // Extract specific identifiers for grouping
       final partyPlanId =
           data['partyPlanId']?.toString() ??
+          data['planId']?.toString() ??
           (item['entityType'] == 'party_plan'
               ? item['entityId']?.toString()
+              : null) ??
+          (itemId.startsWith('party_plan_timeline_')
+              ? itemId.replaceFirst('party_plan_timeline_', '')
               : null);
+
       final groupPartyId =
           data['groupPartyId']?.toString() ??
+          data['partyId']?.toString() ??
           data['groupId']?.toString() ??
-          (item['entityType'] == 'group_party'
+          (item['entityType'] == 'group_party' || item['entityType'] == 'GroupParty'
               ? item['entityId']?.toString()
-              : null);
+              : null) ??
+          (itemId.startsWith('group_party_timeline_')
+              ? itemId.replaceFirst('group_party_timeline_', '')
+              : (itemId.startsWith('group_party_')
+                  ? itemId.replaceFirst('group_party_', '')
+                  : null));
+
       final meetId =
           data['meetId']?.toString() ??
           data['strangersMeetId']?.toString() ??
           (item['entityType'] == 'strangers_meet'
               ? item['entityId']?.toString()
+              : null) ??
+          (itemId.startsWith('strangers_meet_timeline_')
+              ? itemId.replaceFirst('strangers_meet_timeline_', '')
               : null);
+
       final bookingId =
           data['bookingId']?.toString() ??
-          (item['entityType'] == 'booking'
+          (item['entityType'] == 'booking' || item['entityType'] == 'Booking'
               ? item['entityId']?.toString()
-              : null);
+              : null) ??
+          (itemId.startsWith('large_party_timeline_')
+              ? itemId.replaceFirst('large_party_timeline_', '')
+              : (itemId.startsWith('solo_booking_')
+                  ? itemId.replaceFirst('solo_booking_', '')
+                  : null));
+
       final requestId =
           data['requestId']?.toString() ?? item['entityId']?.toString();
 
@@ -807,7 +831,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         if (!entityMap.containsKey(groupKey)) {
           entityMap[groupKey] = item;
           deduplicatedList.add(item);
-        } else if (groupKey.startsWith('party_')) {
+        } else {
+          // Replace existing raw notification with dynamic enriched timeline card if available
+          final existingItem = entityMap[groupKey];
+          final isCurrentTimeline = itemId.contains('_timeline_') || (item['type']?.toString().endsWith('_timeline') == true);
+          final isExistingTimeline = (existingItem is Map) && ((existingItem['id']?.toString().contains('_timeline_') == true) || (existingItem['type']?.toString().endsWith('_timeline') == true));
+          if (isCurrentTimeline && !isExistingTimeline) {
+            final idx = deduplicatedList.indexOf(existingItem);
+            if (idx != -1) {
+              deduplicatedList[idx] = item;
+              entityMap[groupKey] = item;
+            }
+          } else if (groupKey.startsWith('party_')) {
           // STEP 13: ACTIVE PAY DEPOSIT > OLD/EXPIRED PARTY PLAN UPDATE
           final existingItem = entityMap[groupKey];
           final existingData =
@@ -872,10 +907,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             }
           }
         }
-      } else {
-        deduplicatedList.add(item);
       }
+    } else {
+      deduplicatedList.add(item);
     }
+  }
 
     var list = deduplicatedList;
 

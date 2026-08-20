@@ -3815,6 +3815,7 @@ class ApiService {
     required String razorpayOrderId,
     required String razorpayPaymentId,
     required String razorpaySignature,
+    String? partyId,
   }) async {
     try {
       final response = await post(
@@ -3823,6 +3824,7 @@ class ApiService {
           'razorpay_order_id': razorpayOrderId,
           'razorpay_payment_id': razorpayPaymentId,
           'razorpay_signature': razorpaySignature,
+          if (partyId != null && partyId.isNotEmpty) 'partyId': partyId,
         },
       );
       if (response.statusCode == 200) {

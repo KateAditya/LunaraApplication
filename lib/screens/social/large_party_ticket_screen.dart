@@ -40,7 +40,6 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   // Fresh backend ticket data
   Map<String, dynamic>? _freshHostUser;
   String? _canonicalTicketCode;
-  String? _ticketUrl;
   int? _freshTotalParticipants;
   int? _freshMemberCount;
   double? _freshTotalAmount;
@@ -84,16 +83,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   /// Best-effort guess from whatever the caller passed in, shown only until the
   /// authoritative server fetch in [_fetchTicketData] resolves and overwrites it.
   _LargePartyPaymentState _computeInitialStateFromLocalMap() {
-    final amount = double.tryParse((widget.booking['totalAmount'] ?? widget.booking['depositAmount'] ?? widget.booking['approvedAmount'] ?? widget.booking['charges'] ?? 0).toString()) ?? 0.0;
-    if (amount <= 0) return _LargePartyPaymentState.paid;
     final localStatus = (widget.booking['adminApprovalStatus'] ?? widget.booking['status'])?.toString().toLowerCase();
+    final paymentStatus = (widget.booking['paymentStatus'])?.toString().toLowerCase();
     if (localStatus == 'expired') return _LargePartyPaymentState.expired;
-    if (localStatus == 'paid' || localStatus == 'payment_done' || localStatus == 'confirmed') {
+    if (paymentStatus == 'paid' || localStatus == 'payment_done' || (localStatus == 'confirmed' && paymentStatus != 'pending')) {
       return _LargePartyPaymentState.paid;
     }
-    // Any other/unknown status (approved, payment_sent, pending, null, ...):
-    // never assume paid for a nonzero amount — wait for the server fetch to
-    // confirm, and require Pay Now in the meantime.
+    // Any other/unknown status: never assume paid — wait for server fetch to confirm
     return _LargePartyPaymentState.awaitingPayment;
   }
 
@@ -153,7 +149,6 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             _freshTotalAmount = (adminAmount != null && adminAmount > 0) ? adminAmount : totalAmount;
             _freshPaymentStatus = booking['paymentStatus']?.toString();
             _canonicalTicketCode = booking['ticketCode']?.toString();
-            _ticketUrl = booking['ticketUrl']?.toString();
             _amountDue = _freshTotalAmount;
 
             final guestsRaw = booking['numberOfGuests'];
@@ -166,7 +161,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
             final adminApprovalStatus = booking['adminApprovalStatus']?.toString();
             final bookingStatus = booking['status']?.toString();
-            final isPaid = (_freshTotalAmount ?? 0) <= 0 || _freshPaymentStatus == 'paid';
+            final isPaid = _freshPaymentStatus == 'paid' || adminApprovalStatus == 'payment_done' || (bookingStatus == 'confirmed' && _freshPaymentStatus != 'pending');
             final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
 
             if (isPaid) {
@@ -174,8 +169,6 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             } else if (isExpired) {
               _paymentState = _LargePartyPaymentState.expired;
             } else {
-              // Covers isAwaitingPayment as well as any unrecognized status —
-              // a nonzero-amount booking must never default to "paid".
               _paymentState = _LargePartyPaymentState.awaitingPayment;
             }
           });
@@ -229,7 +222,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               _amountDue = _freshTotalAmount;
 
               final gpStatus = groupParty['status']?.toString();
-              final isPaid = (_freshTotalAmount ?? 0) <= 0 || _freshPaymentStatus == 'paid' || gpStatus == 'confirmed';
+              final isPaid = _freshPaymentStatus == 'paid' || (gpStatus == 'confirmed' && _freshPaymentStatus != 'pending');
               final isExpired = gpStatus == 'expired';
 
               if (isPaid) {
@@ -237,13 +230,10 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               } else if (isExpired) {
                 _paymentState = _LargePartyPaymentState.expired;
               } else {
-                // Covers 'approved' as well as any unrecognized status — a
-                // nonzero-amount party must never default to "paid".
                 _paymentState = _LargePartyPaymentState.awaitingPayment;
               }
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString();
-            _ticketUrl = ticketObj['ticketUrl']?.toString();
           });
         }
       }
@@ -632,9 +622,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
       );
     }
 
-    final bool isFreeParty = totalAmount <= 0;
     final bool isAwaitingPayment = _paymentState == _LargePartyPaymentState.awaitingPayment;
     final bool isExpired = _paymentState == _LargePartyPaymentState.expired;
+    final bool isFreeParty = totalAmount <= 0 && !isAwaitingPayment && !isExpired && _paymentState == _LargePartyPaymentState.paid;
     final double amountDue = _amountDue ?? totalAmount;
     final paymentMethodLabel = isFreeParty
         ? 'FREE (Complimentary)'
