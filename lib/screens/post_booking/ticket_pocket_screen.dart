@@ -85,22 +85,23 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
+    final now = DateTime.now();
+    final defaultExp = eventStart?.add(const Duration(hours: 30));
+
     if (booking['expiresAt'] != null) {
       final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
-      if (dt != null) return dt;
+      if (dt != null && dt.isAfter(now)) return dt;
     }
     if (booking['ticketExpiresAt'] != null) {
       final dt = DateTime.tryParse(booking['ticketExpiresAt'].toString())?.toLocal();
-      if (dt != null) return dt;
+      if (dt != null && dt.isAfter(now)) return dt;
     }
     if (booking['eventEndAt'] != null) {
       final dt = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
-      if (dt != null) return dt;
+      if (dt != null && dt.isAfter(now)) return dt;
     }
-    if (eventStart != null) {
-      return eventStart.add(const Duration(hours: 30));
-    }
-    return null;
+
+    return defaultExp;
   }
 
   bool _isActiveBooking(Map<String, dynamic> booking) {

@@ -793,16 +793,27 @@ class ApiService {
     if (userId == null) return [];
 
     try {
-      final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all'});
+      final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all', 'userId': userId});
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] is List) {
+        if (data['success'] == true && data['data'] is List && (data['data'] as List).isNotEmpty) {
           return List<Map<String, dynamic>>.from(data['data']);
         }
       }
     } catch (e) {
       debugPrint('fetchAllUserTickets error: $e');
     }
+
+    // Resilient fallback to fetchBookings if mobile/tickets returns empty or in-flight migration
+    try {
+      final bookings = await fetchBookings(forceRefresh: true);
+      if (bookings != null && bookings.isNotEmpty) {
+        return bookings.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList();
+      }
+    } catch (e) {
+      debugPrint('fetchAllUserTickets fallback error: $e');
+    }
+
     return [];
   }
 

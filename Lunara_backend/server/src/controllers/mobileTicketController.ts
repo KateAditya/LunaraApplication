@@ -11,6 +11,7 @@ import PartyPlan from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
+import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 
 function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
@@ -56,7 +57,20 @@ export class MobileTicketController {
             const tab = (req.query.tab as string) || 'all';
             const now = new Date();
 
-            const venueAttributes = ['id', 'name', 'addressLine1', 'city', 'area', 'images', 'profilePhotoUrl', 'coverImageUrl'];
+            const venueInclude = {
+                model: Venue,
+                as: 'venue',
+                attributes: ['id', 'name', 'addressLine1', 'city', 'area'],
+                include: [
+                    {
+                        model: VenueImage,
+                        as: 'images',
+                        attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                        required: false,
+                    },
+                ],
+                required: false,
+            };
 
             // Parallel fetch across all potential ticket sources for this user
             const [
@@ -70,9 +84,7 @@ export class MobileTicketController {
             ] = await Promise.all([
                 Ticket.findAll({
                     where: { userId },
-                    include: [
-                        { model: Venue, as: 'venue', attributes: venueAttributes },
-                    ],
+                    include: [venueInclude],
                     order: [['eventStartAt', 'DESC']],
                 }),
                 Booking.findAll({
@@ -85,9 +97,7 @@ export class MobileTicketController {
                             { adminApprovalStatus: { [Op.in]: ['approved', 'payment_done'] } },
                         ],
                     },
-                    include: [
-                        { model: Venue, as: 'venue', attributes: venueAttributes },
-                    ],
+                    include: [venueInclude],
                     order: [['bookingDate', 'DESC']],
                 }),
                 GroupParty.findAll({
@@ -100,9 +110,7 @@ export class MobileTicketController {
                             { totalAmount: 0 },
                         ],
                     },
-                    include: [
-                        { model: Venue, as: 'venue', attributes: venueAttributes },
-                    ],
+                    include: [venueInclude],
                     order: [['partyDate', 'DESC']],
                 }),
                 PartyPlanRequest.findAll({
@@ -119,7 +127,7 @@ export class MobileTicketController {
                             model: PartyPlan,
                             as: 'plan',
                             include: [
-                                { model: Venue, as: 'venue', attributes: venueAttributes },
+                                venueInclude,
                                 { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                             ],
                         },
@@ -135,9 +143,7 @@ export class MobileTicketController {
                             { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
                         ],
                     },
-                    include: [
-                        { model: Venue, as: 'venue', attributes: venueAttributes },
-                    ],
+                    include: [venueInclude],
                     order: [['planDateTime', 'DESC']],
                 }),
                 StrangersMeetJoiner.findAll({
@@ -153,9 +159,7 @@ export class MobileTicketController {
                         {
                             model: StrangersMeetRequest,
                             as: 'strangersMeetRequest',
-                            include: [
-                                { model: Venue, as: 'venue', attributes: venueAttributes },
-                            ],
+                            include: [venueInclude],
                         },
                     ],
                     order: [['createdAt', 'DESC']],
@@ -166,12 +170,10 @@ export class MobileTicketController {
                         status: { [Op.ne]: 'cancelled' },
                         [Op.or]: [
                             { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid'] } },
+                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed', 'paid', 'pending'] } },
                         ],
                     },
-                    include: [
-                        { model: Venue, as: 'venue', attributes: venueAttributes },
-                    ],
+                    include: [venueInclude],
                     order: [['createdAt', 'DESC']],
                 }),
             ]);
