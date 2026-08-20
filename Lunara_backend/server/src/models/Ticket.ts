@@ -273,7 +273,4 @@ Ticket.init(
     }
 );
 
-Ticket.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-Ticket.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
-
 export default Ticket;
