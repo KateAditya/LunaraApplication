@@ -48,7 +48,7 @@ export class MobileTicketController {
                     where: {
                         userId,
                         [Op.or]: [
-                            { paymentStatus: { [Op.in]: ['paid', 'free'] } },
+                            { paymentStatus: 'paid' },
                             { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED, 'active' as any] } },
                             { adminApprovalStatus: 'approved' },
                         ],

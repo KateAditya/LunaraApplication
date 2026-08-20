@@ -2079,6 +2079,11 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               }
                             });
 
+                            rzp.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+                              rzp.clear();
+                              debugPrint('External wallet selected: ${response.walletName}');
+                            });
+
                             rzp.open({
                               'key': keyId,
                               'amount': amountInPaise,

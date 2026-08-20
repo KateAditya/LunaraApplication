@@ -244,10 +244,23 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
           const SizedBox(height: 20),
           // Action Buttons
           if (_isProcessing)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              alignment: Alignment.center,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: LunaraTheme.electricViolet, strokeWidth: 2.5),
+                  SizedBox(height: 14),
+                  Text(
+                    'Connecting to Secure Payment Gateway...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
               ),
             )
           else ...[
@@ -257,16 +270,21 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
               height: 50,
               child: ElevatedButton.icon(
                 onPressed: () async {
+                  final navigator = Navigator.of(context);
                   setState(() => _isProcessing = true);
                   if (hasEnoughBalance) {
                     final success = await widget.onWalletPayment();
                     if (mounted) {
                       setState(() => _isProcessing = false);
-                      if (success) Navigator.pop(context);
+                      if (success) navigator.pop();
                     }
                   } else {
-                    Navigator.pop(context);
+                    setState(() => _isProcessing = true);
                     await widget.onHybridPayment(shortfall);
+                    if (mounted) {
+                      setState(() => _isProcessing = false);
+                      navigator.pop();
+                    }
                   }
                 },
                 icon: Icon(
@@ -294,8 +312,16 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
               height: 48,
               child: OutlinedButton.icon(
                 onPressed: () async {
-                  Navigator.pop(context);
-                  await widget.onDirectPayment();
+                  final navigator = Navigator.of(context);
+                  setState(() => _isProcessing = true);
+                  try {
+                    await widget.onDirectPayment();
+                  } finally {
+                    if (mounted) {
+                      setState(() => _isProcessing = false);
+                      navigator.pop();
+                    }
+                  }
                 },
                 icon: const Icon(Icons.payment_rounded, color: Colors.black87, size: 18),
                 label: Text(

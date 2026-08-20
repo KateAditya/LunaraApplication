@@ -1823,6 +1823,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    // Extract total amount to determine if this party is paid or free
+    double totalAmount = 0.0;
+    for (final e in entries) {
+      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['approvedAmount'] ?? e['charges'] ?? e['data']?['totalAmount'];
+      if (rawAmt is num && rawAmt > 0) {
+        totalAmount = rawAmt.toDouble();
+        break;
+      } else if (rawAmt != null) {
+        final parsed = double.tryParse(rawAmt.toString());
+        if (parsed != null && parsed > 0) {
+          totalAmount = parsed;
+          break;
+        }
+      }
+    }
+
     // Determine status from entries
     bool isConfirmed = false;
     bool isApproved = false;
@@ -1839,36 +1855,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (status == 'expired' || e['isExpired'] == true || e['data']?['isExpired'] == true) {
         isExpiredFromServer = true;
-      } else if (status == 'confirmed' || status == 'paid' || status == 'payment_done' ||
-          paymentStatus == 'paid' || paymentStatus == 'free' ||
-          eventType == 'payment_success') {
-        // Deliberately does NOT match on title/body substrings — a
-        // notification whose text merely mentions "confirmed" (e.g. an
-        // unrelated status update) must never be enough to unlock a ticket
-        // that hasn't actually been paid for. Only explicit status/type
-        // fields count.
-        isConfirmed = true;
-      } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
-        isApproved = true;
-      } else if (status == 'cancelled' || status == 'rejected' || title.contains('cancelled') || title.contains('rejected')) {
+      } else if (status == 'cancelled' || status == 'rejected' || paymentStatus == 'failed' || title.contains('cancelled') || title.contains('rejected')) {
         isCancelled = true;
       } else if (status == 'completed' || title.contains('completed')) {
         isCompleted = true;
-      } else if (status == 'pending') {
+      } else if (paymentStatus == 'paid' || eventType == 'payment_success' || (totalAmount <= 0 && (status == 'confirmed' || status == 'paid'))) {
+        isConfirmed = true;
+      } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
+        isApproved = true;
+      } else if (status == 'pending' || paymentStatus == 'pending') {
         isPending = true;
       }
     }
 
-    // Status precedence
-    String overallStatus = isConfirmed
-        ? 'confirmed'
-        : (isCompleted
-            ? 'completed'
-            : (isApproved
-                ? 'approved'
-                : (isCancelled
-                    ? 'cancelled'
-                    : 'pending')));
+    // Status precedence: If cancelled, it is cancelled; If unpaid when totalAmount > 0, it must be pending
+    String overallStatus;
+    if (isCancelled) {
+      overallStatus = 'cancelled';
+    } else if (isExpiredFromServer) {
+      overallStatus = 'expired';
+    } else if (isConfirmed && (totalAmount <= 0 || !isPending)) {
+      overallStatus = 'confirmed';
+    } else if (isCompleted) {
+      overallStatus = 'completed';
+    } else if (isApproved) {
+      overallStatus = 'approved';
+    } else {
+      overallStatus = 'pending';
+    }
 
     // Venue name
     String venueName = partyMap['venueName'] ??

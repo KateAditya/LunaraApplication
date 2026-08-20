@@ -693,7 +693,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
             where: {
                 userId,
                 status: { [Op.in]: ['confirmed', 'completed'] },
-                paymentStatus: { [Op.in]: ['paid', 'free'] },
+                paymentStatus: 'paid',
             },
             include: [venueInclude],
         });
