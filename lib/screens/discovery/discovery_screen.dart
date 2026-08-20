@@ -136,7 +136,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (permission == LocationPermission.deniedForever) {
       if (requestIfNeeded) {
         AppLockWrapper.ignoreNextPause = true;
-        await Geolocator.openAppSettings();
+        if (!kIsWeb) {
+          try {
+            await Geolocator.openAppSettings();
+          } catch (e) {
+            debugPrint("openAppSettings error: $e");
+          }
+        }
       }
       if (showLoader && mounted) Navigator.pop(context);
       return;

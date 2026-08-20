@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, unused_local_variable
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
@@ -164,11 +165,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     _loadFeed();
     _initSocketListeners();
 
-    // Razorpay setup
-    _razorpay = Razorpay();
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onLargePartyPaymentSuccess);
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
-    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
+    // Razorpay setup (native platforms only)
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onLargePartyPaymentSuccess);
+        _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
+        _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
+      } catch (e) {
+        debugPrint('Razorpay init error: $e');
+      }
+    }
 
     // Background sync timer every 45 seconds (WebSockets handle real-time events)
     _pollingTimer = Timer.periodic(const Duration(seconds: 45), (_) {

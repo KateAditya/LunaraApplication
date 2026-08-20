@@ -503,6 +503,15 @@ Venue.hasMany(GroupParty, { foreignKey: 'venueId', as: 'groupParties', onDelete:
 GroupParty.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
 
 // ============================================================================
+// Ticket Associations
+// ============================================================================
+User.hasMany(Ticket, { foreignKey: 'userId', as: 'tickets', onDelete: 'CASCADE' });
+Ticket.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+Venue.hasMany(Ticket, { foreignKey: 'venueId', as: 'tickets', onDelete: 'CASCADE' });
+Ticket.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+
+// ============================================================================
 // Strangers Meet Request & Joiner Associations
 // ============================================================================
 

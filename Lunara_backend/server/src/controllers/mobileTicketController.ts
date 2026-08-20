@@ -86,6 +86,9 @@ export class MobileTicketController {
                     where: { userId },
                     include: [venueInclude],
                     order: [['eventStartAt', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets Ticket query error:', err);
+                    return [];
                 }),
                 Booking.findAll({
                     where: {
@@ -99,6 +102,9 @@ export class MobileTicketController {
                     },
                     include: [venueInclude],
                     order: [['bookingDate', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets Booking query error:', err);
+                    return [];
                 }),
                 GroupParty.findAll({
                     where: {
@@ -112,6 +118,9 @@ export class MobileTicketController {
                     },
                     include: [venueInclude],
                     order: [['partyDate', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets GroupParty query error:', err);
+                    return [];
                 }),
                 PartyPlanRequest.findAll({
                     where: {
@@ -133,6 +142,9 @@ export class MobileTicketController {
                         },
                     ],
                     order: [['createdAt', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets PartyPlanRequest query error:', err);
+                    return [];
                 }),
                 PartyPlan.findAll({
                     where: {
@@ -145,6 +157,9 @@ export class MobileTicketController {
                     },
                     include: [venueInclude],
                     order: [['planDateTime', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets PartyPlan host query error:', err);
+                    return [];
                 }),
                 StrangersMeetJoiner.findAll({
                     where: {
@@ -163,6 +178,9 @@ export class MobileTicketController {
                         },
                     ],
                     order: [['createdAt', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets StrangersMeetJoiner query error:', err);
+                    return [];
                 }),
                 StrangersMeetRequest.findAll({
                     where: {
@@ -175,6 +193,9 @@ export class MobileTicketController {
                     },
                     include: [venueInclude],
                     order: [['createdAt', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets StrangersMeetRequest query error:', err);
+                    return [];
                 }),
             ]);
 

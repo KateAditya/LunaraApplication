@@ -650,7 +650,10 @@ export const addToWallet = async (req: Request, res: Response) => {
 // ─── GET / — List user's bookings ─────────────────────────────────────────────
 export const listMyBookings = async (req: Request, res: Response) => {
     try {
-        const userId = req.user!.id;
+        const userId = req.user?.id || (req.query.userId as string);
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required' });
+        }
 
         const venueInclude = {
             model: Venue,
@@ -661,82 +664,96 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     model: VenueImage,
                     as: 'images',
                     attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                    required: false,
                 }
-            ]
+            ],
+            required: false,
         };
 
-        const bookings = await Booking.findAll({
-            where: { userId },
-            include: [venueInclude],
-            order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
-        });
-
-        // "Your Nights" / booking history is meant to reflect every night the
-        // user actually paid for — but a Party Plan deposit payment only ever
-        // produces a `Booking` row lazily, once BOTH host and joiner have
-        // paid and matched, and even then that single row is stamped under
-        // the HOST's userId only. A joiner who paid their own deposit (or a
-        // host whose plan hasn't matched yet) would otherwise never see that
-        // night here despite the payment having succeeded — surface those
-        // directly from PartyPlan/PartyPlanRequest as synthesized entries,
-        // the same union pattern the Wallet screen already uses for its
-        // "Purchases" tab.
-        const hostPlans = await PartyPlan.findAll({
-            where: {
-                userId,
-                [Op.or]: [
-                    { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                    { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
-                ],
-            },
-            include: [venueInclude],
-        });
-
-        const joinerRequests = await PartyPlanRequest.findAll({
-            where: {
-                requesterId: userId,
-                [Op.or]: [
-                    { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                    { status: { [Op.in]: ['accepted', 'confirmed', 'paid'] } },
-                ],
-            },
-            include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
-        });
-
-        const groupParties = await GroupParty.findAll({
-            where: {
-                userId,
-                status: { [Op.ne]: 'cancelled' },
-                [Op.or]: [
-                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                    { status: { [Op.in]: ['confirmed', 'completed', 'active', 'approved'] } },
-                    { totalAmount: 0 },
-                ],
-            },
-            include: [venueInclude],
-        });
-
-        const smHostRequests = await StrangersMeetRequest.findAll({
-            where: {
-                userId,
-                [Op.or]: [
-                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                    { status: { [Op.in]: ['approved', 'matched', 'confirmed', 'chat_enabled', 'in_progress', 'completed', 'active', 'pending'] } },
-                ],
-            },
-            include: [venueInclude],
-        });
-
-        const smJoinerRequests = await StrangersMeetJoiner.findAll({
-            where: {
-                userId,
-                [Op.or]: [
-                    { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
-                    { status: { [Op.in]: ['paid', 'accepted', 'confirmed', 'completed', 'active'] } },
-                ],
-            },
-            include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude] }],
-        });
+        const [
+            bookings,
+            hostPlans,
+            joinerRequests,
+            groupParties,
+            smHostRequests,
+            smJoinerRequests
+        ] = await Promise.all([
+            Booking.findAll({
+                where: { userId },
+                include: [venueInclude],
+                order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
+            }).catch(err => {
+                logger.error('listMyBookings Booking query error:', err);
+                return [];
+            }),
+            PartyPlan.findAll({
+                where: {
+                    userId,
+                    [Op.or]: [
+                        { hostPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                        { lifecycleStatus: { [Op.in]: ['host_deposit_paid', 'plan_created', 'match_confirmed', 'chat_enabled', 'plan_completed', 'active'] } },
+                    ],
+                },
+                include: [venueInclude],
+            }).catch(err => {
+                logger.error('listMyBookings PartyPlan host query error:', err);
+                return [];
+            }),
+            PartyPlanRequest.findAll({
+                where: {
+                    requesterId: userId,
+                    [Op.or]: [
+                        { joinerPaymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                        { status: { [Op.in]: ['accepted', 'confirmed', 'paid'] } },
+                    ],
+                },
+                include: [{ model: PartyPlan, as: 'plan', include: [venueInclude] }],
+            }).catch(err => {
+                logger.error('listMyBookings PartyPlanRequest joiner query error:', err);
+                return [];
+            }),
+            GroupParty.findAll({
+                where: {
+                    userId,
+                    status: { [Op.ne]: 'cancelled' },
+                    [Op.or]: [
+                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                        { status: { [Op.in]: ['confirmed', 'completed', 'active', 'approved'] } },
+                        { totalAmount: 0 },
+                    ],
+                },
+                include: [venueInclude],
+            }).catch(err => {
+                logger.error('listMyBookings GroupParty query error:', err);
+                return [];
+            }),
+            StrangersMeetRequest.findAll({
+                where: {
+                    userId,
+                    [Op.or]: [
+                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                        { status: { [Op.in]: ['approved', 'matched', 'confirmed', 'chat_enabled', 'in_progress', 'completed', 'active', 'pending'] } },
+                    ],
+                },
+                include: [venueInclude],
+            }).catch(err => {
+                logger.error('listMyBookings StrangersMeetRequest query error:', err);
+                return [];
+            }),
+            StrangersMeetJoiner.findAll({
+                where: {
+                    userId,
+                    [Op.or]: [
+                        { paymentStatus: { [Op.in]: ['paid', 'PAID', 'successful', 'free'] } },
+                        { status: { [Op.in]: ['paid', 'accepted', 'confirmed', 'completed', 'active'] } },
+                    ],
+                },
+                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude] }],
+            }).catch(err => {
+                logger.error('listMyBookings StrangersMeetJoiner query error:', err);
+                return [];
+            }),
+        ]);
 
         const synthesized: any[] = [];
 
