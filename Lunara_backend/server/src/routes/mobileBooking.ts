@@ -99,7 +99,7 @@ router.get('/', authenticate, ctrl.listMyBookings);
  */
 router.post(
     '/:id/pay-now',
-    [authenticate, param('id').isUUID(), validate],
+    [authenticate, param('id').notEmpty().withMessage('id is required'), validate],
     ctrl.payNow
 );
 
@@ -109,7 +109,7 @@ router.post(
  */
 router.post(
     '/:id/initiate-large-party-payment',
-    [authenticate, param('id').isUUID(), validate],
+    [authenticate, param('id').notEmpty().withMessage('id is required'), validate],
     ctrl.initiateLargePartyPayment
 );
 
@@ -121,7 +121,7 @@ router.post(
     '/:id/verify-large-party-payment',
     [
         authenticate,
-        param('id').isUUID(),
+        param('id').notEmpty().withMessage('id is required'),
         body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
         body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
         body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
@@ -138,7 +138,7 @@ router.post(
     '/:id/split-bill',
     [
         authenticate,
-        param('id').isUUID(),
+        param('id').notEmpty().withMessage('id is required'),
         body('members').isArray({ min: 1 }).withMessage('members must be a non-empty array'),
         body('members.*.name').notEmpty().withMessage('Each member must have a name'),
         body('members.*.shareAmount').isNumeric().withMessage('Each member must have a shareAmount'),
@@ -155,7 +155,7 @@ router.post(
     '/:id/split-bill/pay',
     [
         authenticate,
-        param('id').isUUID(),
+        param('id').notEmpty().withMessage('id is required'),
         body('memberId').isUUID().withMessage('memberId must be a UUID'),
         validate,
     ],
@@ -168,7 +168,7 @@ router.post(
  */
 router.post(
     '/:id/secure-reservation',
-    [authenticate, param('id').isUUID(), validate],
+    [authenticate, param('id').notEmpty().withMessage('id is required'), validate],
     ctrl.secureReservation
 );
 
@@ -180,7 +180,7 @@ router.post(
  */
 router.get(
     '/:id/ticket',
-    [authenticate, param('id').isUUID(), validate],
+    [authenticate, param('id').notEmpty().withMessage('id is required'), validate],
     ctrl.getTicket
 );
 
@@ -190,7 +190,7 @@ router.get(
  */
 router.post(
     '/:id/add-to-wallet',
-    [authenticate, param('id').isUUID(), validate],
+    [authenticate, param('id').notEmpty().withMessage('id is required'), validate],
     ctrl.addToWallet
 );
 
@@ -200,6 +200,6 @@ router.post(
  * GET /api/mobile/bookings/:id
  * Full booking detail including group/split members.
  */
-router.get('/:id', [authenticate, param('id').isUUID(), validate], ctrl.getBookingDetail);
+router.get('/:id', [authenticate, param('id').notEmpty().withMessage('id is required'), validate], ctrl.getBookingDetail);
 
 export default router;

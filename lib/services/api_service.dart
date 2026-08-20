@@ -1450,6 +1450,22 @@ class ApiService {
     return null;
   }
 
+  static String cleanBookingId(String rawId) {
+    return rawId
+        .replaceAll('group_party_timeline_', '')
+        .replaceAll('large_party_timeline_', '')
+        .replaceAll('solo_booking_', '')
+        .replaceAll('party_plan_timeline_', '')
+        .replaceAll('group_party_', '')
+        .replaceAll('large_party_', '')
+        .replaceAll('party_plan_', '')
+        .replaceAll('booking_', '')
+        .replaceAll('group_', '')
+        .replaceAll('party_', '')
+        .replaceAll('req_', '')
+        .trim();
+  }
+
   static Future<Map<String, dynamic>?> payWithWallet({
     required double amount,
     String? planId,
@@ -1459,13 +1475,15 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
+      final cleanBid = bookingId != null ? cleanBookingId(bookingId) : null;
+      final cleanPid = planId != null ? cleanBookingId(planId) : null;
       final response = await post(
         '/api/mobile/wallet/pay-with-wallet',
         body: {
           'userId': userId,
           'amount': amount,
-          'planId': planId,
-          'bookingId': bookingId,
+          'planId': cleanPid,
+          'bookingId': cleanBid,
           'paymentType': paymentType,
         },
       );
@@ -3272,8 +3290,9 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> initiateLargePartyPayment(String bookingId) async {
     try {
+      final cleanId = cleanBookingId(bookingId);
       final response = await post(
-        '/api/mobile/bookings/$bookingId/initiate-large-party-payment',
+        '/api/mobile/bookings/$cleanId/initiate-large-party-payment',
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -3296,8 +3315,9 @@ class ApiService {
     required String razorpaySignature,
   }) async {
     try {
+      final cleanId = cleanBookingId(bookingId);
       final response = await post(
-        '/api/mobile/bookings/$bookingId/verify-large-party-payment',
+        '/api/mobile/bookings/$cleanId/verify-large-party-payment',
         body: {
           'razorpay_order_id': razorpayOrderId,
           'razorpay_payment_id': razorpayPaymentId,

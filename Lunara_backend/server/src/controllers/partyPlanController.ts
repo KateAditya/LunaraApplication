@@ -3374,14 +3374,23 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 
 // ─────────────────────────────────────────────────────────────────────────────
 async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction) {
-    const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
+    const hostStatusStr = String(plan.hostPaymentStatus || '').toLowerCase();
+    const planPayStatusStr = String(plan.paymentStatus || '').toLowerCase();
+    const wasHostPaid =
+        hostStatusStr === 'paid' ||
+        hostStatusStr === PartyPlanPaymentStatus.PAID ||
+        Boolean(plan.hostRazorpayPaymentId) ||
+        planPayStatusStr === 'confirmed' ||
+        planPayStatusStr === 'paid' ||
+        planPayStatusStr === 'awaiting participant payment' ||
+        (plan.depositAmount && Number(plan.depositAmount) > 0 && planPayStatusStr !== 'pending' && planPayStatusStr !== 'unpaid');
 
     // 1. Update plan status
     await plan.update({
         status: PartyPlanStatus.CANCELLED,
         lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
         isLive: false,
-        paymentStatus: plan.paymentStatus === 'Confirmed' ? 'Refunded' : plan.paymentStatus,
+        paymentStatus: wasHostPaid || planPayStatusStr === 'confirmed' ? 'Refunded' : plan.paymentStatus,
         hostPaymentStatus: wasHostPaid ? PartyPlanPaymentStatus.REFUNDED : plan.hostPaymentStatus,
     }, { transaction });
 
@@ -3418,7 +3427,11 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     });
 
     for (const req of requests) {
-        const wasJoinerPaid = req.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID;
+        const joinerStatusStr = String(req.joinerPaymentStatus || '').toLowerCase();
+        const wasJoinerPaid =
+            joinerStatusStr === 'paid' ||
+            joinerStatusStr === PartyPlanJoinerPaymentStatus.PAID ||
+            Boolean(req.joinerRazorpayPaymentId);
 
         await req.update({
             status: PartyPlanRequestStatus.CANCELLED,
@@ -3712,7 +3725,11 @@ export const repostPartyPlan = async (req: Request, res: Response): Promise<void
         });
 
         for (const reqItem of pendingRequests) {
-            const wasJoinerPaid = reqItem.joinerPaymentStatus === PartyPlanJoinerPaymentStatus.PAID;
+            const joinerStatusStr = String(reqItem.joinerPaymentStatus || '').toLowerCase();
+            const wasJoinerPaid =
+                joinerStatusStr === 'paid' ||
+                joinerStatusStr === PartyPlanJoinerPaymentStatus.PAID ||
+                Boolean(reqItem.joinerRazorpayPaymentId);
             await reqItem.update({
                 status: PartyPlanRequestStatus.CANCELLED,
                 cancelledBy: callerUserId,

@@ -41,11 +41,22 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
 
+    ApiService.addSocketListener('wallet_updated', _onWalletUpdatedSocket);
+    ApiService.addSocketListener('wallet_refund_processed', _onWalletUpdatedSocket);
+
     _loadWalletData();
+  }
+
+  void _onWalletUpdatedSocket(dynamic data) {
+    if (mounted) {
+      _loadWalletData();
+    }
   }
 
   @override
   void dispose() {
+    ApiService.removeSocketListener('wallet_updated', _onWalletUpdatedSocket);
+    ApiService.removeSocketListener('wallet_refund_processed', _onWalletUpdatedSocket);
     _filterTabController.dispose();
     _customRechargeController.dispose();
     _razorpay.clear();

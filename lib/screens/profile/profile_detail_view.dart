@@ -9,6 +9,7 @@ import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/profile_share_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import 'vip_membership_screen.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -1162,6 +1163,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 ),
                               );
                             }
+                            _checkUsageWarning(res);
                           }
                         },
                 ),
@@ -1264,6 +1266,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 ),
                               );
                             }
+                            _checkUsageWarning(res);
                           }
                         },
                 ),
@@ -1288,6 +1291,55 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         ),
       ],
     );
+  }
+
+  void _checkUsageWarning(Map<String, dynamic>? res) {
+    if (res != null && res['usageWarning'] != null && res['usageWarning']['triggered'] == true && mounted) {
+      final warnMsg = res['usageWarning']['message']?.toString() ?? 'Usage warning';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  warnMsg,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amberAccent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'UPGRADE',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF7F00FF),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Widget _actionButton(

@@ -195,7 +195,7 @@ export class WalletService {
         const result = await sequelize.transaction(async (t) => {
             let wallet = await SmartWallet.findOne({
                 where: { userId },
-                lock: Transaction.LOCK.UPDATE,
+                lock: (t as any).LOCK?.UPDATE || 'UPDATE',
                 transaction: t,
             });
 
@@ -339,7 +339,7 @@ export class WalletService {
         }
 
         const result = await sequelize.transaction(async (t) => {
-            const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
+            const wallet = await SmartWallet.findOne({ where: { userId }, lock: (t as any).LOCK?.UPDATE || 'UPDATE', transaction: t });
             if (!wallet) throw new Error('Wallet not found');
 
             const openingBal = Math.round(wallet.totalAvailableBalance * 100) / 100;
@@ -397,7 +397,7 @@ export class WalletService {
         const { userId, amount, partyPlanId, bookingId, action, reference } = params;
 
         const result = await sequelize.transaction(async (t) => {
-            const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
+            const wallet = await SmartWallet.findOne({ where: { userId }, lock: (t as any).LOCK?.UPDATE || 'UPDATE', transaction: t });
             if (!wallet) throw new Error('Wallet not found');
 
             const openingBal = wallet.totalAvailableBalance;
@@ -477,7 +477,7 @@ export class WalletService {
 
         const executeInTx = async (t: Transaction) => {
             const wallet = await this.getOrCreateWallet(userId, t);
-            await wallet.reload({ lock: Transaction.LOCK.UPDATE, transaction: t });
+            await wallet.reload({ lock: t.LOCK.UPDATE, transaction: t });
 
             const openingBal = Number(wallet.balance || 0);
             const currentLocked = Number(wallet.lockedBalance || 0);
@@ -485,8 +485,8 @@ export class WalletService {
             // If there is locked balance, unlock it
             const unlockAmount = Math.min(currentLocked, amount);
             const newLocked = Math.max(0, currentLocked - unlockAmount);
-            const newBalance = openingBal + amount;
-            const newLifetimeRefunds = Number(wallet.lifetimeRefunds || 0) + amount;
+            const newBalance = Math.round((openingBal + amount) * 100) / 100;
+            const newLifetimeRefunds = Math.round((Number(wallet.lifetimeRefunds || 0) + amount) * 100) / 100;
 
             await wallet.update(
                 {
@@ -497,7 +497,14 @@ export class WalletService {
                 { transaction: t }
             );
 
-            const updatedAvailable = Number(wallet.totalAvailableBalance || wallet.balance);
+            const updatedAvailable = Math.round(
+                (newBalance +
+                    Number(wallet.promotionalBalance || 0) +
+                    Number(wallet.cashbackBalance || 0) +
+                    Number(wallet.rewardBalance || 0)) *
+                    100
+            ) / 100;
+
             await User.update(
                 { walletBalance: updatedAvailable },
                 { where: { id: userId }, transaction: t }
@@ -530,6 +537,55 @@ export class WalletService {
                 },
                 { transaction: t }
             );
+
+            // Real-time socket event & in-app notification
+            setImmediate(async () => {
+                try {
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${userId}`).emit('wallet_updated', {
+                            userId,
+                            balance: updatedAvailable,
+                            refundAmount: amount,
+                            partyPlanId,
+                            reference: referenceId,
+                            reason,
+                        });
+                        io.to(`user_${userId}`).emit('wallet_refund_processed', {
+                            userId,
+                            amount,
+                            partyPlanId,
+                            reference: referenceId,
+                        });
+                    }
+
+                    const notifIdempotency = `refund_notif_${referenceId}`;
+                    await Notification.findOrCreate({
+                        where: { idempotencyKey: notifIdempotency },
+                        defaults: {
+                            recipientUserId: userId,
+                            actorUserId: userId,
+                            eventType: 'REFUND_COMPLETED',
+                            category: 'payments',
+                            entityType: 'wallet',
+                            entityId: wallet.id,
+                            title: '₹' + amount.toFixed(0) + ' Refund Credited',
+                            body: `₹${amount.toFixed(0)} deposit has been refunded and added to your Lunara Wallet available balance.`,
+                            priority: 'HIGH',
+                            isRead: false,
+                            idempotencyKey: notifIdempotency,
+                            metadata: {
+                                amount,
+                                partyPlanId,
+                                referenceId,
+                                newBalance: updatedAvailable,
+                            },
+                        },
+                    });
+                } catch (notifErr: any) {
+                    logger.warn('[creditRefund] Notification/Socket dispatch error:', notifErr.message);
+                }
+            });
 
             return { wallet, txn };
         };
@@ -587,7 +643,7 @@ export class WalletService {
         }
 
         const result = await sequelize.transaction(async (t) => {
-            const wallet = await SmartWallet.findOne({ where: { userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
+            const wallet = await SmartWallet.findOne({ where: { userId }, lock: (t as any).LOCK?.UPDATE || 'UPDATE', transaction: t });
             if (!wallet) throw new Error('Wallet not found');
 
             const openingBal = Math.round(wallet.totalAvailableBalance * 100) / 100;
@@ -836,7 +892,7 @@ export class WalletService {
 
                     if (cashback > 0) {
                         await sequelize.transaction(async (t) => {
-                            const wallet = await SmartWallet.findOne({ where: { userId: params.userId }, lock: Transaction.LOCK.UPDATE, transaction: t });
+                            const wallet = await SmartWallet.findOne({ where: { userId: params.userId }, lock: (t as any).LOCK?.UPDATE || 'UPDATE', transaction: t });
                             if (wallet && !wallet.isFrozen) {
                                 const opening = wallet.totalAvailableBalance;
                                 const newCashbackBal = Number(wallet.cashbackBalance) + cashback;

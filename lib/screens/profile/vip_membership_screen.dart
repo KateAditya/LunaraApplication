@@ -93,7 +93,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     setState(() => _isLoading = true);
     try {
       final packages = await ApiService.fetchSubscriptionPackages();
-      final currentSub = await ApiService.fetchUserSubscription();
       final plans = await ApiService.fetchUserSubscriptions();
       await ApiService.fetchProfile();
 
@@ -167,6 +166,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     setState(() {
       _paymentState = VIPPaymentState.paymentSuccess;
     });
+    debugPrint('[VIP] State updated: $_paymentState');
 
     if (_tabController.index == 0) {
       // Package Purchase
@@ -427,9 +427,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     String signature,
   ) async {
     debugPrint('[VIP] Calling payment verification API');
-    setState(() {
-      _paymentState = VIPPaymentState.verificationPending;
-    });
+    setState(() => _isProcessing = true);
 
     final response = await ApiService.purchaseSubscription(
       packageId: packageId,
@@ -443,7 +441,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     if (response['success'] == true) {
       debugPrint('[VIP] Subscription activation result: success');
       debugPrint('[VIP] Refreshing subscription');
-      setState(() => _paymentState = VIPPaymentState.subscriptionActive);
       debugPrint('[VIP] Subscription ACTIVE');
 
       SubscriptionProvider.instance.refreshAfterPurchase();
@@ -788,9 +785,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(
-                      !canPurchase
-                          ? actionText
-                          : '$actionText FOR ₹${price.toStringAsFixed(0)}',
+                      '$actionText FOR ₹${price.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -1757,17 +1752,21 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           final startDate = DateTime.tryParse(sub['startDate'] ?? '');
           final endDate = DateTime.tryParse(sub['endDate'] ?? '');
           final purchaseDate = DateTime.tryParse(sub['createdAt'] ?? '');
+          final isFree = (pkg != null && pkg['tier'] == 'FREE') ||
+              sub['isLifetime'] == true ||
+              (endDate != null && endDate.year >= 2050);
 
           final String planName = pkg != null
-              ? (pkg['name'] ?? 'VIP Plan')
-              : 'Unknown Plan';
+              ? (pkg['name'] ?? (isFree ? 'Free Plan' : 'VIP Plan'))
+              : (isFree ? 'Free Plan' : 'Unknown Plan');
           final int duration = pkg != null ? (pkg['durationDays'] ?? 0) : 0;
 
           Color statusColor = Colors.grey;
           if (status == 'ACTIVE') {
             statusColor = Colors.green;
-          } else if (status == 'UPCOMING')
+          } else if (status == 'UPCOMING') {
             statusColor = Colors.orange;
+          }
 
           return Container(
             decoration: BoxDecoration(
@@ -1784,7 +1783,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                   children: [
                     Expanded(
                       child: Text(
-                        '$planName ($duration Days)',
+                        isFree ? '$planName (Lifetime)' : '$planName ($duration Days)',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -1817,7 +1816,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                 const SizedBox(height: 8),
                 _buildDateRow('Start Date', startDate),
                 const SizedBox(height: 8),
-                _buildDateRow('Expiry Date', endDate),
+                _buildDateRow(
+                  'Expiry Date',
+                  isFree ? null : endDate,
+                  fallbackText: isFree ? 'Lifetime / Free Tier' : 'N/A',
+                ),
               ],
             ),
           );
@@ -1826,7 +1829,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     );
   }
 
-  Widget _buildDateRow(String label, DateTime? date) {
+  Widget _buildDateRow(String label, DateTime? date, {String fallbackText = 'N/A'}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1835,7 +1838,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           style: const TextStyle(color: Colors.white70, fontSize: 14),
         ),
         Text(
-          date != null ? '${date.day}-${date.month}-${date.year}' : 'N/A',
+          date != null ? '${date.day}-${date.month}-${date.year}' : fallbackText,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 14,

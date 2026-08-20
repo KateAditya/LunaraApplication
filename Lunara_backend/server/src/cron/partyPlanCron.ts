@@ -12,7 +12,7 @@ import '../models';
 import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
 import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
-import SubscriptionPackage from '../models/SubscriptionPackage';
+import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 import Booking, { AdminApprovalStatus, BookingStatus } from '../models/Booking';
 import GroupParty, { GroupPartyStatus } from '../models/GroupParty';
@@ -1662,7 +1662,7 @@ export const startPartyPlanCron = () => {
                 }
             }
 
-            // 4. Check for user subscription expiration and expiration warnings (24h alert)
+            // 4. Check for user subscription expiration and expiration warnings (24h/72h alert)
             const activeSubscriptions = await UserSubscription.findAll({
                 where: {
                     status: SubscriptionStatus.ACTIVE,
@@ -1670,11 +1670,17 @@ export const startPartyPlanCron = () => {
                 include: [{ model: SubscriptionPackage, as: 'package' }]
             });
 
-            const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            const in72Hours = new Date(now.getTime() + 72 * 60 * 60 * 1000);
 
             for (const sub of activeSubscriptions) {
                 const endDate = new Date(sub.endDate);
                 const pkg = (sub as any).package;
+
+                // Skip lifetime / free-tier stub records
+                if (!pkg || pkg.tier === PackageTier.FREE || endDate.getFullYear() >= 2050) {
+                    continue;
+                }
+
                 const pkgName = pkg?.name || 'VIP Package';
 
                 if (endDate <= now) {
@@ -1682,8 +1688,22 @@ export const startPartyPlanCron = () => {
                     await sub.update({ status: SubscriptionStatus.EXPIRED });
                     logger.info(`Subscription ${sub.id} for user ${sub.userId} marked as EXPIRED.`);
 
-                    // Push Notification to user
+                    // Push Notification & in-app record to user
                     try {
+                        const NotificationModel = (await import('../models/Notification')).default;
+                        await NotificationModel.create({
+                            recipientUserId: sub.userId,
+                            eventType: 'SUBSCRIPTION_EXPIRED',
+                            category: 'system' as any,
+                            title: '⚡ VIP Plan Expired',
+                            body: `Your ${pkgName} subscription has expired. Upgrade your plan to continue enjoying exclusive features!`,
+                            actionType: 'open_vip_upgrade',
+                            deepLink: '/vip-membership',
+                            isRead: false,
+                            priority: 'HIGH' as any,
+                            idempotencyKey: `sub_expired_${sub.id}`,
+                        });
+
                         const user = await User.findByPk(sub.userId);
                         if (user && user.fcmToken) {
                             const { sendMulticastPushNotification } = require('../services/fcmService');
@@ -1707,16 +1727,31 @@ export const startPartyPlanCron = () => {
                     } catch (pushErr: any) {
                         logger.warn(`Failed to send subscription expiration push/socket for user ${sub.userId}:`, pushErr.message);
                     }
-                } else if (endDate <= in24Hours) {
-                    // Plan is expiring within 24 hours - send warning if not already sent
+                } else if (endDate <= in72Hours) {
+                    // Plan is expiring within 72 hours - send warning if not already sent
                     if (!sub.expirationAlertSent) {
                         try {
+                            const daysRemaining = Math.max(1, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                            const NotificationModel = (await import('../models/Notification')).default;
+                            await NotificationModel.create({
+                                recipientUserId: sub.userId,
+                                eventType: 'SUBSCRIPTION_EXPIRING_SOON',
+                                category: 'system' as any,
+                                title: '⏳ VIP Plan Expiring Soon',
+                                body: `Your ${pkgName} subscription will expire in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}! Renew or upgrade now to retain all your VIP benefits.`,
+                                actionType: 'open_vip_upgrade',
+                                deepLink: '/vip-membership',
+                                isRead: false,
+                                priority: 'NORMAL' as any,
+                                idempotencyKey: `sub_expiring_${sub.id}`,
+                            });
+
                             const user = await User.findByPk(sub.userId);
                             if (user && user.fcmToken) {
                                 const { sendMulticastPushNotification } = require('../services/fcmService');
                                 await sendMulticastPushNotification([user.fcmToken], {
                                     title: '⏳ VIP Plan Expiring Soon',
-                                    body: `Your ${pkgName} subscription will expire in less than 24 hours! Renew now to retain your benefits.`,
+                                    body: `Your ${pkgName} subscription will expire in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}! Renew now to retain your benefits.`,
                                     data: {
                                         type: 'subscription_expiring_soon',
                                         subscriptionId: sub.id,
@@ -1729,12 +1764,12 @@ export const startPartyPlanCron = () => {
                                 subscriptionId: sub.id,
                                 userId: sub.userId,
                                 endDate: sub.endDate,
-                                message: `Your ${pkgName} subscription will expire in less than 24 hours!`,
+                                message: `Your ${pkgName} subscription will expire in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}!`,
                             });
 
                             await sub.update({ expirationAlertSent: true });
                         } catch (warnErr: any) {
-                            logger.warn(`Failed to send subscription 24h warning to user ${sub.userId}:`, warnErr.message);
+                            logger.warn(`Failed to send subscription warning to user ${sub.userId}:`, warnErr.message);
                         }
                     }
                 }

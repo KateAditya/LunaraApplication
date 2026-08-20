@@ -34,6 +34,23 @@ const DEFAULT_PACKAGES = [
     { name: TablePackageName.PLATINUM, label: 'Platinum', description: 'VIP Table • Unlimited Mixers', price: 1500, maxGuests: 20, bottlesIncluded: 0 },
 ];
 
+export const sanitizeBookingId = (raw: string | undefined | null): string => {
+    if (!raw) return '';
+    return String(raw)
+        .replace(/^group_party_timeline_/, '')
+        .replace(/^large_party_timeline_/, '')
+        .replace(/^solo_booking_/, '')
+        .replace(/^party_plan_timeline_/, '')
+        .replace(/^group_party_/, '')
+        .replace(/^large_party_/, '')
+        .replace(/^party_plan_/, '')
+        .replace(/^booking_/, '')
+        .replace(/^group_/, '')
+        .replace(/^party_/, '')
+        .replace(/^req_/, '')
+        .trim();
+};
+
 // ─── Helper: build ticket response ───────────────────────────────────────────
 function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string) {
     return {
@@ -296,7 +313,7 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
 // ─── POST /:id/pay-now ────────────────────────────────────────────────────────
 export const payNow = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const { paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
         const userId = req.user!.id;
 
@@ -395,7 +412,7 @@ export const payNow = async (req: Request, res: Response) => {
 // ─── POST /:id/split-bill ─────────────────────────────────────────────────────
 export const setupSplitBill = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const { members } = req.body;
         const userId = req.user!.id;
         // members: [{ name: string, userId?: string, shareAmount: number }]
@@ -469,7 +486,7 @@ export const setupSplitBill = async (req: Request, res: Response) => {
 // ─── POST /:id/split-bill/pay ─────────────────────────────────────────────────
 export const payMySplit = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const { memberId } = req.body;
         const userId = req.user!.id;
 
@@ -552,7 +569,7 @@ export const payMySplit = async (req: Request, res: Response) => {
 // ─── POST /:id/secure-reservation ────────────────────────────────────────────
 export const secureReservation = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -590,7 +607,7 @@ export const secureReservation = async (req: Request, res: Response) => {
 // ─── GET /:id/ticket ──────────────────────────────────────────────────────────
 export const getTicket = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
 
         const booking = await Booking.findByPk(id, {
             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
@@ -618,7 +635,7 @@ export const getTicket = async (req: Request, res: Response) => {
 // ─── POST /:id/add-to-wallet ──────────────────────────────────────────────────
 export const addToWallet = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -893,7 +910,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
 // ─── GET /:id — Booking detail ────────────────────────────────────────────────
 export const getBookingDetail = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
 
         const booking = await Booking.findByPk(id, {
             include: [
@@ -920,7 +937,7 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 // ─── POST /:id/initiate-large-party-payment ─────────────────────────────────
 export const initiateLargePartyPayment = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         let booking = await Booking.findByPk(id);
         if (!booking) {
             const groupParty = await GroupParty.findByPk(id);
@@ -1029,7 +1046,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
 // ─── POST /:id/verify-large-party-payment ───────────────────────────────────
 export const verifyLargePartyPayment = async (req: Request, res: Response) => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
         // Wallet payments never create a real Razorpay order on the record, so the
@@ -1075,9 +1092,6 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
 
                 try {
                     const venueName = venue?.name || 'Venue';
-                    // Reuse the same DB-record + push + notification_updated/live_feed_update
-                    // pattern used by the free/instant-confirm path, instead of the ad-hoc
-                    // FCM-only notification this branch previously sent.
                     const { GroupPartyService } = await import('../services/GroupPartyService');
                     await GroupPartyService.emitNotifications(groupParty.userId, venueName, 'small_paid', groupParty.id, groupParty.numberOfFriends);
 
@@ -1146,6 +1160,8 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                 }
             });
 
+            const isWalletTxn = razorpay_payment_id?.startsWith('wallet_') || razorpay_order_id === 'order_mock_wallet';
+
             // Create Payment record
             await Payment.create({
                 transactionId: razorpay_payment_id,
@@ -1153,8 +1169,8 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
                 userId: booking.userId,
                 amount: booking.totalAmount,
                 currency: 'INR',
-                paymentMethod: PaymentMethod.RAZORPAY,
-                paymentGateway: 'razorpay',
+                paymentMethod: isWalletTxn ? PaymentMethod.WALLET : PaymentMethod.RAZORPAY,
+                paymentGateway: isWalletTxn ? 'wallet' : 'razorpay',
                 status: TxnStatus.SUCCESSFUL,
                 refundAmount: 0,
             } as any);

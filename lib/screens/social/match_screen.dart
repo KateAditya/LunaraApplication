@@ -7,6 +7,7 @@ import 'matched_profiles_screen.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../profile/vip_membership_screen.dart';
 
 class MatchScreen extends StatefulWidget {
   const MatchScreen({super.key});
@@ -51,9 +52,8 @@ class _MatchScreenState extends State<MatchScreen>
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final me = await ApiService.fetchProfile();
+      await ApiService.fetchProfile();
       final myId = ApiService.currentUserId;
-      final myGender = me?.gender?.toLowerCase();
       final selectedCity = ApiService.selectedCity;
 
       // 1. Fetch all raw customers
@@ -260,6 +260,54 @@ class _MatchScreenState extends State<MatchScreen>
               }
             });
           }
+        }
+
+        // 75% Limit Usage Warning notification & alert
+        if (res['usageWarning'] != null && res['usageWarning']['triggered'] == true && mounted) {
+          final warnMsg = res['usageWarning']['message']?.toString() ?? 'Limit warning';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      warnMsg,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amberAccent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'UPGRADE',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF7F00FF),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
         }
       }
     });

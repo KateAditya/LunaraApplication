@@ -159,6 +159,65 @@ export const postPlan = async (req: Request, res: Response) => {
             }
         );
 
+        // Check usage & calculate warning if approaching monthly/cycle limit
+        let usageWarning: any = null;
+        try {
+            const { SubscriptionService } = await import('../services/subscriptionService');
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            const userPlansThisMonth = await Plan.count({
+                where: {
+                    userId,
+                    createdAt: { [Op.gte]: startOfMonth }
+                }
+            });
+
+            const status = await SubscriptionService.getFullStatus(userId);
+            const tier = status.tier || 'FREE';
+            let monthlyLimit = 1;
+            if (tier === 'CORE') monthlyLimit = 3;
+            else if (tier === 'PLUS') monthlyLimit = 5;
+            else if (tier === 'PRO') monthlyLimit = 10;
+            else if (tier === 'ELITE') monthlyLimit = 9999; // Unlimited
+
+            if (monthlyLimit < 9999) {
+                const remaining = Math.max(0, monthlyLimit - userPlansThisMonth);
+                const percentage = Math.round((userPlansThisMonth / monthlyLimit) * 100);
+
+                if (percentage >= 75 || remaining <= 1) {
+                    usageWarning = {
+                        triggered: true,
+                        feature: 'party_creation',
+                        used: userPlansThisMonth,
+                        limit: monthlyLimit,
+                        remaining,
+                        percentage,
+                        message: `You've used ${userPlansThisMonth} of ${monthlyLimit} Party Plans for this month. ${remaining > 0 ? `Only ${remaining} remaining!` : 'Limit reached for this month.'}`,
+                    };
+
+                    const NotificationModel = (await import('../models/Notification')).default;
+                    const idempotencyKey = `limit_warn_plan_${userId}_${now.getFullYear()}_${now.getMonth()}_${userPlansThisMonth}`;
+                    await NotificationModel.findOrCreate({
+                        where: { idempotencyKey },
+                        defaults: {
+                            recipientUserId: userId,
+                            eventType: 'LIMIT_WARNING',
+                            category: 'system' as any,
+                            title: '🎉 Party Plan Creation Alert',
+                            body: `You've used ${userPlansThisMonth} of ${monthlyLimit} Party Plans this month. Upgrade to VIP to host unlimited parties!`,
+                            actionType: 'open_vip_upgrade',
+                            deepLink: '/vip-membership',
+                            isRead: false,
+                            priority: 'NORMAL' as any,
+                            idempotencyKey,
+                        }
+                    });
+                }
+            }
+        } catch (planWarnErr) {
+            logger.warn('Failed to calculate party plan warning:', planWarnErr);
+        }
+
         const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
         return res.status(201).json({
@@ -175,6 +234,7 @@ export const postPlan = async (req: Request, res: Response) => {
                 maxJoiners: plan.maxJoiners,
                 status: plan.status,
                 hostPaymentStatus,
+                usageWarning,
             },
         });
     } catch (err: any) {

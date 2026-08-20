@@ -118,10 +118,13 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
 
         // Compute remaining days
         let remainingDays = 0;
-        if (subscription) {
+        const isFreeTier = !subscription || (subscription as any).package?.tier === PackageTier.FREE;
+        if (subscription && !isFreeTier) {
             const now = new Date();
             const end = new Date(subscription.endDate);
-            remainingDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            if (end.getFullYear() < 2050) {
+                remainingDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+            }
         }
 
         res.status(200).json({
@@ -229,35 +232,54 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             }
         }
 
-        // Determine transaction type — exclude the lifetime FREE-tier stub
-        // subscription (created for à-la-carte credit purchases before ever
-        // subscribing) from counting as a real existing plan, same reasoning
-        // as the stacking query below.
+        // Deactivate/Expire any FREE stub or stranded 2099 subscription when upgrading to a paid package
+        if (pkg.tier !== PackageTier.FREE) {
+            await UserSubscription.update(
+                { status: SubscriptionStatus.EXPIRED },
+                {
+                    where: {
+                        userId,
+                        status: { [Op.in]: [SubscriptionStatus.ACTIVE, SubscriptionStatus.UPCOMING] },
+                        [Op.or]: [
+                            { endDate: { [Op.gte]: new Date(2050, 0, 1) } },
+                            { startDate: { [Op.gte]: new Date(2050, 0, 1) } },
+                        ]
+                    }
+                }
+            );
+        }
+
+        // Determine transaction type
         const existingSub = await UserSubscription.findOne({
             where: { userId, status: SubscriptionStatus.ACTIVE },
             include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
         const txnType = existingSub ? TransactionType.UPGRADE : TransactionType.PURCHASE;
 
-        // Do NOT expire active subscriptions to support future stacking.
-        // Find the latest upcoming or active subscription to determine start date.
+        // Find legitimate latest upcoming or active paid subscription to determine start date
         const lastUpcoming = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.UPCOMING },
+            where: {
+                userId,
+                status: SubscriptionStatus.UPCOMING,
+                endDate: { [Op.lt]: new Date(2050, 0, 1) }
+            },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
             order: [['endDate', 'DESC']]
         });
 
-        // Same FREE-stub exclusion as `existingSub` above — otherwise this
-        // brand-new purchase gets queued as UPCOMING for the stub's ~2099
-        // endDate and can never activate.
         const activeSubForDate = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            where: {
+                userId,
+                status: SubscriptionStatus.ACTIVE,
+                endDate: { [Op.gt]: new Date(), [Op.lt]: new Date(2050, 0, 1) }
+            },
             include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         const startDate = new Date();
-        if (lastUpcoming) {
+        if (lastUpcoming && lastUpcoming.endDate > startDate) {
             startDate.setTime(lastUpcoming.endDate.getTime());
-        } else if (activeSubForDate) {
+        } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
             startDate.setTime(activeSubForDate.endDate.getTime());
         }
 
@@ -275,6 +297,8 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             superlikesRemaining: pkg.superlikesPerCycle,
             boostsRemaining: pkg.boostsPerCycle,
         });
+
+        SubscriptionService.invalidateCache(userId);
 
         // Record or Update transaction
         let transaction;
@@ -757,7 +781,20 @@ export const getUserSubscriptions = async (req: Request, res: Response): Promise
             include: [{ model: SubscriptionPackage, as: 'package' }],
             order: [['createdAt', 'DESC']],
         });
-        res.status(200).json({ success: true, data: plans });
+
+        const formattedPlans = plans.map(p => {
+            const json = p.toJSON();
+            const pkg = (p as any).package;
+            const isFree = !pkg || pkg.tier === PackageTier.FREE;
+            const isLifetime = isFree || (p.endDate && new Date(p.endDate).getFullYear() >= 2050);
+            return {
+                ...json,
+                isLifetime,
+                expiresText: isLifetime ? 'Lifetime / Free Tier' : undefined,
+            };
+        });
+
+        res.status(200).json({ success: true, data: formattedPlans });
     } catch (error: any) {
         logger.error('Error fetching user subscriptions:', error);
         res.status(500).json({ success: false, message: 'Server error' });

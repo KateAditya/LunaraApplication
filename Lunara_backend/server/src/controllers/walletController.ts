@@ -812,7 +812,98 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             .filter(t => t.status === 'success')
             .reduce((sum, t) => sum + t.amount, 0);
 
+        // ── Auto-heal any missed Party Plan refund for Host or Joiner ──
+        try {
+            const { PartyPlan, PartyPlanRequest } = await import('../models');
+            const { PartyPlanStatus } = await import('../models/PartyPlan');
+            const { PartyPlanRequestStatus } = await import('../models/PartyPlanRequest');
+            const Op = (await import('sequelize')).Op;
+
+            // Check host cancelled plans
+            const hostCancelledPlans = await PartyPlan.findAll({
+                where: {
+                    userId,
+                    [Op.or]: [
+                        { status: PartyPlanStatus.CANCELLED },
+                        { lifecycleStatus: 'cancelled' },
+                        { paymentStatus: { [Op.iLike]: '%refund%' } },
+                        { hostPaymentStatus: { [Op.iLike]: '%refund%' } },
+                    ],
+                },
+                attributes: ['id', 'depositAmount', 'paymentStatus', 'hostPaymentStatus', 'hostRazorpayPaymentId'],
+                limit: 10,
+            });
+
+            for (const plan of hostCancelledPlans) {
+                const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
+                const hostCreditRef = `PARTY_PLAN_CANCEL_CREDIT_HOST_${plan.id}`;
+                const existingRefund = await WalletTransaction.findOne({
+                    where: {
+                        userId,
+                        partyPlanId: plan.id,
+                        [Op.or]: [
+                            { reference: hostRefundRef },
+                            { reference: hostCreditRef },
+                            { transactionType: 'refund' },
+                            { transactionType: 'deposit_unlock' },
+                        ],
+                    },
+                });
+                if (!existingRefund) {
+                    const depositAmt = Number(plan.depositAmount) || 99.00;
+                    await WalletService.creditRefund({
+                        userId,
+                        amount: depositAmt,
+                        referenceId: hostRefundRef,
+                        reason: 'Party Plan Cancelled Deposit Refund (Auto-Healed)',
+                        partyPlanId: plan.id,
+                    });
+                }
+            }
+
+            // Check joiner cancelled requests
+            const joinerCancelledRequests = await PartyPlanRequest.findAll({
+                where: {
+                    requesterId: userId,
+                    [Op.or]: [
+                        { status: PartyPlanRequestStatus.CANCELLED },
+                        { joinerPaymentStatus: { [Op.iLike]: '%refund%' } },
+                    ],
+                },
+                attributes: ['id', 'planId', 'joinerPaymentStatus', 'joinerRazorpayPaymentId'],
+                limit: 10,
+            });
+
+            for (const reqItem of joinerCancelledRequests) {
+                const joinerRefundRef = `REFUND_JOINER_CANCEL_${reqItem.id}`;
+                const joinerRepostRef = `REFUND_JOINER_REPOST_${reqItem.id}`;
+                const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${reqItem.planId}_${userId}`;
+                const existingRefund = await WalletTransaction.findOne({
+                    where: {
+                        userId,
+                        [Op.or]: [
+                            { reference: joinerRefundRef },
+                            { reference: joinerRepostRef },
+                            { reference: joinerCreditRef },
+                        ],
+                    },
+                });
+                if (!existingRefund) {
+                    await WalletService.creditRefund({
+                        userId,
+                        amount: 99.00,
+                        referenceId: joinerRefundRef,
+                        reason: 'Party Plan Request Cancelled Deposit Refund (Auto-Healed)',
+                        partyPlanId: reqItem.planId,
+                    });
+                }
+            }
+        } catch (autoHealErr: any) {
+            logger.warn('[getWalletData] Auto-heal refund error:', autoHealErr.message);
+        }
+
         const smartWallet = await WalletService.getOrCreateWallet(userId);
+        await smartWallet.reload();
         const config = await WalletService.getGlobalConfig();
         const rawSmartTransactions = await WalletTransaction.findAll({
             where: { userId },
@@ -820,14 +911,18 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             limit: 50,
         });
 
-        // Exclude smart transactions that duplicate gateway ledger entries
+        const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
+
+        // Exclude smart transactions that duplicate gateway ledger entries, but keep all refunds & deposit unlocks
         const smartTransactions = rawSmartTransactions.filter(st => {
+            if (st.transactionType === WalletTransactionType.REFUND || st.transactionType === WalletTransactionType.DEPOSIT_UNLOCK) {
+                return true;
+            }
             if (st.reference && seenTxnIds.has(st.reference)) return false;
             if (st.partyPlanId && seenPartyPlanKeys.has(st.partyPlanId) && (st as any).source === 'razorpay') return false;
             return true;
         });
 
-        const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
         const totalRechargedFromTxns = rawSmartTransactions
             .filter(t => t.transactionType === WalletTransactionType.RECHARGE && t.status === WalletTransactionStatus.SUCCESS)
             .reduce((sum, t) => sum + Number(t.amount || 0), 0);
@@ -906,12 +1001,34 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        const sanitizeId = (raw: any): string | undefined => {
+            if (!raw) return undefined;
+            const clean = String(raw)
+                .replace(/^group_party_timeline_/, '')
+                .replace(/^large_party_timeline_/, '')
+                .replace(/^solo_booking_/, '')
+                .replace(/^party_plan_timeline_/, '')
+                .replace(/^group_party_/, '')
+                .replace(/^large_party_/, '')
+                .replace(/^party_plan_/, '')
+                .replace(/^booking_/, '')
+                .replace(/^group_/, '')
+                .replace(/^party_/, '')
+                .replace(/^req_/, '')
+                .trim();
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean);
+            return isUuid ? clean : undefined;
+        };
+
+        const cleanBookingId = sanitizeId(bookingId);
+        const cleanPlanId = sanitizeId(planId);
+
         if (paymentType === 'commitment_deposit' || paymentType === 'host_deposit') {
             const lockResult = await WalletService.lockDeposit({
                 userId,
                 amount: requiredAmount,
-                partyPlanId: planId,
-                bookingId,
+                partyPlanId: cleanPlanId,
+                bookingId: cleanBookingId,
             });
             const txnId = lockResult.txn?.id || `lock_${Date.now()}`;
             res.json({
@@ -933,10 +1050,10 @@ export const payWithWallet = async (req: Request, res: Response): Promise<void> 
             userId,
             price: requiredAmount,
             transactionType: WalletTransactionType.BOOKING_PAYMENT,
-            reference: `BOOK_${planId || bookingId || Date.now()}`,
-            bookingId,
-            partyPlanId: planId,
-            metadata: { paymentType },
+            reference: `BOOK_${cleanPlanId || cleanBookingId || Date.now()}`,
+            bookingId: cleanBookingId,
+            partyPlanId: cleanPlanId,
+            metadata: { paymentType, rawBookingId: bookingId, rawPlanId: planId },
         });
 
         const txnId = purchaseResult.txn?.id || purchaseResult.data?.transactionId || `pay_${Date.now()}`;
@@ -1112,28 +1229,47 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
         const superlikesRemaining = pkg.superlikesPerCycle;
         const boostsRemaining = pkg.boostsPerCycle;
 
-        // Do NOT expire active subscriptions to support future stacking.
-        // Find the latest upcoming or active subscription to determine start date.
+        // Deactivate/Expire any FREE stub or stranded 2099 subscription when upgrading to a paid package
+        if (pkg.tier !== PackageTier.FREE) {
+            await UserSubscriptionModel.update(
+                { status: SubscriptionStatusEnum.EXPIRED },
+                {
+                    where: {
+                        userId,
+                        status: { [Op.in]: [SubscriptionStatusEnum.ACTIVE, SubscriptionStatusEnum.UPCOMING] },
+                        [Op.or]: [
+                            { endDate: { [Op.gte]: new Date(2050, 0, 1) } },
+                            { startDate: { [Op.gte]: new Date(2050, 0, 1) } },
+                        ]
+                    }
+                }
+            );
+        }
+
+        // Find the latest legitimate upcoming or active subscription to determine start date
         const lastUpcoming = await UserSubscriptionModel.findOne({
-            where: { userId, status: SubscriptionStatusEnum.UPCOMING },
+            where: {
+                userId,
+                status: SubscriptionStatusEnum.UPCOMING,
+                endDate: { [Op.lt]: new Date(2050, 0, 1) }
+            },
+            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
             order: [['endDate', 'DESC']]
         });
         
-        // Exclude the lifetime FREE-tier stub subscription (created by
-        // findOrCreateSubscriptionForCredit for à-la-carte credit purchases,
-        // endDate ~2099) from counting as "an active plan to stack behind" —
-        // otherwise every real purchase after ever buying a single boost/
-        // superlike credit gets queued as UPCOMING for the year 2099 and can
-        // never activate.
         const activeSubForDate = await UserSubscriptionModel.findOne({
-            where: { userId, status: SubscriptionStatusEnum.ACTIVE, endDate: { [Op.gt]: new Date() } },
+            where: {
+                userId,
+                status: SubscriptionStatusEnum.ACTIVE,
+                endDate: { [Op.gt]: new Date(), [Op.lt]: new Date(2050, 0, 1) }
+            },
             include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
         const startDate = new Date();
-        if (lastUpcoming) {
+        if (lastUpcoming && lastUpcoming.endDate > startDate) {
             startDate.setTime(lastUpcoming.endDate.getTime());
-        } else if (activeSubForDate) {
+        } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
             startDate.setTime(activeSubForDate.endDate.getTime());
         }
 
@@ -1152,6 +1288,9 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
             boostsRemaining,
             autoRenew: false,
         });
+
+        const { SubscriptionService } = await import('../services/subscriptionService');
+        SubscriptionService.invalidateCache(userId);
 
         res.json({
             success: true,

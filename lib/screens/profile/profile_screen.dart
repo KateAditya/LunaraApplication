@@ -7,6 +7,7 @@ import '../../widgets/bumble_swipe_widget.dart';
 import 'profile_detail_view.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../../services/subscription_provider.dart';
+import 'vip_membership_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User? user;
@@ -126,7 +127,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      final String? myGender = me?.gender?.toLowerCase();
       final String? myId = ApiService.currentUserId;
 
       final rawCustomers = await ApiService.fetchCustomers();
@@ -391,6 +391,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (res['matched'] == true) {
       _showMatchDialog(targetUser);
     }
+
+    _checkUsageWarning(res);
+  }
+
+  void _checkUsageWarning(Map<String, dynamic>? res) {
+    if (res != null && res['usageWarning'] != null && res['usageWarning']['triggered'] == true && mounted) {
+      final warnMsg = res['usageWarning']['message']?.toString() ?? 'Usage warning';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  warnMsg,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amberAccent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'UPGRADE',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF7F00FF),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   // ── SUPERLIKE handler ─────────────────────────────────────────────────────────
@@ -440,6 +491,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (res['matched'] == true) {
       _showMatchDialog(targetUser);
     }
+
+    _checkUsageWarning(res);
   }
 
   // ── NOPE handler — go to next profile ────────────────────────────────────────

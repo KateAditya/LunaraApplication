@@ -1402,7 +1402,17 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             }
         }
 
-        // 1.5 Enforce subscription limit checks for Like / Superlike
+        // 1.5 Enforce subscription limit checks for Like / Superlike with 75% Threshold Alert
+        let usageWarning: {
+            triggered: boolean;
+            feature: string;
+            used: number;
+            limit: number | string;
+            remaining: number | string;
+            percentage: number;
+            message: string;
+        } | null = null;
+
         if (action === 'like') {
             const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
             const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
@@ -1410,8 +1420,53 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 return res.status(403).json({
                     success: false,
                     code: 'LIMIT_REACHED',
+                    limitReached: true,
                     message: consume.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!'
                 });
+            }
+
+            if (typeof consume.limit === 'number' && consume.limit > 0) {
+                const used = consume.used;
+                const limit = consume.limit;
+                const remaining = typeof consume.remaining === 'number' ? consume.remaining : limit - used;
+                const percentage = Math.round((used / limit) * 100);
+
+                // If user has used >= 70% of daily likes (e.g. 5 of 7 is 71.4%):
+                if (percentage >= 70 && remaining > 0) {
+                    usageWarning = {
+                        triggered: true,
+                        feature: 'daily_likes',
+                        used,
+                        limit,
+                        remaining,
+                        percentage,
+                        message: `You've used ${used} of ${limit} Daily Likes today. Only ${remaining} remaining!`,
+                    };
+
+                    // Persist In-App Notification (throttled once per day)
+                    try {
+                        const NotificationModel = (await import('../models/Notification')).default;
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const idempotencyKey = `limit_warn_like_${userId}_${todayStr}`;
+                        const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey } });
+                        if (!existingNotif) {
+                            await NotificationModel.create({
+                                recipientUserId: userId,
+                                eventType: 'LIMIT_WARNING',
+                                category: 'system' as any,
+                                title: '❤️ Daily Likes Warning',
+                                body: `You've used ${used} of ${limit} daily likes today. Upgrade to Lunara VIP for unlimited likes!`,
+                                actionType: 'open_vip_upgrade',
+                                deepLink: '/vip-membership',
+                                isRead: false,
+                                priority: 'NORMAL' as any,
+                                idempotencyKey,
+                            });
+                        }
+                    } catch (notifErr) {
+                        logger.warn('[swipeUser] Failed to create like limit notification:', notifErr);
+                    }
+                }
             }
         } else if (action === 'superlike') {
             const activeSub = await UserSubscription.findOne({
@@ -1428,11 +1483,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 return res.status(403).json({
                     success: false,
                     code: 'LIMIT_REACHED',
+                    limitReached: true,
                     message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
                 });
             }
 
-            // Atomic database-level conditional decrement for transaction & concurrency safety (Phase 2)
+            const totalGranted = (activeSub as any).package?.superlikesPerCycle || activeSub.superlikesRemaining;
+
+            // Atomic database-level conditional decrement for transaction & concurrency safety
             if (activeSub.superlikesRemaining < 9999) {
                 const [affectedCount] = await UserSubscription.update(
                     { superlikesRemaining: sequelize.literal('superlikes_remaining - 1') },
@@ -1448,6 +1506,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     return res.status(403).json({
                         success: false,
                         code: 'LIMIT_REACHED',
+                        limitReached: true,
                         message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
                     });
                 }
@@ -1455,6 +1514,48 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 activeSub.superlikesRemaining = Math.max(0, activeSub.superlikesRemaining - 1);
                 const { SubscriptionService } = require('../services/subscriptionService');
                 SubscriptionService.invalidateCache(userId);
+
+                // Threshold Check: for 3 superlikes, 2 used is 66.7% (>= 66%), for 10 superlikes, 7 used is 70% (>= 66%), etc.
+                if (totalGranted > 0 && totalGranted < 9999) {
+                    const remaining = activeSub.superlikesRemaining;
+                    const used = totalGranted - remaining;
+                    const percentage = Math.round((used / totalGranted) * 100);
+
+                    if (percentage >= 66) {
+                        usageWarning = {
+                            triggered: true,
+                            feature: 'superlike',
+                            used,
+                            limit: totalGranted,
+                            remaining,
+                            percentage,
+                            message: `You've used ${used} of ${totalGranted} Super Likes for this cycle. ${remaining > 0 ? `Only ${remaining} remaining!` : 'None remaining.'}`,
+                        };
+
+                        // Create In-App Notification
+                        try {
+                            const NotificationModel = (await import('../models/Notification')).default;
+                            const cycleKey = `limit_warn_superlike_${userId}_${activeSub.id}_${used}`;
+                            const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey: cycleKey } });
+                            if (!existingNotif) {
+                                await NotificationModel.create({
+                                    recipientUserId: userId,
+                                    eventType: 'LIMIT_WARNING',
+                                    category: 'system' as any,
+                                    title: '⭐ Super Likes Usage Alert',
+                                    body: `You've used ${used} of ${totalGranted} Super Likes for your current plan. Top up credits or upgrade to Plus/Pro for more!`,
+                                    actionType: 'open_vip_upgrade',
+                                    deepLink: '/vip-membership',
+                                    isRead: false,
+                                    priority: 'NORMAL' as any,
+                                    idempotencyKey: cycleKey,
+                                });
+                            }
+                        } catch (notifErr) {
+                            logger.warn('[swipeUser] Failed to create superlike limit notification:', notifErr);
+                        }
+                    }
+                }
             }
         }
 
@@ -1608,12 +1709,13 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     data: mySwipe,
                     matched: true,
                     conversationId: conversation.id,
+                    usageWarning,
                 });
             } catch (chatErr) {
                 logger.error('[swipeUser] Failed to init free chat, but match still created:', chatErr);
             }
 
-            return res.status(200).json({ success: true, data: mySwipe, matched: true });
+            return res.status(200).json({ success: true, data: mySwipe, matched: true, usageWarning });
         }
 
         // 4. Otherwise (no mutual match yet), create/update to pending match record
@@ -1756,7 +1858,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             logger.error('[swipeUser] Failed to send push notification/socket:', fcmErr);
         }
 
-        return res.status(200).json({ success: true, data: match, matched: false });
+        return res.status(200).json({ success: true, data: match, matched: false, usageWarning });
 
     } catch (error: any) {
         logger.error('[MobileUser] Error processing swipe:', error);
