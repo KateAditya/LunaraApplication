@@ -78,8 +78,8 @@ export class GroupPartyService {
         } else if (!isNaN(rawTbCharge) && rawTbCharge > 0) {
             chargePerPerson = rawTbCharge;
         } else {
-            // Standard fallback charge per person if venue charges are unconfigured
-            chargePerPerson = 6.00;
+            // Venue charges are unconfigured or zero => Free Group Party
+            chargePerPerson = 0;
         }
 
         const rawGpDiscount = venue.groupPartyDiscountPercentage != null ? Number(venue.groupPartyDiscountPercentage) : 0;

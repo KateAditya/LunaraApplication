@@ -450,15 +450,22 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _BookingDetailsModal(venue: venue),
+      builder: (modalCtx) => _BookingDetailsModal(
+        venue: venue,
+        rootContext: context,
+      ),
     );
   }
 }
 
 class _BookingDetailsModal extends StatefulWidget {
   final Venue venue;
+  final BuildContext rootContext;
 
-  const _BookingDetailsModal({required this.venue});
+  const _BookingDetailsModal({
+    required this.venue,
+    required this.rootContext,
+  });
 
   @override
   State<_BookingDetailsModal> createState() => _BookingDetailsModalState();
@@ -1832,9 +1839,14 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                             drinkPreference: _drinkPreference,
                           );
 
-                          if (!parentContext.mounted) return;
-                          Navigator.pop(parentContext); // Close loading dialog
-                          Navigator.pop(parentContext); // Close booking bottom sheet
+                          // Close loading dialog safely
+                          if (mounted) {
+                            Navigator.of(context, rootNavigator: true).pop();
+                          }
+                          // Close booking bottom sheet
+                          if (mounted) {
+                            Navigator.pop(context);
+                          }
 
                           if (result != null && result['success'] == true) {
                             final groupPartyId = (result['data'] is Map)
@@ -1847,8 +1859,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               data: {'type': 'group_party_confirmed', 'partyId': groupPartyId},
                             );
 
-                            Navigator.pushAndRemoveUntil(
-                              parentContext,
+                            final navContext = widget.rootContext.mounted ? widget.rootContext : parentContext;
+                            Navigator.push(
+                              navContext,
                               MaterialPageRoute(
                                 builder: (_) => LargePartyTicketScreen(
                                   booking: {
@@ -1868,7 +1881,6 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   venue: widget.venue.toMap(),
                                 ),
                               ),
-                              (route) => route.isFirst,
                             );
                           } else {
                             final String errorMsg =
@@ -1934,14 +1946,15 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                 partyId: createdGroupPartyId,
                               );
 
-                              if (verifySuccess && parentContext.mounted) {
+                              if (verifySuccess) {
                                 TopNotificationBanner.show(
                                   title: 'Group Party Confirmed! 🎉',
                                   body: 'Your payment was verified successfully. Digital ticket generated!',
                                   data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
                                 );
-                                Navigator.pushAndRemoveUntil(
-                                  parentContext,
+                                final navContext = widget.rootContext.mounted ? widget.rootContext : parentContext;
+                                Navigator.push(
+                                  navContext,
                                   MaterialPageRoute(
                                     builder: (_) => LargePartyTicketScreen(
                                       booking: {
@@ -1961,7 +1974,6 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                       venue: widget.venue.toMap(),
                                     ),
                                   ),
-                                  (route) => route.isFirst,
                                 );
                                 return true;
                               }
@@ -2028,14 +2040,15 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   razorpaySignature: response.signature ?? 'mock_signature',
                                   partyId: createdGroupPartyId,
                                 );
-                                if (success && parentContext.mounted) {
+                                if (success) {
                                   TopNotificationBanner.show(
                                     title: 'Group Party Confirmed! 🎉',
                                     body: 'Your payment was verified successfully. Digital ticket generated!',
                                     data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
                                   );
-                                  Navigator.pushAndRemoveUntil(
-                                    parentContext,
+                                  final navContext = widget.rootContext.mounted ? widget.rootContext : parentContext;
+                                  Navigator.push(
+                                    navContext,
                                     MaterialPageRoute(
                                       builder: (_) => LargePartyTicketScreen(
                                         booking: {
@@ -2055,7 +2068,6 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                         venue: widget.venue.toMap(),
                                       ),
                                     ),
-                                    (route) => route.isFirst,
                                   );
                                 } else {
                                   if (createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
@@ -2168,36 +2180,34 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                       razorpaySignature: 'mock_signature',
                                       partyId: createdGroupPartyId,
                                     );
-                                    if (parentContext.mounted) {
-                                      TopNotificationBanner.show(
-                                        title: 'Group Party Confirmed! 🎉',
-                                        body: 'Your payment was verified successfully. Digital ticket generated!',
-                                        data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
-                                      );
-                                      Navigator.pushAndRemoveUntil(
-                                        parentContext,
-                                        MaterialPageRoute(
-                                          builder: (_) => LargePartyTicketScreen(
-                                            booking: {
-                                              'id': createdGroupPartyId,
-                                              'bookingId': createdGroupPartyId,
-                                              'bookingDate': partyDateStr,
-                                              'partyDate': partyDateStr,
-                                              'startTime': formattedTime,
-                                              'status': 'confirmed',
-                                              'paymentStatus': 'paid',
-                                              'venue': widget.venue.toMap(),
-                                              'venueName': widget.venue.name,
-                                              'numberOfGuests': parsed,
-                                              'partySubject': 'Group Party',
-                                              'totalAmount': totalPrice,
-                                            },
-                                            venue: widget.venue.toMap(),
-                                          ),
+                                    TopNotificationBanner.show(
+                                      title: 'Group Party Confirmed! 🎉',
+                                      body: 'Your payment was verified successfully. Digital ticket generated!',
+                                      data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
+                                    );
+                                    final navContext = widget.rootContext.mounted ? widget.rootContext : parentContext;
+                                    Navigator.push(
+                                      navContext,
+                                      MaterialPageRoute(
+                                        builder: (_) => LargePartyTicketScreen(
+                                          booking: {
+                                            'id': createdGroupPartyId,
+                                            'bookingId': createdGroupPartyId,
+                                            'bookingDate': partyDateStr,
+                                            'partyDate': partyDateStr,
+                                            'startTime': formattedTime,
+                                            'status': 'confirmed',
+                                            'paymentStatus': 'paid',
+                                            'venue': widget.venue.toMap(),
+                                            'venueName': widget.venue.name,
+                                            'numberOfGuests': parsed,
+                                            'partySubject': 'Group Party',
+                                            'totalAmount': totalPrice,
+                                          },
+                                          venue: widget.venue.toMap(),
                                         ),
-                                        (route) => route.isFirst,
-                                      );
-                                    }
+                                      ),
+                                    );
                                   }
                                 }
                               });
