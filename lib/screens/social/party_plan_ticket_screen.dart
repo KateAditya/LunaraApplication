@@ -37,8 +37,6 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   Map<String, dynamic>? _freshHostUser;
   Map<String, dynamic>? _freshJoinerUser;
   String? _canonicalTicketCode;
-  String? _ticketUrl;
-  bool _isFetchingTicket = false;
   final GlobalKey _ticketKey = GlobalKey();
 
   @override
@@ -77,12 +75,17 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
   Future<void> _fetchTicketData() async {
-    final reqId = widget.request['id']?.toString() ?? widget.request['reqId']?.toString();
-    if (reqId == null) return;
+    final rawId = widget.request['id']?.toString() ??
+        widget.request['reqId']?.toString() ??
+        widget.request['bookingId']?.toString() ??
+        widget.request['planId']?.toString() ??
+        widget.plan['id']?.toString() ??
+        widget.plan['planId']?.toString();
+    if (rawId == null) return;
     if (!mounted) return;
-    setState(() => _isFetchingTicket = true);
     try {
-      final data = await ApiService.fetchPartyPlanTicket(reqId);
+      final cleanId = rawId.replaceFirst('party_plan_host_', '').replaceFirst('party_plan_joiner_', '').trim();
+      final data = await ApiService.fetchPartyPlanTicket(cleanId);
       if (data != null && mounted) {
         setState(() {
           final planData = data['plan'];
@@ -97,6 +100,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           }
 
           final joinerObj = data['joiner'] ??
+              data['partner'] ??
               (requestData is Map
                   ? (requestData['requester'] ?? requestData['joiner'] ?? requestData['user'])
                   : null);
@@ -105,13 +109,10 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           }
 
           _canonicalTicketCode = data['ticketCode']?.toString();
-          _ticketUrl = data['ticketUrl']?.toString();
         });
       }
     } catch (e) {
       debugPrint('_fetchTicketData error: $e');
-    } finally {
-      if (mounted) setState(() => _isFetchingTicket = false);
     }
   }
 
@@ -292,6 +293,18 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     }
     if (widget.request['joiner'] is Map) {
       return Map<String, dynamic>.from(widget.request['joiner']);
+    }
+    if (widget.request['partner'] is Map) {
+      return Map<String, dynamic>.from(widget.request['partner']);
+    }
+    if (widget.plan['matchedJoiner'] is Map) {
+      return Map<String, dynamic>.from(widget.plan['matchedJoiner']);
+    }
+    if (widget.plan['joiner'] is Map) {
+      return Map<String, dynamic>.from(widget.plan['joiner']);
+    }
+    if (widget.plan['partner'] is Map) {
+      return Map<String, dynamic>.from(widget.plan['partner']);
     }
     if (widget.request['user'] is Map) {
       final cand = Map<String, dynamic>.from(widget.request['user']);

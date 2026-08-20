@@ -625,18 +625,26 @@ export class GroupPartyService {
             const reminder1h = isLargeBooking ? false : (gp?.reminder1hSent || false);
             const reminder30m = isLargeBooking ? false : (gp?.reminder30mSent || false);
 
-            const timelineSteps = [
-                { id: 'created', label: 'Group Party Created', completed: true },
-                { id: 'joined', label: 'Joined', completed: true },
-                { id: 'request_pending', label: 'Request Pending', completed: isPending || isApproved || isConfirmed || isCompleted },
-                { id: 'approved', label: 'Approved', completed: isApproved || isConfirmed || isCompleted },
-                { id: 'payment_confirmed', label: 'Payment Confirmed', completed: isConfirmed || isCompleted },
-                { id: 'chat_enabled', label: 'Chat Enabled', completed: isConfirmed || isCompleted },
-                { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
-                { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
-                { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
-                { id: 'completed', label: 'Group Party Completed', completed: isCompleted }
-            ];
+            const totalAmt = isLargeBooking ? Number(bookingRecord.totalAmount || 0) : Number(gp?.totalAmount || 0);
+
+            const timelineSteps = isLargeBooking
+                ? [
+                    { id: 'request_submitted', label: 'Request Submitted', completed: true },
+                    { id: 'admin_review', label: 'Admin Approval', completed: isApproved || isConfirmed || isCompleted },
+                    { id: 'payment_confirmed', label: 'Payment Confirmed', completed: isConfirmed || isCompleted },
+                    { id: 'ticket_generated', label: 'Ticket Generated', completed: isConfirmed || isCompleted },
+                    { id: 'completed', label: 'Party Completed', completed: isCompleted }
+                ]
+                : [
+                    { id: 'created', label: 'Group Party Created', completed: true },
+                    ...(totalAmt > 0 ? [{ id: 'payment_confirmed', label: 'Payment Confirmed', completed: isConfirmed || isCompleted }] : []),
+                    { id: 'booking_confirmed', label: 'Booking Confirmed', completed: isConfirmed || isCompleted },
+                    { id: 'ticket_generated', label: 'Ticket Generated', completed: isConfirmed || isCompleted },
+                    { id: 'reminder_2h', label: '2 Hour Reminder', completed: reminder2h || isCompleted },
+                    { id: 'reminder_1h', label: '1 Hour Reminder', completed: reminder1h || isCompleted },
+                    { id: 'reminder_30m', label: '30 Minute Reminder', completed: reminder30m || isCompleted },
+                    { id: 'completed', label: 'Party Completed', completed: isCompleted }
+                ];
 
             const completedCount = timelineSteps.filter(s => s.completed).length;
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
@@ -646,11 +654,11 @@ export class GroupPartyService {
             let statusText = 'Group Party Initiated';
 
             if (isConfirmed) {
-                title = `Group Party Confirmed! 🎉`;
-                body = `Your group party of ${guestCount} friends at ${venueName} is fully confirmed. Get ready!`;
+                title = isLargeBooking ? `Large Party Confirmed! 🎉` : `Group Party Confirmed! 🎉`;
+                body = `Your party of ${guestCount} guests at ${venueName} is fully confirmed. Get ready!`;
                 statusText = 'Confirmed';
             } else if (isApproved) {
-                title = `Group Party Approved! 💳`;
+                title = isLargeBooking ? `Large Party Approved! 💳` : `Group Party Approved! 💳`;
                 body = `Your request for ${guestCount} guests at ${venueName} is approved. Complete payment now.`;
                 statusText = 'Approved - Pending Payment';
             } else if (isPending) {
@@ -659,25 +667,24 @@ export class GroupPartyService {
                     body = `Your request of ${guestCount} guests at ${venueName} is waiting for admin approval.`;
                     statusText = 'Pending Approval';
                 } else {
-                    const totalAmt = Number(gp?.totalAmount || 0);
                     title = `Payment Required 💳`;
                     body = `Action Required: Complete payment${totalAmt > 0 ? ` of ₹${totalAmt}` : ''} to confirm your group party at ${venueName}.`;
                     statusText = 'Payment Required';
                 }
             } else if (isRejected) {
-                title = `Group Party Rejected ❌`;
+                title = isLargeBooking ? `Large Party Rejected ❌` : `Group Party Rejected ❌`;
                 body = `Your party request at ${venueName} could not be approved.`;
                 statusText = 'Rejected';
             } else if (isCancelled) {
-                title = `Group Party Cancelled ❌`;
+                title = isLargeBooking ? `Large Party Cancelled ❌` : `Group Party Cancelled ❌`;
                 body = `Your group party at ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
             } else if (isCompleted) {
-                title = `Group Party Completed ✨`;
+                title = isLargeBooking ? `Large Party Completed ✨` : `Group Party Completed ✨`;
                 body = `Hope you had an amazing night at ${venueName}!`;
                 statusText = 'Completed';
             } else if (isExpired) {
-                title = `Group Party Expired ⌛`;
+                title = isLargeBooking ? `Large Party Expired ⌛` : `Group Party Expired ⌛`;
                 body = `Your party request at ${venueName} expired because payment wasn't completed before the event started.`;
                 statusText = 'Expired';
             }
@@ -687,8 +694,7 @@ export class GroupPartyService {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
             }
             if (isConfirmed) {
-                actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
-                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: false, action: 'VIEW_TICKET' });
+                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
             }
             actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
 

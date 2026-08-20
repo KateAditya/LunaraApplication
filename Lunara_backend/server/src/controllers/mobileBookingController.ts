@@ -692,8 +692,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const groupParties = await GroupParty.findAll({
             where: {
                 userId,
-                status: { [Op.in]: ['confirmed', 'completed'] },
-                paymentStatus: 'paid',
+                [Op.or]: [
+                    { paymentStatus: 'paid' },
+                    { status: { [Op.in]: ['confirmed', 'completed', 'active'] } },
+                ],
             },
             include: [venueInclude],
         });

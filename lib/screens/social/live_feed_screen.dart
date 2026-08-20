@@ -1341,6 +1341,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           ),
         );
+      } else if (status == 'approved' || status == 'pending') {
+        final bool isLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0) > 20 || bookingData['isLargePartyRequest'] == true;
+        if (!isLarge || status == 'approved') {
+          _initiateLargePartyPayment(bookingData);
+        }
       }
     } else if (category.contains('party') || category.contains('plan')) {
       final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
@@ -2024,7 +2029,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         onActionTap = null;
       } else {
         cardTitle = 'Payment Required 💳';
-        cardBody = 'Action Required: Complete payment to confirm your group party at $venueName.';
+        cardBody = 'Action Required: Complete payment${totalAmount > 0 ? " of ₹${totalAmount.toInt()}" : ""} to confirm your group party at $venueName.';
         badgeText = 'PAYMENT REQUIRED';
         accentColor = const Color(0xFFF59E0B);
         actionButtonText = 'Pay Now';

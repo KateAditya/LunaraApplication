@@ -89,6 +89,25 @@ async function resolveImage(imgUrl: string | null | undefined): Promise<Buffer |
     return null;
 }
 
+function formatTimeTo12Hour(timeStr?: string): string {
+    if (!timeStr) return '08:00 PM';
+    const clean = timeStr.trim();
+    if (clean.toUpperCase().includes('AM') || clean.toUpperCase().includes('PM')) {
+        return clean;
+    }
+    const parts = clean.split(':');
+    if (parts.length >= 1) {
+        let h = parseInt(parts[0], 10);
+        const m = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+        if (isNaN(h)) return '08:00 PM';
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12;
+        if (h === 0) h = 12;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+    return clean;
+}
+
 // Vector Icon Helpers for clean PDFKit rendering
 function drawCheckmarkIcon(doc: any, cx: number, cy: number, r: number) {
     doc.save();
@@ -344,7 +363,7 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         // Col 2: TIME
         drawClockIcon(doc, 190, metricY + 22, 9);
         doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('TIME', 145, metricY + 36, { width: 90, align: 'center' });
-        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(options.startTime || '09:00 PM', 140, metricY + 48, { width: 100, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(formatTimeTo12Hour(options.startTime), 140, metricY + 48, { width: 100, align: 'center' });
         doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('Onwards', 140, metricY + 63, { width: 100, align: 'center' });
 
         // Divider 2

@@ -1849,27 +1849,43 @@ export const updateChargesPerHead = async (req: Request, res: Response): Promise
 export const getStrangersMeetTicket = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const request = await StrangersMeetRequest.findByPk(id, {
+        const cleanId = (id || '').replace(/^strangers_meet_/, '').trim();
+
+        const venueInclude = {
+            model: Venue,
+            as: 'venue',
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'profilePhotoUrl', 'coverImageUrl'],
             include: [
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
-                    include: [
-                        { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
-                    ],
-                },
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'],
-                    include: [
-                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city'], required: false },
-                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
-                    ],
-                },
+                { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
             ],
+        };
+
+        const userInclude = {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'profileImageUrl'],
+            include: [
+                { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName', 'subscriptionTier'], required: false },
+                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
+            ],
+        };
+
+        let request = await StrangersMeetRequest.findByPk(cleanId, {
+            include: [venueInclude, userInclude],
         });
+
+        if (!request) {
+            const joiner = await StrangersMeetJoiner.findByPk(cleanId, {
+                include: [{
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    include: [venueInclude, userInclude],
+                }],
+            });
+            if (joiner && (joiner as any).strangersMeetRequest) {
+                request = (joiner as any).strangersMeetRequest;
+            }
+        }
 
         if (!request) {
             res.status(404).json({ success: false, message: 'Strangers meet request not found' });
@@ -1882,20 +1898,30 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             if (u.photos && u.photos.length > 0) {
                 const primary = u.photos.find((p: any) => p.isPrimary) || u.photos[0];
                 if (primary?.filePath) {
-                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                    const cleanPath = primary.filePath.replace(/\\/g, '/');
+                    photoUrl = cleanPath.startsWith('http') ? cleanPath : `/${cleanPath.replace(/^\/+/, '')}`;
                 }
+            }
+            if (photoUrl && !photoUrl.startsWith('http') && !photoUrl.startsWith('/')) {
+                photoUrl = `/${photoUrl.replace(/\\/g, '')}`;
             }
             return photoUrl;
         };
 
         const hostRaw = (request as any).user;
+        const hostPhoto = resolveUserPhoto(hostRaw);
         const hostData = hostRaw ? {
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
             username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
-            profilePhotoUrl: resolveUserPhoto(hostRaw),
-            subscriptionTier: 'FREE',
+            profilePhotoUrl: hostPhoto,
+            profileImageUrl: hostPhoto,
+            photoUrl: hostPhoto,
+            image: hostPhoto,
+            subscriptionTier: hostRaw.profile?.subscriptionTier || 'FREE',
+            bio: hostRaw.profile?.bio ?? null,
+            city: hostRaw.profile?.city ?? null,
         } : null;
 
         // Dynamic participants calculation: count actual confirmed/paid joiners

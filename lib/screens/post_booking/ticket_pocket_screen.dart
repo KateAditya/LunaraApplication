@@ -61,6 +61,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (dt != null) return dt;
     }
     final dateStr = booking['bookingDate']?.toString() ??
+        booking['partyDate']?.toString() ??
         booking['date']?.toString();
     final startTimeStr = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
@@ -69,9 +70,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     if (dateStr != null && dateStr.isNotEmpty) {
       try {
         final bDate = DateTime.parse(dateStr).toLocal();
-        final parts = startTimeStr.split(':');
-        final h = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 20 : 20;
-        final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        final isPm = startTimeStr.toUpperCase().contains('PM');
+        final isAm = startTimeStr.toUpperCase().contains('AM');
+        final cleanTime = startTimeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+        final parts = cleanTime.split(':');
+        int h = parts.isNotEmpty ? (int.tryParse(parts[0].trim()) ?? 20) : 20;
+        final m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        if (isPm && h < 12) h += 12;
+        if (isAm && h == 12) h = 0;
         return DateTime(bDate.year, bDate.month, bDate.day, h, m);
       } catch (_) {}
     }
@@ -92,14 +98,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (dt != null) return dt;
     }
     if (eventStart != null) {
-      return eventStart.add(const Duration(hours: 4));
+      return DateTime(eventStart.year, eventStart.month, eventStart.day + 1, 6, 0, 0);
     }
     return null;
   }
 
   bool _isActiveBooking(Map<String, dynamic> booking) {
     try {
-      if (booking['isExpired'] == true) return false;
       final status = booking['status']?.toString().toLowerCase();
       if (status == 'cancelled' ||
           status == 'completed' ||
@@ -114,8 +119,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (expirationTime != null) {
         return DateTime.now().isBefore(expirationTime);
       }
+      if (booking['isExpired'] == true) return false;
 
-      final dateStr = booking['bookingDate']?.toString();
+      final dateStr = booking['bookingDate']?.toString() ?? booking['partyDate']?.toString();
       if (dateStr == null || dateStr.isEmpty) return true;
 
       final bookingDate = DateTime.parse(dateStr).toLocal();

@@ -30,8 +30,10 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
   // Fresh backend ticket data
   Map<String, dynamic>? _freshHostUser;
+  Map<String, dynamic>? _freshVenue;
+  DateTime? _freshEventDateTime;
+  String? _freshStartTime;
   String? _canonicalTicketCode;
-  String? _ticketUrl;
   int? _freshPersonsCount;
   final GlobalKey _ticketKey = GlobalKey();
 
@@ -50,8 +52,42 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     super.dispose();
   }
 
+  DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
+    DateTime baseDate = DateTime.now();
+    if (rawDate != null) {
+      if (rawDate is DateTime) {
+        baseDate = rawDate.toLocal();
+      } else {
+        try {
+          baseDate = DateTime.parse(rawDate.toString()).toLocal();
+        } catch (_) {}
+      }
+    }
+
+    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
+      final tStr = rawTime.toString().trim();
+      final isPm = tStr.toUpperCase().contains('PM');
+      final isAm = tStr.toUpperCase().contains('AM');
+      final cleanTime = tStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = cleanTime.split(':');
+      if (parts.isNotEmpty) {
+        int? h = int.tryParse(parts[0].trim());
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        if (h != null) {
+          if (isPm && h < 12) h += 12;
+          if (isAm && h == 12) h = 0;
+          return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
+        }
+      }
+    } else if (baseDate.hour == 0 && baseDate.minute == 0) {
+      // Default to 8:00 PM evening start if date-only was parsed
+      return DateTime(baseDate.year, baseDate.month, baseDate.day, 20, 0);
+    }
+    return baseDate;
+  }
+
   void _initCountdown() {
-    final eventDate = widget.request.eventDateTime;
+    final eventDate = _parseEventDateTime(_freshEventDateTime ?? widget.request.eventDateTime, _freshStartTime);
     void update() {
       if (!mounted) return;
       final remaining = eventDate.difference(DateTime.now());
@@ -60,15 +96,17 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
       });
     }
 
+    _countdownTimer?.cancel();
     update();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
   }
 
   Future<void> _fetchTicketData() async {
-    final reqId = widget.request.id;
-    if (reqId.isEmpty) return;
+    final rawId = widget.request.id;
+    if (rawId.isEmpty) return;
     try {
-      final response = await ApiService.get('/api/mobile/strangers-meet/requests/$reqId/ticket');
+      final cleanId = rawId.replaceFirst('strangers_meet_', '').trim();
+      final response = await ApiService.get('/api/mobile/strangers-meet/requests/$cleanId/ticket');
       if (response.statusCode == 200 && mounted) {
         final mapData = jsonDecode(response.body);
         if (mapData != null && mapData['data'] != null) {
@@ -78,9 +116,20 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
             if (reqObj is Map && reqObj['host'] is Map) {
               _freshHostUser = Map<String, dynamic>.from(reqObj['host']);
             }
+            if (reqObj is Map && reqObj['venue'] is Map) {
+              _freshVenue = Map<String, dynamic>.from(reqObj['venue']);
+            }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString() ?? reqObj?['ticketCode']?.toString();
-            _ticketUrl = ticketObj['ticketUrl']?.toString() ?? reqObj?['ticketUrl']?.toString();
             if (reqObj is Map) {
+              final rawDt = reqObj['eventDateTime'] ?? reqObj['event_date_time'];
+              if (rawDt != null) {
+                final parsed = DateTime.tryParse(rawDt.toString())?.toLocal();
+                if (parsed != null) _freshEventDateTime = parsed;
+              }
+              final rawSt = reqObj['startTime'] ?? reqObj['partyTime'] ?? reqObj['time'];
+              if (rawSt != null && rawSt.toString().trim().isNotEmpty) {
+                _freshStartTime = rawSt.toString().trim();
+              }
               final dynamicCount = ticketObj['actualParticipantsCount'] ??
                   ticketObj['joinedCount'] ??
                   ticketObj['numberOfPersons'] ??
@@ -93,6 +142,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
               }
             }
           });
+          _initCountdown();
         }
       }
     } catch (e) {
@@ -205,12 +255,26 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     if (widget.request.user != null) {
       return Map<String, dynamic>.from(widget.request.user!);
     }
+    final myUser = ApiService.cachedCurrentUser;
+    if (myUser != null) {
+      return <String, dynamic>{
+        'id': myUser.id,
+        'firstName': myUser.firstName,
+        'lastName': myUser.lastName,
+        'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
+        'profilePhotoUrl': myUser.profilePhoto,
+        'image': myUser.profilePhoto,
+        'bio': myUser.bio,
+      };
+    }
     return <String, dynamic>{};
   }
 
   void _shareTicket(BuildContext context) {
-    final venueName = widget.request.venue?['name'] ?? 'Venue';
-    final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(widget.request.eventDateTime);
+    final venueMap = _freshVenue ?? widget.request.venue ?? {};
+    final venueName = venueMap['name'] ?? 'Venue';
+    final eventDateTime = _parseEventDateTime(_freshEventDateTime ?? widget.request.eventDateTime, _freshStartTime);
+    final eventDateTimeFormatted = DateFormat('MMM dd, yyyy • hh:mm a').format(eventDateTime);
     final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-PASS').toUpperCase();
     final hostUser = _resolveHostUser();
     final hostName = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();
@@ -221,7 +285,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
       ticketKey: _ticketKey,
       ticketCode: ticketId,
       venueName: venueName,
-      eventDateTime: eventDateTime,
+      eventDateTime: eventDateTimeFormatted,
       eventType: 'Strangers Meet',
       hostName: hostName.isNotEmpty ? hostName : 'Event Host',
       guestCount: '$dynamicCount Attendees',
@@ -230,10 +294,12 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final venueName = widget.request.venue?['name'] ?? 'Unknown Venue';
-    final venueCity = widget.request.venue?['city'] ?? 'Pune';
-    final venueArea = widget.request.venue?['area'] ?? '';
-    final venueAddress = widget.request.venue?['address'] ??
+    final venueMap = _freshVenue ?? widget.request.venue ?? {};
+    final venueName = venueMap['name'] ?? 'Unknown Venue';
+    final venueCity = venueMap['city'] ?? 'Pune';
+    final venueArea = venueMap['area'] ?? '';
+    final venueAddress = venueMap['address'] ??
+        venueMap['addressLine1'] ??
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity, Maharashtra 411001';
 
     final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-TICKET').toUpperCase();
@@ -242,7 +308,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     final int dynamicCount = _freshPersonsCount ?? widget.request.actualParticipantsCount;
     final String memberLabel = '$dynamicCount ${dynamicCount == 1 ? "Person" : "Persons"}';
     final String memberSubtext = targetCapacity > dynamicCount ? '$dynamicCount Joined • Max $targetCapacity' : 'Confirmed';
-    final DateTime eventDateTime = widget.request.eventDateTime;
+    final DateTime eventDateTime = _parseEventDateTime(_freshEventDateTime ?? widget.request.eventDateTime, _freshStartTime);
 
     final hostUser = _resolveHostUser();
     final hostNameRaw = '${hostUser['firstName'] ?? ''} ${hostUser['lastName'] ?? ''}'.trim();

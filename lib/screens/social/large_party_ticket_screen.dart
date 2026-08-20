@@ -96,37 +96,51 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     return _LargePartyPaymentState.awaitingPayment;
   }
 
-  void _initCountdown() {
-    final bookingDateStr = widget.booking['bookingDate']?.toString() ?? widget.booking['partyDate']?.toString();
-    if (bookingDateStr == null) return;
-
-    DateTime? targetDate = DateTime.tryParse(bookingDateStr)?.toLocal();
-    if (targetDate == null) return;
-
-    final startTimeStr = widget.booking['startTime']?.toString() ?? '20:00';
-    try {
-      final timeParts = startTimeStr.split(':');
-      if (timeParts.length >= 2) {
-        final hours = int.parse(timeParts[0]);
-        final minutes = int.parse(timeParts[1]);
-        targetDate = DateTime(
-          targetDate.year,
-          targetDate.month,
-          targetDate.day,
-          hours,
-          minutes,
-        );
+  DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
+    DateTime baseDate = DateTime.now();
+    if (rawDate != null) {
+      if (rawDate is DateTime) {
+        baseDate = rawDate.toLocal();
+      } else {
+        try {
+          baseDate = DateTime.parse(rawDate.toString()).toLocal();
+        } catch (_) {}
       }
-    } catch (_) {}
+    }
+
+    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
+      final tStr = rawTime.toString().trim();
+      final isPm = tStr.toUpperCase().contains('PM');
+      final isAm = tStr.toUpperCase().contains('AM');
+      final cleanTime = tStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = cleanTime.split(':');
+      if (parts.isNotEmpty) {
+        int? h = int.tryParse(parts[0].trim());
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        if (h != null) {
+          if (isPm && h < 12) h += 12;
+          if (isAm && h == 12) h = 0;
+          return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
+        }
+      }
+    }
+    return baseDate;
+  }
+
+  void _initCountdown() {
+    final bookingDateStr = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
+    final startTimeStr = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final DateTime targetDate = _parseEventDateTime(bookingDateStr, startTimeStr);
 
     void update() {
       if (!mounted) return;
-      final remaining = targetDate!.difference(DateTime.now());
+      final remaining = targetDate.difference(DateTime.now());
       setState(() {
         _timeRemaining = remaining.isNegative ? Duration.zero : remaining;
       });
     }
 
+    _countdownTimer?.cancel();
     update();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
   }
@@ -175,6 +189,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               _paymentState = _LargePartyPaymentState.awaitingPayment;
             }
           });
+          _initCountdown();
           return;
         }
       }
@@ -238,6 +253,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString();
           });
+          _initCountdown();
         }
       }
     } catch (e) {
@@ -512,28 +528,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   void _shareTicket(BuildContext context) {
     final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
     final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
-    final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-    DateTime planDateTime = DateTime.now();
-    if (rawDate != null) {
-      try {
-        planDateTime = DateTime.parse(rawDate.toString()).toLocal();
-      } catch (_) {}
-    }
-    // Prefer the server-refreshed date/time — widget.booking is only ever
-    // the caller's initial guess (often just a bare date, defaulting to
-    // midnight — "12:00 AM"). _freshPartyDate/_freshStartTime come from the
-    // actual GroupParty record once _fetchTicketData resolves.
-    if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
-    if (_freshStartTime != null) {
-      final tp = _freshStartTime!.split(':');
-      if (tp.length >= 2) {
-        final h = int.tryParse(tp[0]);
-        final m = int.tryParse(tp[1]);
-        if (h != null && m != null) {
-          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
-        }
-      }
-    }
+    final rawDate = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
+    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final DateTime planDateTime = _parseEventDateTime(rawDate, rawTime);
     final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime);
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'LP-PASS').toString().toUpperCase();
     final hostUser = _resolveHostUser();
@@ -564,28 +561,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         widget.venue['addressLine1']?.toString() ??
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
 
-    final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-    DateTime planDateTime = DateTime.now();
-    if (rawDate != null) {
-      try {
-        planDateTime = DateTime.parse(rawDate.toString()).toLocal();
-      } catch (_) {}
-    }
-    // Prefer the server-refreshed date/time — widget.booking is only ever
-    // the caller's initial guess (often just a bare date, defaulting to
-    // midnight — "12:00 AM"). _freshPartyDate/_freshStartTime come from the
-    // actual GroupParty record once _fetchTicketData resolves.
-    if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
-    if (_freshStartTime != null) {
-      final tp = _freshStartTime!.split(':');
-      if (tp.length >= 2) {
-        final h = int.tryParse(tp[0]);
-        final m = int.tryParse(tp[1]);
-        if (h != null && m != null) {
-          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
-        }
-      }
-    }
+    final rawDate = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
+    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final DateTime planDateTime = _parseEventDateTime(rawDate, rawTime);
 
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'GP-TICKET').toString().toUpperCase();
     final double totalAmount = _freshTotalAmount ??
@@ -630,13 +608,17 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     final bool isFreeParty = totalAmount <= 0 && !isAwaitingPayment && !isExpired && _paymentState == _LargePartyPaymentState.paid;
     final double amountDue = _amountDue ?? totalAmount;
     final paymentMethodLabel = isFreeParty
-        ? 'FREE (Complimentary)'
+        ? 'FREE (No Payment Required)'
         : isAwaitingPayment
             ? 'Awaiting Payment'
             : isExpired
                 ? 'Expired — Not Paid'
                 : (_freshPaymentMethod ??
-                    (widget.booking['paymentId']?.toString().startsWith('wallet_') == true ? 'LUNARA Wallet' : 'Lunara Secure Pay'));
+                    (widget.booking['paymentId']?.toString().startsWith('wallet_') == true
+                        ? 'LUNARA Wallet'
+                        : (widget.booking['paymentId']?.toString().startsWith('free_') == true
+                            ? 'FREE (No Payment Required)'
+                            : 'Online Payment (Razorpay)')));
 
     const lightBgColor = Color(0xFFF6F7FB);
     const darkTextColor = Color(0xFF0F172A);
@@ -987,9 +969,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          'BOOKING STATUS',
-                                          style: TextStyle(
+                                        Text(
+                                          isFreeParty ? 'BOOKING TYPE' : (isAwaitingPayment ? 'PAYMENT STATUS' : 'PAYMENT METHOD'),
+                                          style: const TextStyle(
                                             color: grayTextColor,
                                             fontSize: 8.5,
                                             fontWeight: FontWeight.w800,
@@ -1018,7 +1000,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  isAwaitingPayment || isExpired ? 'AMOUNT DUE' : 'TOTAL PAID',
+                                  isAwaitingPayment || isExpired ? 'AMOUNT DUE' : (isFreeParty ? 'BOOKING CHARGE' : 'TOTAL PAID'),
                                   style: const TextStyle(
                                     color: grayTextColor,
                                     fontSize: 8.5,

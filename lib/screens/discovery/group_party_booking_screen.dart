@@ -1016,9 +1016,9 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // No of Friends Selector
+                  // Total Group Size Selector
                   const Text(
-                    'NUMBER OF FRIENDS',
+                    'TOTAL GROUP SIZE (INCLUDING YOURSELF)',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,

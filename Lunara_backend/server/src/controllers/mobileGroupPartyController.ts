@@ -268,7 +268,9 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
                     discountAmount: Number(groupParty.discountAmount),
                     status: groupParty.status,
                     paymentStatus: groupParty.paymentStatus,
-                    paymentMethod: groupParty.paymentId?.startsWith('wallet_') ? 'LUNARA Wallet' : 'Razorpay',
+                    paymentMethod: Number(groupParty.totalAmount) <= 0
+                        ? 'No Payment Required'
+                        : (groupParty.paymentId?.startsWith('wallet_') ? 'LUNARA Wallet' : 'Razorpay'),
                     ticketCode: ticketCode,
                     ticketUrl: ticketUrl,
                     host: hostData,

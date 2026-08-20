@@ -13,6 +13,30 @@ import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
 
+function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
+    const baseDate = dateVal ? (dateVal instanceof Date ? dateVal : new Date(dateVal)) : new Date();
+    const sTime = timeStr ? timeStr.trim() : '20:00';
+    const isPm = sTime.toUpperCase().includes('PM');
+    const isAm = sTime.toUpperCase().includes('AM');
+    const cleanTime = sTime.toUpperCase().replace('AM', '').replace('PM', '').trim();
+    const parts = cleanTime.split(':');
+    let h = parts.length > 0 ? (parseInt(parts[0], 10) || 20) : 20;
+    const m = parts.length > 1 ? (parseInt(parts[1], 10) || 0) : 0;
+    if (isPm && h < 12) h += 12;
+    if (isAm && h === 12) h = 0;
+    return new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), h, m, 0);
+}
+
+function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | null): Date {
+    if (expAt && expAt.getTime() > startAt.getTime() + 6 * 60 * 60 * 1000) {
+        return expAt;
+    }
+    if (endAt && endAt.getTime() > startAt.getTime() + 6 * 60 * 60 * 1000) {
+        return endAt;
+    }
+    return new Date(startAt.getFullYear(), startAt.getMonth(), startAt.getDate() + 1, 6, 0, 0);
+}
+
 export class MobileTicketController {
     /**
      * GET /api/mobile/tickets
@@ -118,7 +142,6 @@ export class MobileTicketController {
                             as: 'strangersMeetRequest',
                             include: [
                                 { model: Venue, as: 'venue', attributes: venueAttributes },
-                                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                             ],
                         },
                     ],
@@ -129,13 +152,13 @@ export class MobileTicketController {
                         userId,
                         [Op.or]: [
                             { paymentStatus: 'paid' },
-                            { status: { [Op.in]: ['approved', 'in_progress', 'completed', 'host_confirmed_ended', 'admin_confirmed_ended', 'settled'] } },
+                            { status: { [Op.in]: ['confirmed', 'approved', 'in_progress', 'completed'] } },
                         ],
                     },
                     include: [
                         { model: Venue, as: 'venue', attributes: venueAttributes },
                     ],
-                    order: [['eventDateTime', 'DESC']],
+                    order: [['createdAt', 'DESC']],
                 }),
             ]);
 
@@ -164,9 +187,10 @@ export class MobileTicketController {
 
                 const sourceBooking = bookingById.get(t.bookingId);
                 const sourceGroupParty = groupPartyById.get(t.bookingId);
-                const isExpired = t.ticketStatus === TicketStatus.EXPIRED || (t.expiresAt && new Date(t.expiresAt) < now) || (t.eventEndAt && new Date(t.eventEndAt) < now);
-                const startDate = t.eventStartAt ? new Date(t.eventStartAt) : null;
-                const startTimeStr = startDate ? startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '08:00 PM';
+                const startDate = t.eventStartAt ? new Date(t.eventStartAt) : new Date();
+                const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
+                const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
+                const startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
                 formattedTickets.push({
                     id: t.id,
@@ -178,9 +202,9 @@ export class MobileTicketController {
                     bookingDate: t.eventStartAt,
                     startTime: startTimeStr,
                     eventStartAt: t.eventStartAt,
-                    eventEndAt: t.eventEndAt,
+                    eventEndAt: t.eventEndAt || actualExpiresAt,
                     issuedAt: t.issuedAt,
-                    expiresAt: t.expiresAt,
+                    expiresAt: actualExpiresAt,
                     usedAt: t.usedAt,
                     pdfUrl: isExpired ? null : t.pdfUrl,
                     qrToken: isExpired ? null : t.qrToken,
@@ -213,14 +237,9 @@ export class MobileTicketController {
                 seenBookingIds.add(b.id);
                 if (bAny.ticketCode) seenTicketIds.add(bAny.ticketCode);
 
-                const bDateStr = b.bookingDate ? b.bookingDate.toString() : '';
                 const sTime = b.startTime || '20:00';
-                let startAt = new Date();
-                try {
-                    const combined = b.startTime ? new Date(`${bDateStr} ${b.startTime}`) : new Date(bDateStr);
-                    if (!isNaN(combined.getTime())) startAt = combined;
-                } catch (_) {}
-                const expAt = new Date(startAt.getTime() + 12 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(b.bookingDate, sTime);
+                const expAt = getActualExpiration(startAt);
                 const bStatus = (b.status || '').toLowerCase();
                 const isCancelled = bStatus === 'cancelled';
                 const isCompleted = bStatus === 'completed';
@@ -272,14 +291,9 @@ export class MobileTicketController {
                 seenBookingIds.add(gp.id);
                 if (gpAny.ticketCode) seenTicketIds.add(gpAny.ticketCode);
 
-                const gpDateStr = gp.partyDate ? gp.partyDate.toString() : '';
                 const sTime = gp.startTime || '20:00';
-                let startAt = new Date();
-                try {
-                    const combined = gp.startTime ? new Date(`${gpDateStr} ${gp.startTime}`) : new Date(gpDateStr);
-                    if (!isNaN(combined.getTime())) startAt = combined;
-                } catch (_) {}
-                const expAt = gp.expiresAt ? new Date(gp.expiresAt) : new Date(startAt.getTime() + 12 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(gp.partyDate, sTime);
+                const expAt = getActualExpiration(startAt, null, gp.expiresAt ? new Date(gp.expiresAt) : null);
                 const gpStatus = (gp.status || '').toLowerCase();
                 const isCancelled = gpStatus === 'cancelled' || gpStatus === 'rejected';
                 const isCompleted = gpStatus === 'completed';
@@ -333,8 +347,8 @@ export class MobileTicketController {
                 seenBookingIds.add(req.id);
                 if (reqAny.ticketCode) seenTicketIds.add(reqAny.ticketCode);
 
-                const startAt = plan.planDateTime ? new Date(plan.planDateTime) : new Date();
-                const expAt = new Date(startAt.getTime() + 12 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(plan.planDateTime, null);
+                const expAt = getActualExpiration(startAt);
                 const sStatus = (req.status || '').toLowerCase();
                 const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected';
                 const isCompleted = plan.lifecycleStatus === 'plan_completed';
@@ -386,8 +400,8 @@ export class MobileTicketController {
                 seenBookingIds.add(plan.id);
                 if (planAny.ticketCode) seenTicketIds.add(planAny.ticketCode);
 
-                const startAt = plan.planDateTime ? new Date(plan.planDateTime) : new Date();
-                const expAt = new Date(startAt.getTime() + 12 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(plan.planDateTime, null);
+                const expAt = getActualExpiration(startAt);
                 const pStatus = (plan.status || '').toLowerCase();
                 const isCancelled = pStatus === 'cancelled';
                 const isCompleted = plan.lifecycleStatus === 'plan_completed';
@@ -441,8 +455,8 @@ export class MobileTicketController {
                 seenBookingIds.add(j.id);
                 if (jAny.ticketCode) seenTicketIds.add(jAny.ticketCode);
 
-                const startAt = meet.eventDateTime ? new Date(meet.eventDateTime) : new Date();
-                const expAt = meet.expectedEndAt ? new Date(meet.expectedEndAt) : new Date(startAt.getTime() + 4 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(meet.eventDateTime, null);
+                const expAt = getActualExpiration(startAt, meet.expectedEndAt ? new Date(meet.expectedEndAt) : null);
                 const jStatus = (j.status || '').toLowerCase();
                 const isCancelled = jStatus === 'cancelled' || jStatus === 'rejected';
                 const isCompleted = meet.status === 'completed' || meet.status === 'settled';
@@ -494,8 +508,8 @@ export class MobileTicketController {
                 seenBookingIds.add(sm.id);
                 if (smAny.ticketCode) seenTicketIds.add(smAny.ticketCode);
 
-                const startAt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date();
-                const expAt = sm.expectedEndAt ? new Date(sm.expectedEndAt) : new Date(startAt.getTime() + 4 * 60 * 60 * 1000);
+                const startAt = parseEventStartDateTime(sm.eventDateTime, null);
+                const expAt = getActualExpiration(startAt, sm.expectedEndAt ? new Date(sm.expectedEndAt) : null);
                 const sStatus = (sm.status || '').toLowerCase();
                 const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected';
                 const isCompleted = sStatus === 'completed' || sStatus === 'settled';

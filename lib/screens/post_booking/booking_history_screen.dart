@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
+import '../social/large_party_ticket_screen.dart';
+import '../social/party_plan_ticket_screen.dart';
 
 enum HistoryFilterType {
   all,
@@ -59,6 +61,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   DateTime? _getBookedDateTime(Map<String, dynamic> booking) {
     final dateStr = booking['bookedAt']?.toString() ??
         booking['createdAt']?.toString() ??
+        booking['partyDate']?.toString() ??
         booking['bookingDate']?.toString();
     if (dateStr == null || dateStr.isEmpty) return null;
     try {
@@ -758,6 +761,35 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   padding: const EdgeInsets.only(bottom: 20),
                   child: GestureDetector(
                     onTap: () {
+                      final isPartyPlan = booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan';
+                      if (isPartyPlan) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PartyPlanTicketScreen(
+                              request: booking,
+                              plan: booking,
+                              isHost: true,
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      final isGroupParty = booking['isGroupParty'] == true || booking['bookingType'] == 'group_party';
+                      if (isGroupParty) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LargePartyTicketScreen(
+                              booking: booking,
+                              venue: venue ?? {'name': venueName, 'id': booking['venueId']},
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(

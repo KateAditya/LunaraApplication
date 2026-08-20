@@ -3836,63 +3836,87 @@ const TICKET_USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'profileImage
 export const getPartyPlanTicket = async (req: Request, res: Response): Promise<void> => {
     try {
         const { reqId } = req.params;
+        const cleanId = (reqId || '').replace(/^party_plan_host_/, '').replace(/^party_plan_joiner_/, '').trim();
 
-        const request = await PartyPlanRequest.findByPk(reqId, {
+        const venueInclude = {
+            model: Venue,
+            as: 'venue',
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'latitude', 'longitude', 'profilePhotoUrl', 'coverImageUrl'],
+            include: [
+                {
+                    model: VenueImage,
+                    as: 'images',
+                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                    where: { isPrimary: true },
+                    required: false,
+                }
+            ],
+        };
+
+        const userInclude = (as: string) => ({
+            model: User,
+            as,
+            attributes: TICKET_USER_ATTRS,
+            include: [
+                { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
+                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+            ],
+        });
+
+        let request = await PartyPlanRequest.findByPk(cleanId, {
             include: [
                 {
                     model: PartyPlan,
                     as: 'plan',
                     include: [
-                        {
-                            model: User,
-                            as: 'creator',
-                            attributes: TICKET_USER_ATTRS,
-                            include: [
-                                { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
-                                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
-                            ],
-                        },
-                        {
-                            model: Venue,
-                            as: 'venue',
-                            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'latitude', 'longitude'],
-                            include: [
-                                {
-                                    model: VenueImage,
-                                    as: 'images',
-                                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
-                                    where: { isPrimary: true },
-                                    required: false,
-                                }
-                            ],
-                        },
+                        userInclude('creator'),
+                        venueInclude,
                     ] as any,
                 },
-                {
-                    model: User,
-                    as: 'requester',
-                    attributes: TICKET_USER_ATTRS,
-                    include: [
-                        { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
-                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
-                    ],
-                },
+                userInclude('requester'),
             ],
         });
 
-        if (!request) {
-            res.status(404).json({ success: false, message: 'Request not found' });
-            return;
+        let plan: PartyPlan | null = null;
+
+        if (request) {
+            plan = (request as any).plan as PartyPlan;
+        } else {
+            // cleanId might be a PartyPlan ID
+            plan = await PartyPlan.findByPk(cleanId, {
+                include: [
+                    userInclude('creator'),
+                    venueInclude,
+                ] as any,
+            });
+
+            if (plan) {
+                request = await PartyPlanRequest.findOne({
+                    where: {
+                        planId: plan.id,
+                        status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, PartyPlanRequestStatus.PAYMENT_PENDING] },
+                    },
+                    order: [['updatedAt', 'DESC']],
+                    include: [userInclude('requester')],
+                });
+
+                if (!request) {
+                    request = await PartyPlanRequest.findOne({
+                        where: { planId: plan.id },
+                        order: [['createdAt', 'DESC']],
+                        include: [userInclude('requester')],
+                    });
+                }
+            }
         }
 
-        const plan = (request as any).plan as PartyPlan;
         if (!plan) {
-            res.status(404).json({ success: false, message: 'Plan not found for this request' });
+            res.status(404).json({ success: false, message: 'Party plan or request not found' });
             return;
         }
 
         const callerUserId = (req as any).user?.id || req.query.userId || req.body.userId;
-        if (callerUserId && callerUserId !== plan.userId && callerUserId !== request.requesterId) {
+        if (callerUserId && callerUserId !== plan.userId && request && callerUserId !== request.requesterId) {
             res.status(403).json({ success: false, message: 'You are not authorized to view this ticket.' });
             return;
         }
@@ -3904,33 +3928,45 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             if (u.photos && u.photos.length > 0) {
                 const primary = u.photos.find((p: any) => p.isPrimary) || u.photos[0];
                 if (primary?.filePath) {
-                    photoUrl = '/' + primary.filePath.replace(/\\/g, '/');
+                    const cleanPath = primary.filePath.replace(/\\/g, '/');
+                    photoUrl = cleanPath.startsWith('http') ? cleanPath : `/${cleanPath.replace(/^\/+/, '')}`;
                 }
+            }
+            if (photoUrl && !photoUrl.startsWith('http') && !photoUrl.startsWith('/')) {
+                photoUrl = `/${photoUrl.replace(/\\/g, '')}`;
             }
             return photoUrl;
         };
 
         const hostRaw = (plan as any).creator;
-        const joinerRaw = (request as any).requester;
+        const joinerRaw = request ? (request as any).requester : null;
 
+        const hostPhoto = resolveUserPhoto(hostRaw);
         const hostData = hostRaw ? {
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
             username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
-            profilePhotoUrl: resolveUserPhoto(hostRaw),
-            subscriptionTier: 'FREE',
+            profilePhotoUrl: hostPhoto,
+            profileImageUrl: hostPhoto,
+            photoUrl: hostPhoto,
+            image: hostPhoto,
+            subscriptionTier: hostRaw.profile?.subscriptionTier || 'FREE',
             bio: hostRaw.profile?.bio ?? null,
             city: hostRaw.profile?.city ?? null,
         } : null;
 
+        const joinerPhoto = resolveUserPhoto(joinerRaw);
         const joinerData = joinerRaw ? {
             id: joinerRaw.id,
             firstName: joinerRaw.firstName,
             lastName: joinerRaw.lastName,
             username: joinerRaw.profile?.displayName || (joinerRaw.firstName ? `${joinerRaw.firstName}_${joinerRaw.lastName}`.toLowerCase() : 'user'),
-            profilePhotoUrl: resolveUserPhoto(joinerRaw),
-            subscriptionTier: 'FREE',
+            profilePhotoUrl: joinerPhoto,
+            profileImageUrl: joinerPhoto,
+            photoUrl: joinerPhoto,
+            image: joinerPhoto,
+            subscriptionTier: joinerRaw.profile?.subscriptionTier || 'FREE',
             bio: joinerRaw.profile?.bio ?? null,
             city: joinerRaw.profile?.city ?? null,
         } : null;
@@ -3977,7 +4013,7 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         res.json({
             success: true,
             data: {
-                request: {
+                request: request ? {
                     id: request.id,
                     planId: request.planId,
                     status: request.status,
@@ -3986,7 +4022,10 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     requester: joinerData,
                     joiner: joinerData,
                     user: joinerData,
-                },
+                } : null,
+                partner: joinerData,
+                joiner: joinerData,
+                host: hostData,
                 plan: {
                     id: plan.id,
                     message: plan.message,
