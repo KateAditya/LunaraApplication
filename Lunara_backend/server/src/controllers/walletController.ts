@@ -4,7 +4,7 @@ import { logger } from '../config/logger';
 import PartyPlan from '../models/PartyPlan';
 import PartyPlanRequest from '../models/PartyPlanRequest';
 import Payment from '../models/Payment';
-import Booking from '../models/Booking';
+import Booking, { GoingMode } from '../models/Booking';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import User from '../models/User';
@@ -550,17 +550,37 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             ],
         });
 
-        // Unified transactions list
+        // Unified transactions list with strict multi-source deduplication
         const transactions: any[] = [];
+        const seenTxnIds = new Set<string>();
+        const seenPartyPlanKeys = new Set<string>();
+        const seenStrangersMeetKeys = new Set<string>();
 
         // Standard booking payments
         for (const p of payments) {
             const booking = (p as any).booking;
             const venue = booking?.venue;
+
+            let partyPlanId: string | null = null;
+            let strangersMeetId: string | null = null;
+            if (booking?.specialRequests) {
+                try {
+                    const parsedReqs = typeof booking.specialRequests === 'string' ? JSON.parse(booking.specialRequests) : booking.specialRequests;
+                    partyPlanId = parsedReqs?.planId || null;
+                    strangersMeetId = parsedReqs?.strangersMeetId || parsedReqs?.meetId || null;
+                } catch (_) {}
+            }
+
+            if (p.transactionId) seenTxnIds.add(p.transactionId);
+            if (partyPlanId) seenPartyPlanKeys.add(partyPlanId);
+            if (strangersMeetId) seenStrangersMeetKeys.add(strangersMeetId);
+
+            const isPartyDeposit = booking?.goingMode === GoingMode.PARTY_REQUEST || !!partyPlanId;
+
             transactions.push({
                 txnId: p.transactionId,
                 paymentId: p.id,
-                type: 'booking',
+                type: isPartyDeposit ? 'party_plan_deposit' : 'booking',
                 amount: Number(p.amount),
                 currency: p.currency || 'INR',
                 status: p.status,
@@ -581,6 +601,9 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                           venueName: venue?.name ?? 'Unknown Venue',
                           venueCity: venue?.city ?? '',
                           venueAddress: venue?.addressLine1 ?? '',
+                          partyPlanId: partyPlanId || undefined,
+                          strangersMeetId: strangersMeetId || undefined,
+                          label: isPartyDeposit ? 'Party Plan Deposit' : 'Table Booking',
                       }
                     : null,
             });
@@ -588,19 +611,18 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         // Host party plan payments (safety deposit)
         for (const plan of hostPartyPayments) {
-            const venue = (plan as any).venue;
-            // Avoid duplicate if already captured in payments table
-            const alreadyAdded = transactions.find(
-                t => t.context?.partyPlanId === plan.id && t.role === 'host'
-            );
-            if (alreadyAdded) continue;
+            if (plan.hostRazorpayPaymentId && seenTxnIds.has(plan.hostRazorpayPaymentId)) continue;
+            if (seenPartyPlanKeys.has(plan.id)) continue;
+            if (plan.hostRazorpayPaymentId) seenTxnIds.add(plan.hostRazorpayPaymentId);
+            seenPartyPlanKeys.add(plan.id);
 
+            const venue = (plan as any).venue;
             transactions.push({
                 txnId: plan.hostRazorpayPaymentId,
                 paymentId: plan.id,
                 type: 'party_plan_deposit',
                 role: 'host',
-                amount: Number(plan.depositAmount),
+                amount: Number(plan.depositAmount || 99),
                 currency: 'INR',
                 status: 'successful',
                 paymentMethod: 'razorpay',
@@ -620,13 +642,14 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         // Joiner party plan payments (safety deposit)
         for (const req of joinerPartyPayments) {
+            if (req.joinerRazorpayPaymentId && seenTxnIds.has(req.joinerRazorpayPaymentId)) continue;
+            if (seenPartyPlanKeys.has(req.planId) || seenPartyPlanKeys.has(req.id)) continue;
+            if (req.joinerRazorpayPaymentId) seenTxnIds.add(req.joinerRazorpayPaymentId);
+            seenPartyPlanKeys.add(req.planId);
+            seenPartyPlanKeys.add(req.id);
+
             const plan = (req as any).plan;
             const venue = plan ? (plan as any).venue : null;
-            const alreadyAdded = transactions.find(
-                t => t.context?.partyPlanId === req.planId && t.role === 'joiner'
-            );
-            if (alreadyAdded) continue;
-
             transactions.push({
                 txnId: req.joinerRazorpayPaymentId,
                 paymentId: req.id,
@@ -652,6 +675,11 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         // Host Strangers Meet payments
         for (const meet of hostStrangersMeetPayments) {
+            if (meet.razorpayPaymentId && seenTxnIds.has(meet.razorpayPaymentId)) continue;
+            if (seenStrangersMeetKeys.has(meet.id)) continue;
+            if (meet.razorpayPaymentId) seenTxnIds.add(meet.razorpayPaymentId);
+            seenStrangersMeetKeys.add(meet.id);
+
             const venue = (meet as any).venue;
             transactions.push({
                 txnId: meet.razorpayPaymentId,
@@ -679,6 +707,11 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         // Joiner Strangers Meet payments
         for (const jm of joinerStrangersMeetPayments) {
+            if (jm.razorpayPaymentId && seenTxnIds.has(jm.razorpayPaymentId)) continue;
+            if (seenStrangersMeetKeys.has(jm.id) || seenStrangersMeetKeys.has(jm.strangersMeetRequestId)) continue;
+            if (jm.razorpayPaymentId) seenTxnIds.add(jm.razorpayPaymentId);
+            seenStrangersMeetKeys.add(jm.id);
+
             const meet = (jm as any).strangersMeetRequest;
             const venue = meet ? (meet as any).venue : null;
             transactions.push({
@@ -765,7 +798,6 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             };
         });
 
-
         // ── 3. Summary stats ─────────────────────────────────────────────────
         // Merge all transactions (plan payments + subscription) into a unified list
         const allTransactions = [...transactions, ...subscriptionTxns].sort(
@@ -782,14 +814,21 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         const smartWallet = await WalletService.getOrCreateWallet(userId);
         const config = await WalletService.getGlobalConfig();
-        const smartTransactions = await WalletTransaction.findAll({
+        const rawSmartTransactions = await WalletTransaction.findAll({
             where: { userId },
             order: [['createdAt', 'DESC']],
             limit: 50,
         });
 
+        // Exclude smart transactions that duplicate gateway ledger entries
+        const smartTransactions = rawSmartTransactions.filter(st => {
+            if (st.reference && seenTxnIds.has(st.reference)) return false;
+            if (st.partyPlanId && seenPartyPlanKeys.has(st.partyPlanId) && (st as any).source === 'razorpay') return false;
+            return true;
+        });
+
         const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
-        const totalRechargedFromTxns = smartTransactions
+        const totalRechargedFromTxns = rawSmartTransactions
             .filter(t => t.transactionType === WalletTransactionType.RECHARGE && t.status === WalletTransactionStatus.SUCCESS)
             .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 

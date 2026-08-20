@@ -61,23 +61,39 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
           _walletData = data['wallet'] ?? {};
           _summary = data['summary'] ?? {};
           
-          // Combine all transaction types for modern filter tabs
+          // Combine all transaction types for modern filter tabs with strict deduplication
           final txns = (data['transactions'] as List? ?? []);
           final subTxns = (data['subscriptionTransactions'] as List? ?? []);
           final smartTxns = (data['smartTransactions'] as List? ?? []);
 
           final combined = <Map<String, dynamic>>[];
+          final seenKeys = <String>{};
+
+          void addDeduped(dynamic rawItem, [String? forcedType]) {
+            if (rawItem is! Map) return;
+            final map = Map<String, dynamic>.from(rawItem);
+            if (forcedType != null) map['type'] = forcedType;
+            final key = (map['txnId'] ??
+                    map['paymentId'] ??
+                    map['reference'] ??
+                    map['id'] ??
+                    '${map['type']}_${map['createdAt']}_${map['amount']}')
+                .toString();
+            if (key.isNotEmpty && key != 'null') {
+              if (seenKeys.contains(key)) return;
+              seenKeys.add(key);
+            }
+            combined.add(map);
+          }
 
           for (final t in smartTxns) {
-            combined.add(Map<String, dynamic>.from(t));
+            addDeduped(t);
           }
           for (final t in txns) {
-            combined.add(Map<String, dynamic>.from(t));
+            addDeduped(t);
           }
           for (final t in subTxns) {
-            final map = Map<String, dynamic>.from(t);
-            map['type'] = 'subscription';
-            combined.add(map);
+            addDeduped(t, 'subscription');
           }
 
           // Sort by createdAt descending

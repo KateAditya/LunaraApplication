@@ -2057,9 +2057,34 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                     ),
                                     (route) => route.isFirst,
                                   );
+                                } else {
+                                  if (createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
+                                    await ApiService.cancelPendingGroupParty(createdGroupPartyId!);
+                                    createdGroupPartyId = null;
+                                  }
+                                  if (parentContext.mounted) {
+                                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Payment verification failed. Group party booking cancelled.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
                                 }
                               } catch (e) {
                                 debugPrint('verifyGroupPartyPayment error: $e');
+                                if (createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
+                                  await ApiService.cancelPendingGroupParty(createdGroupPartyId!);
+                                  createdGroupPartyId = null;
+                                }
+                                if (parentContext.mounted) {
+                                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Payment verification error: $e'),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                }
                               }
                             });
 

@@ -69,12 +69,28 @@ export class GroupPartyService {
             throw new Error('Venue not found');
         }
 
-        const chargePerPerson = venue.groupPartyChargePerPerson || venue.tableBookingCharges || 0;
-        const discountPercentage = venue.groupPartyDiscountPercentage || venue.discountPercentage || 0;
+        const rawGpCharge = venue.groupPartyChargePerPerson != null ? Number(venue.groupPartyChargePerPerson) : 0;
+        const rawTbCharge = venue.tableBookingCharges != null ? Number(venue.tableBookingCharges) : 0;
 
-        const tableBookingCharge = chargePerPerson * numberOfFriends;
-        const discountAmount = (tableBookingCharge * discountPercentage) / 100;
-        const totalAmount = Math.max(0, tableBookingCharge - discountAmount);
+        let chargePerPerson = 0;
+        if (!isNaN(rawGpCharge) && rawGpCharge > 0) {
+            chargePerPerson = rawGpCharge;
+        } else if (!isNaN(rawTbCharge) && rawTbCharge > 0) {
+            chargePerPerson = rawTbCharge;
+        } else {
+            // Standard fallback charge per person if venue charges are unconfigured
+            chargePerPerson = 6.00;
+        }
+
+        const rawGpDiscount = venue.groupPartyDiscountPercentage != null ? Number(venue.groupPartyDiscountPercentage) : 0;
+        const rawTbDiscount = venue.discountPercentage != null ? Number(venue.discountPercentage) : 0;
+        const discountPercentage = (!isNaN(rawGpDiscount) && rawGpDiscount > 0)
+            ? rawGpDiscount
+            : ((!isNaN(rawTbDiscount) && rawTbDiscount > 0) ? rawTbDiscount : 0);
+
+        const tableBookingCharge = Math.round(chargePerPerson * numberOfFriends * 100) / 100;
+        const discountAmount = Math.round(((tableBookingCharge * discountPercentage) / 100) * 100) / 100;
+        const totalAmount = Math.max(0, Math.round((tableBookingCharge - discountAmount) * 100) / 100);
 
         return {
             numberOfFriends,
@@ -140,9 +156,10 @@ export class GroupPartyService {
         if (partyType === PartyType.SMALL) {
             // SMALL PARTY FLOW
             const pricing = await this.calculateAuthoritativePricing(venueId, numberOfFriends);
+            const requiresPayment = pricing.totalAmount > 0;
             
             let razorpayOrder: any = null;
-            if (pricing.totalAmount > 0) {
+            if (requiresPayment) {
                 try {
                     razorpayOrder = await razorpay.orders.create({
                         amount: Math.round(pricing.totalAmount * 100),
@@ -150,9 +167,9 @@ export class GroupPartyService {
                         receipt: `gp_${Date.now()}`
                     });
                 } catch (rzpErr) {
-                    logger.warn('Failed to create real Razorpay order for GP, falling back to mock order: ' + rzpErr);
+                    logger.warn('Failed to create real Razorpay order for GP, falling back to order ID: ' + rzpErr);
                     razorpayOrder = {
-                        id: `order_mock_${Date.now()}`,
+                        id: `order_gp_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
                         amount: Math.round(pricing.totalAmount * 100),
                         currency: 'INR'
                     };
@@ -177,15 +194,15 @@ export class GroupPartyService {
                         optionalMobileNumber: optionalMobileNumber?.trim(),
                         foodPreference: foodPreference?.trim(),
                         drinkPreference: drinkPreference?.trim(),
-                        status: pricing.totalAmount > 0 ? GroupPartyStatus.PENDING : GroupPartyStatus.CONFIRMED,
-                        paymentStatus: pricing.totalAmount > 0 ? GroupPartyPaymentStatus.PENDING : GroupPartyPaymentStatus.PAID,
+                        status: requiresPayment ? GroupPartyStatus.PENDING : GroupPartyStatus.CONFIRMED,
+                        paymentStatus: requiresPayment ? GroupPartyPaymentStatus.PENDING : GroupPartyPaymentStatus.PAID,
                         paymentId: razorpayOrder ? razorpayOrder.id : `free_${Date.now()}`
                     }, { transaction });
                 }
             );
 
-            // Handle Free Party Instant Confirmation
-            if (pricing.totalAmount <= 0) {
+            // Handle Free Party Instant Confirmation ONLY if totalAmount is strictly 0
+            if (!requiresPayment) {
                 try {
                     await generateTicketForGroupPartyHelper(groupParty.id);
                 } catch (ticketErr) {

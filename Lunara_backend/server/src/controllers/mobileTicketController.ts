@@ -85,10 +85,8 @@ export class MobileTicketController {
                 GroupParty.findAll({
                     where: {
                         userId,
-                        [Op.or]: [
-                            { paymentStatus: GroupPartyPaymentStatus.PAID },
-                            { status: { [Op.in]: [GroupPartyStatus.CONFIRMED, 'completed' as any] } },
-                        ],
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                        status: { [Op.in]: [GroupPartyStatus.CONFIRMED, 'completed' as any] },
                     },
                     include: [
                         { model: Venue, as: 'venue', attributes: venueAttributes },

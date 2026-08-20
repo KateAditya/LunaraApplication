@@ -235,9 +235,16 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
         let ticketUrl = groupParty.ticketUrl ?? null;
         let ticketCode = groupParty.ticketCode || groupParty.paymentId || `GP-${groupParty.id.substring(0, 8).toUpperCase()}`;
 
-        // Generate ticket on-the-fly ONLY for verified paid parties or zero-cost confirmed parties
-        const isVerifiedPaid = groupParty.paymentStatus === GroupPartyPaymentStatus.PAID ||
-            (groupParty.status === GroupPartyStatus.CONFIRMED && Number(groupParty.totalAmount) <= 0);
+        // Generate ticket on-the-fly ONLY for verified paid parties
+        const isVerifiedPaid = groupParty.paymentStatus === GroupPartyPaymentStatus.PAID && groupParty.status === GroupPartyStatus.CONFIRMED;
+
+        if (!isVerifiedPaid && Number(groupParty.totalAmount) > 0) {
+            res.status(402).json({
+                success: false,
+                message: 'Payment has not been completed or verified for this group party ticket.'
+            });
+            return;
+        }
 
         if (!ticketUrl && isVerifiedPaid) {
             try {
