@@ -28,14 +28,17 @@ function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: strin
 }
 
 function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | null): Date {
-    if (expAt && expAt.getTime() > startAt.getTime()) {
+    const now = new Date();
+    const defaultExp = new Date(startAt.getTime() + 30 * 60 * 60 * 1000);
+
+    if (expAt && expAt.getTime() > now.getTime()) {
         return expAt;
     }
-    if (endAt && endAt.getTime() > startAt.getTime()) {
+    if (endAt && endAt.getTime() > now.getTime()) {
         return endAt;
     }
-    // Expiration is at least 30 hours after event start to ensure full event day coverage
-    return new Date(startAt.getTime() + 30 * 60 * 60 * 1000);
+
+    return defaultExp;
 }
 
 export class MobileTicketController {
@@ -46,7 +49,10 @@ export class MobileTicketController {
      */
     public static async getUserTickets(req: Request, res: Response): Promise<Response> {
         try {
-            const userId = req.user!.id;
+            const userId = req.user?.id || (req.query.userId as string);
+            if (!userId) {
+                return res.status(400).json({ success: false, message: 'User ID is required' });
+            }
             const tab = (req.query.tab as string) || 'all';
             const now = new Date();
 
