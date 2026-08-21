@@ -1761,6 +1761,41 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
   void initState() {
     super.initState();
     _loadPlans();
+    _initListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposeListeners();
+    super.dispose();
+  }
+
+  void _initListeners() {
+    ApiService.planPostedNotifier.addListener(_onAutoRefresh);
+    ApiService.addSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener('strangers_meet_updated', _onSocketUpdate);
+  }
+
+  void _disposeListeners() {
+    ApiService.planPostedNotifier.removeListener(_onAutoRefresh);
+    ApiService.removeSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.removeSocketListener('strangers_meet_updated', _onSocketUpdate);
+  }
+
+  void _onAutoRefresh() {
+    if (!mounted) return;
+    _loadPlans();
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _loadPlans();
   }
 
   Future<void> _loadPlans() async {
@@ -1878,6 +1913,7 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
     try {
       final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
       if (res.alreadyRequested || res.success) {
+        ApiService.planPostedNotifier.value++;
         setState(() {
           _requestedPlanIds.add(planId);
         });

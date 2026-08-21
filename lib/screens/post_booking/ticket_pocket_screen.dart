@@ -56,12 +56,40 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       if (mounted) setState(() {});
     });
     _loadBookings();
+    _initListeners();
   }
 
   @override
   void dispose() {
+    _disposeListeners();
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _initListeners() {
+    ApiService.planPostedNotifier.addListener(_onAutoRefresh);
+    ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.addSocketListener('group_party_payment_success', _onSocketUpdate);
+    ApiService.addSocketListener('strangers_meet_settled', _onSocketUpdate);
+    ApiService.addSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _disposeListeners() {
+    ApiService.planPostedNotifier.removeListener(_onAutoRefresh);
+    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener('group_party_payment_success', _onSocketUpdate);
+    ApiService.removeSocketListener('strangers_meet_settled', _onSocketUpdate);
+    ApiService.removeSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _onAutoRefresh() {
+    if (!mounted) return;
+    _loadBookings();
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _loadBookings();
   }
 
   Future<void> _loadBookings() async {

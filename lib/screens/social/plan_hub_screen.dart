@@ -70,6 +70,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     _loadVenues();
     _loadProfile();
     _loadCustomers();
+    _initListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.autoShowCreatePlan) {
         _showCreatePlanSheet(context);
@@ -77,6 +78,67 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         _showArrangeStrangersMeetSheet(context);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _disposeListeners();
+    _bannerController.dispose();
+    super.dispose();
+  }
+
+  void _initListeners() {
+    ApiService.planPostedNotifier.addListener(_onPlanPostedOrAction);
+    ApiService.profileUpdateNotifier.addListener(_loadProfile);
+    ApiService.addSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_reposted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.addSocketListener('strangers_meet_started', _onSocketUpdate);
+    ApiService.addSocketListener('strangers_meet_updated', _onSocketUpdate);
+    ApiService.addSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _disposeListeners() {
+    ApiService.planPostedNotifier.removeListener(_onPlanPostedOrAction);
+    ApiService.profileUpdateNotifier.removeListener(_loadProfile);
+    ApiService.removeSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_reposted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('strangers_meet_started', _onSocketUpdate);
+    ApiService.removeSocketListener('strangers_meet_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _onPlanPostedOrAction() {
+    if (!mounted) return;
+    _loadCustomers();
+    _loadVenues();
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _loadCustomers();
+    _loadVenues();
   }
 
   String _formatToISTString(DateTime date, TimeOfDay time) {
@@ -212,12 +274,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       debugPrint('Error loading venues: $e');
       if (mounted) setState(() => _isLoadingVenues = false);
     }
-  }
-
-  @override
-  void dispose() {
-    _bannerController.dispose();
-    super.dispose();
   }
 
   @override

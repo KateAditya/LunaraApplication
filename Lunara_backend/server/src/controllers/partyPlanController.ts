@@ -922,9 +922,10 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             },
         };
 
-        // Emit socket event for real-time creator/invited user updates
+        // Emit socket event for real-time creator/invited user updates and global feed broadcast
         try {
             const { io } = require('../server');
+            io.emit('party_plan_created', responseData);
             io.to(`user_${userId}`).emit('party_plan_created', responseData);
             if (Array.isArray(selectedUsers)) {
                 for (const invitedUserId of selectedUsers) {

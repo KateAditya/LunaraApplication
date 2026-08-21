@@ -145,6 +145,61 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     _refreshPlanDetails();
     _fetchCurrentUserAndCancellationState();
     _fetchRequestsIfNeeded();
+    _initListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposeListeners();
+    super.dispose();
+  }
+
+  void _initListeners() {
+    ApiService.planPostedNotifier.addListener(_onPlanChanged);
+    ApiService.addSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _disposeListeners() {
+    ApiService.planPostedNotifier.removeListener(_onPlanChanged);
+    ApiService.removeSocketListener('party_plan_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_deleted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('notification_created', _onSocketUpdate);
+  }
+
+  void _onPlanChanged() {
+    if (!mounted) return;
+    _refreshPlanDetails();
+    _fetchRequestsIfNeeded();
+    _checkRequestStatus();
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _refreshPlanDetails();
+    _fetchRequestsIfNeeded();
+    _checkRequestStatus();
   }
 
   Future<void> _fetchRequestsIfNeeded() async {
