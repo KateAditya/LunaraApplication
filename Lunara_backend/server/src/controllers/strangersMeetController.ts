@@ -1938,9 +1938,9 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
         const venueInclude = {
             model: Venue,
             as: 'venue',
-            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude', 'profilePhotoUrl', 'coverImageUrl'],
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
             include: [
-                { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
+                { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'], required: false },
             ],
         };
 

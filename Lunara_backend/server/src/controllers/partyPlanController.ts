@@ -3859,12 +3859,12 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         const venueInclude = {
             model: Venue,
             as: 'venue',
-            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'latitude', 'longitude', 'profilePhotoUrl', 'coverImageUrl'],
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
             include: [
                 {
                     model: VenueImage,
                     as: 'images',
-                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                    attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                     where: { isPrimary: true },
                     required: false,
                 }

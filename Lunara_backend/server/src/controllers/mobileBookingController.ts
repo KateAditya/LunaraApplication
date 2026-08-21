@@ -87,11 +87,12 @@ function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string, 
                 area: (venue as any).area,
                 city: (venue as any).city,
                 address: `${(venue as any).area || (venue as any).addressLine1 || ''}, ${(venue as any).city || ''}`.trim(),
-                profilePhotoUrl: (venue as any).profilePhotoUrl ?? null,
-                coverImageUrl: (venue as any).coverImageUrl ?? null,
+                images: (venue as any).images ?? [],
+                // Derive a primary image URL from the images association
+                profilePhotoUrl: ((venue as any).images ?? []).find((i: any) => i.isPrimary)?.filePath
+                    || ((venue as any).images ?? [])[0]?.filePath || null,
                 latitude: (venue as any).latitude ?? null,
                 longitude: (venue as any).longitude ?? null,
-                images: (venue as any).images ?? [],
             }
             : null,
         bookingDate: booking.bookingDate,
@@ -109,7 +110,10 @@ function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string, 
         isEventBooking: isUpcomingNight,
         bannerImageUrl,
         eventPoster: bannerImageUrl,
-        imageUrl: bannerImageUrl || (venue as any)?.profilePhotoUrl || (venue as any)?.coverImageUrl,
+        imageUrl: bannerImageUrl
+            || ((venue as any)?.images ?? []).find((i: any) => i.isPrimary)?.filePath
+            || ((venue as any)?.images ?? [])[0]?.filePath
+            || null,
         eventTitle,
         partySubject: eventTitle || booking.partySubject,
         partyEvent: partyEvent ? {
@@ -710,12 +714,12 @@ export const getTicket = async (req: Request, res: Response) => {
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
                     include: [
                         {
                             model: VenueImage,
                             as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         },
                     ],
@@ -796,12 +800,12 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const venueInclude = {
             model: Venue,
             as: 'venue',
-            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
             include: [
                 {
                     model: VenueImage,
                     as: 'images',
-                    attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                    attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                     required: false,
                 }
             ],
@@ -1053,6 +1057,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
             });
         }
 
+        // Helper: resolve best image URL from VenueImage association
+        const resolveVenueImageUrl = (venue: any): string | null => {
+            if (!venue) return null;
+            const imgs: any[] = venue.images || [];
+            const primary = imgs.find((i: any) => i.isPrimary === true) || imgs[0];
+            if (!primary) return null;
+            const fp = primary.filePath || primary.url || '';
+            if (!fp) return null;
+            return fp.startsWith('http') ? fp : `/${fp.replace(/^\/+/, '')}`;
+        };
+
         const normalizedBookings = bookings.map(b => {
             const json: any = b.toJSON();
             json.bookedAt = json.createdAt ? new Date(json.createdAt).toISOString() : json.bookingDate;
@@ -1070,6 +1085,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 };
                 json.host = json.user;
             }
+            // Resolve venue image
+            json.venueImageUrl = resolveVenueImageUrl(json.venue);
             const partyEvent = (b as any).partyEvent;
             if (partyEvent) {
                 const bannerImageUrl = partyEvent.imagePath
@@ -1077,7 +1094,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     : null;
                 json.bannerImageUrl = bannerImageUrl;
                 json.eventPoster = bannerImageUrl;
-                json.imageUrl = bannerImageUrl || json.venue?.profilePhotoUrl || json.venue?.coverImageUrl;
+                json.imageUrl = bannerImageUrl || json.venueImageUrl;
                 json.eventTitle = partyEvent.title || json.partySubject;
                 json.partyEvent = {
                     id: partyEvent.id,
@@ -1088,9 +1105,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     eventDate: partyEvent.eventDate,
                     entryPrice: partyEvent.entryPrice,
                 };
+            } else {
+                json.imageUrl = json.imageUrl || json.venueImageUrl;
             }
             return json;
         });
+
+        // Inject venueImageUrl into synthesized items too
+        for (const item of synthesized) {
+            item.venueImageUrl = resolveVenueImageUrl(item.venue);
+            item.imageUrl = item.imageUrl || item.venueImageUrl;
+        }
 
         const seenKeys = new Set<string>();
         const combined: any[] = [];
@@ -1126,12 +1151,12 @@ export const getBookingDetail = async (req: Request, res: Response) => {
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
                     include: [
                         {
                             model: VenueImage,
                             as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         },
                     ],
