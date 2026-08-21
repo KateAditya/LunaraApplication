@@ -561,7 +561,7 @@ export const VenueRevenueDetailsModal: React.FC<Props> = ({ venueId, venueName, 
                                                         <td>{r.userMobile}</td>
                                                         <td>
                                                             <span className={`badge bg-${r.isLargePartyRequest ? 'purple' : r.isGroupBooking ? 'info' : r.goingMode === 'party_request' ? 'warning' : 'primary'}-subtle text-${r.isLargePartyRequest ? 'purple' : r.isGroupBooking ? 'info' : r.goingMode === 'party_request' ? 'warning' : 'primary'}`} style={{ textTransform: 'uppercase', fontSize: '0.7rem' }}>
-                                                                {r.isLargePartyRequest ? 'Large Party' : r.isGroupBooking ? 'Group Party' : r.goingMode === 'party_request' ? 'Party Request' : (r.goingMode || 'Solo')}
+                                                                {r.isLargePartyRequest ? 'Large Party' : r.isGroupBooking ? 'Group Party' : r.goingMode === 'party_request' ? 'Group Party' : (r.goingMode || 'Solo')}
                                                             </span>
                                                         </td>
                                                         <td style={{ textAlign: 'center' }}>{r.numberOfGuests}</td>

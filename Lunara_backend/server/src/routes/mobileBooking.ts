@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import ctrl from '../controllers/mobileBookingController';
 
 const router = Router();
@@ -87,7 +87,7 @@ router.post(
  * GET /api/mobile/bookings
  * List all bookings for a user. Query: ?userId=<uuid>
  */
-router.get('/', authenticate, ctrl.listMyBookings);
+router.get('/', optionalAuth, ctrl.listMyBookings);
 
 // ─── Payment actions ──────────────────────────────────────────────────────────
 // NOTE: All specific /:id/sub-routes MUST be declared before GET /:id

@@ -438,7 +438,7 @@ export const Bookings: React.FC = () => {
                     { key: 'today', label: '📅 Today' },
                     { key: 'solo', label: '👤 Solo' },
                     { key: 'plan', label: '⚡ Party Plans' },
-                    { key: 'party_request', label: '🤝 Party Requests' },
+                    { key: 'party_request', label: '👥 Group Parties' },
                     { key: 'group', label: '👥 Group Bookings' },
                     { key: 'large', label: '⭐ Large Parties' },
                     { key: 'upcoming', label: '🌙 Upcoming Nights' }
@@ -541,13 +541,17 @@ export const Bookings: React.FC = () => {
                                             <td>
                                                 {booking.isUpcomingNight ? (
                                                     <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.7rem' }}>🌙 Upcoming Night</span>
-                                                ) : booking.isLargePartyRequest ? (
+                                                ) : (booking.isLargePartyRequest || (booking.numberOfGuests && booking.numberOfGuests > 20) || (booking.partySize && booking.partySize > 20)) ? (
                                                     <span className="badge bg-danger-subtle text-danger" style={{ fontSize: '0.7rem' }}>⭐ Large Party</span>
-                                                ) : booking.isGroupBooking ? (
-                                                    <span className="badge bg-primary-subtle text-primary" style={{ fontSize: '0.7rem' }}>👥 Group</span>
+                                                ) : (booking.isGroupBooking || booking.goingMode === 'party_request' || booking.goingMode === 'group_party') ? (
+                                                    <span className="badge bg-primary-subtle text-primary" style={{ fontSize: '0.7rem' }}>👥 Group Party</span>
+                                                ) : booking.goingMode === 'solo' ? (
+                                                    <span className="badge bg-info-subtle text-info" style={{ fontSize: '0.7rem' }}>👤 Solo</span>
+                                                ) : booking.goingMode === 'plan' ? (
+                                                    <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.7rem' }}>⚡ Party Plan</span>
                                                 ) : (
-                                                    <span className="badge bg-info-subtle text-info" style={{ fontSize: '0.7rem', textTransform: 'capitalize' }}>
-                                                        {booking.goingMode || 'Solo'}
+                                                    <span className="badge bg-info-subtle text-info" style={{ fontSize: '0.7rem' }}>
+                                                        {booking.goingMode === 'party_request' ? 'Group Party' : (booking.goingMode || 'Solo')}
                                                     </span>
                                                 )}
                                             </td>
@@ -637,14 +641,30 @@ export const Bookings: React.FC = () => {
                                     {selectedBooking.bookingNumber || selectedBooking.id.toUpperCase()}
                                 </span>
                             </div>
-                            {selectedBooking.isUpcomingNight && (
-                                <div>
-                                    <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>BOOKING TYPE</span>
+                            <div>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>BOOKING TYPE</span>
+                                {selectedBooking.isUpcomingNight ? (
                                     <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
                                         🌙 Upcoming Night
                                     </span>
-                                </div>
-                            )}
+                                ) : (selectedBooking.isLargePartyRequest || (selectedBooking.numberOfGuests && selectedBooking.numberOfGuests > 20) || (selectedBooking.partySize && selectedBooking.partySize > 20)) ? (
+                                    <span className="badge bg-danger-subtle text-danger" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
+                                        ⭐ Large Party
+                                    </span>
+                                ) : (selectedBooking.isGroupBooking || selectedBooking.goingMode === 'party_request' || selectedBooking.goingMode === 'group_party') ? (
+                                    <span className="badge bg-primary-subtle text-primary" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
+                                        👥 Group Party
+                                    </span>
+                                ) : selectedBooking.goingMode === 'plan' ? (
+                                    <span className="badge bg-warning-subtle text-warning" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
+                                        ⚡ Party Plan
+                                    </span>
+                                ) : (
+                                    <span className="badge bg-info-subtle text-info" style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '0.2rem' }}>
+                                        👤 Solo
+                                    </span>
+                                )}
+                            </div>
                             {selectedBooking.ticketCode && (
                                 <div>
                                     <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>TICKET CODE</span>

@@ -607,6 +607,22 @@ export {
     PartyReview,
     ReliabilityHistory,
     RewardPointLedger,
+    Ticket,
+    TicketStatus,
+    Area,
+    SmartWallet,
+    SmartWalletConfig,
+    WalletPromotionalCampaign,
+    WalletCashbackRule,
+    UserLike,
+    PlanTimeLock,
+    PlanTimeLockConfig,
+    PlanTimeLockConfigHistory,
+    NotificationJob,
+    NightInterest,
+    NightPartnerRequest,
+    NightPartnerMatch,
+    Notification,
 };
 
 // Export sync function

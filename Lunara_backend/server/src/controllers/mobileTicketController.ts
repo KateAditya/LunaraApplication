@@ -2,19 +2,25 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import sequelize from '../config/database';
-import Ticket, { TicketStatus } from '../models/Ticket';
-import Venue from '../models/Venue';
-import User from '../models/User';
-import Booking from '../models/Booking';
-import GroupParty from '../models/GroupParty';
-import PartyPlan from '../models/PartyPlan';
-import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
-import StrangersMeetRequest, { StrangersMeetStatus } from '../models/StrangersMeetRequest';
-import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
-import Plan from '../models/Plan';
-import PlanJoinRequest from '../models/PlanJoinRequest';
-import VenueImage from '../models/VenueImage';
-import Ad from '../models/Ad';
+import {
+    Ticket,
+    Venue,
+    User,
+    Booking,
+    GroupParty,
+    PartyPlan,
+    PartyPlanRequest,
+    StrangersMeetRequest,
+    StrangersMeetJoiner,
+    Plan,
+    PlanJoinRequest,
+    VenueImage,
+    Ad,
+} from '../models';
+import { TicketStatus } from '../models/Ticket';
+import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
+import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
+import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
 
 function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
@@ -63,7 +69,7 @@ export class MobileTicketController {
             const venueInclude = {
                 model: Venue,
                 as: 'venue',
-                attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+                attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'latitude', 'longitude'],
                 include: [
                     {
                         model: VenueImage,
@@ -98,7 +104,7 @@ export class MobileTicketController {
                     where: { userId },
                     include: [venueInclude, userInclude],
                     order: [['eventStartAt', 'DESC']],
-                }).catch(err => {
+                }).catch((err: any) => {
                     logger.error('getUserTickets Ticket query error:', err);
                     return [];
                 }),
@@ -215,7 +221,7 @@ export class MobileTicketController {
             const formattedTickets: any[] = [];
 
             // 1. Process explicit Ticket table records
-            const bookingIds = tickets.map(t => t.bookingId).filter(Boolean);
+            const bookingIds = tickets.map((t: any) => t.bookingId).filter(Boolean);
             const [sourceBookings, sourceGroupParties] = await Promise.all([
                 Booking.findAll({
                     where: { id: { [Op.in]: bookingIds } },
