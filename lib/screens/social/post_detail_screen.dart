@@ -1789,13 +1789,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         widget.post['hasConfirmedBooking'] == true ||
         widget.post['isMatched'] == true ||
         _alreadyRequested && (_meetRequest?.joiners != null);
-    final bool isSecretVenue = widget.post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;
+    final bool isSecretVenue = widget.post['showVenueDetails'] == false ||
+        widget.post['isSecret'] == true ||
+        widget.post['isSecretVenue'] == true ||
+        widget.venue?['showVenueDetails'] == false ||
+        widget.venue?['isSecret'] == true ||
+        widget.venue?['isSecretVenue'] == true ||
+        (widget.post['venueMap'] is Map &&
+            ((widget.post['venueMap'] as Map)['isSecret'] == true ||
+             (widget.post['venueMap'] as Map)['isSecretVenue'] == true ||
+             (widget.post['venueMap'] as Map)['showVenueDetails'] == false)) ||
+        (widget.post['venue'] is Map &&
+            ((widget.post['venue'] as Map)['isSecret'] == true ||
+             (widget.post['venue'] as Map)['isSecretVenue'] == true ||
+             (widget.post['venue'] as Map)['showVenueDetails'] == false)) ||
+        widget.venue?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        widget.post['venue']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        widget.post['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        (widget.post['venueMap'] is Map &&
+            (widget.post['venueMap'] as Map)['name']?.toString().toUpperCase().contains('SECRET VENUE') == true);
     final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
 
     final String venueName = hideVenue ? 'SECRET VENUE 🔒' : rawVenueName;
 
     String content = widget.post['content'] ?? widget.post['message'] ?? '';
-    if (hideVenue && rawVenueName.isNotEmpty && rawVenueName != 'Unknown Venue') {
+    if (hideVenue && rawVenueName.isNotEmpty && rawVenueName != 'Unknown Venue' && !rawVenueName.toUpperCase().contains('SECRET VENUE')) {
       content = content.replaceAll(RegExp(RegExp.escape(rawVenueName), caseSensitive: false), 'a Secret Venue 🔒');
     }
     final String time = widget.post['time'] ?? '';
@@ -2201,7 +2219,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         post['hasConfirmedBooking'] == true ||
         post['isMatched'] == true ||
         _alreadyRequested && (_meetRequest?.joiners != null);
-    final bool isSecretVenue = post['showVenueDetails'] == false || widget.venue?['showVenueDetails'] == false;
+    final bool isSecretVenue = post['showVenueDetails'] == false ||
+        post['isSecret'] == true ||
+        post['isSecretVenue'] == true ||
+        widget.venue?['showVenueDetails'] == false ||
+        widget.venue?['isSecret'] == true ||
+        widget.venue?['isSecretVenue'] == true ||
+        (post['venueMap'] is Map &&
+            ((post['venueMap'] as Map)['isSecret'] == true ||
+             (post['venueMap'] as Map)['isSecretVenue'] == true ||
+             (post['venueMap'] as Map)['showVenueDetails'] == false)) ||
+        (post['venue'] is Map &&
+            ((post['venue'] as Map)['isSecret'] == true ||
+             (post['venue'] as Map)['isSecretVenue'] == true ||
+             (post['venue'] as Map)['showVenueDetails'] == false)) ||
+        widget.venue?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        post['venue']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        post['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        (post['venueMap'] is Map &&
+            (post['venueMap'] as Map)['name']?.toString().toUpperCase().contains('SECRET VENUE') == true);
     final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
 
     // Determine venue/banner photo (prefer venue or event banner image, avoid host profile photo taking over full banner)
@@ -2261,8 +2297,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ? rawSubject.toUpperCase()
         : 'STRANGERS MEET';
 
-    if (hideVenue && rawVenueName.isNotEmpty) {
-      displayTitle = displayTitle.replaceAll(RegExp(RegExp.escape(rawVenueName.toUpperCase())), 'SECRET VENUE 🔒');
+    if (hideVenue) {
+      if (rawVenueName.isNotEmpty && !rawVenueName.toUpperCase().contains('SECRET VENUE')) {
+        displayTitle = displayTitle.replaceAll(RegExp(RegExp.escape(rawVenueName.toUpperCase())), 'SECRET VENUE 🔒');
+      }
       if (displayTitle.isEmpty || displayTitle == rawVenueName.toUpperCase()) {
         displayTitle = 'SECRET VENUE 🔒';
       }

@@ -742,9 +742,35 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         final startTime = booking['startTime']?.toString() ?? '';
         final eventDateStr = eventDt != null ? _formatEventDate(eventDt) : 'Event Date';
         final timeStr = _formatBookingTime(startTime);
-        final table = _formatTablePackage(booking['tablePackage']?.toString());
 
-        final amtVal = double.tryParse(booking['totalAmount']?.toString() ?? '0') ?? 0.0;
+        final isStrangersMeet = booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
+        final isPartyPlan = booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan';
+        final isGroupParty = booking['isGroupParty'] == true || booking['bookingType'] == 'group_party';
+        final bool isEventTicketH = booking['isUpcomingNight'] == true ||
+            booking['isEventBooking'] == true ||
+            booking['bookingType'] == 'upcoming_night' ||
+            booking['bookingType'] == 'event_booking';
+
+        final eventTitle = booking['subject']?.toString().trim().isNotEmpty == true
+            ? booking['subject'].toString()
+            : (booking['eventTitle']?.toString().trim().isNotEmpty == true
+                ? booking['eventTitle'].toString()
+                : (booking['partySubject']?.toString().trim().isNotEmpty == true
+                    ? booking['partySubject'].toString()
+                    : null));
+        final displayTitle = (isStrangersMeet || isPartyPlan || isEventTicketH) && eventTitle != null
+            ? eventTitle
+            : venueName;
+        final displaySubtitle = (displayTitle != venueName)
+            ? '$venueName • $eventDateStr • $timeStr'
+            : 'Event: $eventDateStr • $timeStr';
+
+        final table = isStrangersMeet
+            ? 'STRANGER MEET'
+            : _formatTablePackage(booking['tablePackage']?.toString());
+
+        final amtRaw = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'] ?? booking['charges'];
+        final amtVal = double.tryParse(amtRaw?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ?? '0') ?? 0.0;
         final amountStr = amtVal <= 0
             ? 'FREE'
             : '₹${NumberFormat('#,##,###').format(amtVal.toInt())}';
@@ -793,7 +819,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   padding: const EdgeInsets.only(bottom: 20),
                   child: GestureDetector(
                     onTap: () {
-                      final isPartyPlan = booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan';
                       if (isPartyPlan) {
                         Navigator.push(
                           context,
@@ -808,7 +833,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         return;
                       }
 
-                      final isGroupParty = booking['isGroupParty'] == true || booking['bookingType'] == 'group_party';
                       if (isGroupParty) {
                         Navigator.push(
                           context,
@@ -822,10 +846,40 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         return;
                       }
 
-                      final isStrangersMeet = booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
                       if (isStrangersMeet) {
                         try {
-                          final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking));
+                          final rawMap = booking['rawRequest'] is Map
+                              ? Map<String, dynamic>.from(booking['rawRequest'])
+                              : Map<String, dynamic>.from(booking);
+                          if (booking['venue'] is Map && rawMap['venue'] == null) {
+                            rawMap['venue'] = booking['venue'];
+                          }
+                          if (booking['user'] is Map && rawMap['user'] == null) {
+                            rawMap['user'] = booking['user'];
+                          }
+                          if (booking['host'] is Map && rawMap['host'] == null) {
+                            rawMap['host'] = booking['host'];
+                          }
+                          if (booking['ticketCode'] != null && rawMap['ticketId'] == null) {
+                            rawMap['ticketId'] = booking['ticketCode'];
+                          }
+                          if (rawMap['ticketCode'] == null && booking['ticketCode'] != null) {
+                            rawMap['ticketCode'] = booking['ticketCode'];
+                          }
+                          final totalAmt = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'];
+                          if (totalAmt != null && (rawMap['paymentAmount'] == null || rawMap['paymentAmount'] == 0)) {
+                            rawMap['paymentAmount'] = totalAmt;
+                          }
+                          if (booking['subject'] != null && rawMap['subject'] == null) {
+                            rawMap['subject'] = booking['subject'];
+                          }
+                          if (booking['tagline'] != null && rawMap['tagline'] == null) {
+                            rawMap['tagline'] = booking['tagline'];
+                          }
+                          if (booking['startTime'] != null && rawMap['startTime'] == null) {
+                            rawMap['startTime'] = booking['startTime'];
+                          }
+                          final req = StrangersMeetRequest.fromJson(rawMap);
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -969,7 +1023,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      venueName,
+                                      displayTitle,
                                       style: const TextStyle(
                                         color: Colors.black,
                                         fontSize: 14,
@@ -980,7 +1034,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      'Event: $eventDateStr • $timeStr',
+                                      displaySubtitle,
                                       style: const TextStyle(
                                         color: Colors.black87,
                                         fontSize: 11,

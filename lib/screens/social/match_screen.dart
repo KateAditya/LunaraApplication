@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/match_card.dart';
-import 'match_success_dialog.dart';
 import 'match_settings_screen.dart';
 import 'matched_profiles_screen.dart';
 import '../../models/user.dart';
@@ -248,7 +247,6 @@ class _MatchScreenState extends State<MatchScreen>
             setState(() {
               _matchedProfiles.add(swiped);
             });
-            _showMatchDialog(swiped);
           }
         } else if (swipedRight) {
           if (mounted) {
@@ -327,30 +325,6 @@ class _MatchScreenState extends State<MatchScreen>
     Future.delayed(const Duration(milliseconds: 400), () {
       _onSwipeComplete();
     });
-  }
-
-  void _showMatchDialog(Map<String, dynamic> matchedUser) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Match',
-      transitionDuration: const Duration(milliseconds: 400),
-      transitionBuilder: (context, anim1, anim2, child) {
-        return FadeTransition(
-          opacity: anim1,
-          child: ScaleTransition(
-            scale: Tween<double>(
-              begin: 0.8,
-              end: 1.0,
-            ).animate(CurvedAnimation(parent: anim1, curve: Curves.elasticOut)),
-            child: child,
-          ),
-        );
-      },
-      pageBuilder: (context, anim1, anim2) {
-        return MatchSuccessDialog(matchedUser: matchedUser);
-      },
-    );
   }
 
   @override

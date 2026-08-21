@@ -388,10 +388,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
 
-    if (res['matched'] == true) {
-      _showMatchDialog(targetUser);
-    }
-
     _checkUsageWarning(res);
   }
 
@@ -487,10 +483,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
 
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
-
-    if (res['matched'] == true) {
-      _showMatchDialog(targetUser);
-    }
 
     _checkUsageWarning(res);
   }
@@ -670,102 +662,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showSuperLikeLimitSnack() {
     if (!mounted) return;
     showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike);
-  }
-
-  void _showMatchDialog(User matchUser) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1F1235),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: LunaraTheme.electricViolet, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: LunaraTheme.electricViolet.withValues(alpha: 0.5),
-                blurRadius: 30,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "IT'S A MATCH! 🎉",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "You and ${matchUser.firstName} liked each other.",
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: 45,
-                    backgroundColor: Colors.grey[800],
-                    backgroundImage:
-                        _me?.profilePhoto != null && _me!.profilePhoto!.isNotEmpty
-                        ? NetworkImage(_me!.profilePhoto!)
-                        : null,
-                    child: _me?.profilePhoto == null || _me!.profilePhoto!.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white, size: 40)
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(Icons.favorite, color: Colors.redAccent, size: 40),
-                  const SizedBox(width: 16),
-                  CircleAvatar(
-                    radius: 45,
-                    backgroundColor: Colors.grey[800],
-                    backgroundImage:
-                        matchUser.profilePhoto != null && matchUser.profilePhoto!.isNotEmpty
-                        ? NetworkImage(matchUser.profilePhoto!)
-                        : null,
-                    child: matchUser.profilePhoto == null || matchUser.profilePhoto!.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white, size: 40)
-                        : null,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: LunaraTheme.electricViolet,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 5,
-                ),
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  "SAY HELLO",
-                  style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("KEEP SWIPING", style: TextStyle(color: Colors.white54)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _showBacktrackUpgradePrompt() {

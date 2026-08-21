@@ -70,21 +70,37 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Future<void> _initBookerProfile() async {
+    // If the cached user already has a name + photo, nothing to fetch —
+    // avoid the async round-trip and the resulting setState rebuild entirely.
+    final cached = ApiService.cachedCurrentUser;
+    if (cached != null &&
+        cached.firstName.trim().isNotEmpty &&
+        (cached.profilePhoto ?? '').trim().isNotEmpty) {
+      return;
+    }
+
+    // Also skip if the widget data already has a complete user.
     final current = _resolveBookerUser();
-    if (current == null ||
-        current.firstName.trim().isEmpty ||
-        current.profilePhoto == null ||
-        current.profilePhoto!.trim().isEmpty) {
-      try {
-        final profile = await ApiService.fetchProfile();
-        if (mounted && profile != null) {
+    if (current != null &&
+        current.firstName.trim().isNotEmpty &&
+        (current.profilePhoto ?? '').trim().isNotEmpty) {
+      return;
+    }
+
+    try {
+      final profile = await ApiService.fetchProfile();
+      if (mounted && profile != null) {
+        // Only rebuild if the fetched data actually adds something new.
+        final existing = _resolveBookerUser();
+        if (existing?.profilePhoto != profile.profilePhoto ||
+            existing?.firstName != profile.firstName) {
           setState(() {
             _loadedBookerUser = profile;
           });
         }
-      } catch (e) {
-        debugPrint("Error auto-loading booker profile in DigitalTicketScreen: $e");
       }
+    } catch (e) {
+      debugPrint("Error auto-loading booker profile in DigitalTicketScreen: $e");
     }
   }
 
@@ -324,9 +340,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       } catch (_) {}
     }
 
+    // Prefer the immediately-available cached user over the async-loaded one
+    // so the very first frame already has complete user data.
+    if (ApiService.cachedCurrentUser != null) return ApiService.cachedCurrentUser;
     if (_loadedBookerUser != null) return _loadedBookerUser;
 
-    return ApiService.cachedCurrentUser;
+    return null;
   }
 
   String _resolveHostUsername(User? hostUser) {

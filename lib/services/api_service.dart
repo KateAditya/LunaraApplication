@@ -49,6 +49,11 @@ class ApiService {
   static final ValueNotifier<int> profileUpdateNotifier = ValueNotifier<int>(0);
   static final ValueNotifier<int> planPostedNotifier = ValueNotifier<int>(0);
 
+  /// Centralized trigger to instantly refresh the Live Feed and associated views across the app.
+  static void notifyFeedNeedsRefresh() {
+    planPostedNotifier.value++;
+  }
+
   // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
   static final Set<String> _cachedRequestedPlanIds = {};
   static final Map<String, Map<String, dynamic>> _cachedPartyPlanRequests = {};
@@ -993,6 +998,7 @@ class ApiService {
           }
         } catch (_) {}
         markPartyPlanAsRequestedLocal(planId, requestData);
+        notifyFeedNeedsRefresh();
         return PartyPlanRequestResult(
           success: true,
           alreadyRequested: true,
@@ -1161,6 +1167,7 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        notifyFeedNeedsRefresh();
         return data['data'];
       }
     } catch (e) {
@@ -1206,6 +1213,7 @@ class ApiService {
         if (targetPlanId != null) {
           markPartyPlanAsCancelledLocal(targetPlanId!);
         }
+        notifyFeedNeedsRefresh();
         return true;
       }
       return false;
@@ -1234,6 +1242,7 @@ class ApiService {
         if (targetPlanId != null) {
           markPartyPlanAsCancelledLocal(targetPlanId!);
         }
+        notifyFeedNeedsRefresh();
         return true;
       }
       return false;
@@ -1252,7 +1261,11 @@ class ApiService {
         '/api/mobile/party-plans/requests/$reqId/revoke',
         body: {'userId': userId, 'reason': ?reason},
       );
-      return response.statusCode == 200;
+      if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint('revokePartyPlanAcceptance error: $e');
       return false;
@@ -1322,6 +1335,7 @@ class ApiService {
         },
       );
       if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
         return true;
       }
     } catch (e) {
@@ -1339,6 +1353,7 @@ class ApiService {
         body: {'userId': userId, 'reason': ?reason},
       );
       markPartyPlanAsCancelledLocal(planId);
+      notifyFeedNeedsRefresh();
       final data = jsonDecode(response.body);
       return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
     } catch (e) {
@@ -1369,6 +1384,7 @@ class ApiService {
         },
       );
       markPartyPlanAsCancelledLocal(planId);
+      notifyFeedNeedsRefresh();
       final data = jsonDecode(response.body);
       return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
     } catch (e) {

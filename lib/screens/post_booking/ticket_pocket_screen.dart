@@ -1134,11 +1134,30 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final bookingDate = booking['bookingDate']?.toString() ?? '';
     final startTime = booking['startTime']?.toString() ?? '';
     final dateStr = _formatBookingDateTime(bookingDate, startTime);
-    final table = _formatTablePackage(booking['tablePackage']?.toString());
-    final guests = booking['numberOfGuests'] ?? 1;
+
+    final eventTitle = booking['subject']?.toString().trim().isNotEmpty == true
+        ? booking['subject'].toString()
+        : (booking['eventTitle']?.toString().trim().isNotEmpty == true
+            ? booking['eventTitle'].toString()
+            : (booking['partySubject']?.toString().trim().isNotEmpty == true
+                ? booking['partySubject'].toString()
+                : null));
+    final displayTitle = (category == 'strangers_meet' || category == 'party_plan' || category == 'event_booking') && eventTitle != null
+        ? eventTitle
+        : venueName;
+    final displaySubtitle = (displayTitle != venueName)
+        ? '$venueName • $dateStr'
+        : dateStr;
+
+    final table = category == 'strangers_meet'
+        ? 'STRANGER MEET'
+        : _formatTablePackage(booking['tablePackage']?.toString());
+    final guests = booking['numberOfGuests'] ?? (category == 'strangers_meet' ? 2 : 1);
 
     final String totalPriceStr = booking['totalAmount']?.toString() ??
         booking['paymentAmount']?.toString() ??
+        booking['chargesPerHead']?.toString() ??
+        booking['charges']?.toString() ??
         '';
     final double amountPaid = double.tryParse(totalPriceStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
     final String displayAmount = amountPaid > 0 ? '₹${amountPaid.toStringAsFixed(0)}' : 'FREE';
@@ -1198,8 +1217,21 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               if (booking['ticketCode'] != null && rawMap['ticketId'] == null) {
                 rawMap['ticketId'] = booking['ticketCode'];
               }
-              if (booking['totalAmount'] != null && rawMap['paymentAmount'] == null) {
-                rawMap['paymentAmount'] = booking['totalAmount'];
+              if (rawMap['ticketCode'] == null && booking['ticketCode'] != null) {
+                rawMap['ticketCode'] = booking['ticketCode'];
+              }
+              final totalAmt = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'];
+              if (totalAmt != null && (rawMap['paymentAmount'] == null || rawMap['paymentAmount'] == 0)) {
+                rawMap['paymentAmount'] = totalAmt;
+              }
+              if (booking['subject'] != null && rawMap['subject'] == null) {
+                rawMap['subject'] = booking['subject'];
+              }
+              if (booking['tagline'] != null && rawMap['tagline'] == null) {
+                rawMap['tagline'] = booking['tagline'];
+              }
+              if (booking['startTime'] != null && rawMap['startTime'] == null) {
+                rawMap['startTime'] = booking['startTime'];
               }
               final req = StrangersMeetRequest.fromJson(rawMap);
               Navigator.push(
@@ -1400,7 +1432,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    venueName,
+                                    displayTitle,
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
@@ -1412,7 +1444,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    dateStr,
+                                    displaySubtitle,
                                     style: TextStyle(
                                       color: Colors.white.withValues(alpha: 0.9),
                                       fontSize: 11.5,

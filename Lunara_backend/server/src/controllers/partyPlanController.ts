@@ -860,34 +860,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 }, { transaction });
 
 
-                // Auto-generate accepted requests for invited users of private or both plan
-                if ((parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
-                    for (const invitedUserId of selectedUsers) {
-                        // Generate a joiner order ID
-                        const joinerOptions = {
-                            amount: Math.round(depositAmount * 100),
-                            currency: 'INR',
-                            receipt: `ppreq_${Date.now()}`
-                        };
-                        let joinerOrder: any = { id: `order_mock_${Date.now()}` };
-                        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-                            try {
-                                joinerOrder = await razorpay.orders.create(joinerOptions);
-                            } catch (err: any) {
-                                logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
-                            }
-                        }
-
-                        await PartyPlanRequest.create({
-                            planId: plan.id,
-                            requesterId: invitedUserId,
-                            status: PartyPlanRequestStatus.PENDING,
-                            joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
-                            joinerRazorpayOrderId: joinerOrder.id,
-                            latLangCheckIn: false,
-                        }, { transaction });
-                    }
-                }
                 return plan;
             }
         );
@@ -922,15 +894,12 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             },
         };
 
-        // Emit socket event for real-time creator/invited user updates and global feed broadcast
+        // Emit socket event for real-time creator update (and global feed if public & paid)
         try {
             const { io } = require('../server');
-            io.emit('party_plan_created', responseData);
             io.to(`user_${userId}`).emit('party_plan_created', responseData);
-            if (Array.isArray(selectedUsers)) {
-                for (const invitedUserId of selectedUsers) {
-                    io.to(`user_${invitedUserId}`).emit('party_plan_created', responseData);
-                }
+            if (parsedVisibility === PartyPlanVisibility.PUBLIC && partyPlan.hostPaymentStatus === PartyPlanPaymentStatus.PAID) {
+                io.emit('party_plan_created', responseData);
             }
         } catch (socketErr) {
             logger.warn('Socket emission failed for party_plan_created:', socketErr);
@@ -938,7 +907,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
 
         res.status(201).json({
             success: true,
-            message: 'Party plan created successfully and is now live!',
+            message: 'Party plan created successfully. Complete deposit payment to activate.',
             data: responseData,
             razorpayOrderId: order.id,
             amount: order.amount,
@@ -946,10 +915,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
         });
 
-        // ── Notifications: host plan-posted + invited users ───────────────
+        // ── Authoritative DB notification for the host (deposit required) ───────
         setImmediate(async () => {
             try {
-                const isPrivate = parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH;
                 const venueName = venue.name;
                 const notifData = {
                     type: 'party_plan_posted',
@@ -962,7 +930,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     hostRazorpayOrderId: partyPlan.hostRazorpayOrderId,
                 };
 
-                // 1. Authoritative DB notification for the host (plan posted)
                 await NotificationService.dispatch({
                     recipientUserId: userId,
                     actorUserId: userId,
@@ -970,34 +937,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     category: 'events',
                     entityType: 'party_plan',
                     entityId: partyPlan.id,
-                    title: '🎉 Party Plan Posted!',
-                    body: `Your party plan at ${venueName} is now live and accepting requests!`,
+                    title: '🎉 Party Plan Created!',
+                    body: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH)
+                        ? `Your party plan at ${venueName} is created. Complete your ₹99 deposit to send your private invitations!`
+                        : `Your party plan at ${venueName} is created. Complete your ₹99 deposit to make it live!`,
                     idempotencyKey: `plan_posted_${partyPlan.id}`,
                     metadata: notifData,
                 });
-
-                // 2. Notify invited users for Private / Both
-                if (isPrivate && Array.isArray(selectedUsers) && selectedUsers.length > 0) {
-                    const invitedUsers = await User.findAll({
-                        where: { id: { [Op.in]: selectedUsers } },
-                        attributes: ['id', 'fcmToken', 'firstName'],
-                    });
-                    const hostName = `${user.firstName} ${user.lastName}`.trim();
-                    for (const invitedUser of invitedUsers) {
-                        await NotificationService.dispatch({
-                            recipientUserId: invitedUser.id,
-                            actorUserId: userId,
-                            eventType: 'party_plan_invitation',
-                            category: 'requests',
-                            entityType: 'party_plan',
-                            entityId: partyPlan.id,
-                            title: '🎉 Party Plan Invitation',
-                            body: `${hostName} invited you to join a party plan at ${venueName}!`,
-                            idempotencyKey: `plan_invite_${partyPlan.id}_${invitedUser.id}`,
-                            metadata: notifData,
-                        });
-                    }
-                }
             } catch (pushErr: any) {
                 logger.warn('Party plan creation notification failed:', pushErr.message);
             }
@@ -1204,7 +1150,122 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                 await (plan as any).update({
                     lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
                 });
-                res.json({ success: true, message: 'Payment verified. No active join requests currently.', data: plan });
+
+                // Idempotent dispatch of private invitations upon host deposit verification
+                if ((plan.visibility === PartyPlanVisibility.PRIVATE || plan.visibility === PartyPlanVisibility.BOTH) && Array.isArray(plan.selectedUsers) && plan.selectedUsers.length > 0) {
+                    const invitedUserIds: string[] = [...plan.selectedUsers];
+                    setImmediate(async () => {
+                        try {
+                            const hostUser = await User.findByPk(plan.userId, {
+                                attributes: ['id', 'firstName', 'lastName'],
+                            });
+                            const venue = await Venue.findByPk(plan.venueId, {
+                                attributes: ['id', 'name', 'area', 'city'],
+                            });
+                            const hostName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'The host';
+                            const venueName = venue?.name || 'the venue';
+
+                            for (const invitedUserId of invitedUserIds) {
+                                const existingReq = await PartyPlanRequest.findOne({
+                                    where: { planId: plan.id, requesterId: invitedUserId }
+                                });
+                                let createdReq = existingReq;
+                                if (!existingReq) {
+                                    const joinerOptions = {
+                                        amount: Math.round((plan.depositAmount || 99) * 100),
+                                        currency: 'INR',
+                                        receipt: `ppreq_${Date.now()}`
+                                    };
+                                    let joinerOrder: any = { id: `order_mock_${Date.now()}` };
+                                    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
+                                        try {
+                                            joinerOrder = await razorpay.orders.create(joinerOptions);
+                                        } catch (err: any) {
+                                            logger.warn('Razorpay create joiner order failed for invite, using mock. Error: ' + err.message);
+                                        }
+                                    }
+
+                                    createdReq = await PartyPlanRequest.create({
+                                        planId: plan.id,
+                                        requesterId: invitedUserId,
+                                        status: PartyPlanRequestStatus.PENDING,
+                                        joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
+                                        joinerRazorpayOrderId: joinerOrder.id,
+                                        latLangCheckIn: false,
+                                    });
+                                }
+
+                                // Dispatch invitation push notification & real-time socket events to invited user
+                                await NotificationService.dispatch({
+                                    recipientUserId: invitedUserId,
+                                    actorUserId: plan.userId,
+                                    eventType: 'party_plan_invitation',
+                                    category: 'requests',
+                                    entityType: 'party_plan',
+                                    entityId: plan.id,
+                                    title: '🎉 Party Plan Invitation',
+                                    body: `${hostName} invited you to join a party plan at ${venueName}!`,
+                                    idempotencyKey: `plan_invite_${plan.id}_${invitedUserId}`,
+                                    metadata: {
+                                        type: 'party_plan_invitation',
+                                        partyPlanId: plan.id,
+                                        requestId: createdReq?.id,
+                                        hostId: plan.userId,
+                                        venueName: venueName,
+                                        depositAmount: plan.depositAmount,
+                                    },
+                                });
+
+                                const { io } = require('../server');
+                                if (io) {
+                                    io.to(`user_${invitedUserId}`).emit('party_plan_created', plan);
+                                    io.to(`user_${invitedUserId}`).emit('party_plan_request_received', {
+                                        planId: plan.id,
+                                        requestId: createdReq?.id,
+                                        hostName,
+                                        venueName
+                                    });
+                                    io.to(`user_${invitedUserId}`).emit('live_feed_update', {
+                                        type: 'party_plan_invitation',
+                                        partyPlanId: plan.id,
+                                    });
+                                }
+                            }
+
+                            // Notify host that invitations have been dispatched
+                            await NotificationService.dispatch({
+                                recipientUserId: plan.userId,
+                                actorUserId: plan.userId,
+                                eventType: 'private_invitations_sent',
+                                category: 'events',
+                                entityType: 'party_plan',
+                                entityId: plan.id,
+                                title: '🎉 Private Invitations Sent!',
+                                body: `Your ₹${plan.depositAmount || 99} deposit was verified and invitations have been sent to your ${invitedUserIds.length} selected guest${invitedUserIds.length > 1 ? 's' : ''}.`,
+                                idempotencyKey: `private_invites_sent_${plan.id}`,
+                                metadata: {
+                                    type: 'private_invitations_sent',
+                                    partyPlanId: plan.id,
+                                    venueName,
+                                },
+                            });
+                        } catch (inviteErr: any) {
+                            logger.warn('Failed to dispatch private party plan invitations:', inviteErr.message);
+                        }
+                    });
+                }
+
+                if (plan.visibility === PartyPlanVisibility.BOTH) {
+                    try {
+                        const { io } = require('../server');
+                        io.to('live_feed').emit('live_feed_update', {
+                            type: 'party_plan_created',
+                            partyPlanId: plan.id,
+                        });
+                    } catch (_) {}
+                }
+
+                res.json({ success: true, message: 'Payment verified. Private invitations dispatched.', data: plan });
                 return;
             }
         } else {

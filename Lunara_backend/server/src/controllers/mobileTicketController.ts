@@ -222,7 +222,7 @@ export class MobileTicketController {
 
             // 1. Process explicit Ticket table records
             const bookingIds = tickets.map((t: any) => t.bookingId).filter(Boolean);
-            const [sourceBookings, sourceGroupParties] = await Promise.all([
+            const [sourceBookings, sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = await Promise.all([
                 Booking.findAll({
                     where: { id: { [Op.in]: bookingIds } },
                     attributes: ['id', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId'],
@@ -239,9 +239,31 @@ export class MobileTicketController {
                     where: { id: { [Op.in]: bookingIds } },
                     attributes: ['id', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId'],
                 }),
+                StrangersMeetRequest.findAll({
+                    where: { id: { [Op.in]: bookingIds } },
+                    include: [venueInclude, userInclude],
+                }),
+                StrangersMeetJoiner.findAll({
+                    where: { id: { [Op.in]: bookingIds } },
+                    include: [
+                        {
+                            model: StrangersMeetRequest,
+                            as: 'strangersMeetRequest',
+                            include: [venueInclude, userInclude],
+                        },
+                        userInclude,
+                    ],
+                }),
+                PartyPlan.findAll({
+                    where: { id: { [Op.in]: bookingIds } },
+                    include: [venueInclude, userInclude],
+                }),
             ]);
             const bookingById = new Map(sourceBookings.map(b => [b.id, b]));
             const groupPartyById = new Map(sourceGroupParties.map(g => [g.id, g]));
+            const strangersMeetById = new Map(sourceStrangersMeets.map(sm => [sm.id, sm]));
+            const strangersJoinerById = new Map(sourceStrangersJoiners.map(j => [j.id, j]));
+            const partyPlanById = new Map(sourcePartyPlans.map(p => [p.id, p]));
 
             for (const t of tickets) {
                 if (t.bookingId) seenBookingIds.add(t.bookingId);
@@ -249,13 +271,17 @@ export class MobileTicketController {
 
                 const sourceBooking = bookingById.get(t.bookingId);
                 const sourceGroupParty = groupPartyById.get(t.bookingId);
+                const sourceStrangersMeet = strangersMeetById.get(t.bookingId);
+                const sourceStrangersJoiner = strangersJoinerById.get(t.bookingId);
+                const sourcePartyPlan = partyPlanById.get(t.bookingId);
+
                 const startDate = t.eventStartAt ? new Date(t.eventStartAt) : new Date();
                 const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
                 const startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-                const isPartyPlan = t.bookingType === 'party_plan';
-                const isStrangersMeet = t.bookingType === 'strangers_meet';
+                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan);
+                const isStrangersMeet = t.bookingType === 'strangers_meet' || Boolean(sourceStrangersMeet) || Boolean(sourceStrangersJoiner);
                 const isLargeParty = (t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty);
                 const isGroupParty = (t.bookingType === 'group_party' && !isLargeParty) || Boolean(sourceGroupParty);
                 const isEventBooking = Boolean(sourceBooking?.isUpcomingNight);
@@ -284,14 +310,63 @@ export class MobileTicketController {
                     profileImageUrl: rawUser.profileImageUrl || null,
                 } : null;
 
-                const amountVal = sourceBooking ? Number(sourceBooking.totalAmount) : (sourceGroupParty ? Number(sourceGroupParty.totalAmount) : null);
+                const smMeet = sourceStrangersMeet || (sourceStrangersJoiner as any)?.strangersMeetRequest;
+                const smAmount = sourceStrangersMeet
+                    ? Number(sourceStrangersMeet.paymentAmount ?? sourceStrangersMeet.chargesPerHead ?? 0)
+                    : (sourceStrangersJoiner ? Number((sourceStrangersJoiner as any).paymentAmount ?? smMeet?.chargesPerHead ?? 0) : null);
+                const smGuests = sourceStrangersMeet ? Number(sourceStrangersMeet.numberOfPersons || 2) : 2;
+                const smSubject = smMeet?.subject || 'Strangers Meetup';
+                const smTagline = smMeet?.tagline || '';
+
+                const amountVal = sourceBooking
+                    ? Number(sourceBooking.totalAmount)
+                    : (sourceGroupParty
+                        ? Number(sourceGroupParty.totalAmount)
+                        : (smAmount != null
+                            ? smAmount
+                            : (sourcePartyPlan ? Number(sourcePartyPlan.depositAmount || 99) : null)));
                 const isFree = amountVal != null ? amountVal <= 0 : false;
 
                 const sbPartyEvent = (sourceBooking as any)?.partyEvent;
                 const eventBanner = sbPartyEvent?.imagePath
                     ? (sbPartyEvent.imagePath.startsWith('http') ? sbPartyEvent.imagePath : `/${sbPartyEvent.imagePath.replace(/^\/+/, '')}`)
                     : null;
-                const eventTitle = sbPartyEvent?.title || sourceBooking?.partySubject || (isEventBooking ? 'Upcoming Night Event' : null);
+                const eventTitle = isStrangersMeet
+                    ? smSubject
+                    : (isPartyPlan
+                        ? ((sourcePartyPlan as any)?.planTheme || 'Party Plan Match')
+                        : (sbPartyEvent?.title || sourceBooking?.partySubject || (isEventBooking ? 'Upcoming Night Event' : null)));
+
+                const tablePackage = isStrangersMeet
+                    ? (smSubject || 'Stranger Meetup')
+                    : (isPartyPlan
+                        ? 'Party Plan Match'
+                        : (sourceBooking ? sourceBooking.tablePackage : (isGroupParty ? 'Group Table' : (isEventBooking ? (eventTitle || 'Event Entry') : null))));
+
+                const numberOfGuests = isStrangersMeet
+                    ? smGuests
+                    : (isPartyPlan ? 2 : (sourceBooking ? sourceBooking.numberOfGuests : (sourceGroupParty ? sourceGroupParty.numberOfFriends : null)));
+
+                let rawRequestObj: any = undefined;
+                if (isStrangersMeet && smMeet) {
+                    const smJson = (smMeet.toJSON ? smMeet.toJSON() : smMeet);
+                    rawRequestObj = {
+                        ...smJson,
+                        venue: smMeet.venue || (t.venue as any),
+                        user: smMeet.user || userObj,
+                        host: smMeet.user || userObj,
+                        ticketId: t.ticketId,
+                        ticketCode: t.ticketId,
+                        totalAmount: smAmount,
+                        paymentAmount: smAmount,
+                        chargesPerHead: Number(smMeet.chargesPerHead || 0),
+                        subject: smSubject,
+                        tagline: smTagline,
+                        eventDateTime: smMeet.eventDateTime || t.eventStartAt,
+                    };
+                } else if (isPartyPlan && sourcePartyPlan) {
+                    rawRequestObj = sourcePartyPlan.toJSON ? sourcePartyPlan.toJSON() : sourcePartyPlan;
+                }
 
                 formattedTickets.push({
                     id: t.id,
@@ -312,15 +387,20 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : t.qrToken,
                     ticketUrl: isExpired ? null : t.pdfUrl,
                     totalAmount: amountVal,
+                    paymentAmount: amountVal,
+                    chargesPerHead: isStrangersMeet && smMeet ? Number(smMeet.chargesPerHead || 0) : undefined,
                     isFree,
-                    numberOfGuests: sourceBooking ? sourceBooking.numberOfGuests : (sourceGroupParty ? sourceGroupParty.numberOfFriends : null),
-                    tablePackage: sourceBooking ? sourceBooking.tablePackage : (isGroupParty ? 'Group Table' : (isEventBooking ? (eventTitle || 'Event Entry') : null)),
+                    numberOfGuests,
+                    tablePackage,
                     goingMode: sourceBooking ? sourceBooking.goingMode : (isSolo ? 'solo' : undefined),
                     bannerImageUrl: eventBanner,
                     eventPoster: eventBanner,
                     imageUrl: eventBanner || (t.venue as any)?.profilePhotoUrl || (t.venue as any)?.coverImageUrl,
                     eventTitle,
                     partySubject: eventTitle || sourceBooking?.partySubject,
+                    subject: isStrangersMeet ? smSubject : undefined,
+                    tagline: isStrangersMeet ? smTagline : undefined,
+                    rawRequest: rawRequestObj,
                     partyEvent: sbPartyEvent ? {
                         id: sbPartyEvent.id,
                         title: sbPartyEvent.title,
@@ -339,9 +419,9 @@ export class MobileTicketController {
                     isEventBooking,
                     isUpcomingNight: isEventBooking,
                     isVenueBooking,
-                    user: userObj,
-                    host: userObj,
-                    venueName: t.venue?.name || 'Lunara Venue',
+                    user: (isStrangersMeet && smMeet?.user) || userObj,
+                    host: (isStrangersMeet && smMeet?.user) || userObj,
+                    venueName: (isStrangersMeet && smMeet?.venue?.name) || t.venue?.name || 'Lunara Venue',
                     venueAddress: `${t.venue?.area || t.venue?.addressLine1 || ''}, ${t.venue?.city || ''}`.trim(),
                     venue: t.venue ? {
                         id: t.venue.id,
@@ -354,7 +434,7 @@ export class MobileTicketController {
                         profilePhotoUrl: (t.venue as any).profilePhotoUrl ?? null,
                         coverImageUrl: (t.venue as any).coverImageUrl ?? null,
                         images: (t.venue as any).images ?? [],
-                    } : null,
+                    } : (smMeet?.venue || null),
                     isExpired,
                 });
             }
@@ -784,11 +864,28 @@ export class MobileTicketController {
                     pdfUrl: isExpired ? null : (jAny.ticketUrl || meet.ticketUrl || null),
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (jAny.ticketUrl || meet.ticketUrl || null),
-                    totalAmount: Number(meet.chargesPerHead || 0),
-                    isFree: Number(meet.chargesPerHead || 0) <= 0,
+                    totalAmount: Number(meet.chargesPerHead || jAny.paymentAmount || 0),
+                    paymentAmount: Number(meet.chargesPerHead || jAny.paymentAmount || 0),
+                    chargesPerHead: Number(meet.chargesPerHead || 0),
+                    isFree: Number(meet.chargesPerHead || jAny.paymentAmount || 0) <= 0,
                     numberOfGuests: 2,
-                    tablePackage: 'Stranger Meetup',
-                    rawRequest: meet,
+                    tablePackage: meet.subject || 'Stranger Meetup',
+                    eventTitle: meet.subject || 'Strangers Meetup',
+                    partySubject: meet.subject || 'Strangers Meetup',
+                    subject: meet.subject || 'Strangers Meetup',
+                    tagline: meet.tagline || '',
+                    rawRequest: {
+                        ...(meet.toJSON ? meet.toJSON() : meet),
+                        venue: meet.venue,
+                        user: jUser,
+                        host: meet.user || jUser,
+                        ticketId: ticketCode,
+                        ticketCode,
+                        paymentAmount: Number(meet.chargesPerHead || jAny.paymentAmount || 0),
+                        chargesPerHead: Number(meet.chargesPerHead || 0),
+                        subject: meet.subject || 'Strangers Meetup',
+                        tagline: meet.tagline || '',
+                    },
                     isPartyPlan: false,
                     isGroupParty: false,
                     isLargeParty: false,
@@ -861,11 +958,28 @@ export class MobileTicketController {
                     pdfUrl: isExpired ? null : (sm.ticketUrl || null),
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (sm.ticketUrl || null),
-                    totalAmount: Number(sm.paymentAmount || 99),
-                    isFree: Number(sm.paymentAmount || 99) <= 0,
-                    numberOfGuests: 2,
-                    tablePackage: 'Stranger Meetup',
-                    rawRequest: smAny,
+                    totalAmount: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99),
+                    paymentAmount: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99),
+                    chargesPerHead: Number(sm.chargesPerHead || 0),
+                    isFree: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99) <= 0,
+                    numberOfGuests: sm.numberOfPersons || 2,
+                    tablePackage: sm.subject || 'Stranger Meetup',
+                    eventTitle: sm.subject || 'Strangers Meetup',
+                    partySubject: sm.subject || 'Strangers Meetup',
+                    subject: sm.subject || 'Strangers Meetup',
+                    tagline: sm.tagline || '',
+                    rawRequest: {
+                        ...(sm.toJSON ? sm.toJSON() : sm),
+                        venue: (sm as any).venue,
+                        user: smUser,
+                        host: smUser,
+                        ticketId: ticketCode,
+                        ticketCode,
+                        paymentAmount: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99),
+                        chargesPerHead: Number(sm.chargesPerHead || 0),
+                        subject: sm.subject || 'Strangers Meetup',
+                        tagline: sm.tagline || '',
+                    },
                     isPartyPlan: false,
                     isGroupParty: false,
                     isLargeParty: false,

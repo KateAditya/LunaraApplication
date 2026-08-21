@@ -16,7 +16,6 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_pulsing_logo_button.dart';
-import '../social/match_success_dialog.dart';
 import '../onboarding/permissions_screen.dart' show NotificationPermissionRequest;
 
 class Dashboard extends StatefulWidget {
@@ -218,44 +217,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   void _onNewMatchReceived(dynamic data) {
     if (!mounted) return;
-    try {
-      final matchedUserRaw = data['matchedUser'];
-      if (matchedUserRaw != null) {
-        final matchedUserMap = {
-          'id': matchedUserRaw['id'],
-          'name':
-              '${matchedUserRaw['firstName'] ?? ''} ${matchedUserRaw['lastName'] ?? ''}'
-                  .trim()
-                  .toUpperCase(),
-          'image':
-              matchedUserRaw['profileImageUrl'] ??
-              'https://picsum.photos/400/600',
-          'isAsset': false,
-        };
-        showGeneralDialog(
-          context: context,
-          barrierDismissible: true,
-          barrierLabel: 'Match',
-          transitionDuration: const Duration(milliseconds: 400),
-          transitionBuilder: (context, anim1, anim2, child) {
-            return FadeTransition(
-              opacity: anim1,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.8, end: 1.0).animate(
-                  CurvedAnimation(parent: anim1, curve: Curves.elasticOut),
-                ),
-                child: child,
-              ),
-            );
-          },
-          pageBuilder: (context, anim1, anim2) {
-            return MatchSuccessDialog(matchedUser: matchedUserMap);
-          },
-        );
-      }
-    } catch (e) {
-      debugPrint('Error showing global new match dialog: $e');
-    }
+    _fetchBadges();
   }
 
   @override

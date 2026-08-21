@@ -35,14 +35,38 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
   String? _freshStartTime;
   String? _canonicalTicketCode;
   int? _freshPersonsCount;
+  String? _freshSubject;
+  String? _freshTagline;
+  double? _freshAmountPaid;
+  String? _freshPaymentStatus;
+  String? _freshStatus;
+  int? _freshTargetCapacity;
   final GlobalKey _ticketKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
+    _prefillFromWidget();
     _initLocation();
     _initCountdown();
     _fetchTicketData();
+  }
+
+  void _prefillFromWidget() {
+    _freshSubject = widget.request.subject;
+    _freshTagline = widget.request.tagline;
+    _freshAmountPaid = (widget.request.paymentAmount ?? widget.request.chargesPerHead).toDouble();
+    _freshPaymentStatus = widget.request.paymentStatus;
+    _freshStatus = widget.request.status;
+    _freshEventDateTime = widget.request.eventDateTime;
+    _canonicalTicketCode = widget.request.ticketId;
+    _freshTargetCapacity = widget.request.numberOfPersons;
+    if (widget.request.venue != null) {
+      _freshVenue = Map<String, dynamic>.from(widget.request.venue!);
+    }
+    if (widget.request.user != null) {
+      _freshHostUser = Map<String, dynamic>.from(widget.request.user!);
+    }
   }
 
   @override
@@ -139,6 +163,31 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                   reqObj['numberOfPersons'];
               if (dynamicCount != null) {
                 _freshPersonsCount = int.tryParse(dynamicCount.toString());
+              }
+              final rawSubject = reqObj['subject']?.toString();
+              if (rawSubject != null && rawSubject.trim().isNotEmpty) {
+                _freshSubject = rawSubject.trim();
+              }
+              final rawTagline = reqObj['tagline']?.toString();
+              if (rawTagline != null && rawTagline.trim().isNotEmpty) {
+                _freshTagline = rawTagline.trim();
+              }
+              final rawAmt = reqObj['paymentAmount'] ?? reqObj['totalAmount'] ?? reqObj['chargesPerHead'] ?? ticketObj['paymentAmount'] ?? ticketObj['totalAmount'];
+              if (rawAmt != null) {
+                final parsedAmt = double.tryParse(rawAmt.toString());
+                if (parsedAmt != null) {
+                  _freshAmountPaid = parsedAmt;
+                }
+              }
+              final rawPayStatus = reqObj['paymentStatus']?.toString() ?? ticketObj['paymentStatus']?.toString();
+              if (rawPayStatus != null) _freshPaymentStatus = rawPayStatus;
+
+              final rawStatus = reqObj['status']?.toString() ?? ticketObj['status']?.toString();
+              if (rawStatus != null) _freshStatus = rawStatus;
+
+              final rawTarget = reqObj['targetCapacity'] ?? reqObj['capacity'] ?? reqObj['numberOfPersons'] ?? ticketObj['targetCapacity'] ?? ticketObj['numberOfPersons'];
+              if (rawTarget != null) {
+                _freshTargetCapacity = int.tryParse(rawTarget.toString());
               }
             }
           });
@@ -313,9 +362,11 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity, Maharashtra 411001';
 
     final ticketId = (_canonicalTicketCode ?? widget.request.ticketId ?? 'SM-TICKET').toUpperCase();
-    final double amountPaid = (widget.request.paymentAmount ?? widget.request.chargesPerHead).toDouble();
-    final int targetCapacity = widget.request.numberOfPersons;
+    final double amountPaid = (_freshAmountPaid ?? (widget.request.paymentAmount ?? widget.request.chargesPerHead)).toDouble();
+    final int targetCapacity = _freshTargetCapacity ?? widget.request.numberOfPersons;
     final int dynamicCount = _freshPersonsCount ?? widget.request.actualParticipantsCount;
+    final String subjectText = (_freshSubject != null && _freshSubject!.isNotEmpty) ? _freshSubject! : widget.request.subject;
+    final String taglineText = (_freshTagline != null && _freshTagline!.isNotEmpty) ? _freshTagline! : widget.request.tagline;
     final String memberLabel = '$dynamicCount ${dynamicCount == 1 ? "Person" : "Persons"}';
     final String memberSubtext = targetCapacity > dynamicCount ? '$dynamicCount Joined • Max $targetCapacity' : 'Confirmed';
     final DateTime eventDateTime = _parseEventDateTime(_freshEventDateTime ?? widget.request.eventDateTime, _freshStartTime);
@@ -462,7 +513,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
                       // Headline & Tagline
                       Text(
-                        '🎉 ${widget.request.subject}',
+                        '🎉 $subjectText',
                         style: const TextStyle(
                           color: darkTextColor,
                           fontSize: 22,
@@ -472,8 +523,8 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        widget.request.tagline.isNotEmpty
-                            ? widget.request.tagline
+                        taglineText.isNotEmpty
+                            ? taglineText
                             : 'Meet amazing new people at $venueName.',
                         style: const TextStyle(
                           color: grayTextColor,
@@ -693,8 +744,8 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                   Flexible(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: const [
-                                        Text(
+                                      children: [
+                                        const Text(
                                           'BOOKING STATUS',
                                           style: TextStyle(
                                             color: grayTextColor,
@@ -703,10 +754,14 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                             letterSpacing: 0.5,
                                           ),
                                         ),
-                                        SizedBox(height: 2),
+                                        const SizedBox(height: 2),
                                         Text(
-                                          'Lunara Secure Pay',
-                                          style: TextStyle(
+                                          (_freshPaymentStatus != null && _freshPaymentStatus!.isNotEmpty && _freshPaymentStatus!.toLowerCase() == 'pending')
+                                              ? 'Payment Pending'
+                                              : (_freshStatus != null && _freshStatus!.toLowerCase() == 'cancelled'
+                                                  ? 'Cancelled'
+                                                  : 'Lunara Secure Pay'),
+                                          style: const TextStyle(
                                             color: darkTextColor,
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,

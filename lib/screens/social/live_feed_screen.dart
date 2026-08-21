@@ -214,17 +214,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.addSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
     ApiService.addSocketListener('notification_created', _onNotificationCreated);
+    ApiService.addSocketListener('notification_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('notification_received', _onNotificationCreated);
+    ApiService.addSocketListener('badge_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('live_feed_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.addSocketListener('large_party_status_update', _onGroupPartyUpdated);
     ApiService.addSocketListener('group_party_status_update', _onGroupPartyUpdated);
+    ApiService.addSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_host_paid', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_joiner_paid', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_arrival_confirmed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
   }
 
   void _disposeSocketListeners() {
@@ -242,17 +259,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
     ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
     ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
+    ApiService.removeSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
     ApiService.removeSocketListener('notification_created', _onNotificationCreated);
+    ApiService.removeSocketListener('notification_updated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('notification_received', _onNotificationCreated);
+    ApiService.removeSocketListener('badge_updated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('live_feed_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.removeSocketListener('large_party_status_update', _onGroupPartyUpdated);
     ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
+    ApiService.removeSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_paid', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_joiner_paid', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_arrival_confirmed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
   }
 
   void _onPartyPlanRequestUpdated(dynamic data) {

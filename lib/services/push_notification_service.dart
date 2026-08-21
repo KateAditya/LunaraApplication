@@ -461,7 +461,35 @@ class PushNotificationService {
 
     debugPrint('🔔 Navigating from notification payload (type: "$rawType", payload: $data)');
 
-    // ── 1. Messages & Chat Notifications ────────────────────────────────────
+    // ── 1. Plan Upgrade, VIP Subscription & Wallet Notifications ────────────
+    final isWalletOrSubscriptionType = rawType.contains('subscription') ||
+        rawType.contains('upgrade') ||
+        rawType.contains('vip') ||
+        rawType.contains('tier') ||
+        rawType.contains('membership') ||
+        rawType.contains('wallet') ||
+        rawType.contains('credit') ||
+        rawType.contains('refund') ||
+        rawType.contains('recharge') ||
+        rawType.contains('deposit_refund');
+
+    if (isWalletOrSubscriptionType) {
+      if (rawType.contains('expired')) {
+        _showSubscriptionDialog(
+          navigator,
+          title: 'VIP Subscription Expired',
+          message: 'Your VIP subscription has expired or has been terminated. Tap below to view your wallet and options.',
+          buttonText: 'View Wallet',
+        );
+      } else {
+        navigator.push(
+          MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+        );
+      }
+      return;
+    }
+
+    // ── 2. Messages & Chat Notifications ────────────────────────────────────
     final senderId = (data['senderId'] ??
             data['actorUserId'] ??
             data['actorId'] ??
@@ -470,7 +498,6 @@ class PushNotificationService {
 
     if (rawType.contains('message') ||
         rawType.contains('chat') ||
-        rawType.contains('match') ||
         (senderId != null && senderId.isNotEmpty && rawType == '')) {
       if (senderId != null && senderId.isNotEmpty) {
         _navigateToChat(navigator, data);
@@ -478,7 +505,75 @@ class PushNotificationService {
       }
     }
 
-    // ── 2. Party Plan Notifications ─────────────────────────────────────────
+    // ── 3. Tickets & Booking Confirmations ──────────────────────────────────
+    final isTicketType = rawType.contains('ticket') ||
+        rawType.contains('booking_confirmed') ||
+        rawType.contains('ticket_generated') ||
+        rawType.contains('ticket_created') ||
+        rawType.contains('pass') ||
+        rawType.contains('entry_confirmed');
+
+    if (isTicketType) {
+      final partyPlanId = (data['partyPlanId'] ??
+              data['planId'] ??
+              data['entityId'] ??
+              data['id'])
+          ?.toString();
+
+      final strangersMeetId = (data['strangersMeetRequestId'] ??
+              data['strangersMeetId'] ??
+              data['requestId'] ??
+              data['meetId'] ??
+              data['entityId'] ??
+              data['id'])
+          ?.toString();
+
+      if (rawType.contains('stranger') || rawType.contains('meet')) {
+        if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
+          _navigateToStrangersMeet(navigator, strangersMeetId, data);
+          return;
+        }
+      } else if (rawType.contains('party') || rawType.contains('plan')) {
+        if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
+          navigator.push(
+            MaterialPageRoute(
+              builder: (_) => PartyPlanDetailScreen(
+                plan: {'id': partyPlanId, 'planId': partyPlanId, ...data},
+              ),
+            ),
+          );
+          return;
+        }
+      }
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
+      );
+      return;
+    }
+
+    // ── 4. Live Feed Direct Navigation ──────────────────────────────────────
+    final isLiveFeedType = rawType.contains('live_feed') ||
+        rawType.contains('feed') ||
+        rawType.contains('activity') ||
+        rawType.contains('timeline') ||
+        rawType.contains('announcement');
+
+    if (isLiveFeedType) {
+      int initialTab = 0;
+      if (rawType.contains('party') || rawType.contains('plan')) {
+        initialTab = 1;
+      } else if (rawType.contains('group') || rawType.contains('large')) {
+        initialTab = 2;
+      }
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => LiveFeedScreen(initialTabIndex: initialTab),
+        ),
+      );
+      return;
+    }
+
+    // ── 5. Party Plan Notifications & Action Prompts ─────────────────────────
     final partyPlanId = (data['partyPlanId'] ??
             data['planId'] ??
             data['entityId'] ??
@@ -496,7 +591,6 @@ class PushNotificationService {
 
     if (isPartyPlanType) {
       if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
-        // Deep link directly to Party Plan Detail Screen!
         navigator.push(
           MaterialPageRoute(
             builder: (_) => PartyPlanDetailScreen(
@@ -533,7 +627,7 @@ class PushNotificationService {
       return;
     }
 
-    // ── 3. Stranger Meets Notifications ─────────────────────────────────────
+    // ── 6. Stranger Meets Notifications ─────────────────────────────────────
     final strangersMeetId = (data['strangersMeetRequestId'] ??
             data['strangersMeetId'] ??
             data['requestId'] ??
@@ -557,7 +651,7 @@ class PushNotificationService {
       return;
     }
 
-    // ── 4. Group Party / Large Party Bookings ───────────────────────────────
+    // ── 7. Group Party / Large Party Bookings ───────────────────────────────
     if (rawType.contains('group') || rawType.contains('large_party')) {
       final status = (data['status'] ?? data['bookingStatus'] ?? '').toString().toLowerCase();
       if (status == 'confirmed' || status == 'paid' || rawType.contains('confirmed')) {
@@ -574,7 +668,7 @@ class PushNotificationService {
       return;
     }
 
-    // ── 5. Venue Offers & Details ───────────────────────────────────────────
+    // ── 8. Venue Offers & Details ───────────────────────────────────────────
     final venueId = (data['venueId'] ?? data['entityId'] ?? data['id'])?.toString();
     if (rawType.contains('offer') || rawType.contains('venue') || rawType.contains('club')) {
       if (venueId != null && venueId.isNotEmpty) {
@@ -583,42 +677,15 @@ class PushNotificationService {
       }
     }
 
-    // ── 6. Bookings & Tickets ───────────────────────────────────────────────
-    if (rawType.contains('booking') || rawType.contains('ticket')) {
+    // ── 9. Generic Bookings & Tickets ───────────────────────────────────────
+    if (rawType.contains('booking')) {
       navigator.push(
         MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
       );
       return;
     }
 
-    // ── 7. Wallet & Subscription Notifications ───────────────────────────────
-    if (rawType.contains('wallet') || rawType.contains('payment') || rawType.contains('credit')) {
-      navigator.push(
-        MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
-      );
-      return;
-    }
-
-    if (rawType.contains('subscription')) {
-      if (rawType.contains('expired')) {
-        _showSubscriptionDialog(
-          navigator,
-          title: 'VIP Subscription Expired',
-          message: 'Your VIP subscription has expired or has been terminated. Tap below to view your wallet and options.',
-          buttonText: 'View Wallet',
-        );
-      } else {
-        _showSubscriptionDialog(
-          navigator,
-          title: 'VIP Subscription Updated!',
-          message: 'Your subscription status has been updated. Tap below to check your status.',
-          buttonText: 'Check Wallet',
-        );
-      }
-      return;
-    }
-
-    // ── 8. Generic Fallbacks based on IDs ────────────────────────────────────
+    // ── 10. Generic Fallbacks based on IDs ──────────────────────────────────
     if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
       navigator.push(
         MaterialPageRoute(

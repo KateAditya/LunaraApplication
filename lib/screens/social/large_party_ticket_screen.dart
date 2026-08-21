@@ -70,6 +70,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
     _initLocation();
     _initCountdown();
+    // Pre-populate fresh fields from widget data synchronously so the first
+    // frame is already complete — no waiting for the network round-trip.
+    _prefillFromWidget();
     _fetchTicketData();
   }
 
@@ -93,6 +96,46 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
     // Any other/unknown status: never assume paid — wait for server fetch to confirm
     return _LargePartyPaymentState.awaitingPayment;
+  }
+
+  /// Synchronously copies widget.booking data into the "fresh" fields so that
+  /// the very first build frame already renders complete data.  The actual
+  /// [_fetchTicketData] call will overwrite these with server-verified values
+  /// but will only trigger setState if something genuinely changed.
+  void _prefillFromWidget() {
+    final b = widget.booking;
+    if (b['user'] is Map) {
+      _freshHostUser = Map<String, dynamic>.from(b['user']);
+    } else if (b['host'] is Map) {
+      _freshHostUser = Map<String, dynamic>.from(b['host']);
+    } else if (b['customer'] is Map) {
+      _freshHostUser = Map<String, dynamic>.from(b['customer']);
+    }
+    if (b['venue'] is Map) {
+      _freshVenue = Map<String, dynamic>.from(b['venue']);
+    }
+    _freshTotalAmount ??= double.tryParse(
+        (b['totalAmount'] ?? b['paymentAmount'] ?? b['depositAmount'] ?? '').toString());
+    _freshPaymentStatus ??= b['paymentStatus']?.toString();
+    _freshPaymentMethod ??= b['paymentMethod']?.toString();
+    _canonicalTicketCode ??= b['ticketCode']?.toString();
+    _amountDue ??= _freshTotalAmount;
+
+    final rawParticipants = b['totalParticipants'] ?? b['numberOfFriends'] ?? b['numberOfGuests'];
+    if (rawParticipants != null && _freshTotalParticipants == null) {
+      _freshTotalParticipants = int.tryParse(rawParticipants.toString());
+      if (_freshTotalParticipants != null && _freshMemberCount == null) {
+        _freshMemberCount = _freshTotalParticipants! > 1 ? _freshTotalParticipants! - 1 : 1;
+      }
+    }
+    final rawDate = b['bookingDate'] ?? b['partyDate'];
+    if (rawDate != null && _freshPartyDate == null) {
+      _freshPartyDate = DateTime.tryParse(rawDate.toString())?.toLocal();
+    }
+    final rawTime = b['startTime'];
+    if (rawTime != null && rawTime.toString().trim().isNotEmpty && _freshStartTime == null) {
+      _freshStartTime = rawTime.toString().trim();
+    }
   }
 
   DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
@@ -162,48 +205,60 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         final mapData = jsonDecode(response.body);
         final booking = mapData is Map ? mapData['data'] : null;
         if (booking is Map) {
-          setState(() {
-            if (booking['user'] is Map) {
-              _freshHostUser = Map<String, dynamic>.from(booking['user']);
-            } else if (booking['host'] is Map) {
-              _freshHostUser = Map<String, dynamic>.from(booking['host']);
-            }
-            if (booking['venue'] is Map) {
-              _freshVenue = Map<String, dynamic>.from(booking['venue']);
-            }
-            final adminAmount = double.tryParse((booking['adminPaymentAmount'] ?? '').toString());
-            final totalAmount = double.tryParse((booking['totalAmount'] ?? '').toString());
-            _freshTotalAmount = (adminAmount != null && adminAmount > 0) ? adminAmount : totalAmount;
-            _freshPaymentStatus = booking['paymentStatus']?.toString();
-            _canonicalTicketCode = booking['ticketCode']?.toString();
-            _amountDue = _freshTotalAmount;
+          // Compute new values first, then only setState if something changed.
+          Map<String, dynamic>? newHostUser;
+          if (booking['user'] is Map) newHostUser = Map<String, dynamic>.from(booking['user']);
+          else if (booking['host'] is Map) newHostUser = Map<String, dynamic>.from(booking['host']);
 
-            final guestsRaw = booking['numberOfGuests'];
-            if (guestsRaw != null) {
-              _freshTotalParticipants = int.tryParse(guestsRaw.toString());
-              if (_freshTotalParticipants != null) {
-                _freshMemberCount = _freshTotalParticipants! > 1 ? _freshTotalParticipants! - 1 : 1;
-              }
-            }
+          Map<String, dynamic>? newVenue;
+          if (booking['venue'] is Map) newVenue = Map<String, dynamic>.from(booking['venue']);
 
-            final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toLowerCase();
-            final bookingStatus = booking['status']?.toString().toLowerCase();
-            final isFreeBooking = (_freshTotalAmount == null || _freshTotalAmount! <= 0);
-            final isPaid = _freshPaymentStatus == 'paid' || 
-                           adminApprovalStatus == 'payment_done' ||
-                           (bookingStatus == 'confirmed' && isFreeBooking) ||
-                           (bookingStatus == 'completed' && isFreeBooking);
-            final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
+          final adminAmount = double.tryParse((booking['adminPaymentAmount'] ?? '').toString());
+          final totalAmount = double.tryParse((booking['totalAmount'] ?? '').toString());
+          final newTotalAmount = (adminAmount != null && adminAmount > 0) ? adminAmount : totalAmount;
+          final newPaymentStatus = booking['paymentStatus']?.toString();
+          final newTicketCode = booking['ticketCode']?.toString();
+          final newAmountDue = newTotalAmount;
+          final guestsRaw = booking['numberOfGuests'];
+          final newTotalParticipants = guestsRaw != null ? int.tryParse(guestsRaw.toString()) : null;
+          final newMemberCount = newTotalParticipants != null && newTotalParticipants > 1 ? newTotalParticipants - 1 : null;
 
-            if (isPaid) {
-              _paymentState = _LargePartyPaymentState.paid;
-            } else if (isExpired) {
-              _paymentState = _LargePartyPaymentState.expired;
-            } else {
-              _paymentState = _LargePartyPaymentState.awaitingPayment;
-            }
-          });
-          _initCountdown();
+          final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toLowerCase();
+          final bookingStatus = booking['status']?.toString().toLowerCase();
+          final isFreeBooking = (newTotalAmount == null || newTotalAmount <= 0);
+          final isPaid = newPaymentStatus == 'paid' ||
+                         adminApprovalStatus == 'payment_done' ||
+                         (bookingStatus == 'confirmed' && isFreeBooking) ||
+                         (bookingStatus == 'completed' && isFreeBooking);
+          final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
+          final newPaymentState = isPaid
+              ? _LargePartyPaymentState.paid
+              : isExpired
+                  ? _LargePartyPaymentState.expired
+                  : _LargePartyPaymentState.awaitingPayment;
+
+          // Only rebuild if something actually changed.
+          final didChange = newPaymentState != _paymentState ||
+              newTicketCode != _canonicalTicketCode ||
+              newPaymentStatus != _freshPaymentStatus ||
+              newTotalAmount != _freshTotalAmount ||
+              (newHostUser != null && newHostUser.toString() != _freshHostUser?.toString()) ||
+              (newVenue != null && newVenue.toString() != _freshVenue?.toString());
+
+          if (mounted && didChange) {
+            setState(() {
+              if (newHostUser != null) _freshHostUser = newHostUser;
+              if (newVenue != null) _freshVenue = newVenue;
+              _freshTotalAmount = newTotalAmount;
+              _freshPaymentStatus = newPaymentStatus;
+              _canonicalTicketCode = newTicketCode;
+              _amountDue = newAmountDue;
+              if (newTotalParticipants != null) _freshTotalParticipants = newTotalParticipants;
+              if (newMemberCount != null) _freshMemberCount = newMemberCount;
+              _paymentState = newPaymentState;
+            });
+            _initCountdown();
+          }
           return;
         }
       }

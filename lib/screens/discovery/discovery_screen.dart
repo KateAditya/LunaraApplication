@@ -348,7 +348,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
                 final targetVenueId =
                     (plan['venueId'] ?? venue['id'])?.toString() ?? '';
-                final bool isSecretVenuePost = venue['isSecret'] == true;
+                final bool isSecretVenuePost = venue['isSecret'] == true ||
+                    plan['showVenueDetails'] == false ||
+                    plan['isSecret'] == true ||
+                    venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
 
                 // Resolve venue cover image from multiple possible fields
                 dynamic rawImg =
@@ -402,7 +405,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue': venue['name'] ?? 'Venue',
+                  'venue': isSecretVenuePost ? 'Secret Venue 🔒' : (venue['name'] ?? 'Venue'),
                   'venueId': targetVenueId,
                   'content': plan['message'] ?? '',
                   'time': timeStr,
@@ -413,8 +416,20 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       : '',
                   'userId': user['id'] ?? plan['userId'],
                   'user': user,
-                  'venueMap': venue,
+                  'venueMap': isSecretVenuePost
+                      ? {
+                          'id': targetVenueId,
+                          'name': 'Secret Venue 🔒',
+                          'isSecret': true,
+                          'showVenueDetails': false,
+                          'city': venue['city'] ?? user['city'] ?? 'Pune',
+                          'area': venue['area'] ?? 'Secret Location',
+                        }
+                      : venue,
                   'createdAt': plan['createdAt'],
+                  'showVenueDetails': isSecretVenuePost ? false : (plan['showVenueDetails'] ?? true),
+                  'isSecret': isSecretVenuePost,
+                  'canSeeVenue': plan['canSeeVenue'] == true,
                 };
               }),
             );
@@ -494,10 +509,17 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               : (venue['images'] as List).first)
                         : null);
 
+                final bool isSecretMeet = venue['isSecret'] == true ||
+                    meet['showVenueDetails'] == false ||
+                    meet['isSecret'] == true ||
+                    venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+                    meet['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+
                 if ((rawImg == null ||
                         rawImg.toString().isEmpty ||
                         rawImg.toString().startsWith('Instance of')) &&
-                    extractedVenueId.isNotEmpty) {
+                    extractedVenueId.isNotEmpty &&
+                    !isSecretMeet) {
                   try {
                     final matchedV = _allVenues.firstWhere(
                       (v) => v.id == extractedVenueId,
@@ -523,13 +545,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'city': venue['city'] ?? user['city'] ?? 'Unknown',
                   'bio': user['bio'] ?? '',
                   'gender': user['gender'] ?? 'Unknown',
-                  'venue':
-                      venue['name'] ??
-                      meet['venueName'] ??
-                      (meet['venue'] is String ? meet['venue'] : null) ??
-                      'Venue',
+                  'venue': isSecretMeet
+                      ? 'Secret Venue 🔒'
+                      : (venue['name'] ??
+                          meet['venueName'] ??
+                          (meet['venue'] is String ? meet['venue'] : null) ??
+                          'Venue'),
                   'venueId': extractedVenueId,
-                  'venueMap': venue,
+                  'venueMap': isSecretMeet
+                      ? {
+                          'id': extractedVenueId,
+                          'name': 'Secret Venue 🔒',
+                          'isSecret': true,
+                          'showVenueDetails': false,
+                          'city': venue['city'] ?? user['city'] ?? 'Pune',
+                          'area': venue['area'] ?? 'Secret Location',
+                        }
+                      : venue,
                   'content': meet['tagline'] ?? meet['subject'] ?? '',
                   'time': timeStr,
                   'coverImageUrl':
@@ -540,6 +572,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   'userId': user['id'] ?? meet['userId'],
                   'user': user,
                   'createdAt': meet['createdAt'],
+                  'showVenueDetails': isSecretMeet ? false : (meet['showVenueDetails'] ?? true),
+                  'isSecret': isSecretMeet,
+                  'canSeeVenue': meet['canSeeVenue'] == true,
                 };
               }),
             );
@@ -2516,8 +2551,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           final String? coverImageUrl =
               ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
 
-          final bool isSecretVenue = feed['venueMap'] is Map &&
-              (feed['venueMap'] as Map)['isSecret'] == true;
+          final bool isSecretVenue = (feed['venueMap'] is Map &&
+                  ((feed['venueMap'] as Map)['isSecret'] == true ||
+                   (feed['venueMap'] as Map)['showVenueDetails'] == false)) ||
+              feed['isSecret'] == true ||
+              feed['showVenueDetails'] == false ||
+              feed['venue']?.toString().toUpperCase().contains('SECRET VENUE') == true;
 
           return RepaintBoundary(
             child: Container(
@@ -2562,26 +2601,42 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     Positioned.fill(
                       child: InkWell(
                         onTap: () {
-                          final venue = _allVenues.firstWhere(
-                            (v) =>
-                                v.name.toLowerCase() == venueName.toLowerCase(),
-                            orElse: () => _allVenues.isNotEmpty
-                                ? _allVenues.first
-                                : Venue(
-                                    id: '0',
-                                    name: venueName,
-                                    city: 'Pune',
-                                    addressLine1: 'Pune',
-                                    averageRating: 0.0,
-                                  ),
-                          );
+                          Map<String, dynamic> resolvedVenue;
+                          if (isSecretVenue) {
+                            if (feed['venueMap'] is Map) {
+                              resolvedVenue = Map<String, dynamic>.from(feed['venueMap'] as Map);
+                            } else {
+                              resolvedVenue = {
+                                'id': feed['venueId'] ?? '',
+                                'name': 'Secret Venue 🔒',
+                                'isSecret': true,
+                                'showVenueDetails': false,
+                                'city': feed['city'] ?? 'Pune',
+                              };
+                            }
+                          } else {
+                            final venue = _allVenues.firstWhere(
+                              (v) =>
+                                  v.name.toLowerCase() == venueName.toLowerCase(),
+                              orElse: () => _allVenues.isNotEmpty
+                                  ? _allVenues.first
+                                  : Venue(
+                                      id: '0',
+                                      name: venueName,
+                                      city: 'Pune',
+                                      addressLine1: 'Pune',
+                                      averageRating: 0.0,
+                                    ),
+                            );
+                            resolvedVenue = venue.toMap();
+                          }
 
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => PostDetailScreen(
                                 post: feed,
-                                venue: venue.toMap(),
+                                venue: resolvedVenue,
                               ),
                             ),
                           );

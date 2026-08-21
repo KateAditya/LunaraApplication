@@ -1291,6 +1291,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Future<void> _loadVenueDetailsIfNeeded() async {
+    final bool isMyPost = _isHostPlan(widget.plan);
+    final bool isSecretVenue = widget.plan['showVenueDetails'] == false ||
+        widget.plan['isSecret'] == true ||
+        widget.plan['isSecretVenue'] == true ||
+        (widget.plan['venue'] is Map &&
+            ((widget.plan['venue'] as Map)['showVenueDetails'] == false ||
+             (widget.plan['venue'] as Map)['isSecret'] == true ||
+             (widget.plan['venue'] as Map)['isSecretVenue'] == true)) ||
+        widget.plan['venue']?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+    final bool hide = isSecretVenue && !isMyPost && widget.plan['canSeeVenue'] != true;
+    if (hide) return;
+
     final initialUrl = _getVenueImageUrl();
     if (initialUrl != null && initialUrl.isNotEmpty) return;
 
@@ -2199,7 +2211,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     // canSeeVenue is the backend-authoritative flag (host, or a joiner the
     // host has accepted). Hosts always see their own venue regardless.
-    final bool hideVenueDetails = plan['showVenueDetails'] == false && !isMyPost && plan['canSeeVenue'] != true;
+    final bool isSecretVenue = plan['showVenueDetails'] == false ||
+        plan['isSecret'] == true ||
+        plan['isSecretVenue'] == true ||
+        venue['showVenueDetails'] == false ||
+        venue['isSecret'] == true ||
+        venue['isSecretVenue'] == true ||
+        venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+    final bool hideVenueDetails = isSecretVenue && !isMyPost && plan['canSeeVenue'] != true;
 
     final hostName = _extractHostName(host, plan);
     final hostAge = host['age'] ?? plan['hostAge'];

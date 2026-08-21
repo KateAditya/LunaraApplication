@@ -4078,13 +4078,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                                 if (confirmRes.statusCode ==
                                                     200) {
+                                                  ApiService.notifyFeedNeedsRefresh();
                                                   if (mounted) {
+                                                    final isPriv = selectedPrivacy == 'Private' || selectedPrivacy == 'Both';
                                                     ScaffoldMessenger.of(
                                                       context,
                                                     ).showSnackBar(
-                                                      const SnackBar(
+                                                      SnackBar(
                                                         content: Text(
-                                                          '🎉 Deposit Paid! Your plan is now LIVE!',
+                                                          isPriv
+                                                              ? '🎉 Deposit Paid! Private invitations sent to your selected guests!'
+                                                              : '🎉 Deposit Paid! Your plan is now LIVE!',
                                                         ),
                                                         backgroundColor:
                                                             Colors.green,
@@ -4245,13 +4249,16 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
                                           final selectedVenueName =
                                               selectedVenue?.name ?? 'Venue';
+                                          final isPriv = selectedPrivacy == 'Private' || selectedPrivacy == 'Both';
 
                                           await SmartCheckoutSheet.show(
                                             context: context,
-                                            title:
-                                                '🎉 Plan Created! Pay Safety Deposit',
-                                            subtitle:
-                                                'Your safety deposit (₹${depositAmount.toStringAsFixed(0)}) is required to activate your plan and make it visible in the Live Feed.',
+                                            title: isPriv
+                                                ? '🔒 Private Plan! Pay Host Deposit'
+                                                : '🎉 Plan Created! Pay Safety Deposit',
+                                            subtitle: isPriv
+                                                ? 'Pay your ₹${depositAmount.toStringAsFixed(0)} deposit to dispatch private invitations to your ${selectedUserIds.length} selected guest${selectedUserIds.length > 1 ? 's' : ''}.'
+                                                : 'Your safety deposit (₹${depositAmount.toStringAsFixed(0)}) is required to activate your plan and make it visible in the Live Feed.',
                                             itemPrice: depositAmount,
                                             onWalletPayment: () async {
                                               // Wallet payment: deduct from Smart Credit Wallet then verify with backend
@@ -4285,12 +4292,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                 if (confirmRes.statusCode ==
                                                         200 &&
                                                     mounted) {
+                                                  ApiService.notifyFeedNeedsRefresh();
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
-                                                    const SnackBar(
+                                                    SnackBar(
                                                       content: Text(
-                                                        '🎉 Deposit Paid via Wallet! Your plan is now LIVE!',
+                                                        isPriv
+                                                            ? '🎉 Deposit Paid via Wallet! Private invitations sent to your selected guests!'
+                                                            : '🎉 Deposit Paid via Wallet! Your plan is now LIVE!',
                                                       ),
                                                       backgroundColor:
                                                           Colors.green,

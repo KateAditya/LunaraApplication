@@ -228,11 +228,24 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
       rawCover = null;
     }
 
+    final bool isSecretVenue = post['showVenueDetails'] == false ||
+        post['isSecret'] == true ||
+        post['isSecretVenue'] == true ||
+        (post['venueMap'] is Map &&
+            ((post['venueMap'] as Map)['isSecret'] == true ||
+             (post['venueMap'] as Map)['showVenueDetails'] == false)) ||
+        (post['venue'] is Map &&
+            ((post['venue'] as Map)['isSecret'] == true ||
+             (post['venue'] as Map)['showVenueDetails'] == false)) ||
+        venueName.toUpperCase().contains('SECRET VENUE');
+
     // Use venue cover image as background; fall back to user avatar
     final String? coverImageUrl = ApiService.formatImageUrl(rawCover) ?? avatarUrl;
 
     ImageProvider? bgImage;
-    if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
+    if (isSecretVenue) {
+      bgImage = const AssetImage('assets/images/secretimag.png');
+    } else if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
       if (coverImageUrl.startsWith('http')) {
         bgImage = CachedNetworkImageProvider(coverImageUrl);
       } else if (coverImageUrl.startsWith('assets/')) {
@@ -271,11 +284,30 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
 
       child: InkWell(
         onTap: () {
+          Map<String, dynamic> resolvedVenue;
+          if (isSecretVenue) {
+            if (post['venue'] is Map) {
+              resolvedVenue = Map<String, dynamic>.from(post['venue'] as Map);
+            } else if (post['venueMap'] is Map) {
+              resolvedVenue = Map<String, dynamic>.from(post['venueMap'] as Map);
+            } else {
+              resolvedVenue = {
+                'id': targetVenueId,
+                'name': 'Secret Venue 🔒',
+                'isSecret': true,
+                'showVenueDetails': false,
+                'city': post['city'] ?? 'Pune',
+              };
+            }
+          } else {
+            resolvedVenue = matchedVenue.toMap();
+          }
+
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) =>
-                  PostDetailScreen(post: post, venue: matchedVenue.toMap()),
+                  PostDetailScreen(post: post, venue: resolvedVenue),
             ),
           );
         },

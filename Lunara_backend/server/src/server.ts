@@ -284,8 +284,9 @@ io.on('connection', (socket) => {
 
     socket.on('join_user_room', async (userId: string) => {
         socket.join(`user_${userId}`);
+        socket.join('live_feed');
         (socket as any).userId = userId;
-        logger.info(`Socket ${socket.id} joined user room user_${userId}`);
+        logger.info(`Socket ${socket.id} joined user room user_${userId} and live_feed`);
 
         try {
             await User.update({ isOnline: true, lastActiveAt: new Date() }, { where: { id: userId } });
