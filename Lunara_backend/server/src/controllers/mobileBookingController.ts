@@ -52,23 +52,75 @@ export const sanitizeBookingId = (raw: string | undefined | null): string => {
 };
 
 // ─── Helper: build ticket response ───────────────────────────────────────────
-function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string) {
+function buildTicket(booking: Booking, venue: Venue | null, ticketCode: string, user?: User | null) {
+    const rawUser = user || (booking as any).user;
+    const userObj = rawUser ? {
+        id: rawUser.id,
+        fullName: `${rawUser.firstName || ''} ${rawUser.lastName || ''}`.trim() || 'Guest',
+        firstName: rawUser.firstName,
+        lastName: rawUser.lastName,
+        email: rawUser.email,
+        phone: rawUser.phone,
+        mobileNumber: rawUser.phone,
+        profilePhotoUrl: rawUser.profileImageUrl || null,
+        profileImageUrl: rawUser.profileImageUrl || null,
+    } : null;
+
+    const bAny = booking as any;
+    const partyEvent = bAny.partyEvent;
+    const bannerImageUrl = partyEvent?.imagePath
+        ? (partyEvent.imagePath.startsWith('http') ? partyEvent.imagePath : `/${partyEvent.imagePath.replace(/^\/+/, '')}`)
+        : null;
+    const isUpcomingNight = Boolean(booking.isUpcomingNight);
+    const eventTitle = partyEvent?.title || booking.partySubject || (isUpcomingNight ? 'Upcoming Night Event' : null);
+
     return {
         bookingId: booking.id,
         bookingNumber: booking.bookingNumber,
         ticketCode,
         ticketUrl: (booking as any).ticketUrl || null,
         venue: venue
-            ? { id: (venue as any).id, name: (venue as any).name, address: (venue as any).address }
+            ? {
+                id: (venue as any).id,
+                name: (venue as any).name,
+                addressLine1: (venue as any).addressLine1,
+                area: (venue as any).area,
+                city: (venue as any).city,
+                address: `${(venue as any).area || (venue as any).addressLine1 || ''}, ${(venue as any).city || ''}`.trim(),
+                profilePhotoUrl: (venue as any).profilePhotoUrl ?? null,
+                coverImageUrl: (venue as any).coverImageUrl ?? null,
+                latitude: (venue as any).latitude ?? null,
+                longitude: (venue as any).longitude ?? null,
+                images: (venue as any).images ?? [],
+            }
             : null,
         bookingDate: booking.bookingDate,
         startTime: booking.startTime,
         tablePackage: booking.tablePackage,
         numberOfGuests: booking.numberOfGuests,
+        totalAmount: Number(booking.totalAmount || 0),
         status: booking.status,
         paymentStatus: booking.paymentStatus,
         paymentMode: booking.paymentMode,
         addedToWallet: booking.addedToWallet ?? false,
+        user: userObj,
+        host: userObj,
+        isUpcomingNight,
+        isEventBooking: isUpcomingNight,
+        bannerImageUrl,
+        eventPoster: bannerImageUrl,
+        imageUrl: bannerImageUrl || (venue as any)?.profilePhotoUrl || (venue as any)?.coverImageUrl,
+        eventTitle,
+        partySubject: eventTitle || booking.partySubject,
+        partyEvent: partyEvent ? {
+            id: partyEvent.id,
+            title: partyEvent.title,
+            imagePath: bannerImageUrl,
+            bannerImageUrl,
+            aboutEvent: partyEvent.aboutEvent,
+            eventDate: partyEvent.eventDate,
+            entryPrice: partyEvent.entryPrice,
+        } : null,
     };
 }
 
@@ -610,7 +662,32 @@ export const getTicket = async (req: Request, res: Response) => {
         const id = sanitizeBookingId(req.params.id);
 
         const booking = await Booking.findByPk(id, {
-            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                            required: false,
+                        },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                },
+                {
+                    model: Ad,
+                    as: 'partyEvent',
+                    attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                    required: false,
+                },
+            ],
         });
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
         if (booking.userId !== req.user!.id) {
@@ -624,7 +701,7 @@ export const getTicket = async (req: Request, res: Response) => {
 
         return res.json({
             success: true,
-            data: buildTicket(booking, (booking as any).venue, ticketCode),
+            data: buildTicket(booking, (booking as any).venue, ticketCode, (booking as any).user),
         });
     } catch (err: any) {
         logger.error('getTicket:', err);
@@ -675,7 +752,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const venueInclude = {
             model: Venue,
             as: 'venue',
-            attributes: ['id', 'name', 'addressLine1', 'area', 'city'],
+            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
             include: [
                 {
                     model: VenueImage,
@@ -684,6 +761,13 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     required: false,
                 }
             ],
+            required: false,
+        };
+
+        const userInclude = {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
             required: false,
         };
 
@@ -697,7 +781,16 @@ export const listMyBookings = async (req: Request, res: Response) => {
         ] = await Promise.all([
             Booking.findAll({
                 where: { userId },
-                include: [venueInclude],
+                include: [
+                    venueInclude,
+                    userInclude,
+                    {
+                        model: Ad,
+                        as: 'partyEvent',
+                        attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                        required: false,
+                    },
+                ],
                 order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings Booking query error:', err);
@@ -724,7 +817,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
             }),
             GroupParty.findAll({
                 where: { userId },
-                include: [venueInclude],
+                include: [venueInclude, userInclude],
                 order: [['partyDate', 'DESC'], ['startTime', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings GroupParty query error:', err);
@@ -735,7 +828,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     userId,
                     status: { [Op.ne]: 'rejected' },
                 },
-                include: [venueInclude],
+                include: [venueInclude, userInclude],
                 order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings StrangersMeetRequest query error:', err);
@@ -746,7 +839,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     userId,
                     status: { [Op.ne]: 'rejected' },
                 },
-                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude] }],
+                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude, userInclude] }, userInclude],
                 order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings StrangersMeetJoiner query error:', err);
@@ -804,6 +897,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const venue = (gp as any).venue;
             const partyDate = new Date(gp.partyDate);
             const bookedDate = gp.createdAt ? new Date(gp.createdAt).toISOString() : partyDate.toISOString();
+            const gpUser = (gp as any).user ? {
+                id: (gp as any).user.id,
+                fullName: `${(gp as any).user.firstName || ''} ${(gp as any).user.lastName || ''}`.trim() || 'Host',
+                firstName: (gp as any).user.firstName,
+                lastName: (gp as any).user.lastName,
+                phone: (gp as any).user.phone,
+                mobileNumber: (gp as any).user.phone,
+                email: (gp as any).user.email,
+                profilePhotoUrl: (gp as any).user.profileImageUrl || null,
+            } : null;
+
             synthesized.push({
                 id: `group_party_${gp.id}`,
                 bookingId: gp.id,
@@ -817,6 +921,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 tablePackage: 'GROUP PARTY',
                 numberOfGuests: gp.numberOfFriends || 1,
                 venue,
+                user: gpUser,
+                host: gpUser,
                 isGroupParty: true,
                 ticketCode: gp.ticketCode,
                 ticketUrl: gp.ticketUrl,
@@ -827,6 +933,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const venue = (sm as any).venue;
             const eventDt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date((sm as any).createdAt || Date.now());
             const bookedDate = (sm as any).createdAt ? new Date((sm as any).createdAt).toISOString() : eventDt.toISOString();
+            const smUser = (sm as any).user ? {
+                id: (sm as any).user.id,
+                fullName: `${(sm as any).user.firstName || ''} ${(sm as any).user.lastName || ''}`.trim() || 'Host',
+                firstName: (sm as any).user.firstName,
+                lastName: (sm as any).user.lastName,
+                phone: (sm as any).user.phone,
+                mobileNumber: (sm as any).user.phone,
+                email: (sm as any).user.email,
+                profilePhotoUrl: (sm as any).user.profileImageUrl || null,
+            } : null;
+
             synthesized.push({
                 id: `strangers_meet_host_${sm.id}`,
                 bookingId: sm.id,
@@ -843,6 +960,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 tablePackage: 'STRANGERS MEET (HOST)',
                 numberOfGuests: sm.numberOfPersons || 2,
                 venue,
+                user: smUser,
+                host: smUser,
                 ticketCode: sm.ticketId,
                 ticketUrl: sm.ticketUrl,
                 rawRequest: sm.toJSON(),
@@ -855,6 +974,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const venue = sm.venue;
             const eventDt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date(sm.createdAt || Date.now());
             const bookedDate = (joiner as any).createdAt ? new Date((joiner as any).createdAt).toISOString() : (sm.createdAt ? new Date(sm.createdAt).toISOString() : eventDt.toISOString());
+            const jUser = (joiner as any).user ? {
+                id: (joiner as any).user.id,
+                fullName: `${(joiner as any).user.firstName || ''} ${(joiner as any).user.lastName || ''}`.trim() || 'Guest',
+                firstName: (joiner as any).user.firstName,
+                lastName: (joiner as any).user.lastName,
+                phone: (joiner as any).user.phone,
+                mobileNumber: (joiner as any).user.phone,
+                email: (joiner as any).user.email,
+                profilePhotoUrl: (joiner as any).user.profileImageUrl || null,
+            } : null;
+
             synthesized.push({
                 id: `strangers_meet_joiner_${joiner.id}`,
                 bookingId: sm.id,
@@ -871,6 +1001,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 tablePackage: 'STRANGERS MEET (JOINER)',
                 numberOfGuests: 1,
                 venue,
+                user: jUser,
+                host: jUser,
                 ticketCode: sm.ticketId,
                 ticketUrl: sm.ticketUrl,
                 rawRequest: sm.toJSON(),
@@ -880,6 +1012,39 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const normalizedBookings = bookings.map(b => {
             const json: any = b.toJSON();
             json.bookedAt = json.createdAt ? new Date(json.createdAt).toISOString() : json.bookingDate;
+            const bUser = (b as any).user;
+            if (bUser) {
+                json.user = {
+                    id: bUser.id,
+                    fullName: `${bUser.firstName || ''} ${bUser.lastName || ''}`.trim() || 'Guest',
+                    firstName: bUser.firstName,
+                    lastName: bUser.lastName,
+                    phone: bUser.phone,
+                    mobileNumber: bUser.phone,
+                    email: bUser.email,
+                    profilePhotoUrl: bUser.profileImageUrl || null,
+                };
+                json.host = json.user;
+            }
+            const partyEvent = (b as any).partyEvent;
+            if (partyEvent) {
+                const bannerImageUrl = partyEvent.imagePath
+                    ? (partyEvent.imagePath.startsWith('http') ? partyEvent.imagePath : `/${partyEvent.imagePath.replace(/^\/+/, '')}`)
+                    : null;
+                json.bannerImageUrl = bannerImageUrl;
+                json.eventPoster = bannerImageUrl;
+                json.imageUrl = bannerImageUrl || json.venue?.profilePhotoUrl || json.venue?.coverImageUrl;
+                json.eventTitle = partyEvent.title || json.partySubject;
+                json.partyEvent = {
+                    id: partyEvent.id,
+                    title: partyEvent.title,
+                    imagePath: bannerImageUrl,
+                    bannerImageUrl,
+                    aboutEvent: partyEvent.aboutEvent,
+                    eventDate: partyEvent.eventDate,
+                    entryPrice: partyEvent.entryPrice,
+                };
+            }
             return json;
         });
 
@@ -914,7 +1079,30 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id, {
             include: [
-                { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] },
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                            required: false,
+                        },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                },
+                {
+                    model: Ad,
+                    as: 'partyEvent',
+                    attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                    required: false,
+                },
                 {
                     model: GroupBooking,
                     as: 'groupBooking',

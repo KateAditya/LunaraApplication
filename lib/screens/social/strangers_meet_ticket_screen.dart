@@ -252,18 +252,28 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
       return _freshHostUser!;
     }
-    if (widget.request.user != null) {
+    if (widget.request.user != null && widget.request.user!.isNotEmpty) {
       return Map<String, dynamic>.from(widget.request.user!);
     }
     final myUser = ApiService.cachedCurrentUser;
     if (myUser != null) {
+      final fName = myUser.firstName;
+      final lName = myUser.lastName;
+      final fullN = '$fName $lName'.trim();
       return <String, dynamic>{
         'id': myUser.id,
-        'firstName': myUser.firstName,
-        'lastName': myUser.lastName,
-        'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
+        'firstName': fName,
+        'lastName': lName,
+        'fullName': fullN.isNotEmpty ? fullN : 'Meetup Host',
+        'name': fullN.isNotEmpty ? fullN : 'Meetup Host',
+        'username': myUser.displayName ?? (fName.isNotEmpty ? fName.toLowerCase() : 'user'),
         'profilePhotoUrl': myUser.profilePhoto,
+        'profileImageUrl': myUser.profilePhoto,
+        'profilePhoto': myUser.profilePhoto,
         'image': myUser.profilePhoto,
+        'phone': myUser.phone,
+        'mobileNumber': myUser.phone,
+        'email': myUser.email,
         'bio': myUser.bio,
       };
     }
@@ -714,9 +724,9 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                const Text(
-                                  'TOTAL PAID',
-                                  style: TextStyle(
+                                Text(
+                                  amountPaid <= 0 ? 'ENTRY FEE' : 'TOTAL PAID',
+                                  style: const TextStyle(
                                     color: grayTextColor,
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w800,
@@ -728,7 +738,9 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      '₹${amountPaid.toStringAsFixed(amountPaid.truncateToDouble() == amountPaid ? 0 : 2)}',
+                                      amountPaid <= 0
+                                          ? 'FREE'
+                                          : '₹${amountPaid.toStringAsFixed(amountPaid.truncateToDouble() == amountPaid ? 0 : 2)}',
                                       style: const TextStyle(
                                         color: Color(0xFF15803D),
                                         fontSize: 14,
@@ -742,9 +754,9 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                         color: const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: const Text(
-                                        'PAID',
-                                        style: TextStyle(
+                                      child: Text(
+                                        amountPaid <= 0 ? 'FREE ENTRY' : 'PAID',
+                                        style: const TextStyle(
                                           color: Color(0xFF15803D),
                                           fontSize: 8,
                                           fontWeight: FontWeight.w900,

@@ -1128,6 +1128,23 @@ class ApiService {
     return [];
   }
 
+  static Future<List<Map<String, dynamic>>> fetchUserStrangersMeets(
+    String userId,
+  ) async {
+    try {
+      final response = await get('/api/mobile/strangers-meet/user/$userId');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchUserStrangersMeets error: $e');
+    }
+    return [];
+  }
+
   static Future<Map<String, dynamic>?> acceptPartyPlanRequest(
     String reqId,
   ) async {

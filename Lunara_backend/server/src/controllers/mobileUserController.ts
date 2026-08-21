@@ -435,13 +435,31 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         let swipeStatus: string | null = null;
         const requesterUserId = req.user?.id || (req.query.currentUserId as string);
         if (requesterUserId && requesterUserId !== userId) {
-            const existingSwipe = await UserMatch.findOne({
-                where: {
-                    user1Id: requesterUserId,
-                    user2Id: userId
-                }
-            });
-            if (existingSwipe) {
+            const [existingSwipe, existingUserLike] = await Promise.all([
+                UserMatch.findOne({
+                    where: {
+                        user1Id: requesterUserId,
+                        user2Id: userId
+                    }
+                }),
+                UserLike.findOne({
+                    where: {
+                        userId: requesterUserId,
+                        targetUserId: userId
+                    }
+                })
+            ]);
+
+            const userLikeAction = existingUserLike?.actionType;
+            if (userLikeAction === 'superlike') {
+                isLiked = true;
+                isSuperLiked = true;
+                swipeStatus = existingSwipe?.status || 'pending';
+            } else if (userLikeAction === 'like') {
+                isLiked = true;
+                isSuperLiked = false;
+                swipeStatus = existingSwipe?.status || 'pending';
+            } else if (existingSwipe) {
                 isLiked = ['pending', 'connected'].includes(existingSwipe.status as string);
                 isSuperLiked = isLiked && existingSwipe.matchReason === 'superlike';
                 swipeStatus = existingSwipe.status;
@@ -669,7 +687,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 groupPartyCounts,
                 strangersMeetCounts,
                 activeSubs,
-                mySwipes
+                mySwipes,
+                myUserLikes
             ] = await Promise.all([
                 UserMatch.findAll({
                     attributes: [
@@ -752,6 +771,14 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                             user2Id: { [Op.in]: allUserIds }
                         }
                     })
+                    : Promise.resolve([]),
+                currentUserId
+                    ? UserLike.findAll({
+                        where: {
+                            userId: currentUserId,
+                            targetUserId: { [Op.in]: allUserIds }
+                        }
+                    })
                     : Promise.resolve([])
             ]);
 
@@ -794,6 +821,20 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                         status: s.status,
                         matchReason: s.matchReason || 'like'
                     };
+                });
+            }
+
+            // Merge UserLike rows into mySwipesMap
+            if (myUserLikes && Array.isArray(myUserLikes)) {
+                myUserLikes.forEach((l: any) => {
+                    if (l && l.targetUserId) {
+                        const existing = mySwipesMap[l.targetUserId];
+                        const isSuper = l.actionType === 'superlike';
+                        mySwipesMap[l.targetUserId] = {
+                            status: existing?.status || 'pending',
+                            matchReason: isSuper ? 'superlike' : (existing?.matchReason || 'like'),
+                        };
+                    }
                 });
             }
         }

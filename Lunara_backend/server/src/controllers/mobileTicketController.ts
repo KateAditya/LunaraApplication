@@ -12,6 +12,7 @@ import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanReq
 import StrangersMeetRequest, { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import VenueImage from '../models/VenueImage';
+import Ad from '../models/Ad';
 import { logger } from '../config/logger';
 
 function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
@@ -60,7 +61,7 @@ export class MobileTicketController {
             const venueInclude = {
                 model: Venue,
                 as: 'venue',
-                attributes: ['id', 'name', 'addressLine1', 'city', 'area'],
+                attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'profilePhotoUrl', 'coverImageUrl', 'latitude', 'longitude'],
                 include: [
                     {
                         model: VenueImage,
@@ -69,6 +70,13 @@ export class MobileTicketController {
                         required: false,
                     },
                 ],
+                required: false,
+            };
+
+            const userInclude = {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 required: false,
             };
 
@@ -84,7 +92,7 @@ export class MobileTicketController {
             ] = await Promise.all([
                 Ticket.findAll({
                     where: { userId },
-                    include: [venueInclude],
+                    include: [venueInclude, userInclude],
                     order: [['eventStartAt', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets Ticket query error:', err);
@@ -92,7 +100,16 @@ export class MobileTicketController {
                 }),
                 Booking.findAll({
                     where: { userId },
-                    include: [venueInclude],
+                    include: [
+                        venueInclude,
+                        userInclude,
+                        {
+                            model: Ad,
+                            as: 'partyEvent',
+                            attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                            required: false,
+                        },
+                    ],
                     order: [['bookingDate', 'DESC'], ['startTime', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets Booking query error:', err);
@@ -100,7 +117,7 @@ export class MobileTicketController {
                 }),
                 GroupParty.findAll({
                     where: { userId },
-                    include: [venueInclude],
+                    include: [venueInclude, userInclude],
                     order: [['partyDate', 'DESC'], ['startTime', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets GroupParty query error:', err);
@@ -117,9 +134,10 @@ export class MobileTicketController {
                             as: 'plan',
                             include: [
                                 venueInclude,
-                                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] },
                             ],
                         },
+                        { model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] },
                     ],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
@@ -128,7 +146,7 @@ export class MobileTicketController {
                 }),
                 PartyPlan.findAll({
                     where: { userId },
-                    include: [venueInclude],
+                    include: [venueInclude, userInclude],
                     order: [['planDateTime', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets PartyPlan host query error:', err);
@@ -143,8 +161,9 @@ export class MobileTicketController {
                         {
                             model: StrangersMeetRequest,
                             as: 'strangersMeetRequest',
-                            include: [venueInclude],
+                            include: [venueInclude, userInclude],
                         },
+                        userInclude,
                     ],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
@@ -156,7 +175,7 @@ export class MobileTicketController {
                         userId,
                         status: { [Op.ne]: StrangersMeetStatus.REJECTED },
                     },
-                    include: [venueInclude],
+                    include: [venueInclude, userInclude],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets StrangersMeetRequest query error:', err);
@@ -173,11 +192,19 @@ export class MobileTicketController {
             const [sourceBookings, sourceGroupParties] = await Promise.all([
                 Booking.findAll({
                     where: { id: { [Op.in]: bookingIds } },
-                    attributes: ['id', 'totalAmount', 'numberOfGuests', 'tablePackage'],
+                    attributes: ['id', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId'],
+                    include: [
+                        {
+                            model: Ad,
+                            as: 'partyEvent',
+                            attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                            required: false,
+                        },
+                    ],
                 }),
                 GroupParty.findAll({
                     where: { id: { [Op.in]: bookingIds } },
-                    attributes: ['id', 'totalAmount', 'numberOfFriends'],
+                    attributes: ['id', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId'],
                 }),
             ]);
             const bookingById = new Map(sourceBookings.map(b => [b.id, b]));
@@ -194,12 +221,52 @@ export class MobileTicketController {
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
                 const startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+                const isPartyPlan = t.bookingType === 'party_plan';
+                const isStrangersMeet = t.bookingType === 'strangers_meet';
+                const isLargeParty = (t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty);
+                const isGroupParty = (t.bookingType === 'group_party' && !isLargeParty) || Boolean(sourceGroupParty);
+                const isEventBooking = Boolean(sourceBooking?.isUpcomingNight);
+                const isSolo = t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo';
+                const isVenueBooking = !isPartyPlan && !isStrangersMeet && !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
+
+                let category = 'venue_booking';
+                if (isPartyPlan) category = 'party_plan';
+                else if (isStrangersMeet) category = 'strangers_meet';
+                else if (isLargeParty) category = 'large_party';
+                else if (isGroupParty) category = 'group_party';
+                else if (isEventBooking) category = 'event_booking';
+                else if (isSolo) category = 'solo';
+                else category = 'venue_booking';
+
+                const rawUser = (t as any).user;
+                const userObj = rawUser ? {
+                    id: rawUser.id,
+                    fullName: `${rawUser.firstName || ''} ${rawUser.lastName || ''}`.trim() || 'Guest',
+                    firstName: rawUser.firstName,
+                    lastName: rawUser.lastName,
+                    email: rawUser.email,
+                    phone: rawUser.phone,
+                    mobileNumber: rawUser.phone,
+                    profilePhotoUrl: rawUser.profileImageUrl || null,
+                    profileImageUrl: rawUser.profileImageUrl || null,
+                } : null;
+
+                const amountVal = sourceBooking ? Number(sourceBooking.totalAmount) : (sourceGroupParty ? Number(sourceGroupParty.totalAmount) : null);
+                const isFree = amountVal != null ? amountVal <= 0 : false;
+
+                const sbPartyEvent = (sourceBooking as any)?.partyEvent;
+                const eventBanner = sbPartyEvent?.imagePath
+                    ? (sbPartyEvent.imagePath.startsWith('http') ? sbPartyEvent.imagePath : `/${sbPartyEvent.imagePath.replace(/^\/+/, '')}`)
+                    : null;
+                const eventTitle = sbPartyEvent?.title || sourceBooking?.partySubject || (isEventBooking ? 'Upcoming Night Event' : null);
+
                 formattedTickets.push({
                     id: t.id,
                     ticketId: t.ticketId,
                     ticketCode: t.ticketId,
                     bookingId: t.bookingId,
                     bookingType: t.bookingType,
+                    category,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
                     bookingDate: t.eventStartAt,
                     startTime: startTimeStr,
@@ -211,11 +278,36 @@ export class MobileTicketController {
                     pdfUrl: isExpired ? null : t.pdfUrl,
                     qrToken: isExpired ? null : t.qrToken,
                     ticketUrl: isExpired ? null : t.pdfUrl,
-                    totalAmount: sourceBooking ? Number(sourceBooking.totalAmount) : (sourceGroupParty ? Number(sourceGroupParty.totalAmount) : null),
+                    totalAmount: amountVal,
+                    isFree,
                     numberOfGuests: sourceBooking ? sourceBooking.numberOfGuests : (sourceGroupParty ? sourceGroupParty.numberOfFriends : null),
-                    tablePackage: sourceBooking ? sourceBooking.tablePackage : null,
-                    isPartyPlan: t.bookingType === 'party_plan',
-                    isGroupParty: t.bookingType === 'group_party',
+                    tablePackage: sourceBooking ? sourceBooking.tablePackage : (isGroupParty ? 'Group Table' : (isEventBooking ? (eventTitle || 'Event Entry') : null)),
+                    goingMode: sourceBooking ? sourceBooking.goingMode : (isSolo ? 'solo' : undefined),
+                    bannerImageUrl: eventBanner,
+                    eventPoster: eventBanner,
+                    imageUrl: eventBanner || (t.venue as any)?.profilePhotoUrl || (t.venue as any)?.coverImageUrl,
+                    eventTitle,
+                    partySubject: eventTitle || sourceBooking?.partySubject,
+                    partyEvent: sbPartyEvent ? {
+                        id: sbPartyEvent.id,
+                        title: sbPartyEvent.title,
+                        imagePath: eventBanner,
+                        bannerImageUrl: eventBanner,
+                        aboutEvent: sbPartyEvent.aboutEvent,
+                        eventDate: sbPartyEvent.eventDate,
+                        entryPrice: sbPartyEvent.entryPrice,
+                    } : null,
+                    isPartyPlan,
+                    isGroupParty,
+                    isLargeParty,
+                    isLargePartyRequest: isLargeParty,
+                    isStrangersMeet,
+                    isSolo,
+                    isEventBooking,
+                    isUpcomingNight: isEventBooking,
+                    isVenueBooking,
+                    user: userObj,
+                    host: userObj,
                     venueName: t.venue?.name || 'Lunara Venue',
                     venueAddress: `${t.venue?.area || t.venue?.addressLine1 || ''}, ${t.venue?.city || ''}`.trim(),
                     venue: t.venue ? {
@@ -224,6 +316,8 @@ export class MobileTicketController {
                         addressLine1: t.venue.addressLine1,
                         city: t.venue.city,
                         area: t.venue.area,
+                        latitude: (t.venue as any).latitude ?? null,
+                        longitude: (t.venue as any).longitude ?? null,
                         profilePhotoUrl: (t.venue as any).profilePhotoUrl ?? null,
                         coverImageUrl: (t.venue as any).coverImageUrl ?? null,
                         images: (t.venue as any).images ?? [],
@@ -241,7 +335,10 @@ export class MobileTicketController {
                 if (b.isLargePartyRequest && !isLargePaid) {
                     continue; // Large party must be paid before ticket is generated/shown
                 }
-                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || b.status === 'confirmed' || b.status === 'completed';
+                const totalAmt = Number(b.totalAmount || 0);
+                const isFreeBooking = totalAmt <= 0;
+                const bStatusStr = (b.status as string || '').toLowerCase();
+                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || bStatusStr === 'confirmed' || bStatusStr === 'completed' || (isFreeBooking && bStatusStr !== 'cancelled');
                 if (!isPaidBooking) {
                     continue;
                 }
@@ -258,12 +355,45 @@ export class MobileTicketController {
                 const isExpired = bStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
+                const isLargeParty = Boolean(b.isLargePartyRequest);
+                const isUpcomingNight = Boolean(b.isUpcomingNight);
+                const isSolo = b.goingMode === 'solo';
+                const isGroupParty = b.goingMode === 'party_request' && !isLargeParty;
+                const isEventBooking = isUpcomingNight;
+                const isVenueBooking = !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
+
+                let category = 'venue_booking';
+                if (isLargeParty) category = 'large_party';
+                else if (isEventBooking) category = 'event_booking';
+                else if (isGroupParty) category = 'group_party';
+                else if (isSolo) category = 'solo';
+                else category = 'venue_booking';
+
+                const bUser = bAny.user ? {
+                    id: bAny.user.id,
+                    fullName: `${bAny.user.firstName || ''} ${bAny.user.lastName || ''}`.trim() || 'Guest',
+                    firstName: bAny.user.firstName,
+                    lastName: bAny.user.lastName,
+                    email: bAny.user.email,
+                    phone: bAny.user.phone,
+                    mobileNumber: bAny.user.phone,
+                    profilePhotoUrl: bAny.user.profileImageUrl || null,
+                    profileImageUrl: bAny.user.profileImageUrl || null,
+                } : null;
+
+                const bPartyEvent = (b as any).partyEvent;
+                const eventBanner = bPartyEvent?.imagePath
+                    ? (bPartyEvent.imagePath.startsWith('http') ? bPartyEvent.imagePath : `/${bPartyEvent.imagePath.replace(/^\/+/, '')}`)
+                    : null;
+                const eventTitle = bPartyEvent?.title || b.partySubject || (isEventBooking ? 'Upcoming Night Event' : null);
+
                 formattedTickets.push({
                     id: b.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: b.id,
-                    bookingType: b.isLargePartyRequest ? 'group_party' : 'solo',
+                    bookingType: isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : (isEventBooking ? 'event_booking' : 'venue_booking'))),
+                    category,
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: b.bookingDate,
                     startTime: sTime,
@@ -275,11 +405,36 @@ export class MobileTicketController {
                     pdfUrl: isExpired ? null : (bAny.ticketUrl || null),
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (bAny.ticketUrl || null),
-                    totalAmount: Number(b.totalAmount || 0),
+                    totalAmount: totalAmt,
+                    isFree: isFreeBooking,
                     numberOfGuests: b.numberOfGuests || 1,
-                    tablePackage: b.tablePackage || 'Standard',
+                    tablePackage: b.tablePackage || (isGroupParty ? 'Group Table' : (isEventBooking ? (eventTitle || 'Event Entry') : 'Standard')),
+                    goingMode: b.goingMode,
+                    bannerImageUrl: eventBanner,
+                    eventPoster: eventBanner,
+                    imageUrl: eventBanner || bAny.venue?.profilePhotoUrl || bAny.venue?.coverImageUrl,
+                    eventTitle,
+                    partySubject: eventTitle || b.partySubject,
+                    partyEvent: bPartyEvent ? {
+                        id: bPartyEvent.id,
+                        title: bPartyEvent.title,
+                        imagePath: eventBanner,
+                        bannerImageUrl: eventBanner,
+                        aboutEvent: bPartyEvent.aboutEvent,
+                        eventDate: bPartyEvent.eventDate,
+                        entryPrice: bPartyEvent.entryPrice,
+                    } : null,
                     isPartyPlan: false,
-                    isGroupParty: Boolean(b.isLargePartyRequest),
+                    isGroupParty,
+                    isLargeParty,
+                    isLargePartyRequest: isLargeParty,
+                    isStrangersMeet: false,
+                    isSolo,
+                    isEventBooking,
+                    isUpcomingNight: isEventBooking,
+                    isVenueBooking,
+                    user: bUser,
+                    host: bUser,
                     venueName: bAny.venue?.name || 'Lunara Venue',
                     venueAddress: `${bAny.venue?.area || bAny.venue?.addressLine1 || ''}, ${bAny.venue?.city || ''}`.trim(),
                     venue: bAny.venue ? {
@@ -288,6 +443,8 @@ export class MobileTicketController {
                         addressLine1: bAny.venue.addressLine1,
                         city: bAny.venue.city,
                         area: bAny.venue.area,
+                        latitude: bAny.venue.latitude ?? null,
+                        longitude: bAny.venue.longitude ?? null,
                         profilePhotoUrl: bAny.venue.profilePhotoUrl ?? null,
                         coverImageUrl: bAny.venue.coverImageUrl ?? null,
                         images: bAny.venue.images ?? [],
@@ -312,12 +469,28 @@ export class MobileTicketController {
                 const isExpired = gpStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = gpAny.ticketCode || `LUN-${startAt.getFullYear()}-GP-${gp.id.substring(0, 6).toUpperCase()}`;
 
+                const gpAmount = Number(gp.totalAmount || 0);
+                const isFreeGp = gpAmount <= 0;
+
+                const gpUser = gpAny.user ? {
+                    id: gpAny.user.id,
+                    fullName: `${gpAny.user.firstName || ''} ${gpAny.user.lastName || ''}`.trim() || 'Host',
+                    firstName: gpAny.user.firstName,
+                    lastName: gpAny.user.lastName,
+                    email: gpAny.user.email,
+                    phone: gpAny.user.phone,
+                    mobileNumber: gpAny.user.phone,
+                    profilePhotoUrl: gpAny.user.profileImageUrl || null,
+                    profileImageUrl: gpAny.user.profileImageUrl || null,
+                } : null;
+
                 formattedTickets.push({
                     id: gp.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: gp.id,
                     bookingType: 'group_party',
+                    category: 'group_party',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: gp.partyDate,
                     startTime: sTime,
@@ -329,11 +502,21 @@ export class MobileTicketController {
                     pdfUrl: isExpired ? null : (gpAny.ticketUrl || null),
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (gpAny.ticketUrl || null),
-                    totalAmount: Number(gp.totalAmount || 0),
+                    totalAmount: gpAmount,
+                    isFree: isFreeGp,
                     numberOfGuests: gp.numberOfFriends || 5,
                     tablePackage: 'Group Table',
                     isPartyPlan: false,
                     isGroupParty: true,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: false,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: gpUser,
+                    host: gpUser,
                     venueName: gpAny.venue?.name || 'Lunara Venue',
                     venueAddress: `${gpAny.venue?.area || gpAny.venue?.addressLine1 || ''}, ${gpAny.venue?.city || ''}`.trim(),
                     venue: gpAny.venue ? {
@@ -367,12 +550,37 @@ export class MobileTicketController {
                 const isExpired = sStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = reqAny.ticketCode || `LUN-${startAt.getFullYear()}-PP-${req.id.substring(0, 6).toUpperCase()}`;
 
+                const reqUser = reqAny.requester ? {
+                    id: reqAny.requester.id,
+                    fullName: `${reqAny.requester.firstName || ''} ${reqAny.requester.lastName || ''}`.trim() || 'Guest',
+                    firstName: reqAny.requester.firstName,
+                    lastName: reqAny.requester.lastName,
+                    email: reqAny.requester.email,
+                    phone: reqAny.requester.phone,
+                    mobileNumber: reqAny.requester.phone,
+                    profilePhotoUrl: reqAny.requester.profileImageUrl || null,
+                    profileImageUrl: reqAny.requester.profileImageUrl || null,
+                } : null;
+
+                const hostUser = plan.creator ? {
+                    id: plan.creator.id,
+                    fullName: `${plan.creator.firstName || ''} ${plan.creator.lastName || ''}`.trim() || 'Host',
+                    firstName: plan.creator.firstName,
+                    lastName: plan.creator.lastName,
+                    email: plan.creator.email,
+                    phone: plan.creator.phone,
+                    mobileNumber: plan.creator.phone,
+                    profilePhotoUrl: plan.creator.profileImageUrl || null,
+                    profileImageUrl: plan.creator.profileImageUrl || null,
+                } : null;
+
                 formattedTickets.push({
                     id: req.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: plan.id,
                     bookingType: 'party_plan',
+                    category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDateTime,
                     startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -385,10 +593,23 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (reqAny.ticketUrl || null),
                     totalAmount: Number(plan.depositAmount || 99),
+                    isFree: false,
                     numberOfGuests: 2,
                     tablePackage: 'Party Plan Match',
+                    rawRequest: reqAny,
+                    plan: plan,
+                    isHost: false,
                     isPartyPlan: true,
                     isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: false,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: reqUser,
+                    host: hostUser,
                     venueName: plan.venue?.name || 'Lunara Venue',
                     venueAddress: `${plan.venue?.area || plan.venue?.addressLine1 || ''}, ${plan.venue?.city || ''}`.trim(),
                     venue: plan.venue ? {
@@ -420,12 +641,25 @@ export class MobileTicketController {
                 const isExpired = pStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = planAny.ticketCode || `LUN-${startAt.getFullYear()}-PP-${plan.id.substring(0, 6).toUpperCase()}`;
 
+                const planUser = planAny.user ? {
+                    id: planAny.user.id,
+                    fullName: `${planAny.user.firstName || ''} ${planAny.user.lastName || ''}`.trim() || 'Host',
+                    firstName: planAny.user.firstName,
+                    lastName: planAny.user.lastName,
+                    email: planAny.user.email,
+                    phone: planAny.user.phone,
+                    mobileNumber: planAny.user.phone,
+                    profilePhotoUrl: planAny.user.profileImageUrl || null,
+                    profileImageUrl: planAny.user.profileImageUrl || null,
+                } : null;
+
                 formattedTickets.push({
                     id: plan.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: plan.id,
                     bookingType: 'party_plan',
+                    category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDateTime,
                     startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -438,10 +672,22 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (planAny.ticketUrl || null),
                     totalAmount: Number(plan.depositAmount || 99),
+                    isFree: false,
                     numberOfGuests: 2,
                     tablePackage: 'Party Plan Match',
+                    plan: planAny,
+                    isHost: true,
                     isPartyPlan: true,
                     isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: false,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: planUser,
+                    host: planUser,
                     venueName: planAny.venue?.name || 'Lunara Venue',
                     venueAddress: `${planAny.venue?.area || planAny.venue?.addressLine1 || ''}, ${planAny.venue?.city || ''}`.trim(),
                     venue: planAny.venue ? {
@@ -475,12 +721,25 @@ export class MobileTicketController {
                 const isExpired = meet.status === 'expired' || isCompleted || expAt < now;
                 const ticketCode = jAny.ticketCode || `LUN-${startAt.getFullYear()}-SM-${j.id.substring(0, 6).toUpperCase()}`;
 
+                const jUser = jAny.user ? {
+                    id: jAny.user.id,
+                    fullName: `${jAny.user.firstName || ''} ${jAny.user.lastName || ''}`.trim() || 'Guest',
+                    firstName: jAny.user.firstName,
+                    lastName: jAny.user.lastName,
+                    email: jAny.user.email,
+                    phone: jAny.user.phone,
+                    mobileNumber: jAny.user.phone,
+                    profilePhotoUrl: jAny.user.profileImageUrl || null,
+                    profileImageUrl: jAny.user.profileImageUrl || null,
+                } : null;
+
                 formattedTickets.push({
                     id: j.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: meet.id,
                     bookingType: 'strangers_meet',
+                    category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: meet.eventDateTime,
                     startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -493,10 +752,21 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (jAny.ticketUrl || meet.ticketUrl || null),
                     totalAmount: Number(meet.chargesPerHead || 0),
+                    isFree: Number(meet.chargesPerHead || 0) <= 0,
                     numberOfGuests: 2,
                     tablePackage: 'Stranger Meetup',
+                    rawRequest: meet,
                     isPartyPlan: false,
                     isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: true,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: jUser,
+                    host: jUser,
                     venueName: meet.venue?.name || 'Lunara Venue',
                     venueAddress: `${meet.venue?.area || meet.venue?.addressLine1 || ''}, ${meet.venue?.city || ''}`.trim(),
                     venue: meet.venue ? {
@@ -528,12 +798,25 @@ export class MobileTicketController {
                 const isExpired = sStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = smAny.ticketCode || sm.ticketId || `LUN-${startAt.getFullYear()}-SM-${sm.id.substring(0, 6).toUpperCase()}`;
 
+                const smUser = smAny.user ? {
+                    id: smAny.user.id,
+                    fullName: `${smAny.user.firstName || ''} ${smAny.user.lastName || ''}`.trim() || 'Host',
+                    firstName: smAny.user.firstName,
+                    lastName: smAny.user.lastName,
+                    email: smAny.user.email,
+                    phone: smAny.user.phone,
+                    mobileNumber: smAny.user.phone,
+                    profilePhotoUrl: smAny.user.profileImageUrl || null,
+                    profileImageUrl: smAny.user.profileImageUrl || null,
+                } : null;
+
                 formattedTickets.push({
                     id: sm.id,
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: sm.id,
                     bookingType: 'strangers_meet',
+                    category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: sm.eventDateTime,
                     startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -546,10 +829,21 @@ export class MobileTicketController {
                     qrToken: isExpired ? null : ticketCode,
                     ticketUrl: isExpired ? null : (sm.ticketUrl || null),
                     totalAmount: Number(sm.paymentAmount || 99),
+                    isFree: Number(sm.paymentAmount || 99) <= 0,
                     numberOfGuests: 2,
                     tablePackage: 'Stranger Meetup',
+                    rawRequest: smAny,
                     isPartyPlan: false,
                     isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: true,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: smUser,
+                    host: smUser,
                     venueName: smAny.venue?.name || 'Lunara Venue',
                     venueAddress: `${smAny.venue?.area || smAny.venue?.addressLine1 || ''}, ${smAny.venue?.city || ''}`.trim(),
                     venue: smAny.venue ? {

@@ -10,6 +10,8 @@ import 'package:intl/intl.dart';
 import '../../widgets/profile_share_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import 'vip_membership_screen.dart';
+import '../social/post_detail_screen.dart';
+import '../../models/strangers_meet_request.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -78,7 +80,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   @override
   void didUpdateWidget(ProfileDetailView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.user != oldWidget.user) {
+    final userChanged = widget.user.id != oldWidget.user.id;
+    if (userChanged) {
       _currentUser = widget.user;
       _localSwipedAction = widget.swipedAction ??
           (widget.user.isSuperLiked
@@ -90,8 +93,17 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           if (mounted) setState(() => _isLoadingSwipeStatus = false);
         });
       }
-    } else if (widget.swipedAction != oldWidget.swipedAction) {
-      _localSwipedAction = widget.swipedAction;
+    } else {
+      _currentUser = widget.user;
+      if (widget.swipedAction != null && widget.swipedAction != _localSwipedAction) {
+        _localSwipedAction = widget.swipedAction;
+      } else if (_localSwipedAction == null) {
+        if (widget.user.isSuperLiked) {
+          _localSwipedAction = 'superlike';
+        } else if (widget.user.isLiked) {
+          _localSwipedAction = 'like';
+        }
+      }
     }
   }
 
@@ -1126,44 +1138,67 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     color: Colors.white,
                   ),
                   iconSize: isLiked ? 34 : 32,
-                  // Only allow tap if not already liked/superliked, not limit-hit,
-                  // and not already waiting on a previous tap's result.
-                  onPressed: (isActed || likeDisabled || _isLikeProcessing)
+                  onPressed: (_isLikeProcessing || likeDisabled)
                       ? null
                       : () async {
-                          if (widget.onLike != null) {
-                            // Delegate to the parent's handler and wait for its
-                            // real, server-confirmed outcome — never mark this
-                            // button as liked ourselves. The parent updates
-                            // `swipedAction` on success, which this widget
-                            // picks up via didUpdateWidget; on failure (e.g.
-                            // limit reached) nothing here changes, so the
-                            // button correctly stays un-liked.
-                            setState(() => _isLikeProcessing = true);
-                            try {
+                          if (isLiked) {
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('You already liked ${_currentUser.firstName}! ❤️'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
+                          if (isSuperLiked) {
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('You already Super Liked ${_currentUser.firstName}! 🌟'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() => _isLikeProcessing = true);
+                          try {
+                            if (widget.onLike != null) {
                               await widget.onLike!.call();
-                            } finally {
-                              if (mounted) setState(() => _isLikeProcessing = false);
+                              if (mounted) {
+                                setState(() => _localSwipedAction = 'like');
+                              }
+                            } else {
+                              final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
+                              if (!mounted) return;
+                              if (res == null || res['limitReached'] == true) {
+                                showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
+                                return;
+                              }
+                              setState(() => _localSwipedAction = 'like');
+                              if (res['matched'] == true) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                    backgroundColor: const Color(0xFF10B981),
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('You liked ${_currentUser.firstName}! ❤️'),
+                                    backgroundColor: LunaraTheme.electricViolet,
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                              _checkUsageWarning(res);
                             }
-                          } else {
-                            setState(() => _isLikeProcessing = true);
-                            final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
-                            if (!mounted) return;
-                            setState(() => _isLikeProcessing = false);
-                            if (res == null || res['limitReached'] == true) {
-                              showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
-                              return;
-                            }
-                            setState(() => _localSwipedAction = 'like');
-                            if (res['matched'] == true) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                  backgroundColor: const Color(0xFF10B981),
-                                ),
-                              );
-                            }
-                            _checkUsageWarning(res);
+                          } finally {
+                            if (mounted) setState(() => _isLikeProcessing = false);
                           }
                         },
                 ),
@@ -1234,39 +1269,56 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  // Allow tap if: not already superliked, AND (not acted at all OR user only liked — to upgrade), AND not already processing.
-                  onPressed: (isSuperLiked || superLikeDisabled || _isSuperProcessing)
+                  onPressed: (_isSuperProcessing || superLikeDisabled)
                       ? null
                       : () async {
-                          if (widget.onSuper != null) {
-                            // Delegate to the parent's handler and wait for its
-                            // real, server-confirmed outcome — same reasoning
-                            // as the Like button above.
-                            setState(() => _isSuperProcessing = true);
-                            try {
+                          if (isSuperLiked) {
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('You already Super Liked ${_currentUser.firstName}! 🌟'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
+                          setState(() => _isSuperProcessing = true);
+                          try {
+                            if (widget.onSuper != null) {
                               await widget.onSuper!.call();
-                            } finally {
-                              if (mounted) setState(() => _isSuperProcessing = false);
+                              if (mounted) {
+                                setState(() => _localSwipedAction = 'superlike');
+                              }
+                            } else {
+                              final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
+                              if (!mounted) return;
+                              if (res == null || res['limitReached'] == true) {
+                                showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
+                                return;
+                              }
+                              setState(() => _localSwipedAction = 'superlike');
+                              if (res['matched'] == true) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                    backgroundColor: const Color(0xFF10B981),
+                                  ),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('You Super Liked ${_currentUser.firstName}! 🌟'),
+                                    backgroundColor: const Color(0xFFFF8C00),
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                              _checkUsageWarning(res);
                             }
-                          } else {
-                            setState(() => _isSuperProcessing = true);
-                            final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
-                            if (!mounted) return;
-                            setState(() => _isSuperProcessing = false);
-                            if (res == null || res['limitReached'] == true) {
-                              showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
-                              return;
-                            }
-                            setState(() => _localSwipedAction = 'superlike');
-                            if (res['matched'] == true) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                  backgroundColor: const Color(0xFF10B981),
-                                ),
-                              );
-                            }
-                            _checkUsageWarning(res);
+                          } finally {
+                            if (mounted) setState(() => _isSuperProcessing = false);
                           }
                         },
                 ),
@@ -1719,20 +1771,24 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
     try {
       final results = await Future.wait([
         ApiService.fetchUserPartyPlans(widget.targetUserId),
+        ApiService.fetchUserStrangersMeets(widget.targetUserId),
         ApiService.fetchMyPartyPlanRequests(),
+        ApiService.fetchJoinedStrangersMeets(),
       ]);
 
-      final List<Map<String, dynamic>> allPlans = results[0];
-      final List<Map<String, dynamic>> myRequests = results[1];
+      final List<Map<String, dynamic>> partyPlans =
+          (results[0] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final List<Map<String, dynamic>> strangersMeets =
+          (results[1] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final List<Map<String, dynamic>> myPartyRequests =
+          (results[2] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final List<StrangersMeetRequest> myJoinedMeets =
+          (results[3] as List?)?.cast<StrangersMeetRequest>() ?? [];
 
-      // Filter only active AND not-yet-passed plans. The backend `status`
-      // field alone isn't enough — a plan stays 'active' in the DB even
-      // after its event date/time has passed (nothing flips it
-      // automatically), so date-filtering is required too, otherwise past
-      // plans stay listed here and "Request to Join" then fails with
-      // "This Party Plan has expired."
       final now = DateTime.now();
-      final activePlans = allPlans.where((plan) {
+
+      // Filter and tag Party Plans
+      final activePartyPlans = partyPlans.where((plan) {
         final status = (plan['status'] ?? 'active').toString().toLowerCase();
         if (status != 'active') return false;
         final rawDateTime = plan['actualPlanDateTime'] ?? plan['planDateTime'];
@@ -1741,21 +1797,53 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
           if (planDateTime != null && planDateTime.isBefore(now)) return false;
         }
         return true;
-      }).toList();
+      }).map((p) => {...p, 'planType': 'party_plan'}).toList();
 
-      // Collect plan IDs that current user has already requested to join (combining sync cache + server response)
+      // Filter and tag Strangers Meets
+      final activeStrangersMeets = strangersMeets.where((meet) {
+        final status = (meet['status'] ?? '').toString().toLowerCase();
+        if (status == 'rejected' || status == 'cancelled' || status == 'not_started') return false;
+        final rawDateTime = meet['eventDateTime'];
+        if (rawDateTime != null) {
+          final meetDateTime = DateTime.tryParse(rawDateTime.toString());
+          if (meetDateTime != null &&
+              meetDateTime.isBefore(now.subtract(const Duration(hours: 6)))) {
+            return false;
+          }
+        }
+        return true;
+      }).map((m) => {...m, 'planType': 'strangers_meet'}).toList();
+
+      // Merge and sort all plans chronologically
+      final allActivePlans = [...activePartyPlans, ...activeStrangersMeets];
+      allActivePlans.sort((a, b) {
+        final dtA = DateTime.tryParse(
+              (a['planDateTime'] ?? a['eventDateTime'] ?? '').toString(),
+            ) ??
+            now;
+        final dtB = DateTime.tryParse(
+              (b['planDateTime'] ?? b['eventDateTime'] ?? '').toString(),
+            ) ??
+            now;
+        return dtA.compareTo(dtB);
+      });
+
+      // Collect plan IDs that current user has already requested to join
       final requestedIds = ApiService.getRequestedPlanIdsSync();
-      for (final req in myRequests) {
+      for (final req in myPartyRequests) {
         final planId =
             req['partyPlanId']?.toString() ?? req['planId']?.toString();
         if (planId != null) {
           requestedIds.add(planId);
         }
       }
+      for (final joined in myJoinedMeets) {
+        requestedIds.add(joined.id);
+      }
 
       if (mounted) {
         setState(() {
-          _plans = activePlans;
+          _plans = allActivePlans;
           _requestedPlanIds = requestedIds;
           _isLoading = false;
         });
@@ -1861,14 +1949,251 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
     }
   }
 
+  Future<void> _sendStrangersMeetJoin(Map<String, dynamic> meet) async {
+    final meetId = meet['id']?.toString() ?? '';
+    if (meetId.isEmpty || _joiningPlanIds.contains(meetId) || _requestedPlanIds.contains(meetId)) return;
+
+    final String subject = meet['subject']?.toString() ?? 'Strangers Meetup';
+    String selectedFood = 'Any';
+    String selectedDrink = 'Any';
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                20,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF140727) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : Colors.black.withValues(alpha: 0.05),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'JOIN STRANGERS MEET',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : Colors.black,
+                      letterSpacing: 1,
+                      fontFamily: 'AllroundGothic',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subject,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? LunaraTheme.cyberCyan
+                          : LunaraTheme.electricViolet,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'FOOD PREFERENCE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white60 : Colors.black54,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: ['Veg', 'Non-Veg', 'Any'].map((pref) {
+                      final isSelected = selectedFood == pref;
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () => setModalState(() => selectedFood = pref),
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? LunaraTheme.electricViolet.withValues(alpha: 0.2)
+                                  : (isDark
+                                      ? Colors.white.withValues(alpha: 0.05)
+                                      : Colors.grey[100]),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? LunaraTheme.electricViolet
+                                    : (isDark ? Colors.white12 : Colors.black12),
+                              ),
+                            ),
+                            child: Text(
+                              pref,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isSelected
+                                    ? FontWeight.w900
+                                    : FontWeight.w600,
+                                color: isSelected
+                                    ? (isDark
+                                        ? Colors.white
+                                        : LunaraTheme.electricViolet)
+                                    : (isDark ? Colors.white70 : Colors.black87),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'DRINK PREFERENCE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white60 : Colors.black54,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: ['Alcoholic', 'Non-Alcoholic', 'Any'].map((pref) {
+                      final isSelected = selectedDrink == pref;
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () => setModalState(() => selectedDrink = pref),
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? LunaraTheme.cyberCyan.withValues(alpha: 0.2)
+                                  : (isDark
+                                      ? Colors.white.withValues(alpha: 0.05)
+                                      : Colors.grey[100]),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? LunaraTheme.cyberCyan
+                                    : (isDark ? Colors.white12 : Colors.black12),
+                              ),
+                            ),
+                            child: Text(
+                              pref,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: isSelected
+                                    ? FontWeight.w900
+                                    : FontWeight.w600,
+                                color: isSelected
+                                    ? (isDark
+                                        ? LunaraTheme.cyberCyan
+                                        : Colors.teal[800])
+                                    : (isDark ? Colors.white70 : Colors.black87),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text(
+                        'SUBMIT JOIN REQUEST',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _joiningPlanIds.add(meetId));
+    try {
+      final success = await ApiService.sendStrangersMeetJoinRequest(
+        meetId,
+        foodPreference: selectedFood,
+        drinkPreference: selectedDrink,
+      );
+      if (success) {
+        setState(() => _requestedPlanIds.add(meetId));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF10B981),
+              content: Text(
+                'Join request sent for "$subject"! The host will review it. 🎉',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _joiningPlanIds.remove(meetId));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
+      initialChildSize: 0.65,
       minChildSize: 0.4,
-      maxChildSize: 0.9,
+      maxChildSize: 0.92,
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
@@ -1977,22 +2302,368 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                         itemCount: _plans.length,
                         itemBuilder: (context, index) {
                           final plan = _plans[index];
-                          final planId =
-                              plan['id']?.toString() ??
+                          final isStrangersMeet =
+                              plan['planType'] == 'strangers_meet';
+                          final planId = plan['id']?.toString() ??
                               plan['planId']?.toString() ??
                               '';
                           final venue =
                               plan['venue'] as Map<String, dynamic>? ?? {};
-                          final venueName = venue['name'] as String? ?? 'Venue';
-                          final description =
-                              plan['description'] as String? ?? '';
+                          final venueName =
+                              venue['name'] as String? ?? 'Venue';
                           final formattedDate = _formatDateTime(
-                            plan['planDateTime'] ?? plan['planDate'],
+                            plan['eventDateTime'] ??
+                                plan['planDateTime'] ??
+                                plan['planDate'],
                           );
                           final hasRequested = _requestedPlanIds.contains(
                             planId,
                           );
                           final isJoining = _joiningPlanIds.contains(planId);
+
+                          if (isStrangersMeet) {
+                            final subject =
+                                plan['subject'] as String? ?? 'Strangers Meetup';
+                            final tagline = plan['tagline'] as String? ?? '';
+                            final numberOfPersons =
+                                plan['numberOfPersons'] ?? 20;
+                            final slotsFilled = plan['slotsFilled'] ??
+                                plan['joinedCount'] ??
+                                0;
+                            final chargesPerHead =
+                                NumberFormat('#,##0').format(
+                                  plan['chargesPerHead'] ?? 0,
+                                );
+                            final dynamicStatus =
+                                plan['dynamicStatus'] as String? ?? 'NEW';
+
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PostDetailScreen(
+                                      post: plan,
+                                      venue: venue,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.04)
+                                      : Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? LunaraTheme.cyberCyan.withValues(alpha: 0.25)
+                                        : Colors.teal.withValues(alpha: 0.2),
+                                    width: 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: isDark ? 0.25 : 0.04,
+                                      ),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: LunaraTheme.cyberCyan
+                                                .withValues(alpha: 0.15),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.groups_rounded,
+                                            color: LunaraTheme.cyberCyan,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: LunaraTheme.cyberCyan
+                                                          .withValues(alpha: 0.15),
+                                                      borderRadius:
+                                                          BorderRadius.circular(6),
+                                                      border: Border.all(
+                                                        color: LunaraTheme.cyberCyan
+                                                            .withValues(alpha: 0.3),
+                                                      ),
+                                                    ),
+                                                    child: const Text(
+                                                      '🤝 STRANGERS MEETUP',
+                                                      style: TextStyle(
+                                                        color: LunaraTheme.cyberCyan,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const Spacer(),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.amberAccent
+                                                          .withValues(alpha: 0.15),
+                                                      borderRadius:
+                                                          BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      dynamicStatus,
+                                                      style: const TextStyle(
+                                                        color: Colors.amberAccent,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                subject,
+                                                style: TextStyle(
+                                                  color: isDark
+                                                      ? Colors.white
+                                                      : Colors.black,
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.3,
+                                                ),
+                                              ),
+                                              if (tagline.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  tagline,
+                                                  style: TextStyle(
+                                                    color: isDark
+                                                        ? Colors.white70
+                                                        : Colors.black87,
+                                                    fontSize: 12,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? Colors.black.withValues(alpha: 0.25)
+                                            : Colors.grey[100],
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.location_on_rounded,
+                                                size: 14,
+                                                color: LunaraTheme.cyberCyan,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  venueName,
+                                                  style: TextStyle(
+                                                    color: isDark
+                                                        ? Colors.white
+                                                        : Colors.black87,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.calendar_today_rounded,
+                                                size: 13,
+                                                color: Colors.grey,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  formattedDate,
+                                                  style: TextStyle(
+                                                    color: isDark
+                                                        ? Colors.white70
+                                                        : Colors.black54,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.person_outline_rounded,
+                                                size: 14,
+                                                color: Colors.amber,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                '$slotsFilled / $numberOfPersons SPOTS',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Colors.amber,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                '₹$chargesPerHead / person',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: Colors.green,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 46,
+                                      child: hasRequested
+                                          ? Container(
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.withValues(
+                                                  alpha: 0.15,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                border: Border.all(
+                                                  color: Colors.green.withValues(
+                                                    alpha: 0.4,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: const Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.check_circle_rounded,
+                                                    color: Colors.green,
+                                                    size: 18,
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Text(
+                                                    'REQUEST SENT / JOINED',
+                                                    style: TextStyle(
+                                                      color: Colors.green,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 12,
+                                                      letterSpacing: 1,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          : ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    LunaraTheme.cyberCyan,
+                                                foregroundColor: Colors.black,
+                                                elevation: 0,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(14),
+                                                ),
+                                              ),
+                                              onPressed: isJoining
+                                                  ? null
+                                                  : () => _sendStrangersMeetJoin(
+                                                        plan,
+                                                      ),
+                                              icon: isJoining
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.black,
+                                                      ),
+                                                    )
+                                                  : const Icon(
+                                                      Icons.group_add_rounded,
+                                                      size: 18,
+                                                    ),
+                                              label: Text(
+                                                isJoining
+                                                    ? 'SENDING...'
+                                                    : 'JOIN STRANGERS MEET',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 12,
+                                                  letterSpacing: 1,
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          // Party Plan Card
+                          final description =
+                              plan['description'] as String? ?? '';
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 16),
@@ -2043,6 +2714,37 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 3,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: LunaraTheme.electricViolet
+                                                      .withValues(alpha: 0.15),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: LunaraTheme.electricViolet
+                                                        .withValues(alpha: 0.3),
+                                                  ),
+                                                ),
+                                                child: const Text(
+                                                  '🎉 PARTY PLAN',
+                                                  style: TextStyle(
+                                                    color: LunaraTheme.electricViolet,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w900,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
                                           Text(
                                             venueName.toUpperCase(),
                                             style: TextStyle(
@@ -2097,9 +2799,8 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                                             color: Colors.green.withValues(
                                               alpha: 0.15,
                                             ),
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(14),
                                             border: Border.all(
                                               color: Colors.green.withValues(
                                                 alpha: 0.4,
@@ -2148,9 +2849,9 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
                                                   height: 16,
                                                   child:
                                                       CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white,
-                                                      ),
+                                                    strokeWidth: 2,
+                                                    color: Colors.white,
+                                                  ),
                                                 )
                                               : const Icon(
                                                   Icons

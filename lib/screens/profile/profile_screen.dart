@@ -585,8 +585,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Expanded(
                 child: Text(
                   isSuperLike
-                      ? 'You Super Liked $firstName! 🌟'
-                      : 'You Liked $firstName! ❤️',
+                      ? 'You Super Liked $firstName! 🌟${_superlikesPerCycle > 0 ? ' ($_superlikesRemaining left)' : ''}'
+                      : 'You Liked $firstName! ❤️${_dailyLikesLimit != 999999 ? ' (${_dailyLikesLimit - _dailyLikesUsed} left today)' : ''}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,

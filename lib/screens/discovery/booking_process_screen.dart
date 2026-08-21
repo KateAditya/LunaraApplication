@@ -1292,6 +1292,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
       _guestsController.text = '2'; // Default for friends
     }
 
+    bool isSubmittingBooking = false;
+
     showModalBottomSheet(
       context: outerContext,
       isScrollControlled: true,
@@ -1755,12 +1757,19 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                             ],
 
                             LunaraActionButton(
-                              text: isLargeParty
-                                  ? 'SUBMIT REQUEST'
-                                  : (isFreeBooking
-                                        ? 'BOOK NOW — IT\'S FREE!'
-                                        : 'PROCEED TO PAYMENT'),
-                              onPressed: () async {
+                              text: isSubmittingBooking
+                                  ? 'PROCESSING...'
+                                  : (isLargeParty
+                                      ? 'SUBMIT REQUEST'
+                                      : (isFreeBooking
+                                            ? 'BOOK NOW — IT\'S FREE!'
+                                            : 'PROCEED TO PAYMENT')),
+                              onPressed: isSubmittingBooking
+                                  ? null
+                                  : () async {
+                                if (isSubmittingBooking) return;
+                                setModalState(() => isSubmittingBooking = true);
+
                                 if (isLargeParty) {
                                   if (_partySubjectController.text
                                           .trim()
@@ -1768,6 +1777,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       _partyRequirementController.text
                                           .trim()
                                           .isEmpty) {
+                                    setModalState(() => isSubmittingBooking = false);
                                     ScaffoldMessenger.of(
                                       outerContext,
                                     ).showSnackBar(
@@ -1782,6 +1792,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   if (_partyMobileController.text
                                       .trim()
                                       .isEmpty) {
+                                    setModalState(() => isSubmittingBooking = false);
                                     ScaffoldMessenger.of(
                                       outerContext,
                                     ).showSnackBar(
@@ -1969,17 +1980,35 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                         venue: widget.venue,
                                         date:
                                             '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                        package: 'Free Entry Ticket',
+                                        package: isSolo ? 'Solo Entry' : 'Free Entry Ticket',
                                         time: _formatTimeOfBooking(
                                           _selectedTime,
                                         ),
-                                        table: 'Standard Table',
+                                        table: isSolo ? 'Solo Entry' : 'Standard Table',
                                         guests: isSolo
-                                            ? '1 Guest'
-                                            : '$guests Guests',
+                                            ? '1'
+                                            : '$guests',
                                         totalPrice: 'FREE (₹0)',
                                         ticketId:
                                             createdBookingId ?? 'FREE_TICKET',
+                                        user: ApiService.cachedCurrentUser,
+                                        booking: {
+                                          'id': createdBookingId,
+                                          'venue': widget.venue,
+                                          'venueId': widget.venue['id'],
+                                          'isSolo': isSolo,
+                                          'goingMode': isSolo ? 'solo' : 'party_request',
+                                          'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                          'category': isSolo ? 'solo' : 'venue_booking',
+                                          'totalAmount': 0,
+                                          'paymentStatus': 'paid',
+                                          'status': 'CONFIRMED',
+                                          'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                          'numberOfGuests': isSolo ? 1 : guests,
+                                          'bookingDate': _selectedDate.toIso8601String(),
+                                          'startTime': _formatTimeOfBooking(_selectedTime),
+                                          'user': ApiService.cachedCurrentUser,
+                                        },
                                       ),
                                     ),
                                   );

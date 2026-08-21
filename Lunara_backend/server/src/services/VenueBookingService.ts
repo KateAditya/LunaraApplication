@@ -120,6 +120,10 @@ export class VenueBookingService {
             }
         }
 
+        const cleanBookingDate = typeof bookingDate === 'string' && bookingDate.includes('T')
+            ? bookingDate.split('T')[0]
+            : String(bookingDate).substring(0, 10);
+
         // Clear the user's own abandoned/unpaid solo or small-party booking
         // attempts for this exact date before proceeding. A PENDING Booking
         // row (with a Razorpay order) is created below BEFORE payment
@@ -133,11 +137,11 @@ export class VenueBookingService {
             const staleSameDayBookings = await Booking.findAll({
                 where: {
                     userId,
-                    bookingDate: new Date(bookingDate),
+                    venueId,
+                    bookingDate: cleanBookingDate,
                     status: BookingStatus.PENDING,
                     paymentStatus: { [Op.ne]: PaymentStatus.PAID },
                     isLargePartyRequest: false,
-                    razorpayOrderId: { [Op.ne]: null as any },
                 },
             });
             for (const stale of staleSameDayBookings) {
@@ -153,7 +157,7 @@ export class VenueBookingService {
             : undefined;
 
         const normalizedStart = normalizeStartTime(startTime);
-        const bookingStartDateTime = new Date(`${bookingDate}T${normalizedStart}:00`);
+        const bookingStartDateTime = new Date(`${cleanBookingDate}T${normalizedStart}:00`);
         if (isNaN(bookingStartDateTime.getTime())) {
             throw new Error('Invalid bookingDate or startTime format');
         }
@@ -188,7 +192,7 @@ export class VenueBookingService {
                 return await Booking.create({
                     userId,
                     venueId,
-                    bookingDate: new Date(bookingDate),
+                    bookingDate: cleanBookingDate as any,
                     startTime: normalizedStart,
                     numberOfGuests: numberOfGuests || (pricing.pkg ? pricing.pkg.maxGuests : 1),
                     totalAmount: pricing.totalAmount,

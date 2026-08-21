@@ -373,6 +373,90 @@ export const getUserJoinedMeets = async (req: Request, res: Response): Promise<v
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/user/:userId
+// Get active/approved strangers meet requests for a specific user's public profile
+// ─────────────────────────────────────────────────────────────────────────────
+export const getUserStrangersMeetsByUserId = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const callerUserId = (req.user as any)?.id;
+
+        const user = await User.findByPk(userId, { attributes: ['id'] });
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const now = new Date();
+        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+
+        let where: any;
+        if (callerUserId && callerUserId === userId) {
+            // Viewing own profile — return all active/approved/in-progress meets
+            where = {
+                userId,
+                status: {
+                    [Op.notIn]: [
+                        StrangersMeetStatus.REJECTED,
+                        StrangersMeetStatus.CANCELLED,
+                        StrangersMeetStatus.NOT_STARTED,
+                    ],
+                },
+            };
+        } else {
+            // Viewing another user's profile — return public/approved/in-progress meets
+            where = {
+                userId,
+                status: {
+                    [Op.in]: [
+                        StrangersMeetStatus.APPROVED,
+                        StrangersMeetStatus.START_CONFIRMATION_PENDING,
+                        StrangersMeetStatus.IN_PROGRESS,
+                        StrangersMeetStatus.END_CONFIRMATION_PENDING,
+                    ],
+                },
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                eventDateTime: { [Op.gte]: sixHoursAgo },
+            };
+        }
+
+        let requests = await StrangersMeetRequest.findAll({
+            where,
+            include: buildIncludes(),
+            order: [['eventDateTime', 'ASC'], ['createdAt', 'DESC']],
+        });
+
+        // Fallback: If no future paid events found, allow approved events for this user
+        if (requests.length === 0 && callerUserId !== userId) {
+            const fallbackWhere = {
+                userId,
+                status: {
+                    [Op.in]: [
+                        StrangersMeetStatus.APPROVED,
+                        StrangersMeetStatus.START_CONFIRMATION_PENDING,
+                        StrangersMeetStatus.IN_PROGRESS,
+                    ],
+                },
+            };
+            requests = await StrangersMeetRequest.findAll({
+                where: fallbackWhere,
+                include: buildIncludes(),
+                order: [['eventDateTime', 'DESC'], ['createdAt', 'DESC']],
+            });
+        }
+
+        res.json({
+            success: true,
+            total: requests.length,
+            data: requests.map(formatRequest),
+        });
+    } catch (err: any) {
+        logger.error('getUserStrangersMeetsByUserId error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch user strangers meets', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/strangers-meet/:id
 // ─────────────────────────────────────────────────────────────────────────────
 export const getRequestById = async (req: Request, res: Response): Promise<void> => {
@@ -1863,7 +1947,7 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
         const userInclude = {
             model: User,
             as: 'user',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'profileImageUrl'],
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
             include: [
                 { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName', 'subscriptionTier'], required: false },
                 { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
@@ -1914,9 +1998,15 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             id: hostRaw.id,
             firstName: hostRaw.firstName,
             lastName: hostRaw.lastName,
+            fullName: `${hostRaw.firstName || ''} ${hostRaw.lastName || ''}`.trim() || 'Host',
+            name: `${hostRaw.firstName || ''} ${hostRaw.lastName || ''}`.trim() || 'Host',
             username: hostRaw.profile?.displayName || (hostRaw.firstName ? `${hostRaw.firstName}_${hostRaw.lastName}`.toLowerCase() : 'user'),
+            phone: hostRaw.phone,
+            mobileNumber: hostRaw.phone,
+            email: hostRaw.email,
             profilePhotoUrl: hostPhoto,
             profileImageUrl: hostPhoto,
+            profilePhoto: hostPhoto,
             photoUrl: hostPhoto,
             image: hostPhoto,
             subscriptionTier: hostRaw.profile?.subscriptionTier || 'FREE',
@@ -1951,6 +2041,10 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             }
         }
 
+        const rawEventDate = new Date(request.eventDateTime);
+        const startTimeStr = rawEventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const totalAmountNum = Number(request.paymentAmount || request.chargesPerHead || 0);
+
         res.json({
             success: true,
             data: {
@@ -1959,19 +2053,23 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                     subject: request.subject,
                     tagline: request.tagline,
                     eventDateTime: request.eventDateTime,
+                    startTime: startTimeStr,
                     numberOfPersons: dynamicParticipantsCount,
                     targetCapacity: request.numberOfPersons,
                     capacity: request.numberOfPersons,
                     slotsFilled: dynamicParticipantsCount,
                     joinedCount: dynamicParticipantsCount,
                     actualParticipantsCount: dynamicParticipantsCount,
-                    paymentAmount: request.paymentAmount,
-                    chargesPerHead: request.chargesPerHead,
+                    paymentAmount: totalAmountNum,
+                    chargesPerHead: Number(request.chargesPerHead || 0),
+                    totalAmount: totalAmountNum,
+                    isFree: totalAmountNum <= 0,
                     status: request.status,
                     paymentStatus: request.paymentStatus,
                     ticketCode: ticketCode,
                     ticketUrl: ticketUrl,
                     host: hostData,
+                    user: hostData,
                     venue: (request as any).venue,
                 },
                 ticketCode: ticketCode,
@@ -1980,6 +2078,9 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                 joinedCount: dynamicParticipantsCount,
                 numberOfPersons: dynamicParticipantsCount,
                 targetCapacity: request.numberOfPersons,
+                host: hostData,
+                user: hostData,
+                venue: (request as any).venue,
             },
         });
     } catch (err: any) {

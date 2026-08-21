@@ -558,7 +558,11 @@ export const getBookings = async (req: Request, res: Response) => {
             where.venueId = venueId;
         }
 
-        if (status) where.status = status;
+        if (status) {
+            where.status = status;
+        } else {
+            where.status = { [Op.ne]: BookingStatus.CANCELLED };
+        }
 
         const isGroupRequested = String(isGroupBooking) === 'true';
         const isLargeRequested = String(isLargePartyRequest) === 'true';
@@ -668,6 +672,37 @@ export const getBookings = async (req: Request, res: Response) => {
                 logger.warn('Failed to fetch GroupParties in getBookings:', gErr);
             }
         }
+
+        // 4. Deduplicate bookings by (userId, venueId, bookingDate, startTime, goingMode)
+        // If a user has a confirmed/paid/completed booking, discard stale/unpaid pending/cancelled duplicate attempts.
+        // If multiple pending bookings exist for the same slot, keep only the newest one.
+        const deduplicatedMap = new Map<string, any>();
+        for (const item of mappedList) {
+            const bDate = item.bookingDate ? String(item.bookingDate).split('T')[0] : '';
+            const bTime = item.startTime ? String(item.startTime).substring(0, 5) : '';
+            const groupKey = `${item.userId || ''}_${item.venueId || ''}_${bDate}_${bTime}_${item.goingMode || 'solo'}`;
+
+            if (!deduplicatedMap.has(groupKey)) {
+                deduplicatedMap.set(groupKey, item);
+            } else {
+                const existing = deduplicatedMap.get(groupKey);
+                const isItemPaidOrConfirmed = item.status === 'confirmed' || item.status === 'completed' || item.paymentStatus === 'paid';
+                const isExistingPaidOrConfirmed = existing.status === 'confirmed' || existing.status === 'completed' || existing.paymentStatus === 'paid';
+
+                if (isItemPaidOrConfirmed && !isExistingPaidOrConfirmed) {
+                    deduplicatedMap.set(groupKey, item);
+                } else if (!isItemPaidOrConfirmed && isExistingPaidOrConfirmed) {
+                    continue;
+                } else {
+                    const existingCreated = new Date(existing.createdAt || 0).getTime();
+                    const itemCreated = new Date(item.createdAt || 0).getTime();
+                    if (itemCreated > existingCreated) {
+                        deduplicatedMap.set(groupKey, item);
+                    }
+                }
+            }
+        }
+        mappedList = Array.from(deduplicatedMap.values());
 
         // Apply pagination in memory over aggregated data
         const total = mappedList.length;

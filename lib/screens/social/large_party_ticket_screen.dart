@@ -86,8 +86,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   _LargePartyPaymentState _computeInitialStateFromLocalMap() {
     final localStatus = (widget.booking['adminApprovalStatus'] ?? widget.booking['status'])?.toString().toLowerCase();
     final paymentStatus = (widget.booking['paymentStatus'])?.toString().toLowerCase();
+    final totalAmount = double.tryParse((widget.booking['totalAmount'] ?? widget.booking['paymentAmount'] ?? '0').toString()) ?? 0.0;
     if (localStatus == 'expired') return _LargePartyPaymentState.expired;
-    if (paymentStatus == 'paid' || localStatus == 'payment_done') {
+    if (paymentStatus == 'paid' || localStatus == 'payment_done' || (localStatus == 'confirmed' && totalAmount <= 0) || (localStatus == 'completed' && totalAmount <= 0)) {
       return _LargePartyPaymentState.paid;
     }
     // Any other/unknown status: never assume paid — wait for server fetch to confirm
@@ -162,6 +163,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         final booking = mapData is Map ? mapData['data'] : null;
         if (booking is Map) {
           setState(() {
+            if (booking['user'] is Map) {
+              _freshHostUser = Map<String, dynamic>.from(booking['user']);
+            } else if (booking['host'] is Map) {
+              _freshHostUser = Map<String, dynamic>.from(booking['host']);
+            }
             if (booking['venue'] is Map) {
               _freshVenue = Map<String, dynamic>.from(booking['venue']);
             }
@@ -180,9 +186,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               }
             }
 
-            final adminApprovalStatus = booking['adminApprovalStatus']?.toString();
-            final bookingStatus = booking['status']?.toString();
-            final isPaid = _freshPaymentStatus == 'paid' || adminApprovalStatus == 'payment_done';
+            final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toLowerCase();
+            final bookingStatus = booking['status']?.toString().toLowerCase();
+            final isFreeBooking = (_freshTotalAmount == null || _freshTotalAmount! <= 0);
+            final isPaid = _freshPaymentStatus == 'paid' || 
+                           adminApprovalStatus == 'payment_done' ||
+                           (bookingStatus == 'confirmed' && isFreeBooking) ||
+                           (bookingStatus == 'completed' && isFreeBooking);
             final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
 
             if (isPaid) {
@@ -217,6 +227,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             if (groupParty is Map) {
               if (groupParty['host'] is Map) {
                 _freshHostUser = Map<String, dynamic>.from(groupParty['host']);
+              } else if (groupParty['user'] is Map) {
+                _freshHostUser = Map<String, dynamic>.from(groupParty['user']);
               }
               if (groupParty['venue'] is Map) {
                 _freshVenue = Map<String, dynamic>.from(groupParty['venue']);
@@ -243,8 +255,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               _freshPaymentMethod = groupParty['paymentMethod']?.toString();
               _amountDue = _freshTotalAmount;
 
-              final gpStatus = groupParty['status']?.toString();
-              final isPaid = _freshPaymentStatus == 'paid' || (gpStatus == 'confirmed' && _freshPaymentStatus != 'pending' && (_freshTotalAmount == null || _freshTotalAmount! <= 0));
+              final gpStatus = groupParty['status']?.toString().toLowerCase();
+              final isFreeGp = (_freshTotalAmount == null || _freshTotalAmount! <= 0);
+              final isPaid = _freshPaymentStatus == 'paid' || 
+                             (gpStatus == 'confirmed' && isFreeGp) ||
+                             (gpStatus == 'completed' && isFreeGp);
               final isExpired = gpStatus == 'expired';
 
               if (isPaid) {
@@ -258,6 +273,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             _canonicalTicketCode = ticketObj['ticketCode']?.toString();
           });
           _initCountdown();
+          return;
         }
       }
     } catch (e) {
@@ -594,9 +610,32 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
       return _freshHostUser!;
     }
-    if (widget.booking['host'] is Map) return Map<String, dynamic>.from(widget.booking['host']);
-    if (widget.booking['user'] is Map) return Map<String, dynamic>.from(widget.booking['user']);
-    if (widget.booking['customer'] is Map) return Map<String, dynamic>.from(widget.booking['customer']);
+    if (widget.booking['host'] is Map && (widget.booking['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.booking['host']);
+    }
+    if (widget.booking['user'] is Map && (widget.booking['user'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.booking['user']);
+    }
+    if (widget.booking['customer'] is Map && (widget.booking['customer'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.booking['customer']);
+    }
+    final cached = ApiService.cachedCurrentUser;
+    if (cached != null) {
+      return {
+        'id': cached.id,
+        'firstName': cached.firstName,
+        'lastName': cached.lastName,
+        'fullName': '${cached.firstName} ${cached.lastName}'.trim(),
+        'name': '${cached.firstName} ${cached.lastName}'.trim(),
+        'username': '${cached.firstName.toLowerCase()}.${cached.lastName.toLowerCase()}',
+        'email': cached.email,
+        'mobileNumber': cached.phone,
+        'phone': cached.phone,
+        'profilePhotoUrl': cached.profilePhoto,
+        'profileImageUrl': cached.profilePhoto,
+        'profilePhoto': cached.profilePhoto,
+      };
+    }
     return <String, dynamic>{};
   }
 

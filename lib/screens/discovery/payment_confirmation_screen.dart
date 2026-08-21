@@ -130,6 +130,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       // Pop the PaymentConfirmationScreen back to live feed
       Navigator.pop(context);
     } else {
+      final isSolo = (widget.guests?.trim() == '1' ||
+          widget.guests?.trim() == '1 Guest' ||
+          widget.package.toLowerCase().contains('solo'));
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -138,10 +141,30 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             date: widget.date,
             package: widget.package,
             time: widget.time,
-            table: widget.table,
-            guests: widget.guests,
+            table: widget.table ?? (isSolo ? 'Solo Entry' : null),
+            guests: isSolo ? '1' : widget.guests,
             totalPrice: widget.totalPrice,
             ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
+            user: ApiService.cachedCurrentUser,
+            booking: {
+              'id': widget.bookingId,
+              'bookingId': widget.bookingId,
+              'venue': widget.venue,
+              'venueId': widget.venue['id'],
+              'isSolo': isSolo,
+              'goingMode': isSolo ? 'solo' : 'venue_booking',
+              'bookingType': isSolo ? 'solo' : 'venue_booking',
+              'category': isSolo ? 'solo' : 'venue_booking',
+              'totalAmount': widget.totalPrice,
+              'paymentStatus': 'paid',
+              'paymentMethod': 'UPI / Net Banking',
+              'status': 'CONFIRMED',
+              'tablePackage': widget.table ?? widget.package,
+              'numberOfGuests': isSolo ? 1 : widget.guests,
+              'bookingDate': widget.date,
+              'startTime': widget.time,
+              'user': ApiService.cachedCurrentUser,
+            },
           ),
         ),
       );
@@ -544,6 +567,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         }
         if (!context.mounted) return;
         Navigator.pop(context); // Close processing dialog
+        final isSolo = (widget.guests?.trim() == '1' ||
+            widget.guests?.trim() == '1 Guest' ||
+            widget.package.toLowerCase().contains('solo'));
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -552,10 +578,30 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               date: widget.date,
               package: widget.package,
               time: widget.time,
-              table: widget.table,
-              guests: widget.guests,
+              table: widget.table ?? (isSolo ? 'Solo Entry' : null),
+              guests: isSolo ? '1' : widget.guests,
               totalPrice: 'FREE (₹0)',
               ticketId: widget.bookingId ?? 'FREE_TICKET',
+              user: ApiService.cachedCurrentUser,
+              booking: {
+                'id': widget.bookingId,
+                'bookingId': widget.bookingId,
+                'venue': widget.venue,
+                'venueId': widget.venue['id'],
+                'isSolo': isSolo,
+                'goingMode': isSolo ? 'solo' : 'venue_booking',
+                'bookingType': isSolo ? 'solo' : 'venue_booking',
+                'category': isSolo ? 'solo' : 'venue_booking',
+                'totalAmount': 0,
+                'paymentStatus': 'paid',
+                'paymentMethod': 'Complimentary',
+                'status': 'CONFIRMED',
+                'tablePackage': widget.table ?? widget.package,
+                'numberOfGuests': isSolo ? 1 : widget.guests,
+                'bookingDate': widget.date,
+                'startTime': widget.time,
+                'user': ApiService.cachedCurrentUser,
+              },
             ),
           ),
         );
@@ -617,6 +663,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 (route) => route.isFirst,
               );
             } else {
+              final isSolo = (widget.guests?.trim() == '1' ||
+                  widget.guests?.trim() == '1 Guest' ||
+                  widget.package.toLowerCase().contains('solo'));
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
@@ -625,10 +674,30 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                     date: widget.date,
                     package: widget.package,
                     time: widget.time,
-                    table: widget.table,
-                    guests: widget.guests,
+                    table: widget.table ?? (isSolo ? 'Solo Entry' : null),
+                    guests: isSolo ? '1' : widget.guests,
                     totalPrice: widget.totalPrice,
                     ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
+                    user: ApiService.cachedCurrentUser,
+                    booking: {
+                      'id': widget.bookingId,
+                      'bookingId': widget.bookingId,
+                      'venue': widget.venue,
+                      'venueId': widget.venue['id'],
+                      'isSolo': isSolo,
+                      'goingMode': isSolo ? 'solo' : 'venue_booking',
+                      'bookingType': isSolo ? 'solo' : 'venue_booking',
+                      'category': isSolo ? 'solo' : 'venue_booking',
+                      'totalAmount': widget.totalPrice,
+                      'paymentStatus': 'paid',
+                      'paymentMethod': 'Lunara Wallet',
+                      'status': 'CONFIRMED',
+                      'tablePackage': widget.table ?? widget.package,
+                      'numberOfGuests': isSolo ? 1 : widget.guests,
+                      'bookingDate': widget.date,
+                      'startTime': widget.time,
+                      'user': ApiService.cachedCurrentUser,
+                    },
                   ),
                 ),
               );
@@ -763,6 +832,9 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         if (widget.package == 'Party Plan Safety Deposit') {
           Navigator.pop(context);
         } else {
+          final isSolo = (widget.guests?.trim() == '1' ||
+              widget.guests?.trim() == '1 Guest' ||
+              widget.package.toLowerCase().contains('solo'));
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -771,10 +843,30 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
                 date: widget.date,
                 package: widget.package,
                 time: widget.time,
-                table: widget.table,
-                guests: widget.guests,
+                table: widget.table ?? (isSolo ? 'Solo Entry' : null),
+                guests: isSolo ? '1' : widget.guests,
                 totalPrice: widget.totalPrice,
                 ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
+                user: ApiService.cachedCurrentUser,
+                booking: {
+                  'id': widget.bookingId,
+                  'bookingId': widget.bookingId,
+                  'venue': widget.venue,
+                  'venueId': widget.venue['id'],
+                  'isSolo': isSolo,
+                  'goingMode': isSolo ? 'solo' : 'venue_booking',
+                  'bookingType': isSolo ? 'solo' : 'venue_booking',
+                  'category': isSolo ? 'solo' : 'venue_booking',
+                  'totalAmount': widget.totalPrice,
+                  'paymentStatus': 'paid',
+                  'paymentMethod': 'UPI / Net Banking',
+                  'status': 'CONFIRMED',
+                  'tablePackage': widget.table ?? widget.package,
+                  'numberOfGuests': isSolo ? 1 : widget.guests,
+                  'bookingDate': widget.date,
+                  'startTime': widget.time,
+                  'user': ApiService.cachedCurrentUser,
+                },
               ),
             ),
           );

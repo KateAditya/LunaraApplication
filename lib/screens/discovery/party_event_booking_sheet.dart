@@ -136,18 +136,37 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   void _navigateToTicket(String ticketCode, double totalPrice) {
     if (!mounted) return;
     Navigator.pop(context); // Close bottom sheet
+
+    final venueMap = widget.event['venueMap'] ?? widget.event['venue'];
+    final eventTitle = widget.event['title']?.toString().trim().isNotEmpty == true
+        ? widget.event['title'].toString()
+        : widget.event['subject']?.toString().trim().isNotEmpty == true
+            ? widget.event['subject'].toString()
+            : null;
+    final bannerUrl = widget.event['bannerImageUrl']?.toString().trim().isNotEmpty == true
+        ? widget.event['bannerImageUrl'].toString()
+        : widget.event['imagePath']?.toString().trim().isNotEmpty == true
+            ? widget.event['imagePath'].toString()
+            : widget.event['image']?.toString().trim().isNotEmpty == true
+                ? widget.event['image'].toString()
+                : null;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => DigitalTicketScreen(
-          venue: widget.event['venueMap'] ?? widget.event['venue'],
+          venue: venueMap,
           date: widget.event['date'],
           package: 'Party Ticket',
-          time: '8:00 PM',
+          time: widget.event['time'] ?? '8:00 PM',
           guests: '$_quantity GUESTS',
           totalPrice: totalPrice == 0 ? '0' : totalPrice.toStringAsFixed(2),
           ticketId: ticketCode,
           status: 'CONFIRMED',
+          booking: widget.event,
+          bannerImageUrl: bannerUrl,
+          eventTitle: eventTitle,
+          isUpcomingNight: true,
         ),
       ),
     );

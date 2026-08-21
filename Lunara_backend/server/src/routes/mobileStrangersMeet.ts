@@ -6,6 +6,7 @@ import {
     createRequest,
     getUserRequests,
     getUserJoinedMeets,
+    getUserStrangersMeetsByUserId,
     getRequestById,
     confirmPayment,
     initiatePayment,
@@ -67,6 +68,16 @@ router.get(
     '/my-requests/:userId',
     [authenticate, param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
     getUserRequests
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/user/:userId
+// Get active/approved strangers meet requests for a specific user's public profile
+// ─────────────────────────────────────────────────────────────────────────────
+router.get(
+    '/user/:userId',
+    [param('userId').isUUID().withMessage('userId must be a valid UUID'), validate],
+    getUserStrangersMeetsByUserId
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

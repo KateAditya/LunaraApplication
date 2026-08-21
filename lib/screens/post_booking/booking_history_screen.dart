@@ -810,6 +810,36 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         }
                       }
 
+                      final bool isEventTicketH = booking['isUpcomingNight'] == true ||
+                          booking['isEventBooking'] == true ||
+                          booking['bookingType'] == 'upcoming_night' ||
+                          booking['bookingType'] == 'event_booking';
+
+                      final partyEventH = booking['partyEvent'];
+                      String? resolvedBannerH;
+                      if (partyEventH is Map) {
+                        resolvedBannerH = partyEventH['bannerImageUrl']?.toString().trim().isNotEmpty == true
+                            ? partyEventH['bannerImageUrl'].toString()
+                            : partyEventH['imagePath']?.toString().trim().isNotEmpty == true
+                                ? partyEventH['imagePath'].toString()
+                                : null;
+                      }
+                      resolvedBannerH ??= booking['bannerImageUrl']?.toString().trim().isNotEmpty == true
+                          ? booking['bannerImageUrl'].toString()
+                          : null;
+
+                      String? resolvedTitleH;
+                      if (partyEventH is Map) {
+                        resolvedTitleH = partyEventH['title']?.toString().trim().isNotEmpty == true
+                            ? partyEventH['title'].toString()
+                            : null;
+                      }
+                      resolvedTitleH ??= booking['eventTitle']?.toString().trim().isNotEmpty == true
+                          ? booking['eventTitle'].toString()
+                          : booking['partySubject']?.toString().trim().isNotEmpty == true
+                              ? booking['partySubject'].toString()
+                              : null;
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -826,6 +856,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                     ? booking['id'].toString().substring(0, 8).toUpperCase()
                                     : 'TICKET'),
                             ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
+                            booking: booking,
+                            bannerImageUrl: resolvedBannerH,
+                            eventTitle: resolvedTitleH,
+                            user: booking['user'] ?? booking['host'] ?? ApiService.cachedCurrentUser,
+                            isUpcomingNight: isEventTicketH,
                           ),
                         ),
                       );
