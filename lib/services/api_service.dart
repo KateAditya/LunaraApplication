@@ -796,8 +796,9 @@ class ApiService {
       final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all', 'userId': userId});
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] is List && (data['data'] as List).isNotEmpty) {
-          return List<Map<String, dynamic>>.from(data['data']);
+        if (data['success'] == true && data['data'] is List) {
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          if (list.isNotEmpty) return list;
         }
       }
     } catch (e) {
@@ -1967,7 +1968,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/strangers-meet/$id/not-started',
-        body: {'userId': userId, if (reason != null) 'reason': reason},
+        body: {'userId': userId, 'reason': ?reason},
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {

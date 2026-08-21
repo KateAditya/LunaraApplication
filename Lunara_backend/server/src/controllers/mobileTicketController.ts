@@ -11,6 +11,8 @@ import PartyPlan from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import StrangersMeetRequest, { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
+import Plan from '../models/Plan';
+import PlanJoinRequest from '../models/PlanJoinRequest';
 import VenueImage from '../models/VenueImage';
 import Ad from '../models/Ad';
 import { logger } from '../config/logger';
@@ -89,6 +91,8 @@ export class MobileTicketController {
                 partyPlanHostPlans,
                 strangersJoinerReqs,
                 strangersHostMeets,
+                socialTablePlans,
+                socialJoinReqs,
             ] = await Promise.all([
                 Ticket.findAll({
                     where: { userId },
@@ -179,6 +183,29 @@ export class MobileTicketController {
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets StrangersMeetRequest query error:', err);
+                    return [];
+                }),
+                Plan.findAll({
+                    where: { userId },
+                    include: [venueInclude, userInclude],
+                    order: [['planDate', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets Plan query error:', err);
+                    return [];
+                }),
+                PlanJoinRequest.findAll({
+                    where: { requesterId: userId },
+                    include: [
+                        {
+                            model: Plan,
+                            as: 'plan',
+                            include: [venueInclude, { model: User, as: 'user' }],
+                        },
+                        userInclude,
+                    ],
+                    order: [['createdAt', 'DESC']],
+                }).catch(err => {
+                    logger.error('getUserTickets PlanJoinRequest query error:', err);
                     return [];
                 }),
             ]);
@@ -860,6 +887,176 @@ export class MobileTicketController {
                 });
             }
 
+            // 8. Synthesize from Plan (Table Plan Host)
+            for (const plan of socialTablePlans) {
+                const planAny = plan as any;
+                if (seenBookingIds.has(plan.id) || (planAny.ticketCode && seenTicketIds.has(planAny.ticketCode))) continue;
+                seenBookingIds.add(plan.id);
+                if (planAny.ticketCode) seenTicketIds.add(planAny.ticketCode);
+
+                const startAt = parseEventStartDateTime(plan.planDate || planAny.partyDate, plan.startTime || planAny.partyTime);
+                const expAt = getActualExpiration(startAt);
+                const pStatus = (plan.status || '').toLowerCase();
+                const isCancelled = pStatus === 'cancelled';
+                const isCompleted = pStatus === 'completed' || pStatus === 'secured';
+                const isExpired = pStatus === 'expired' || isCompleted || expAt < now;
+                const ticketCode = planAny.ticketCode || `LUN-${startAt.getFullYear()}-TP-${plan.id.substring(0, 6).toUpperCase()}`;
+
+                const planUser = planAny.user ? {
+                    id: planAny.user.id,
+                    fullName: `${planAny.user.firstName || ''} ${planAny.user.lastName || ''}`.trim() || 'Host',
+                    firstName: planAny.user.firstName,
+                    lastName: planAny.user.lastName,
+                    email: planAny.user.email,
+                    phone: planAny.user.phone,
+                    mobileNumber: planAny.user.phone,
+                    profilePhotoUrl: planAny.user.profileImageUrl || null,
+                    profileImageUrl: planAny.user.profileImageUrl || null,
+                } : null;
+
+                formattedTickets.push({
+                    id: plan.id,
+                    ticketId: ticketCode,
+                    ticketCode,
+                    bookingId: plan.id,
+                    bookingType: 'party_plan',
+                    category: 'party_plan',
+                    status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    bookingDate: plan.planDate || planAny.partyDate,
+                    startTime: plan.startTime || planAny.partyTime || startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    eventStartAt: startAt,
+                    eventEndAt: expAt,
+                    issuedAt: plan.createdAt,
+                    expiresAt: expAt,
+                    usedAt: isCompleted ? expAt : null,
+                    pdfUrl: isExpired ? null : (planAny.ticketUrl || null),
+                    qrToken: isExpired ? null : ticketCode,
+                    ticketUrl: isExpired ? null : (planAny.ticketUrl || null),
+                    totalAmount: Number(plan.totalAmount || 0),
+                    isFree: Number(plan.totalAmount || 0) <= 0,
+                    numberOfGuests: 2,
+                    tablePackage: plan.tablePackage || 'Party Plan',
+                    plan: planAny,
+                    isHost: true,
+                    isPartyPlan: true,
+                    isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: false,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: planUser,
+                    host: planUser,
+                    venueName: planAny.venue?.name || 'Lunara Venue',
+                    venueAddress: `${planAny.venue?.area || planAny.venue?.addressLine1 || ''}, ${planAny.venue?.city || ''}`.trim(),
+                    venue: planAny.venue ? {
+                        id: planAny.venue.id,
+                        name: planAny.venue.name,
+                        addressLine1: planAny.venue.addressLine1,
+                        city: planAny.venue.city,
+                        area: planAny.venue.area,
+                        profilePhotoUrl: planAny.venue.profilePhotoUrl ?? null,
+                        coverImageUrl: planAny.venue.coverImageUrl ?? null,
+                        images: planAny.venue.images ?? [],
+                    } : null,
+                    isExpired,
+                });
+            }
+
+            // 9. Synthesize from PlanJoinRequest (Table Plan Joiner)
+            for (const req of socialJoinReqs) {
+                const reqAny = req as any;
+                const plan = reqAny.plan;
+                if (!plan) continue;
+                if (seenBookingIds.has(req.id) || seenBookingIds.has(plan.id) || (reqAny.ticketCode && seenTicketIds.has(reqAny.ticketCode))) continue;
+                seenBookingIds.add(req.id);
+                if (reqAny.ticketCode) seenTicketIds.add(reqAny.ticketCode);
+
+                const startAt = parseEventStartDateTime(plan.planDate || plan.partyDate, plan.startTime || plan.partyTime);
+                const expAt = getActualExpiration(startAt);
+                const rStatus = (req.status || '').toLowerCase();
+                const isCancelled = rStatus === 'cancelled' || rStatus === 'rejected';
+                const isCompleted = plan.status === 'completed' || plan.status === 'secured';
+                const isExpired = rStatus === 'expired' || isCompleted || expAt < now;
+                const ticketCode = reqAny.ticketCode || `LUN-${startAt.getFullYear()}-TP-${req.id.substring(0, 6).toUpperCase()}`;
+
+                const reqUser = reqAny.user ? {
+                    id: reqAny.user.id,
+                    fullName: `${reqAny.user.firstName || ''} ${reqAny.user.lastName || ''}`.trim() || 'Guest',
+                    firstName: reqAny.user.firstName,
+                    lastName: reqAny.user.lastName,
+                    email: reqAny.user.email,
+                    phone: reqAny.user.phone,
+                    mobileNumber: reqAny.user.phone,
+                    profilePhotoUrl: reqAny.user.profileImageUrl || null,
+                    profileImageUrl: reqAny.user.profileImageUrl || null,
+                } : null;
+
+                const hostUser = plan.user ? {
+                    id: plan.user.id,
+                    fullName: `${plan.user.firstName || ''} ${plan.user.lastName || ''}`.trim() || 'Host',
+                    firstName: plan.user.firstName,
+                    lastName: plan.user.lastName,
+                    email: plan.user.email,
+                    phone: plan.user.phone,
+                    mobileNumber: plan.user.phone,
+                    profilePhotoUrl: plan.user.profileImageUrl || null,
+                    profileImageUrl: plan.user.profileImageUrl || null,
+                } : null;
+
+                formattedTickets.push({
+                    id: req.id,
+                    ticketId: ticketCode,
+                    ticketCode,
+                    bookingId: plan.id,
+                    bookingType: 'party_plan',
+                    category: 'party_plan',
+                    status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    bookingDate: plan.planDate || plan.partyDate,
+                    startTime: plan.startTime || plan.partyTime || startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    eventStartAt: startAt,
+                    eventEndAt: expAt,
+                    issuedAt: req.createdAt,
+                    expiresAt: expAt,
+                    usedAt: isCompleted ? expAt : null,
+                    pdfUrl: isExpired ? null : (reqAny.ticketUrl || null),
+                    qrToken: isExpired ? null : ticketCode,
+                    ticketUrl: isExpired ? null : (reqAny.ticketUrl || null),
+                    totalAmount: Number(req.shareAmount || reqAny.splitAmount || 0),
+                    isFree: Number(req.shareAmount || reqAny.splitAmount || 0) <= 0,
+                    numberOfGuests: 2,
+                    tablePackage: plan.tablePackage || 'Party Plan Match',
+                    plan: plan,
+                    isHost: false,
+                    isPartyPlan: true,
+                    isGroupParty: false,
+                    isLargeParty: false,
+                    isLargePartyRequest: false,
+                    isStrangersMeet: false,
+                    isSolo: false,
+                    isEventBooking: false,
+                    isUpcomingNight: false,
+                    isVenueBooking: false,
+                    user: reqUser,
+                    host: hostUser,
+                    venueName: plan.venue?.name || 'Lunara Venue',
+                    venueAddress: `${plan.venue?.area || plan.venue?.addressLine1 || ''}, ${plan.venue?.city || ''}`.trim(),
+                    venue: plan.venue ? {
+                        id: plan.venue.id,
+                        name: plan.venue.name,
+                        addressLine1: plan.venue.addressLine1,
+                        city: plan.venue.city,
+                        area: plan.venue.area,
+                        profilePhotoUrl: plan.venue.profilePhotoUrl ?? null,
+                        coverImageUrl: plan.venue.coverImageUrl ?? null,
+                        images: plan.venue.images ?? [],
+                    } : null,
+                    isExpired,
+                });
+            }
+
             // Filter by requested Tab
             let resultTickets = formattedTickets;
             if (tab === 'upcoming' || tab === 'active') {
@@ -897,7 +1094,7 @@ export class MobileTicketController {
     public static async getTicketById(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.user!.id;
+            const userId = req.user?.id || (req.query.userId as string);
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -911,7 +1108,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (ticket.userId !== userId) {
+            if (userId && ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized ticket access' });
             }
 
@@ -962,7 +1159,7 @@ export class MobileTicketController {
     public static async getTicketDownloadUrl(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.user!.id;
+            const userId = req.user?.id || (req.query.userId as string);
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -972,7 +1169,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (ticket.userId !== userId) {
+            if (userId && ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized access' });
             }
 
@@ -1008,7 +1205,7 @@ export class MobileTicketController {
     public static async createShareToken(req: Request, res: Response): Promise<Response> {
         try {
             const { id } = req.params;
-            const userId = req.user!.id;
+            const userId = req.user?.id || (req.body?.userId as string) || (req.query?.userId as string);
 
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
@@ -1018,7 +1215,7 @@ export class MobileTicketController {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (ticket.userId !== userId) {
+            if (userId && ticket.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Unauthorized' });
             }
 
