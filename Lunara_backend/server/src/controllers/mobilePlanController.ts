@@ -366,7 +366,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             partyPlans,
             myTableReqs,
             myPartyReqs,
-            myLargePartyBookings,
+            myBookings,
+            myHostPartyPlans,
             myGroupParties,
             myStrangersMeetReqs,
             myJoinMeets,
@@ -476,22 +477,37 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 })
                 : Promise.resolve([]),
 
-            // 5. My Large Party Requests
+            // 5. My Bookings (Solo, Party Request, Large Party, Event Bookings)
             viewerId
                 ? Booking.findAll({
                     where: {
                         userId: viewerId as string,
-                        isLargePartyRequest: true,
-                        numberOfGuests: { [Op.gt]: 20 }
+                        status: { [Op.ne]: 'cancelled' },
                     },
                     include: [
                         { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
                     ],
+                    order: [['createdAt', 'DESC']],
+                    limit: 30,
+                })
+                : Promise.resolve([]),
+
+            // 6. My Host Party Plans (including unpaid deposits)
+            viewerId
+                ? PartyPlan.findAll({
+                    where: {
+                        userId: viewerId as string,
+                        status: { [Op.ne]: PartyPlanStatus.CANCELLED },
+                    },
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
+                    ],
+                    order: [['createdAt', 'DESC']],
                     limit: 20,
                 })
                 : Promise.resolve([]),
 
-            // 6. My Group Parties (<= 20 friends)
+            // 7. My Group Parties (<= 20 friends)
             viewerId
                 ? GroupParty.findAll({
                     where: { userId: viewerId as string },
@@ -502,7 +518,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 })
                 : Promise.resolve([]),
 
-            // 7. My Strangers Meet Requests
+            // 8. My Strangers Meet Requests
             viewerId
                 ? StrangersMeetRequest.findAll({
                     where: { userId: viewerId as string },
@@ -513,7 +529,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 })
                 : Promise.resolve([]),
 
-            // 8. My requests to join other Strangers Meets
+            // 9. My requests to join other Strangers Meets
             viewerId
                 ? StrangersMeetJoiner.findAll({
                     where: { userId: viewerId as string },
@@ -738,7 +754,191 @@ export const getLiveFeed = async (req: Request, res: Response) => {
 
         let myRequests: any[] = [];
         let incomingRequests: any[] = [];
+        let pendingPayments: any[] = [];
+
         if (viewerId) {
+            // Build pending payments list
+            const pendingPaymentItems: any[] = [];
+
+            // 1. Pending Bookings (Solo, Event, Large Party, Group)
+            myBookings.forEach((b: any) => {
+                const isPaid = (b.paymentStatus || '').toLowerCase() === 'paid';
+                if (!isPaid && b.status !== 'cancelled' && b.status !== 'rejected') {
+                    const dueAmt = Number(b.totalAmount) || Number(b.depositAmount) || 0;
+                    pendingPaymentItems.push({
+                        id: `pending_bk_${b.id}`,
+                        bookingId: b.id,
+                        type: 'pending_payment',
+                        requestType: 'booking_payment',
+                        category: 'booking',
+                        paymentCategory: b.isLargePartyRequest ? 'large_party' : (b.goingMode === 'party_request' ? 'group_party' : 'booking'),
+                        status: 'payment_pending',
+                        paymentStatus: b.paymentStatus || 'pending',
+                        amountDue: dueAmt,
+                        title: '💳 Booking Payment Pending',
+                        body: `Your reservation at ${b.venue?.name || 'Venue'} is awaiting payment (₹${dueAmt}). Tap to complete now.`,
+                        venueName: b.venue?.name || 'Venue',
+                        venue: b.venue,
+                        actionRequired: true,
+                        hasPendingPayment: true,
+                        createdAt: b.createdAt,
+                        bookingDate: b.bookingDate,
+                        startTime: b.startTime,
+                        numberOfGuests: b.numberOfGuests,
+                        payActionPayload: {
+                            type: 'booking',
+                            bookingId: b.id,
+                            venueId: b.venueId,
+                            venueName: b.venue?.name,
+                            amount: dueAmt,
+                            isLargeParty: b.isLargePartyRequest,
+                            goingMode: b.goingMode
+                        }
+                    });
+                }
+            });
+
+            // 2. Pending Party Plans (Host Deposit)
+            myHostPartyPlans.forEach((p: any) => {
+                const hostPaid = (p.hostPaymentStatus || '').toLowerCase() === 'paid';
+                if (!hostPaid && p.status !== 'cancelled') {
+                    const depositAmt = Number(p.depositAmount) || 1999;
+                    pendingPaymentItems.push({
+                        id: `pending_pp_${p.id}`,
+                        planId: p.id,
+                        type: 'pending_payment',
+                        requestType: 'party_plan_host_deposit',
+                        category: 'party_plan',
+                        paymentCategory: 'party_plan',
+                        status: 'payment_pending',
+                        paymentStatus: p.hostPaymentStatus || 'unpaid',
+                        amountDue: depositAmt,
+                        title: '⚡ Party Plan Deposit Required',
+                        body: `Pay ₹${depositAmt} host deposit for your plan at ${p.venue?.name || 'Venue'} to make it live!`,
+                        venueName: p.venue?.name || 'Venue',
+                        venue: p.venue,
+                        actionRequired: true,
+                        hasPendingPayment: true,
+                        createdAt: p.createdAt,
+                        planDateTime: p.planDateTime,
+                        payActionPayload: {
+                            type: 'party_plan',
+                            planId: p.id,
+                            venueId: p.venueId,
+                            venueName: p.venue?.name,
+                            amount: depositAmt,
+                            isHost: true
+                        }
+                    });
+                }
+            });
+
+            // 3. Pending Party Plan Joiner Requests
+            myPartyReqs.forEach((r: any) => {
+                const joinerPaid = (r.joinerPaymentStatus || '').toLowerCase() === 'paid';
+                if (!joinerPaid && (r.status === 'accepted' || r.status === 'payment_pending')) {
+                    const shareAmt = Number(r.plan?.depositAmount) || 1999;
+                    pendingPaymentItems.push({
+                        id: `pending_pp_join_${r.id}`,
+                        requestId: r.id,
+                        planId: r.planId,
+                        type: 'pending_payment',
+                        requestType: 'party_plan_joiner_share',
+                        category: 'party_plan',
+                        paymentCategory: 'party_plan',
+                        status: 'payment_pending',
+                        paymentStatus: r.joinerPaymentStatus || 'unpaid',
+                        amountDue: shareAmt,
+                        title: '🤝 Party Plan Share Payment',
+                        body: `Your request was accepted! Pay ₹${shareAmt} to secure your spot at ${r.plan?.venue?.name || 'Venue'}.`,
+                        venueName: r.plan?.venue?.name || 'Venue',
+                        venue: r.plan?.venue,
+                        actionRequired: true,
+                        hasPendingPayment: true,
+                        createdAt: r.createdAt,
+                        paymentTimeoutAt: r.paymentTimeoutAt,
+                        payActionPayload: {
+                            type: 'party_plan_join',
+                            requestId: r.id,
+                            planId: r.planId,
+                            venueId: r.plan?.venueId,
+                            amount: shareAmt,
+                            isJoiner: true
+                        }
+                    });
+                }
+            });
+
+            // 4. Pending Group Parties
+            myGroupParties.forEach((gp: any) => {
+                const gpPaid = (gp.paymentStatus || '').toLowerCase() === 'paid';
+                if (!gpPaid && gp.status !== 'cancelled') {
+                    const gpAmt = Number(gp.totalAmount) || 0;
+                    pendingPaymentItems.push({
+                        id: `pending_gp_${gp.id}`,
+                        groupPartyId: gp.id,
+                        type: 'pending_payment',
+                        requestType: 'group_party_payment',
+                        category: 'group_party',
+                        paymentCategory: 'group_party',
+                        status: 'payment_pending',
+                        paymentStatus: gp.paymentStatus || 'pending',
+                        amountDue: gpAmt,
+                        title: '👥 Group Party Deposit Pending',
+                        body: `Complete payment of ₹${gpAmt} for your group of ${gp.numberOfFriends} friends at ${gp.venue?.name || 'Venue'}.`,
+                        venueName: gp.venue?.name || 'Venue',
+                        venue: gp.venue,
+                        actionRequired: true,
+                        hasPendingPayment: true,
+                        createdAt: gp.createdAt,
+                        partyDate: gp.partyDate,
+                        payActionPayload: {
+                            type: 'group_party',
+                            groupPartyId: gp.id,
+                            bookingId: gp.id,
+                            venueId: gp.venueId,
+                            venueName: gp.venue?.name,
+                            amount: gpAmt
+                        }
+                    });
+                }
+            });
+
+            // 5. Pending Strangers Meets
+            myStrangersMeetReqs.forEach((sm: any) => {
+                const smPaid = (sm.paymentStatus || '').toLowerCase() === 'paid';
+                if (!smPaid && sm.status !== 'cancelled') {
+                    const smAmt = Number(sm.paymentAmount) || 0;
+                    pendingPaymentItems.push({
+                        id: `pending_sm_${sm.id}`,
+                        meetId: sm.id,
+                        type: 'pending_payment',
+                        requestType: 'stranger_meet_payment',
+                        category: 'stranger_meet',
+                        paymentCategory: 'stranger_meet',
+                        status: 'payment_pending',
+                        paymentStatus: sm.paymentStatus || 'pending',
+                        amountDue: smAmt,
+                        title: '🎭 Stranger Meet Deposit Pending',
+                        body: `Pay ₹${smAmt} deposit to host your Stranger Meetup at ${sm.venue?.name || 'Venue'}.`,
+                        venueName: sm.venue?.name || 'Venue',
+                        venue: sm.venue,
+                        actionRequired: true,
+                        hasPendingPayment: true,
+                        createdAt: sm.createdAt,
+                        eventDateTime: sm.eventDateTime,
+                        payActionPayload: {
+                            type: 'stranger_meet',
+                            meetId: sm.id,
+                            venueId: sm.venueId,
+                            amount: smAmt
+                        }
+                    });
+                }
+            });
+
+            pendingPayments = pendingPaymentItems;
+
             myRequests = [
                 ...myTableReqs.map((r: any) => ({
                     id: r.id,
@@ -777,19 +977,65 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         creator: (r.plan as any).creator,
                     } : null,
                 })),
-                ...myLargePartyBookings.map((b: any) => ({
+
+                ...pendingPaymentItems,
+                ...myBookings.map((b: any) => ({
                     id: b.id,
                     type: 'my_request',
-                    requestType: 'large_party_request',
-                    status: b.adminApprovalStatus || 'pending',
+                    requestType: b.isLargePartyRequest ? 'large_party_request' : (b.goingMode === 'party_request' ? 'group_booking' : 'booking'),
+                    status: b.status || 'pending',
+                    paymentStatus: b.paymentStatus || 'pending',
                     createdAt: b.createdAt,
-                    booking: b
+                    booking: {
+                        id: b.id,
+                        bookingId: b.id,
+                        venue: b.venue,
+                        venueName: b.venue?.name,
+                        venueAddress: b.venue?.addressLine1 ?? b.venue?.city ?? '',
+                        status: b.status || 'pending',
+                        paymentStatus: b.paymentStatus || 'pending',
+                        numberOfGuests: b.numberOfGuests,
+                        partySubject: b.partySubject || (b.goingMode === 'party_request' ? 'Group Party' : 'Table Booking'),
+                        bookingDate: b.bookingDate,
+                        startTime: b.startTime,
+                        totalAmount: b.totalAmount,
+                        depositAmount: b.depositAmount,
+                        approvedAmount: b.totalAmount,
+                        charges: b.totalAmount,
+                        createdAt: b.createdAt,
+                        mobileNumber: b.mobileNumber,
+                        goingMode: b.goingMode,
+                        isLargePartyRequest: b.isLargePartyRequest,
+                    }
+                })),
+                ...myHostPartyPlans.map((p: any) => ({
+                    id: p.id,
+                    type: 'my_request',
+                    requestType: 'party_plan_host',
+                    status: p.status || 'active',
+                    paymentStatus: p.hostPaymentStatus || 'unpaid',
+                    hostPaymentStatus: p.hostPaymentStatus || 'unpaid',
+                    depositAmount: p.depositAmount,
+                    createdAt: p.createdAt,
+                    plan: {
+                        id: p.id,
+                        userId: p.userId,
+                        message: p.message,
+                        planDateTime: p.planDateTime,
+                        hostPaymentStatus: p.hostPaymentStatus,
+                        depositAmount: p.depositAmount,
+                        status: p.status,
+                        isLive: p.isLive,
+                        paymentStatus: p.paymentStatus,
+                        venue: p.venue,
+                    }
                 })),
                 ...myGroupParties.map((gp: any) => ({
                     id: gp.id,
                     type: 'my_request',
                     requestType: 'large_party_request',
                     status: gp.status || 'pending',
+                    paymentStatus: gp.paymentStatus || 'pending',
                     createdAt: gp.createdAt,
                     booking: {
                         id: gp.id,
@@ -798,6 +1044,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         venueName: gp.venue?.name,
                         venueAddress: gp.venue?.addressLine1 ?? gp.venue?.city ?? '',
                         status: gp.status || 'pending',
+                        paymentStatus: gp.paymentStatus || 'pending',
                         bookingStatus: gp.status || 'pending',
                         numberOfGuests: gp.numberOfFriends,
                         partySubject: 'Group Party',
@@ -918,7 +1165,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             count: combinedFeed.length,
             data: combinedFeed,
             myRequests,
-            incomingRequests
+            incomingRequests,
+            pendingPayments
         });
     } catch (err: any) {
         logger.error('getLiveFeed:', err);

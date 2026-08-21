@@ -703,6 +703,123 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
   }
 
+  Future<void> _initiatePendingBookingPayment(Map<String, dynamic> payPayload) async {
+    final type = (payPayload['type'] ?? '').toString();
+    final bookingId = (payPayload['bookingId'] ?? payPayload['id'] ?? '').toString();
+    final planId = (payPayload['planId'] ?? '').toString();
+    final groupPartyId = (payPayload['groupPartyId'] ?? '').toString();
+    final venueName = payPayload['venueName'] ?? payPayload['venue']?['name'] ?? 'Venue';
+    final rawAmount = payPayload['amount'] ?? payPayload['amountDue'] ?? payPayload['totalAmount'] ?? payPayload['depositAmount'] ?? 1999.0;
+    final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
+
+    if (type == 'group_party' || groupPartyId.isNotEmpty || (payPayload['isLargeParty'] == true)) {
+      await _initiateLargePartyPayment(payPayload);
+      return;
+    }
+
+    if (type == 'party_plan' || type == 'party_plan_join' || planId.isNotEmpty) {
+      if (planId.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PartyPlanDetailScreen(plan: {'id': planId, ...payPayload}),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (bookingId.isEmpty) return;
+
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Complete Booking Payment',
+      subtitle: 'Reservation at $venueName',
+      itemPrice: amount,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(
+          amount: amount,
+          bookingId: bookingId,
+          paymentType: 'booking',
+        );
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.payNowBooking(
+            bookingId,
+            paymentMethod: 'wallet',
+            transactionId: transactionId,
+          );
+          if (confirmRes != null && mounted) {
+            _loadFeed(showLoader: false);
+            TopNotificationBanner.show(
+              title: 'Booking Confirmed! 🎉',
+              body: 'Your booking at $venueName is paid and confirmed.',
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Booking Paid via Smart Credit Wallet!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            return true;
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        final confirmRes = await ApiService.payNowBooking(
+          bookingId,
+          paymentMethod: 'razorpay',
+          razorpayOrderId: 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+          razorpayPaymentId: 'mock_pay_${DateTime.now().millisecondsSinceEpoch}',
+          razorpaySignature: 'mock_signature',
+        );
+        if (confirmRes != null && mounted) {
+          _loadFeed(showLoader: false);
+          TopNotificationBanner.show(
+            title: 'Booking Confirmed! 🎉',
+            body: 'Your payment at $venueName was verified successfully.',
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Booking Payment Successful!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      },
+      onHybridPayment: (shortfall) async {
+        await ApiService.payWithWallet(
+          amount: amount - shortfall,
+          bookingId: bookingId,
+          paymentType: 'booking',
+        );
+        final confirmRes = await ApiService.payNowBooking(
+          bookingId,
+          paymentMethod: 'hybrid',
+          razorpayOrderId: 'order_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+          razorpayPaymentId: 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+          razorpaySignature: 'mock_signature',
+        );
+        if (confirmRes != null && mounted) {
+          _loadFeed(showLoader: false);
+          TopNotificationBanner.show(
+            title: 'Booking Confirmed! 🎉',
+            body: 'Your booking is confirmed with hybrid payment.',
+          );
+        }
+      },
+    );
+  }
+
   Future<void> _handleAcceptPartyPlan(String reqId) async {
     showDialog(
       context: context,
@@ -1888,6 +2005,71 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         onActionTap: actionTap,
         actions: isExpired ? null : actionsList,
         rawData: n,
+      ));
+    }
+
+    // 6. Process Non-Party Feed Items (Pending Bookings, Table Plan Join Requests, System Action Items)
+    for (final fi in nonPartyFeedItems) {
+      final id = fi['id']?.toString() ?? '';
+      final isPendingPayment = fi['hasPendingPayment'] == true ||
+          fi['type'] == 'pending_payment' ||
+          fi['requestType'] == 'booking_payment' ||
+          fi['paymentStatus'] == 'pending' ||
+          fi['status'] == 'payment_pending';
+
+      final title = fi['title']?.toString() ??
+          (isPendingPayment ? '💳 Complete Booking Payment' : (fi['partySubject'] ?? 'Table Booking'));
+      final body = fi['body']?.toString() ??
+          (isPendingPayment
+              ? 'Your reservation at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'} is waiting for payment (₹${fi['amountDue'] ?? fi['totalAmount'] ?? fi['depositAmount'] ?? 0}). Tap to pay now!'
+              : 'Booking at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'}');
+      final isRead = false; // Action required is active!
+      final createdAt = _parseDateTime(fi['createdAt']);
+      final timeAgo = _formatTimeAgo(fi['createdAt']);
+
+      Color accentColor = isPendingPayment ? const Color(0xFFF59E0B) : const Color(0xFF7C3AED);
+      IconData icon = isPendingPayment ? Icons.payment_rounded : Icons.confirmation_number_rounded;
+      String? badge = isPendingPayment ? 'ACTION REQUIRED' : 'BOOKING';
+      String? actionText = isPendingPayment ? 'Complete Payment' : null;
+      VoidCallback? actionTap;
+
+      if (isPendingPayment) {
+        final bookingData = fi['booking'] is Map ? Map<String, dynamic>.from(fi['booking']) : fi;
+        final payPayload = fi['payActionPayload'] is Map ? Map<String, dynamic>.from(fi['payActionPayload']) : bookingData;
+        actionTap = () => _initiatePendingBookingPayment(payPayload);
+      }
+
+      List<NotificationAction>? actionsList;
+      if (actionText != null && actionTap != null) {
+        actionsList = [
+          NotificationAction(
+            label: actionText,
+            onTap: actionTap,
+            isPrimary: true,
+            icon: Icons.credit_card_rounded,
+          ),
+        ];
+      }
+
+      items.add(UnifiedNotificationItem(
+        id: id.isNotEmpty ? id : 'item_${DateTime.now().millisecondsSinceEpoch}',
+        category: 'booking',
+        title: title,
+        body: body,
+        createdAt: createdAt,
+        timeAgo: timeAgo,
+        isRead: isRead,
+        isExpired: false,
+        priority: isPendingPayment ? 'CRITICAL' : 'NORMAL',
+        badgeText: badge,
+        accentColor: accentColor,
+        categoryIcon: icon,
+        avatarUrl: fi['venue']?['images']?[0]?['filePath'] ?? fi['venueImageUrl'],
+        actionButtonText: actionText,
+        onActionTap: actionTap,
+        actions: actionsList,
+        rawData: fi,
+        statusSummary: isPendingPayment ? 'Payment Pending' : (fi['status']?.toString().toUpperCase()),
       ));
     }
 

@@ -954,13 +954,16 @@ class ApiService {
             'incomingRequests': List<Map<String, dynamic>>.from(
               data['incomingRequests'] ?? [],
             ),
+            'pendingPayments': List<Map<String, dynamic>>.from(
+              data['pendingPayments'] ?? [],
+            ),
           };
         }
       }
-      return {'feed': [], 'myRequests': [], 'incomingRequests': []};
+      return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
     } catch (e) {
       debugPrint('Error fetching live feed: $e');
-      return {'feed': [], 'myRequests': [], 'incomingRequests': []};
+      return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
     }
   }
 

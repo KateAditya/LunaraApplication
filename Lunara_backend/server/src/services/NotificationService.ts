@@ -247,4 +247,43 @@ export class NotificationService {
             where: { recipientUserId, isRead: false },
         });
     }
+
+    /**
+     * Dispatch specialized pending payment notification with high priority and actionType: pay_now
+     */
+    public static async dispatchPendingPaymentNotification(params: {
+        recipientUserId: string;
+        entityType: 'booking' | 'party_plan' | 'group_party' | 'stranger_meet';
+        entityId: string;
+        venueName: string;
+        amount: number;
+        title?: string;
+        body?: string;
+        metadata?: Record<string, any>;
+    }): Promise<Notification | null> {
+        const { recipientUserId, entityType, entityId, venueName, amount, metadata } = params;
+        const title = params.title || '💳 Reservation Payment Pending';
+        const body = params.body || `Your reservation at ${venueName} is awaiting payment (₹${amount}). Complete payment now to confirm your spot!`;
+
+        return await this.dispatch({
+            recipientUserId,
+            eventType: 'PAYMENT_REQUIRED' as any,
+            category: 'payments',
+            entityType,
+            entityId,
+            title,
+            body,
+            actionType: 'pay_now',
+            priority: 'HIGH',
+            metadata: {
+                ...metadata,
+                amount,
+                venueName,
+                entityId,
+                entityType,
+                actionRequired: true,
+                paymentStatus: 'pending'
+            }
+        });
+    }
 }

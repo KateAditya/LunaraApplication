@@ -1545,8 +1545,8 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
                     bPaid = bAmount;
                 } else if (b.paymentStatus === 'partially_paid') {
                     bPaid = Number(b.depositAmount) || 0;
-                } else if (b.depositAmount && Number(b.depositAmount) > 0) {
-                    bPaid = Number(b.depositAmount);
+                } else {
+                    bPaid = 0;
                 }
             }
 
