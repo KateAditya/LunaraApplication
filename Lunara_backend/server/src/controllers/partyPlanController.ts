@@ -261,6 +261,9 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
         // logs/error.log). The caller schedules generation using the
         // returned booking id, only after the transaction actually commits.
 
+        const isHostWallet = Boolean(plan.hostRazorpayPaymentId && (plan.hostRazorpayPaymentId.startsWith('wallet_') || plan.hostRazorpayPaymentId.startsWith('order_mock_wallet')));
+        const isJoinerWallet = Boolean(request.joinerRazorpayPaymentId && (request.joinerRazorpayPaymentId.startsWith('wallet_') || request.joinerRazorpayPaymentId.startsWith('order_mock_wallet')));
+
         // Create Payment record for Host
         await Payment.create({
             transactionId: plan.hostRazorpayPaymentId || `TXN_HOST_${plan.id}`,
@@ -268,10 +271,11 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             userId: plan.userId,
             amount: plan.depositAmount ? Number(plan.depositAmount) : 99.00,
             currency: 'INR',
-            paymentMethod: PaymentMethod.RAZORPAY,
-            paymentGateway: 'razorpay',
+            paymentMethod: isHostWallet ? PaymentMethod.WALLET : PaymentMethod.RAZORPAY,
+            paymentGateway: isHostWallet ? 'wallet' : 'razorpay',
             status: PaymentStatus.SUCCESSFUL,
             refundAmount: 0,
+            createdAt: plan.createdAt || new Date(),
         }, { transaction });
 
         // Create Payment record for Joiner
@@ -281,10 +285,11 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             userId: request.requesterId,
             amount: plan.paymentType === 'self_pay' ? 0.00 : 99.00,
             currency: 'INR',
-            paymentMethod: PaymentMethod.RAZORPAY,
-            paymentGateway: 'razorpay',
+            paymentMethod: isJoinerWallet ? PaymentMethod.WALLET : PaymentMethod.RAZORPAY,
+            paymentGateway: isJoinerWallet ? 'wallet' : 'razorpay',
             status: PaymentStatus.SUCCESSFUL,
             refundAmount: 0,
+            createdAt: request.createdAt || new Date(),
         }, { transaction });
 
         // Emit party_plan_ticket_generated so the client can refresh the ticket screen
@@ -1059,7 +1064,8 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             // Only Razorpay-gateway payments need a new ledger entry here —
             // a 'wallet_'-prefixed order id means this was already paid (and
             // logged) via the Smart Credit Wallet balance debit path.
-            if (!razorpay_order_id || !(razorpay_order_id as string).startsWith('wallet_')) {
+            const isHostWalletPaid = (!!razorpay_order_id && ((razorpay_order_id as string).startsWith('wallet_') || razorpay_order_id === 'order_mock_wallet')) || (!!razorpay_payment_id && (razorpay_payment_id as string).startsWith('wallet_'));
+            if (!isHostWalletPaid) {
                 await logDepositLedgerEntry({
                     userId: plan.userId,
                     partyPlanId: plan.id,
@@ -2979,7 +2985,7 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
             // Only Razorpay-gateway payments need a new ledger entry — a
             // 'wallet_'-prefixed order id means this was already paid (and
             // logged) via the Smart Credit Wallet balance debit path.
-            const isWalletPaid = !!razorpay_order_id && (razorpay_order_id as string).startsWith('wallet_');
+            const isWalletPaid = (!!razorpay_order_id && ((razorpay_order_id as string).startsWith('wallet_') || razorpay_order_id === 'order_mock_wallet')) || (!!razorpay_payment_id && (razorpay_payment_id as string).startsWith('wallet_'));
 
             if (hostPaid) {
                 // Both parties have paid → MATCH_CONFIRMED

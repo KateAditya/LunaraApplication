@@ -84,12 +84,16 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
             if (rawItem is! Map) return;
             final map = Map<String, dynamic>.from(rawItem);
             if (forcedType != null) map['type'] = forcedType;
-            final key = (map['txnId'] ??
-                    map['paymentId'] ??
-                    map['reference'] ??
-                    map['id'] ??
-                    '${map['type']}_${map['createdAt']}_${map['amount']}')
-                .toString();
+            final planId = map['partyPlanId'] ?? map['context']?['partyPlanId'];
+            final role = map['role'] ?? map['context']?['role'] ?? '';
+            final key = (planId != null && planId.toString().isNotEmpty)
+                ? 'party_plan_${planId}_$role'
+                : (map['txnId'] ??
+                        map['paymentId'] ??
+                        map['reference'] ??
+                        map['id'] ??
+                        '${map['type']}_${map['createdAt']}_${map['amount']}')
+                    .toString();
             if (key.isNotEmpty && key != 'null') {
               if (seenKeys.contains(key)) return;
               seenKeys.add(key);
@@ -956,6 +960,12 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
       icon = Icons.card_giftcard_rounded;
       iconBg = const Color(0xFF10B981).withValues(alpha: 0.1);
       iconColor = const Color(0xFF10B981);
+    } else if (type.contains('deposit')) {
+      final label = (contextData['label'] ?? (contextData['role'] == 'host' ? 'HOST SAFETY DEPOSIT' : (contextData['role'] == 'joiner' ? 'JOINER SAFETY DEPOSIT' : 'PARTY PLAN DEPOSIT'))).toString();
+      title = label.toUpperCase();
+      icon = Icons.local_activity_rounded;
+      iconBg = LunaraTheme.electricViolet.withValues(alpha: 0.1);
+      iconColor = LunaraTheme.electricViolet;
     } else {
       title = (contextData['venueName'] ?? 'TABLE BOOKING').toString().toUpperCase();
       icon = Icons.local_activity_rounded;

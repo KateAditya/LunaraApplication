@@ -4246,12 +4246,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             return completer.future;
                                           }
                                           // ────────────────────────────────────────────────────────────────────────────
-
                                           final selectedVenueName =
                                               selectedVenue?.name ?? 'Venue';
                                           final isPriv = selectedPrivacy == 'Private' || selectedPrivacy == 'Both';
 
-                                          await SmartCheckoutSheet.show(
+                                          final bool? paymentSuccess = await SmartCheckoutSheet.show(
                                             context: context,
                                             title: isPriv
                                                 ? '🔒 Private Plan! Pay Host Deposit'
@@ -4347,7 +4346,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             },
                                             onDirectPayment: () async {
                                               // Direct Razorpay gateway — no mock, real checkout
-                                              await launchRazorpayForHostDeposit(
+                                              return await launchRazorpayForHostDeposit(
                                                 amount: depositAmount,
                                                 venueName: selectedVenueName,
                                                 existingOrderId:
@@ -4391,7 +4390,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                                   walletApplied
                                                   ? shortfall
                                                   : depositAmount;
-                                              await launchRazorpayForHostDeposit(
+                                              return await launchRazorpayForHostDeposit(
                                                 amount: amountToCollect,
                                                 venueName: selectedVenueName,
                                                 existingOrderId:
@@ -4399,6 +4398,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                               );
                                             },
                                           );
+
+                                          if (!mounted) return;
+                                          if (paymentSuccess == true) {
+                                            // Direct user to the Live Feed so they can see their post immediately
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => const LiveFeedScreen(
+                                                  initialTabIndex: 1,
+                                                ),
+                                              ),
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  '⚠️ Plan created as inactive. Complete your ₹99 deposit anytime from Manage Plans to activate it.',
+                                                ),
+                                                backgroundColor: Colors.orange,
+                                                duration: Duration(seconds: 4),
+                                              ),
+                                            );
+                                          }
                                         } else {
                                           Navigator.pop(context);
                                         }
@@ -4408,17 +4430,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         );
                                         if (mounted) Navigator.pop(context);
                                       }
-
-                                      if (!mounted) return;
-                                      // Direct user to the Live Feed so they can see their post immediately
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const LiveFeedScreen(
-                                            initialTabIndex: 1,
-                                          ),
-                                        ),
-                                      );
                                     } else {
                                       if (!mounted) return;
                                       String errorMsg =

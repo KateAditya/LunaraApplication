@@ -8,8 +8,8 @@ class SmartCheckoutSheet extends StatefulWidget {
   final double itemPrice;
   final Map<String, dynamic>? metadata;
   final Future<bool> Function() onWalletPayment;
-  final Future<void> Function() onDirectPayment;
-  final Future<void> Function(double shortfallAmount) onHybridPayment;
+  final Future<dynamic> Function() onDirectPayment;
+  final Future<dynamic> Function(double shortfallAmount) onHybridPayment;
 
   const SmartCheckoutSheet({
     super.key,
@@ -22,17 +22,17 @@ class SmartCheckoutSheet extends StatefulWidget {
     required this.onHybridPayment,
   });
 
-  static Future<void> show({
+  static Future<bool?> show({
     required BuildContext context,
     required String title,
     required String subtitle,
     required double itemPrice,
     Map<String, dynamic>? metadata,
     required Future<bool> Function() onWalletPayment,
-    required Future<void> Function() onDirectPayment,
-    required Future<void> Function(double shortfallAmount) onHybridPayment,
+    required Future<dynamic> Function() onDirectPayment,
+    required Future<dynamic> Function(double shortfallAmount) onHybridPayment,
   }) {
-    return showModalBottomSheet(
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -276,14 +276,17 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                     final success = await widget.onWalletPayment();
                     if (mounted) {
                       setState(() => _isProcessing = false);
-                      if (success) navigator.pop();
+                      if (success) navigator.pop(true);
                     }
                   } else {
-                    setState(() => _isProcessing = true);
-                    await widget.onHybridPayment(shortfall);
+                    final dynamic res = await widget.onHybridPayment(shortfall);
                     if (mounted) {
                       setState(() => _isProcessing = false);
-                      navigator.pop();
+                      if (res == true) {
+                        navigator.pop(true);
+                      } else if (res != false && res != null) {
+                        navigator.pop(res);
+                      }
                     }
                   }
                 },
@@ -315,11 +318,21 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                   final navigator = Navigator.of(context);
                   setState(() => _isProcessing = true);
                   try {
-                    await widget.onDirectPayment();
-                  } finally {
+                    final dynamic res = await widget.onDirectPayment();
                     if (mounted) {
                       setState(() => _isProcessing = false);
-                      navigator.pop();
+                      if (res == true) {
+                        navigator.pop(true);
+                      } else if (res == false) {
+                        // Keep sheet open so user can retry or pay with wallet
+                      } else {
+                        // Legacy callers returning void/null: pop
+                        navigator.pop(res);
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() => _isProcessing = false);
                     }
                   }
                 },

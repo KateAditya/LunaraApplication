@@ -563,24 +563,38 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
             let partyPlanId: string | null = null;
             let strangersMeetId: string | null = null;
+            let partyRole: 'host' | 'joiner' | undefined = undefined;
+
             if (booking?.specialRequests) {
                 try {
                     const parsedReqs = typeof booking.specialRequests === 'string' ? JSON.parse(booking.specialRequests) : booking.specialRequests;
                     partyPlanId = parsedReqs?.planId || null;
                     strangersMeetId = parsedReqs?.strangersMeetId || parsedReqs?.meetId || null;
+                    if (parsedReqs?.joinerId === userId) {
+                        partyRole = 'joiner';
+                    } else if (parsedReqs?.hostId === userId || booking.userId === userId) {
+                        partyRole = 'host';
+                    }
                 } catch (_) {}
+            }
+
+            const isPartyDeposit = booking?.goingMode === GoingMode.PARTY_REQUEST || !!partyPlanId;
+            if (isPartyDeposit && !partyRole) {
+                partyRole = booking?.userId === userId ? 'host' : 'joiner';
             }
 
             if (p.transactionId) seenTxnIds.add(p.transactionId);
             if (partyPlanId) seenPartyPlanKeys.add(partyPlanId);
             if (strangersMeetId) seenStrangersMeetKeys.add(strangersMeetId);
 
-            const isPartyDeposit = booking?.goingMode === GoingMode.PARTY_REQUEST || !!partyPlanId;
+            const partyLabel = partyRole === 'joiner' ? 'Joiner Safety Deposit' : 'Host Safety Deposit';
 
             transactions.push({
                 txnId: p.transactionId,
                 paymentId: p.id,
+                partyPlanId: partyPlanId || undefined,
                 type: isPartyDeposit ? 'party_plan_deposit' : 'booking',
+                role: partyRole,
                 amount: Number(p.amount),
                 currency: p.currency || 'INR',
                 status: p.status,
@@ -603,7 +617,8 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                           venueAddress: venue?.addressLine1 ?? '',
                           partyPlanId: partyPlanId || undefined,
                           strangersMeetId: strangersMeetId || undefined,
-                          label: isPartyDeposit ? 'Party Plan Deposit' : 'Table Booking',
+                          role: partyRole,
+                          label: isPartyDeposit ? partyLabel : 'Table Booking',
                       }
                     : null,
             });
@@ -913,13 +928,13 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
 
         const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
 
-        // Exclude smart transactions that duplicate gateway ledger entries, but keep all refunds & deposit unlocks
+        // Exclude smart transactions that duplicate gateway ledger entries or recorded party plan payments, but keep all refunds & deposit unlocks
         const smartTransactions = rawSmartTransactions.filter(st => {
             if (st.transactionType === WalletTransactionType.REFUND || st.transactionType === WalletTransactionType.DEPOSIT_UNLOCK) {
                 return true;
             }
             if (st.reference && seenTxnIds.has(st.reference)) return false;
-            if (st.partyPlanId && seenPartyPlanKeys.has(st.partyPlanId) && (st as any).source === 'razorpay') return false;
+            if (st.partyPlanId && seenPartyPlanKeys.has(st.partyPlanId)) return false;
             return true;
         });
 
