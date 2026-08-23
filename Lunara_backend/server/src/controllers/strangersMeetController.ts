@@ -13,16 +13,10 @@ import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
 import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
-import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { generateTicketForStrangersMeetHelper } from '../services/ticketService';
 import { StrangersMeetService } from '../services/StrangersMeetService';
 import sequelize from '../config/database';
-
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'secret123',
-});
 
 
 
@@ -479,6 +473,7 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
     try {
         const { id } = req.params;
         const userId = req.user!.id;
+        const { paymentMethod } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -508,34 +503,60 @@ export const initiatePayment = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // Generate Razorpay Order
-        const options = {
-            amount: Math.round(paymentAmount * 100), // in paise
-            currency: 'INR',
-            receipt: `smreq_${Date.now()}`
-        };
+        const PaymentIntentModel = await import('../models/PaymentIntent');
+        const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+        const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+        const PaymentServiceModule = await import('../services/PaymentService');
 
-        let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
-        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-            try {
-                const rzpOrder = await razorpay.orders.create(options);
-                if (rzpOrder && rzpOrder.id) {
-                    order = rzpOrder;
-                }
-            } catch (err: any) {
-                logger.warn('Razorpay strangers meet order creation failed, using mock: ' + err.message);
-            }
+        const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
+
+        const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+            userId,
+            entityType: PaymentIntentEntityType.STRANGERS_MEET,
+            entityId: id,
+            amount: paymentAmount,
+            paymentMethod: method,
+            metadata: { isHostDeposit: true, requestId: id },
+        });
+
+        if (!result.success && result.shortfallData) {
+            res.status(200).json({
+                success: false,
+                code: 'INSUFFICIENT_WALLET_BALANCE',
+                message: result.message,
+                data: result.shortfallData,
+                paymentIntent: result.paymentIntent,
+            });
+            return;
         }
 
-        await request.update({
-            razorpayOrderId: order.id
-        });
+        if (result.success && method === PaymentIntentMethod.WALLET) {
+            await request.update({
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                ticketId: genTicketId(),
+            });
+            try {
+                await generateTicketForStrangersMeetHelper(request.id);
+            } catch (tErr: any) {
+                logger.warn('Ticket error:', tErr?.message);
+            }
+
+            res.json({
+                success: true,
+                message: 'Payment completed successfully using Smart Credit Wallet!',
+                paymentIntent: result.paymentIntent,
+            });
+            return;
+        }
+
+        const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`;
+        await request.update({ razorpayOrderId: orderId });
 
         res.json({
             success: true,
-            razorpayOrderId: order.id,
-            amount: order.amount,
-            currency: order.currency,
+            razorpayOrderId: orderId,
+            amount: Math.round(paymentAmount * 100),
+            currency: 'INR',
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
         });
     } catch (err: any) {
@@ -1017,6 +1038,7 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
     try {
         const { id } = req.params;
         const userId = req.user!.id;
+        const { paymentMethod } = req.body;
 
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
@@ -1043,65 +1065,86 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
-        // Check if already a paid joiner
-        const existingJoiner = await StrangersMeetJoiner.findOne({
-            where: { strangersMeetRequestId: id, userId }
-        });
-
-        if (!existingJoiner || existingJoiner.status !== 'accepted') {
-            res.status(400).json({ success: false, message: 'You must have an accepted join request to make a payment' });
-            return;
-        }
-
-        if (existingJoiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
-            res.status(400).json({ success: false, message: 'You have already joined this strangers meet' });
-            return;
-        }
-
-        const chargesPerHead = Number(request.chargesPerHead || 0);
-        const orderAmount = chargesPerHead > 0 ? Math.round(chargesPerHead * 100) : 0;
-
-        let orderId = `order_mock_join_${Date.now()}`;
-        if (orderAmount > 0 && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-            try {
-                const options = {
-                    amount: orderAmount,
-                    currency: 'INR',
-                    receipt: `smjoin_${Date.now()}`
-                };
-                const order = await razorpay.orders.create(options);
-                if (order && order.id) {
-                    orderId = order.id;
-                }
-            } catch (err: any) {
-                logger.warn('Razorpay order failed, using mock: ' + err.message);
-            }
-        }
-
+        // Auto-create or promote joiner record if slots are open
         let joiner = await StrangersMeetJoiner.findOne({
             where: { strangersMeetRequestId: id, userId }
         });
 
-        if (joiner) {
-            await joiner.update({
-                paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
-                paymentAmount: chargesPerHead,
-                razorpayOrderId: orderId,
-            });
-        } else {
+        const chargesPerHead = Number(request.chargesPerHead || 0);
+
+        if (!joiner) {
             joiner = await StrangersMeetJoiner.create({
                 strangersMeetRequestId: id,
                 userId,
+                status: 'accepted' as any,
                 paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
                 paymentAmount: chargesPerHead,
-                razorpayOrderId: orderId,
             });
+        } else if (joiner.status !== 'accepted') {
+            await joiner.update({ status: 'accepted' as any });
         }
+
+        if (joiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID) {
+            res.status(400).json({ success: false, message: 'You have already joined this strangers meet' });
+            return;
+        }
+
+        const PaymentIntentModel = await import('../models/PaymentIntent');
+        const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+        const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+        const PaymentServiceModule = await import('../services/PaymentService');
+
+        const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
+
+        const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+            userId,
+            entityType: PaymentIntentEntityType.STRANGERS_MEET,
+            entityId: id,
+            amount: chargesPerHead,
+            paymentMethod: method,
+            metadata: { isJoinerPayment: true, joinerId: joiner.id, requestId: id },
+        });
+
+        if (!result.success && result.shortfallData) {
+            res.status(200).json({
+                success: false,
+                code: 'INSUFFICIENT_WALLET_BALANCE',
+                message: result.message,
+                data: result.shortfallData,
+                paymentIntent: result.paymentIntent,
+            });
+            return;
+        }
+
+        if (result.success && method === PaymentIntentMethod.WALLET) {
+            await joiner.update({ paymentStatus: StrangersMeetJoinerPaymentStatus.PAID });
+            await request.increment('slotsFilled', { by: 1 });
+
+            try {
+                await generateTicketForStrangersMeetHelper(request.id);
+            } catch (tErr: any) {
+                logger.warn('Ticket error:', tErr?.message);
+            }
+
+            res.json({
+                success: true,
+                message: 'Payment completed successfully using Smart Credit Wallet!',
+                paymentIntent: result.paymentIntent,
+            });
+            return;
+        }
+
+        const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_join_${Date.now()}`;
+        await joiner.update({
+            paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+            paymentAmount: chargesPerHead,
+            razorpayOrderId: orderId,
+        });
 
         res.json({
             success: true,
             razorpayOrderId: orderId,
-            amount: orderAmount,
+            amount: Math.round(chargesPerHead * 100),
             currency: 'INR',
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
         });

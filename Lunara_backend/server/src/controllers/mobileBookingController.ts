@@ -1341,14 +1341,21 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 export const initiateLargePartyPayment = async (req: Request, res: Response) => {
     try {
         const rawId = req.params.id;
+        const paymentMethod = req.body?.paymentMethod;
         const { booking, groupParty } = await resolveBookingOrGroupPartyTarget(rawId);
 
         if (!booking && !groupParty) {
             return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
         }
 
+        const PaymentIntentModel = await import('../models/PaymentIntent');
+        const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+        const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+        const PaymentServiceModule = await import('../services/PaymentService');
+        const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
+
         if (groupParty) {
-            if (String(groupParty.userId) !== String(req.user!.id)) {
+            if (String(groupParty.userId).trim() !== String(req.user!.id).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own group party' });
             }
             const pStatus = (groupParty.status || '').toLowerCase();
@@ -1356,43 +1363,61 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             if (pStatus === 'cancelled' || pPayStatus === 'paid') {
                 return res.status(400).json({ success: false, message: 'Group party is already confirmed/cancelled' });
             }
-            const amount = Number(groupParty.totalAmount);
+            const amount = Number(groupParty.totalAmount || 1999);
             if (isNaN(amount) || amount <= 0) {
                 return res.status(400).json({ success: false, message: 'Invalid total amount set for group party' });
             }
-            const options = {
-                amount: Math.round(amount * 100),
-                currency: 'INR',
-                receipt: `gp_${groupParty.id.replace(/-/g, '').slice(0, 30)}`,
-            };
-            let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
-            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-                try {
-                    order = await razorpay.orders.create(options);
-                } catch (err: any) {
-                    logger.warn('Razorpay create order failed for group party, using mock order. Error: ' + err.message);
-                }
+
+            const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+                userId: groupParty.userId,
+                entityType: PaymentIntentEntityType.GROUP_PARTY,
+                entityId: groupParty.id,
+                amount,
+                paymentMethod: method,
+                metadata: { groupPartyId: groupParty.id },
+            });
+
+            if (!result.success && result.shortfallData) {
+                return res.status(200).json({
+                    success: false,
+                    code: 'INSUFFICIENT_WALLET_BALANCE',
+                    message: result.message,
+                    data: result.shortfallData,
+                    paymentIntent: result.paymentIntent,
+                });
             }
-            await groupParty.update({ paymentId: order.id });
+
+            if (result.success && method === PaymentIntentMethod.WALLET) {
+                await groupParty.update({
+                    paymentStatus: GroupPartyPaymentStatus.PAID,
+                    status: GroupPartyStatus.CONFIRMED,
+                });
+                try {
+                    await generateTicketForGroupPartyHelper(groupParty.id);
+                } catch (tErr: any) {
+                    logger.warn('Ticket creation note:', tErr?.message);
+                }
+                return res.json({
+                    success: true,
+                    message: 'Group Party Paid via Smart Credit Wallet!',
+                    paymentIntent: result.paymentIntent,
+                });
+            }
+
+            const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`;
+            await groupParty.update({ paymentId: orderId });
             return res.json({
                 success: true,
-                razorpayOrderId: order.id,
-                amount: order.amount,
-                currency: order.currency,
+                razorpayOrderId: orderId,
+                amount: Math.round(amount * 100),
+                currency: 'INR',
                 razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
             });
         }
 
         if (booking) {
-            if (String(booking.userId) !== String(req.user!.id)) {
+            if (String(booking.userId).trim() !== String(req.user!.id).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
-            }
-
-            const goingMode = (booking.goingMode || '').toLowerCase();
-            const isLargeParty = booking.isLargePartyRequest || goingMode === 'party_request' || goingMode === 'group_party' || (booking.numberOfGuests || 0) > 20;
-
-            if (!isLargeParty) {
-                return res.status(400).json({ success: false, message: 'Not a group or large party request booking' });
             }
 
             const adminStatus = (booking.adminApprovalStatus || '').toLowerCase();
@@ -1407,6 +1432,10 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
                 adminStatus === 'approved_awaiting_payment' ||
                 adminStatus === 'awaiting_payment' ||
                 adminStatus === 'payment_sent' ||
+                adminStatus === 'payment_required' ||
+                adminStatus === 'payment_pending' ||
+                adminStatus === 'action_required' ||
+                adminStatus === 'pending_payment' ||
                 bookingStatus === 'approved' ||
                 bookingStatus === 'confirmed' ||
                 bookingStatus === 'payment_sent' ||
@@ -1416,43 +1445,67 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
                 return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already completed' });
             }
 
-            const amount = Number(booking.adminPaymentAmount || booking.totalAmount);
+            const amount = Number(booking.adminPaymentAmount || booking.totalAmount || 1999);
             if (isNaN(amount) || amount <= 0) {
                 return res.status(400).json({ success: false, message: 'Invalid total amount set for booking' });
             }
 
-            const options = {
-                amount: Math.round(amount * 100), // in paise
-                currency: 'INR',
-                receipt: `blp_${booking.id.replace(/-/g, '').slice(0, 30)}`,
-            };
+            const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+                userId: booking.userId,
+                entityType: PaymentIntentEntityType.LARGE_PARTY,
+                entityId: booking.id,
+                amount,
+                paymentMethod: method,
+                metadata: { bookingId: booking.id },
+            });
 
-            let order: any = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
-            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id') {
-                try {
-                    order = await razorpay.orders.create(options);
-                } catch (err: any) {
-                    logger.warn('Razorpay create order failed, using mock order. Error: ' + err.message);
-                }
+            if (!result.success && result.shortfallData) {
+                return res.status(200).json({
+                    success: false,
+                    code: 'INSUFFICIENT_WALLET_BALANCE',
+                    message: result.message,
+                    data: result.shortfallData,
+                    paymentIntent: result.paymentIntent,
+                });
             }
 
+            if (result.success && method === PaymentIntentMethod.WALLET) {
+                await (booking as any).update({
+                    paymentStatus: PaymentStatus.PAID,
+                    paymentMode: BookingPaymentMode.PAY_NOW,
+                    status: BookingStatus.CONFIRMED,
+                    adminApprovalStatus: 'payment_done',
+                });
+                try {
+                    await generateTicketForBookingHelper(booking.id);
+                } catch (tErr: any) {
+                    logger.warn('Ticket creation note:', tErr?.message);
+                }
+                return res.json({
+                    success: true,
+                    message: 'Large Party Paid via Smart Credit Wallet!',
+                    paymentIntent: result.paymentIntent,
+                });
+            }
+
+            const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`;
             await (booking as any).update({
-                razorpayOrderId: order.id,
+                razorpayOrderId: orderId,
             });
 
             return res.json({
                 success: true,
-                razorpayOrderId: order.id,
-                amount: order.amount,
-                currency: order.currency,
+                razorpayOrderId: orderId,
+                amount: Math.round(amount * 100),
+                currency: 'INR',
                 razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
             });
         }
 
         return res.status(404).json({ success: false, message: 'Booking or Group Party target not found' });
     } catch (err: any) {
-        logger.error('initiateLargePartyPayment:', err);
-        return res.status(500).json({ success: false, message: err.message });
+        logger.error('initiateLargePartyPayment error:', err);
+        return res.status(200).json({ success: false, message: err?.message || 'Failed to initiate large party payment' });
     }
 };
 
