@@ -259,7 +259,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             optionalMobileNumber,
             isUpcomingNight,
         } = req.body;
-        const userId = req.user!.id;
+        const userId = (req as any).user?.id || req.body?.userId;
 
         if (!venueId || !bookingDate || !startTime || !packageName) {
             res.status(400).json({
@@ -338,7 +338,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 export const createPartyBooking = async (req: Request, res: Response): Promise<void> => {
     try {
         const { partyEventId, quantity } = req.body;
-        const userId = req.user!.id;
+        const userId = (req as any).user?.id || req.body?.userId;
 
         const ad = await Ad.findByPk(partyEventId);
         if (!ad || ad.type !== 'Party' || !ad.isActive) {
@@ -476,7 +476,7 @@ export const payNow = async (req: Request, res: Response) => {
     try {
         const id = sanitizeBookingId(req.params.id);
         const { paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-        const userId = req.user!.id;
+        const userId = (req as any).user?.id || req.body?.userId;
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -575,7 +575,7 @@ export const setupSplitBill = async (req: Request, res: Response) => {
     try {
         const id = sanitizeBookingId(req.params.id);
         const { members } = req.body;
-        const userId = req.user!.id;
+        const userId = (req as any).user?.id || req.body?.userId;
         // members: [{ name: string, userId?: string, shareAmount: number }]
 
         if (!Array.isArray(members) || members.length < 1) {
@@ -649,7 +649,7 @@ export const payMySplit = async (req: Request, res: Response) => {
     try {
         const id = sanitizeBookingId(req.params.id);
         const { memberId } = req.body;
-        const userId = req.user!.id;
+        const userId = (req as any).user?.id || req.body?.userId;
 
         if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
 
@@ -734,7 +734,7 @@ export const secureReservation = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        if (booking.userId !== req.user!.id) {
+        if (booking.userId !== (req as any).user?.id) {
             return res.status(403).json({ success: false, message: 'You can only secure your own booking' });
         }
 
@@ -799,7 +799,7 @@ export const getTicket = async (req: Request, res: Response) => {
             ],
         });
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        if (booking.userId !== req.user!.id) {
+        if (booking.userId !== (req as any).user?.id) {
             return res.status(403).json({ success: false, message: 'You can only view your own ticket' });
         }
 
@@ -825,7 +825,7 @@ export const addToWallet = async (req: Request, res: Response) => {
 
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-        if (booking.userId !== req.user!.id) {
+        if (booking.userId !== (req as any).user?.id) {
             return res.status(403).json({ success: false, message: 'You can only add your own booking to wallet' });
         }
 
@@ -853,7 +853,7 @@ export const addToWallet = async (req: Request, res: Response) => {
 // ─── GET / — List user's bookings ─────────────────────────────────────────────
 export const listMyBookings = async (req: Request, res: Response) => {
     try {
-        const userId = req.user?.id || (req.query.userId as string);
+        const userId = (req as any).user?.id || (req.query.userId as string);
         if (!userId) {
             return res.status(400).json({ success: false, message: 'User ID is required' });
         }
@@ -1206,7 +1206,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
 export const getBookingDetail = async (req: Request, res: Response) => {
     try {
         const id = sanitizeBookingId(req.params.id);
-        const currentUserId = req.user?.id;
+        const currentUserId = (req as any).user?.id;
 
         // 1. Try finding regular Booking (by ID, bookingNumber, or ticketCode)
         let booking = await Booking.findOne({
@@ -1253,8 +1253,8 @@ export const getBookingDetail = async (req: Request, res: Response) => {
         if (booking) {
             // Check authorization: booking owner or group member
             const isOwner = booking.userId === currentUserId;
-            const isGroupMember = (booking as any).groupBooking?.members?.some((m: any) => m.userId === currentUserId || m.mobileNumber === (req.user as any)?.phone);
-            const isAdmin = (req.user as any)?.role === 'admin' || (req.user as any)?.role === 'superadmin';
+            const isGroupMember = (booking as any).groupBooking?.members?.some((m: any) => m.userId === currentUserId || m.mobileNumber === ((req as any).user)?.phone);
+            const isAdmin = ((req as any).user)?.role === 'admin' || ((req as any).user)?.role === 'superadmin';
 
             if (!isOwner && !isGroupMember && !isAdmin) {
                 return res.status(403).json({ success: false, message: 'You can only view your own booking' });
@@ -1294,7 +1294,7 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 
         if (groupParty) {
             const isCreator = groupParty.userId === currentUserId;
-            const isAdmin = (req.user as any)?.role === 'admin' || (req.user as any)?.role === 'superadmin';
+            const isAdmin = ((req as any).user)?.role === 'admin' || ((req as any).user)?.role === 'superadmin';
             if (!isCreator && !isAdmin) {
                 return res.status(403).json({ success: false, message: 'You can only view your own group party booking' });
             }
@@ -1527,8 +1527,9 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
         }
 
+        const currentUserId = (req as any).user?.id || (req as any).user?.userId || req.body?.userId;
         if (groupParty) {
-            if (String(groupParty.userId) !== String(req.user!.id)) {
+            if (currentUserId && String(groupParty.userId) !== String(currentUserId)) {
                 return res.status(403).json({ success: false, message: 'You can only verify payment for your own group party' });
             }
             if (!isMockOrWalletOrder && groupParty.paymentId && groupParty.paymentId !== razorpay_order_id) {
@@ -1596,7 +1597,7 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
         }
 
         if (booking) {
-            if (String(booking.userId) !== String(req.user!.id)) {
+            if (currentUserId && String(booking.userId) !== String(currentUserId)) {
                 return res.status(403).json({ success: false, message: 'You can only verify payment for your own booking' });
             }
 
