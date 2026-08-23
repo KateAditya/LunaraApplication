@@ -2317,10 +2317,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     // Distinguish Large Party (>20) vs Group Party (<=20)
-    final bool isLargeParty = guestCount > 20 ||
-        partyMap['isLargePartyRequest'] == true ||
-        partyMap['isLargeBooking'] == true ||
-        partyMap['type'] == 'large_party_timeline';
+    final bool isExplicitlySmall = entries.any((e) => e['isSmallGroupParty'] == true) ||
+        partyMap['isSmallGroupParty'] == true;
+    final bool isLargeParty = !isExplicitlySmall &&
+        (guestCount > 20 ||
+            partyMap['isLargePartyRequest'] == true ||
+            partyMap['isLargeBooking'] == true ||
+            partyMap['type'] == 'large_party_timeline');
 
     if (isExpired) {
       accentColor = const Color(0xFF9CA3AF);
@@ -2364,16 +2367,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badgeText = 'CANCELLED';
       accentColor = const Color(0xFFEF4444);
     } else {
-      if (isLargeParty) {
-        cardTitle = 'Large Party Submitted ⏳';
-        cardBody = 'Your request for $guestCount guests at $venueName is waiting for admin approval.';
+      // ── Pending state: waiting for admin approval (or admin has approved but no price set yet)
+      // NEVER show a Pay Now button when amount is 0 — that means admin hasn't set a price.
+      final bool hasPendingPrice = totalAmount > 0;
+
+      if (isLargeParty || !hasPendingPrice) {
+        // Large party OR no price set yet → always show "Pending Approval" (no pay button)
+        cardTitle = isLargeParty ? 'Large Party Submitted ⏳' : 'Group Party Submitted ⏳';
+        cardBody = 'Your request for $guestCount guests at $venueName is pending admin approval. You\'ll be notified once it\'s reviewed.';
         badgeText = 'PENDING APPROVAL';
         accentColor = const Color(0xFF8B5CF6);
         actionButtonText = null;
         onActionTap = null;
       } else {
+        // Small group party where admin has set a price — payment required
         cardTitle = 'Payment Required 💳';
-        cardBody = 'Action Required: Complete payment${totalAmount > 0 ? " of ₹${totalAmount.toInt()}" : ""} to confirm your group party at $venueName.';
+        cardBody = 'Action Required: Complete payment of ₹${totalAmount.toInt()} to confirm your group party at $venueName.';
         badgeText = 'PAYMENT REQUIRED';
         accentColor = const Color(0xFFF59E0B);
         actionButtonText = 'Pay Now';
