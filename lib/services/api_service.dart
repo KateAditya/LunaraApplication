@@ -864,6 +864,59 @@ class ApiService {
     }
   }
 
+  static Future<bool> unlikeUser({required String targetUserId}) async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return false;
+
+      final response = await post(
+        '/api/mobile/user/unlike',
+        body: {
+          'userId': userId,
+          'targetUserId': targetUserId,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error unliking user: $e');
+      return false;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchReliabilityHistory() async {
+    try {
+      final response = await get('/api/mobile/user/reliability-history');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data']?['history'] != null) {
+          return List<Map<String, dynamic>>.from(data['data']['history']);
+        }
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Error fetching reliability history: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> activateProfileBoost() async {
+    try {
+      final response = await post('/api/mobile/subscriptions/use-boost');
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error activating profile boost: $e');
+      return null;
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> fetchMyLikesAndMatches() async {
     try {
       final userId = currentUserId;
@@ -1493,6 +1546,8 @@ class ApiService {
         .replaceAll('large_party_timeline_', '')
         .replaceAll('solo_booking_', '')
         .replaceAll('party_plan_timeline_', '')
+        .replaceAll('notification_', '')
+        .replaceAll('notif_', '')
         .replaceAll('group_party_', '')
         .replaceAll('large_party_', '')
         .replaceAll('party_plan_', '')
@@ -2233,6 +2288,7 @@ class ApiService {
       debugPrint('uploadProfilePhotos status: ${response.statusCode}');
       debugPrint('uploadProfilePhotos body: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {
+        _lastProfileFetchTime = null;
         return true;
       }
     } catch (e) {
@@ -2248,6 +2304,7 @@ class ApiService {
       if (response.statusCode == 200 ||
           response.statusCode == 201 ||
           response.statusCode == 204) {
+        _lastProfileFetchTime = null;
         return {
           'success': true,
           'message': data['message'] ?? 'Photo deleted successfully!',
@@ -2260,6 +2317,27 @@ class ApiService {
     } catch (e) {
       debugPrint('deleteProfilePhoto error: $e');
       return {'success': false, 'message': 'Failed to delete photo: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> setPrimaryPhoto(String photoId) async {
+    try {
+      final response = await put('/api/profile/photos/$photoId/primary');
+      final Map<String, dynamic> data = jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _lastProfileFetchTime = null;
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Profile picture updated successfully!',
+        };
+      }
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Failed to update profile picture.',
+      };
+    } catch (e) {
+      debugPrint('setPrimaryPhoto error: $e');
+      return {'success': false, 'message': 'Failed to update profile picture: $e'};
     }
   }
 
@@ -3333,11 +3411,17 @@ class ApiService {
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
+        if (data is Map) {
           return Map<String, dynamic>.from(data);
         }
       } else {
         debugPrint('initiateLargePartyPayment error [${response.statusCode}]: ${response.body}');
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map) {
+            return Map<String, dynamic>.from(data);
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('initiateLargePartyPayment error: $e');

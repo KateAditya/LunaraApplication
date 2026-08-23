@@ -3190,6 +3190,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               final foodPref = req['foodPreference']?.toString() ?? reqUser['foodPreference']?.toString();
               final drinkPref = req['drinkPreference']?.toString() ?? reqUser['drinkPreference']?.toString();
 
+              final bool isInvite = req['isInvite'] == true ||
+                  (widget.plan['selectedUsers'] is List &&
+                      (widget.plan['selectedUsers'] as List)
+                          .contains(reqUser['id']?.toString() ?? req['requesterId']?.toString()));
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3244,40 +3249,67 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _handleAcceptPartyPlanRequest(reqId),
-                          icon: const Icon(Icons.check_circle_rounded, size: 15),
-                          label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C3AED),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                  if (isInvite)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.mark_email_read_rounded, color: Color(0xFFA78BFA), size: 16),
+                          SizedBox(width: 8),
+                          Text(
+                            'INVITATION SENT • AWAITING RESPONSE',
+                            style: TextStyle(
+                              color: Color(0xFFA78BFA),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              letterSpacing: 0.5,
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _handleAcceptPartyPlanRequest(reqId),
+                            icon: const Icon(Icons.check_circle_rounded, size: 15),
+                            label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7C3AED),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _handleRejectPartyPlanRequest(reqId),
-                          icon: const Icon(Icons.cancel_rounded, size: 15, color: Colors.redAccent),
-                          label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.redAccent)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0x40EF4444)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _handleRejectPartyPlanRequest(reqId),
+                            icon: const Icon(Icons.cancel_rounded, size: 15, color: Colors.redAccent),
+                            label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.redAccent)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0x40EF4444)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               );
             },

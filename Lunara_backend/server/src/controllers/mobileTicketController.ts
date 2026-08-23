@@ -51,6 +51,40 @@ function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | 
     return defaultExp;
 }
 
+const MENU_IMAGE_TYPES = ['menu', 'food_menu', 'bar_menu', 'beverage_menu', 'party_packages'];
+
+export function extractVenueCoverImageUrl(venue: any): string | null {
+    if (!venue) return null;
+    
+    // Check if direct properties exist and aren't menu images
+    if (venue.coverImageUrl && typeof venue.coverImageUrl === 'string' && !venue.coverImageUrl.toLowerCase().includes('menu')) {
+        return venue.coverImageUrl.startsWith('http') ? venue.coverImageUrl : `/${venue.coverImageUrl.replace(/^\/+/, '')}`;
+    }
+    if (venue.profilePhotoUrl && typeof venue.profilePhotoUrl === 'string' && !venue.profilePhotoUrl.toLowerCase().includes('menu')) {
+        return venue.profilePhotoUrl.startsWith('http') ? venue.profilePhotoUrl : `/${venue.profilePhotoUrl.replace(/^\/+/, '')}`;
+    }
+
+    const images: any[] = venue.images || [];
+    if (images.length > 0) {
+        // 1. Primary non-menu image
+        const primaryNonMenu = images.find((img: any) => img.isPrimary && !MENU_IMAGE_TYPES.includes((img.imageType || img.type || '').toLowerCase()));
+        if (primaryNonMenu) {
+            const p = primaryNonMenu.filePath || primaryNonMenu.url;
+            if (p) return p.startsWith('http') ? p : `/${p.replace(/^\/+/, '')}`;
+        }
+        // 2. Any non-menu image
+        const anyNonMenu = images.find((img: any) => !MENU_IMAGE_TYPES.includes((img.imageType || img.type || '').toLowerCase()));
+        if (anyNonMenu) {
+            const p = anyNonMenu.filePath || anyNonMenu.url;
+            if (p) return p.startsWith('http') ? p : `/${p.replace(/^\/+/, '')}`;
+        }
+        const first = images[0];
+        const p = first?.filePath || first?.url;
+        if (p) return p.startsWith('http') ? p : `/${p.replace(/^\/+/, '')}`;
+    }
+    return null;
+}
+
 export class MobileTicketController {
     /**
      * GET /api/mobile/tickets
@@ -368,6 +402,9 @@ export class MobileTicketController {
                     rawRequestObj = sourcePartyPlan.toJSON ? sourcePartyPlan.toJSON() : sourcePartyPlan;
                 }
 
+                const venueCoverUrl = extractVenueCoverImageUrl(t.venue || smMeet?.venue);
+                const ticketImageUrl = eventBanner || venueCoverUrl;
+
                 formattedTickets.push({
                     id: t.id,
                     ticketId: t.ticketId,
@@ -395,7 +432,7 @@ export class MobileTicketController {
                     goingMode: sourceBooking ? sourceBooking.goingMode : (isSolo ? 'solo' : undefined),
                     bannerImageUrl: eventBanner,
                     eventPoster: eventBanner,
-                    imageUrl: eventBanner || (t.venue as any)?.profilePhotoUrl || (t.venue as any)?.coverImageUrl,
+                    imageUrl: ticketImageUrl,
                     eventTitle,
                     partySubject: eventTitle || sourceBooking?.partySubject,
                     subject: isStrangersMeet ? smSubject : undefined,
@@ -431,10 +468,14 @@ export class MobileTicketController {
                         area: t.venue.area,
                         latitude: (t.venue as any).latitude ?? null,
                         longitude: (t.venue as any).longitude ?? null,
-                        profilePhotoUrl: (t.venue as any).profilePhotoUrl ?? null,
-                        coverImageUrl: (t.venue as any).coverImageUrl ?? null,
+                        profilePhotoUrl: venueCoverUrl,
+                        coverImageUrl: venueCoverUrl,
                         images: (t.venue as any).images ?? [],
-                    } : (smMeet?.venue || null),
+                    } : (smMeet?.venue ? {
+                        ...smMeet.venue,
+                        profilePhotoUrl: venueCoverUrl,
+                        coverImageUrl: venueCoverUrl,
+                    } : null),
                     isExpired,
                 });
             }
@@ -499,6 +540,8 @@ export class MobileTicketController {
                     ? (bPartyEvent.imagePath.startsWith('http') ? bPartyEvent.imagePath : `/${bPartyEvent.imagePath.replace(/^\/+/, '')}`)
                     : null;
                 const eventTitle = bPartyEvent?.title || b.partySubject || (isEventBooking ? 'Upcoming Night Event' : null);
+                const bVenueCoverUrl = extractVenueCoverImageUrl(bAny.venue);
+                const bImageUrl = eventBanner || bVenueCoverUrl;
 
                 formattedTickets.push({
                     id: b.id,
@@ -525,7 +568,7 @@ export class MobileTicketController {
                     goingMode: b.goingMode,
                     bannerImageUrl: eventBanner,
                     eventPoster: eventBanner,
-                    imageUrl: eventBanner || bAny.venue?.profilePhotoUrl || bAny.venue?.coverImageUrl,
+                    imageUrl: bImageUrl,
                     eventTitle,
                     partySubject: eventTitle || b.partySubject,
                     partyEvent: bPartyEvent ? {
@@ -558,8 +601,8 @@ export class MobileTicketController {
                         area: bAny.venue.area,
                         latitude: bAny.venue.latitude ?? null,
                         longitude: bAny.venue.longitude ?? null,
-                        profilePhotoUrl: bAny.venue.profilePhotoUrl ?? null,
-                        coverImageUrl: bAny.venue.coverImageUrl ?? null,
+                        profilePhotoUrl: bVenueCoverUrl,
+                        coverImageUrl: bVenueCoverUrl,
                         images: bAny.venue.images ?? [],
                     } : null,
                     isExpired,
@@ -651,6 +694,20 @@ export class MobileTicketController {
                 const reqAny = req as any;
                 const plan = reqAny.plan;
                 if (!plan) continue;
+
+                // STRICT RULE: No ticket before BOTH host and joiner payments are verified!
+                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
+                const joinerPaid = (req.joinerPaymentStatus || '').toLowerCase() === 'paid' || plan.paymentType === 'self_pay';
+                const isBothPaidMatch = hostPaid && joinerPaid && (
+                    plan.lifecycleStatus === 'match_confirmed' ||
+                    plan.lifecycleStatus === 'chat_enabled' ||
+                    plan.lifecycleStatus === 'event_upcoming' ||
+                    plan.matchedRequestId === req.id
+                );
+                if (!isBothPaidMatch) {
+                    continue;
+                }
+
                 if (seenBookingIds.has(req.id) || seenBookingIds.has(plan.id) || (reqAny.ticketCode && seenTicketIds.has(reqAny.ticketCode))) continue;
                 seenBookingIds.add(req.id);
                 if (reqAny.ticketCode) seenTicketIds.add(reqAny.ticketCode);
@@ -742,6 +799,19 @@ export class MobileTicketController {
             // 5. Synthesize from PartyPlan (Host)
             for (const plan of partyPlanHostPlans) {
                 const planAny = plan as any;
+
+                // STRICT RULE: No ticket for Host until host deposit is paid AND a partner match is confirmed!
+                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
+                const isMatchConfirmed = (
+                    plan.lifecycleStatus === 'match_confirmed' ||
+                    plan.lifecycleStatus === 'chat_enabled' ||
+                    plan.lifecycleStatus === 'event_upcoming' ||
+                    Boolean(plan.matchedRequestId)
+                );
+                if (!hostPaid || !isMatchConfirmed) {
+                    continue;
+                }
+
                 if (seenBookingIds.has(plan.id) || (planAny.ticketCode && seenTicketIds.has(planAny.ticketCode))) continue;
                 seenBookingIds.add(plan.id);
                 if (planAny.ticketCode) seenTicketIds.add(planAny.ticketCode);
@@ -1219,7 +1289,18 @@ export class MobileTicketController {
             const ticket = await Ticket.findOne({
                 where: { [Op.or]: [{ id }, { ticketId: id }] },
                 include: [
-                    { model: Venue, as: 'venue' },
+                    {
+                        model: Venue,
+                        as: 'venue',
+                        include: [
+                            {
+                                model: VenueImage,
+                                as: 'images',
+                                attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                                required: false,
+                            },
+                        ],
+                    },
                     { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
                 ],
             });
@@ -1234,6 +1315,7 @@ export class MobileTicketController {
 
             const now = new Date();
             const isExpired = ticket.ticketStatus === TicketStatus.EXPIRED || new Date(ticket.expiresAt) < now;
+            const vCoverUrl = extractVenueCoverImageUrl(ticket.venue);
 
             return res.status(200).json({
                 success: true,
@@ -1258,8 +1340,8 @@ export class MobileTicketController {
                         addressLine1: ticket.venue.addressLine1,
                         city: ticket.venue.city,
                         area: ticket.venue.area,
-                        profilePhotoUrl: (ticket.venue as any).profilePhotoUrl ?? null,
-                        coverImageUrl: (ticket.venue as any).coverImageUrl ?? null,
+                        profilePhotoUrl: vCoverUrl,
+                        coverImageUrl: vCoverUrl,
                         images: (ticket.venue as any).images ?? [],
                     } : null,
                     guestName: ticket.user ? `${ticket.user.firstName} ${ticket.user.lastName}` : 'Guest',

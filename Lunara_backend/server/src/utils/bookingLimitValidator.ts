@@ -1,10 +1,11 @@
-import { Op } from 'sequelize';
-import { PartyPlan, StrangersMeetRequest, GroupParty, Booking } from '../models';
+import { EventTimeLockService } from '../services/EventTimeLockService';
 
 /**
- * Checks if the user already has a Party Plan, Strangers Meet, or Group Party
- * scheduled for the given date.
- * Returns the error message string if a conflict exists, otherwise null.
+ * Universal Event Booking Limit & Time Lock Validator
+ * Delegates to EventTimeLockService to enforce the strict 4-hour gap rule
+ * across Party Plan, Group Party, Stranger Meet, Solo Booking, and Large Party.
+ *
+ * Returns an error message string if a conflict exists (< 4 hours gap), otherwise null.
  */
 export const checkExistingBookingForDate = async (
     userId: string,
@@ -13,90 +14,29 @@ export const checkExistingBookingForDate = async (
 ): Promise<string | null> => {
     try {
         const targetDate = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-        if (isNaN(targetDate.getTime())) {
-            return null; // Invalid date, skip validation to let standard validators catch it
+        if (!targetDate || isNaN(targetDate.getTime())) {
+            return null; // Let standard payload validation handle invalid dates
         }
 
-        // Define start and end of that day in UTC/server timezone
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const mapType = (forType || 'party_plan').toLowerCase();
+        let normalizedType: 'party_plan' | 'group_party' | 'stranger_meet' | 'solo_booking' | 'large_party' = 'party_plan';
+        if (mapType.includes('group')) normalizedType = 'group_party';
+        else if (mapType.includes('stranger')) normalizedType = 'stranger_meet';
+        else if (mapType.includes('solo')) normalizedType = 'solo_booking';
+        else if (mapType.includes('large')) normalizedType = 'large_party';
 
-        // Format targetDate string for DATEONLY matching in PostgreSQL (YYYY-MM-DD)
-        const yyyy = targetDate.getFullYear();
-        const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(targetDate.getDate()).padStart(2, '0');
-        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const result = await EventTimeLockService.validateFourHourGap(userId, targetDate, normalizedType);
 
-        // 1. Check PartyPlan (checks 4-hour cooldown time window)
-        if (!forType || forType === 'party_plan') {
-            const fourHoursMs = 4 * 60 * 60 * 1000;
-            const windowStart = new Date(targetDate.getTime() - fourHoursMs);
-            const windowEnd = new Date(targetDate.getTime() + fourHoursMs);
-
-            const existingPartyPlan = await PartyPlan.findOne({
-                where: {
-                    userId,
-                    status: { [Op.ne]: 'cancelled' },
-                    planDateTime: {
-                        [Op.between]: [windowStart, windowEnd]
-                    }
-                }
-            });
-            if (existingPartyPlan) {
-                const planTime = new Date(existingPartyPlan.planDateTime);
-                const timeStr = planTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                return `You already have a party plan scheduled near this time (${timeStr}). Party plans must be at least 4 hours apart.`;
-            }
-        }
-
-        // 2. Check StrangersMeetRequest
-        if (!forType || forType === 'strangers_meet') {
-            const existingStrangersMeet = await StrangersMeetRequest.findOne({
-                where: {
-                    userId,
-                    status: { [Op.notIn]: ['cancelled', 'rejected'] },
-                    eventDateTime: {
-                        [Op.between]: [startOfDay, endOfDay]
-                    }
-                }
-            });
-            if (existingStrangersMeet) {
-                return 'You already have a strangers meetup scheduled on this day.';
-            }
-        }
-
-        // 3. Check GroupParty
-        if (!forType || forType === 'group_party') {
-            const existingGroupParty = await GroupParty.findOne({
-                where: {
-                    userId,
-                    status: { [Op.notIn]: ['cancelled', 'rejected', 'pending', 'expired'] },
-                    partyDate: dateStr
-                }
-            });
-            if (existingGroupParty) {
-                return 'You already have a group party booked on this day.';
-            }
-
-            // 4. Check Booking (where goingMode = 'party_request')
-            const existingLargePartyBooking = await Booking.findOne({
-                where: {
-                    userId,
-                    status: { [Op.ne]: 'cancelled' },
-                    goingMode: 'party_request',
-                    bookingDate: dateStr
-                }
-            });
-            if (existingLargePartyBooking) {
-                return 'You already have a group party booked on this day.';
-            }
+        if (!result.allowed) {
+            return result.message;
         }
 
         return null;
     } catch (error) {
-        // Fallback: log the error and allow booking creation rather than breaking completely
+        // Fallback: log error and allow continuation if validator hits unexpected system issue
+        console.error('Error in checkExistingBookingForDate time-lock validation:', error);
         return null;
     }
 };
+
+export default checkExistingBookingForDate;

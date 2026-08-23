@@ -37,6 +37,8 @@ import Area from './Area';
 import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
+import UserEngagementEvent from './UserEngagementEvent';
+import ProfileBoost from './ProfileBoost';
 import SafetyCheck from './SafetyCheck';
 import DeletedAccount from './DeletedAccount';
 import PlanTimeLock from './PlanTimeLock';
@@ -615,6 +617,8 @@ export {
     WalletPromotionalCampaign,
     WalletCashbackRule,
     UserLike,
+    UserEngagementEvent,
+    ProfileBoost,
     PlanTimeLock,
     PlanTimeLockConfig,
     PlanTimeLockConfigHistory,
@@ -802,6 +806,8 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         await NightPartnerMatch.sync(options);
         await PartySafetyCheck.sync(options);
         await UserLike.sync(options);
+        await UserEngagementEvent.sync(options);
+        await ProfileBoost.sync(options);
         await Notification.sync(options);
         await WalletTransaction.sync(options);
         await Ticket.sync(options);
@@ -878,6 +884,8 @@ export default {
     WalletPromotionalCampaign,
     WalletCashbackRule,
     UserLike,
+    UserEngagementEvent,
+    ProfileBoost,
     WalletTransaction,
     syncModels,
 };

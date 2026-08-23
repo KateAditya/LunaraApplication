@@ -11,7 +11,9 @@
 
 import 'package:flutter/material.dart';
 import '../models/plan_status.dart';
+import '../widgets/vip_expiration_dialog.dart';
 import 'api_service.dart';
+import 'notification_navigator.dart';
 
 enum VipFeature {
   hideProfile,
@@ -94,17 +96,50 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Expiration Alert Callback ───────────────────────────────────────────
+  void Function(Map<String, dynamic> data)? onShowExpirationAlert;
+
   /// Register a socket listener for real-time subscription events.
   void listenToSocket() {
     ApiService.addSocketListener('subscription_updated', _onSubscriptionUpdated);
+    ApiService.addSocketListener('subscription_expiring', _onSubscriptionExpiring);
     ApiService.addSocketListener('subscription_expired', _onSubscriptionExpired);
     ApiService.addSocketListener('boost_activated', _onBoostActivated);
+    ApiService.addSocketListener('boost_expired', _onBoostExpired);
+    ApiService.addSocketListener('like_received', _onLikeReceived);
+    ApiService.addSocketListener('superlike_received', _onSuperlikeReceived);
+    ApiService.addSocketListener('like_removed', _onLikeRemoved);
   }
 
   void stopListeningToSocket() {
     ApiService.removeSocketListener('subscription_updated', _onSubscriptionUpdated);
+    ApiService.removeSocketListener('subscription_expiring', _onSubscriptionExpiring);
     ApiService.removeSocketListener('subscription_expired', _onSubscriptionExpired);
     ApiService.removeSocketListener('boost_activated', _onBoostActivated);
+    ApiService.removeSocketListener('boost_expired', _onBoostExpired);
+    ApiService.removeSocketListener('like_received', _onLikeReceived);
+    ApiService.removeSocketListener('superlike_received', _onSuperlikeReceived);
+    ApiService.removeSocketListener('like_removed', _onLikeRemoved);
+  }
+
+  void _onLikeReceived(dynamic data) {
+    debugPrint('[SubscriptionProvider] Socket: like_received → refreshing status & badge counts');
+    refresh();
+  }
+
+  void _onSuperlikeReceived(dynamic data) {
+    debugPrint('[SubscriptionProvider] Socket: superlike_received → refreshing status & badge counts');
+    refresh();
+  }
+
+  void _onLikeRemoved(dynamic data) {
+    debugPrint('[SubscriptionProvider] Socket: like_removed → refreshing status & badge counts');
+    refresh();
+  }
+
+  void _onBoostExpired(dynamic data) {
+    debugPrint('[SubscriptionProvider] Socket: boost_expired → refreshing');
+    refresh();
   }
 
   void _onSubscriptionUpdated(dynamic data) {
@@ -112,10 +147,23 @@ class SubscriptionProvider extends ChangeNotifier {
     refreshAfterPurchase();
   }
 
+  void _onSubscriptionExpiring(dynamic data) {
+    debugPrint('[SubscriptionProvider] Socket: subscription_expiring → $data');
+    if (data is Map) {
+      final mapData = Map<String, dynamic>.from(data);
+      onShowExpirationAlert?.call(mapData);
+    }
+    refresh();
+  }
+
   void _onSubscriptionExpired(dynamic data) {
     debugPrint('[SubscriptionProvider] Socket: subscription_expired → resetting to FREE');
     _status = PlanStatus.free;
     _lastFetched = null;
+    if (data is Map) {
+      final mapData = Map<String, dynamic>.from(data);
+      onShowExpirationAlert?.call(mapData);
+    }
     notifyListeners();
   }
 
@@ -190,6 +238,7 @@ class _SubscriptionScopeState extends State<SubscriptionScope> {
   void initState() {
     super.initState();
     _provider.addListener(_onProviderChanged);
+    _provider.onShowExpirationAlert = _handleShowExpirationAlert;
     _provider.loadIfNeeded();
     _provider.listenToSocket();
   }
@@ -197,11 +246,34 @@ class _SubscriptionScopeState extends State<SubscriptionScope> {
   @override
   void dispose() {
     _provider.removeListener(_onProviderChanged);
+    _provider.onShowExpirationAlert = null;
     _provider.stopListeningToSocket();
     super.dispose();
   }
 
   void _onProviderChanged() => setState(() {});
+
+  void _handleShowExpirationAlert(Map<String, dynamic> data) {
+    final navContext = NotificationNavigator.navigatorKey.currentContext;
+    if (navContext == null) return;
+
+    final title = data['title']?.toString() ?? 'VIP Subscription Alert';
+    final body = data['body']?.toString() ?? 'Your VIP subscription status has changed.';
+    final planName = data['planName']?.toString() ?? 'VIP Membership';
+    final remainingHours = (data['remainingHours'] is num)
+        ? (data['remainingHours'] as num).toInt()
+        : (int.tryParse(data['remainingHours']?.toString() ?? '0') ?? 0);
+    final isExpired = data['isExpired'] == true || data['eventType'] == 'vip_expired';
+
+    VipExpirationDialog.show(
+      navContext,
+      title: title,
+      message: body,
+      planName: planName,
+      remainingHours: remainingHours,
+      isExpired: isExpired,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

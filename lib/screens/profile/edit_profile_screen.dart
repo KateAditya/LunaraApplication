@@ -84,57 +84,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _deletePhoto() async {
-    if (_localPhotoDetails.length <= 3) {
-      _showMinPhotosRequiredDialog();
-      return;
-    }
-
     String? photoId;
     if (_localPhotoDetails.isNotEmpty) {
-      photoId = _localPhotoDetails.first['id'];
-    }
-
-    if (photoId == null || photoId.isEmpty) {
-       if (_localProfilePhotoBytes != null) {
-         setState(() {
-           _localProfilePhotoBytes = null;
-           _photoDeleted = true;
-         });
-         return;
-       }
-       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-       ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Cannot delete photo. Please refresh your profile.'), backgroundColor: Colors.orange),
-       );
-       return;
-    }
-
-    setState(() => _isLoading = true);
-    final result = await ApiService.deleteProfilePhoto(photoId);
-    final bool success = result['success'] == true;
-    final String message = result['message']?.toString() ?? (success ? 'Photo deleted successfully!' : 'Failed to delete photo.');
-    
-    if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      if (success) {
-         _photoDeleted = true;
-         _localProfilePhotoBytes = null;
-      }
-    });
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    if (success) {
-      await _refreshProfileData();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.green),
+      final primary = _localPhotoDetails.firstWhere(
+        (p) => p['isPrimary'] == 'true' || p['url'] == _currentProfilePhotoUrl,
+        orElse: () => _localPhotoDetails.first,
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
-      );
+      photoId = primary['id'];
     }
+    await _deletePhotoById(photoId);
   }
 
   Future<void> _showImageSourceBottomSheet({bool isMainProfilePhoto = true}) async {
@@ -283,21 +241,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _refreshProfileData() async {
-    final updatedUser = await ApiService.fetchProfile(userId: widget.user.id);
+    final updatedUser = await ApiService.fetchProfile(userId: widget.user.id, forceRefresh: true);
     if (updatedUser != null && mounted) {
        setState(() {
          _localPhotoDetails = List.from(updatedUser.photoDetails);
          _currentProfilePhotoUrl = updatedUser.profilePhoto;
          _localProfilePhotoBytes = null;
+         _photoDeleted = false;
        });
        ApiService.profileUpdateNotifier.value++;
     }
   }
 
-  Future<void> _deleteOtherPhoto(String photoId) async {
+  Future<void> _deletePhotoById(String? photoId) async {
     if (_localPhotoDetails.length <= 3) {
       _showMinPhotosRequiredDialog();
       return;
+    }
+
+    if (photoId == null || photoId.isEmpty) {
+       if (_localProfilePhotoBytes != null) {
+         setState(() {
+           _localProfilePhotoBytes = null;
+           _photoDeleted = true;
+         });
+         return;
+       }
+       ScaffoldMessenger.of(context).hideCurrentSnackBar();
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Cannot delete photo. Please refresh your profile.'), backgroundColor: Colors.orange),
+       );
+       return;
     }
 
     setState(() => _isLoading = true);
@@ -319,6 +293,109 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
        );
     }
     setState(() => _isLoading = false);
+  }
+
+  Future<void> _setAsPrimaryPhoto(String photoId) async {
+    if (photoId.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    final result = await ApiService.setPrimaryPhoto(photoId);
+    final bool success = result['success'] == true;
+    final String message = result['message']?.toString() ?? (success ? 'Profile picture updated successfully!' : 'Failed to update profile picture.');
+    
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (success) {
+      await _refreshProfileData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.green),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showPhotoOptionsModal(Map<String, String> photo) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isPrimary = photo['isPrimary'] == 'true' || photo['url'] == _currentProfilePhotoUrl;
+    final photoId = photo['id'] ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF161622) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white24 : Colors.black12,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  'Photo Options',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (!isPrimary)
+                  ListTile(
+                    leading: const Icon(Icons.star_rounded, color: LunaraTheme.electricViolet, size: 26),
+                    title: Text(
+                      'Set as Profile Picture',
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _setAsPrimaryPhoto(photoId);
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red, size: 26),
+                  title: const Text(
+                    'Delete Photo',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deletePhotoById(photoId);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(Icons.close, color: isDark ? Colors.white54 : Colors.black54, size: 24),
+                  title: Text(
+                    'Cancel',
+                    style: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
+                  ),
+                  onTap: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   // ── Registration-style Chip Option Lists ─────────────────────────────
@@ -499,13 +576,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final result = await ApiService.updateProfile(data);
     final success = result['success'] == true;
     
-    setState(() => _isLoading = false);
-    
     if (!mounted) return;
     
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (success) {
+      await ApiService.fetchProfile(userId: widget.user.id, forceRefresh: true);
+      if (!mounted) return;
       ApiService.profileUpdateNotifier.value++;
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['message'] ?? 'Profile updated successfully!'),
@@ -514,6 +592,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
       Navigator.pop(context, true);
     } else {
+      setState(() => _isLoading = false);
       final msg = result['message'] ?? 'Failed to update profile.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: Colors.red),
@@ -703,6 +782,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               maxLines: maxLines,
               inputFormatters: inputFormatters,
               validator: validator,
+              onTap: () {
+                if (controller.text.isNotEmpty &&
+                    controller.selection.baseOffset == 0 &&
+                    controller.selection.extentOffset == controller.text.length) {
+                  controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                }
+              },
               style: TextStyle(
                 color: isDark ? Colors.white : Colors.black87,
                 fontWeight: FontWeight.w600,
@@ -884,8 +970,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildOtherPhotosGrid() {
-    final otherPhotos = _localPhotoDetails.length > 1 ? _localPhotoDetails.skip(1).toList() : <Map<String, String>>[];
-    
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -894,9 +978,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
-      itemCount: otherPhotos.length + 1,
+      itemCount: _localPhotoDetails.length + 1,
       itemBuilder: (context, index) {
-        if (index == otherPhotos.length) {
+        if (index == _localPhotoDetails.length) {
           return GestureDetector(
             onTap: () => _pickAndUploadPhoto(isMainProfilePhoto: false),
             child: Container(
@@ -912,34 +996,71 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           );
         }
         
-        final photo = otherPhotos[index];
-        return Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                image: DecorationImage(
-                  image: NetworkImage(photo['url'] ?? ''),
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            Positioned(
-              top: 4,
-              right: 4,
-              child: GestureDetector(
-                onTap: () => _deleteOtherPhoto(photo['id'] ?? ''),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
+        final photo = _localPhotoDetails[index];
+        final isPrimary = photo['isPrimary'] == 'true' || photo['url'] == _currentProfilePhotoUrl;
+        final photoId = photo['id'] ?? '';
+
+        return GestureDetector(
+          onTap: () => _showPhotoOptionsModal(photo),
+          onLongPress: () => _showPhotoOptionsModal(photo),
+          child: Stack(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: isPrimary
+                      ? Border.all(color: LunaraTheme.electricViolet, width: 2.5)
+                      : null,
+                  image: DecorationImage(
+                    image: NetworkImage(photo['url'] ?? ''),
+                    fit: BoxFit.cover,
                   ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 16),
                 ),
               ),
-            ),
-          ],
+              if (isPrimary)
+                Positioned(
+                  top: 4,
+                  left: 4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: LunaraTheme.electricViolet,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_rounded, color: Colors.white, size: 10),
+                        SizedBox(width: 2),
+                        Text(
+                          'MAIN',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(
+                top: 4,
+                right: 4,
+                child: GestureDetector(
+                  onTap: () => _deletePhotoById(photoId),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white, size: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

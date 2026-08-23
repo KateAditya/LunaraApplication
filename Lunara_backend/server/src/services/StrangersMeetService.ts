@@ -278,21 +278,40 @@ export class StrangersMeetService {
         try {
             const { recipientUserId, eventType, title, body, entityId, metadata, notifyAdmins } = options;
 
-            // 1. Create DB Notification Record for Recipient
+            // 1. Create or Update Single DB Notification Record for Recipient (One Stranger Meet = One Card)
             try {
                 const Notification = (await import('../models/Notification')).default;
-                await Notification.create({
-                    recipientUserId,
-                    eventType,
-                    category: 'bookings' as any,
-                    entityType: 'strangers_meet',
-                    entityId,
-                    title,
-                    body,
-                    priority: 'HIGH' as any,
-                    isRead: false,
-                    metadata: metadata || { entityId }
+                const existingNotif = await Notification.findOne({
+                    where: {
+                        recipientUserId,
+                        entityType: 'strangers_meet',
+                        entityId,
+                    }
                 });
+
+                if (existingNotif) {
+                    await existingNotif.update({
+                        eventType,
+                        title,
+                        body,
+                        isRead: false,
+                        updatedAt: new Date(),
+                        metadata: metadata || { entityId }
+                    });
+                } else {
+                    await Notification.create({
+                        recipientUserId,
+                        eventType,
+                        category: 'bookings' as any,
+                        entityType: 'strangers_meet',
+                        entityId,
+                        title,
+                        body,
+                        priority: 'HIGH' as any,
+                        isRead: false,
+                        metadata: metadata || { entityId }
+                    });
+                }
             } catch (dbErr) {
                 logger.warn(`[StrangersMeetService] Failed to create DB Notification: ${dbErr}`);
             }
@@ -595,7 +614,12 @@ export class StrangersMeetService {
                         primaryAction = 'Pay Deposit';
                         primaryActionUrl = `/strangers-meet/${request.id}/pay-deposit`;
                     } else {
-                        currentStatusText = 'Accepting Participants';
+                        const acceptedCount = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid').length;
+                        const remainingSlots = Math.max(0, request.numberOfPersons - acceptedCount);
+                        const isFull = acceptedCount >= request.numberOfPersons;
+                        currentStatusText = isFull
+                            ? `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • FULL`
+                            : `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • ${remainingSlots} slots remaining`;
                         primaryAction = 'View Meet';
                         primaryActionUrl = `/strangers-meet/${request.id}`;
                     }
@@ -619,6 +643,12 @@ export class StrangersMeetService {
                 ? new Date(request.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : '';
 
+            const acceptedCount = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid').length;
+            const pendingJoiners = joiners.filter((j: any) => j.status === 'pending');
+            const maximumCapacity = request.numberOfPersons;
+            const remainingSlots = Math.max(0, maximumCapacity - acceptedCount);
+            const isFull = acceptedCount >= maximumCapacity;
+
             return {
                 id: `strangers_meet_timeline_${request.id}`,
                 meetId: request.id,
@@ -632,7 +662,22 @@ export class StrangersMeetService {
                     name: `${reqAny.user.firstName} ${reqAny.user.lastName}`.trim(),
                     photo: reqAny.user.profileImageUrl
                 } : null,
-                slotsFilled: request.slotsFilled || 0,
+                slotsFilled: acceptedCount,
+                acceptedCount,
+                maximumCapacity,
+                remainingSlots,
+                isFull,
+                pendingRequestsCount: pendingJoiners.length,
+                pendingRequests: pendingJoiners.map((j: any) => ({
+                    joinerId: j.id,
+                    userId: j.user?.id || j.userId,
+                    name: j.user ? `${j.user.firstName} ${j.user.lastName}`.trim() : 'Participant',
+                    photo: j.user?.profileImageUrl || '',
+                    foodPreference: j.foodPreference,
+                    drinkPreference: j.drinkPreference,
+                    status: j.status,
+                    createdAt: j.createdAt,
+                })),
                 totalSlots: request.numberOfPersons,
                 chargesPerHead: request.chargesPerHead,
                 currentStatusText,

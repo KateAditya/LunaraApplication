@@ -39,6 +39,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    ApiService.profileUpdateNotifier.addListener(_onProfileNotify);
     _screens = [
       const DiscoveryScreen(),
       LiveFeedScreen(key: _liveFeedKey, isTab: true, onCountChanged: _onLiveFeedCountChanged),
@@ -53,6 +54,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       (_) => _fetchBadges(),
     );
     _initSocketListeners();
+  }
+
+  void _onProfileNotify() {
+    _loadProfile(forceRefresh: true);
   }
 
   Future<void> _initApp() async {
@@ -192,6 +197,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    ApiService.profileUpdateNotifier.removeListener(_onProfileNotify);
     _disposeSocketListeners();
     WidgetsBinding.instance.removeObserver(this);
     _badgeTimer?.cancel();
@@ -225,8 +231,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     // No location check needed on app resume
   }
 
-  Future<void> _loadProfile() async {
-    final user = await ApiService.fetchProfile();
+  Future<void> _loadProfile({bool forceRefresh = false}) async {
+    final user = await ApiService.fetchProfile(forceRefresh: forceRefresh);
     if (mounted) {
       setState(() {
         _currentUser = user;

@@ -74,3 +74,43 @@ export const getReliabilityLeaderboard = async (_req: Request, res: Response): P
         res.status(500).json({ success: false, message: 'Failed to fetch leaderboard', error: err.message });
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/reliability-history
+// ─────────────────────────────────────────────────────────────────────────────
+export const getReliabilityHistory = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user?.id || (req.query.userId as string);
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+        const offset = (page - 1) * limit;
+
+        const { count, rows } = await ReliabilityHistory.findAndCountAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset,
+        });
+
+        res.json({
+            success: true,
+            data: {
+                history: rows,
+                pagination: {
+                    page,
+                    limit,
+                    total: count,
+                    totalPages: Math.ceil(count / limit),
+                },
+            },
+        });
+    } catch (err: any) {
+        logger.error('getReliabilityHistory error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch reliability history', error: err.message });
+    }
+};

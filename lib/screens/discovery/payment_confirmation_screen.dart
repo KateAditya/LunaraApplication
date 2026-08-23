@@ -7,6 +7,7 @@ import 'digital_ticket_screen.dart';
 import '../../services/api_service.dart';
 import '../../widgets/top_notification_banner.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class PaymentConfirmationScreen extends StatefulWidget {
@@ -79,10 +80,16 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+        _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+        _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+      } catch (e) {
+        debugPrint('Razorpay init error: $e');
+      }
+    }
     if (widget.autoOpenPayment) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _handlePayment(context);
@@ -92,8 +99,14 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
   @override
   void dispose() {
+    if (!kIsWeb) {
+      try {
+        _razorpay.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     super.dispose();
-    _razorpay.clear();
   }
 
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {

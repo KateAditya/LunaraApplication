@@ -22,6 +22,15 @@ class UserSubscription extends Model {
     public boostsRemaining!: number;
     public expirationAlertSent!: boolean;
 
+    // Multi-stage notification tracking fields
+    public reminder1DaySent!: boolean;
+    public reminder8HourSent!: boolean;
+    public reminder5HourSent!: boolean;
+    public reminder2HourSent!: boolean;
+    public reminder1HourSent!: boolean;
+    public expiryNotified!: boolean;
+    public lastNotifiedAt?: Date | null;
+
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -78,12 +87,56 @@ UserSubscription.init(
             allowNull: false,
             defaultValue: false,
         },
+        reminder1DaySent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        reminder8HourSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        reminder5HourSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        reminder2HourSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        reminder1HourSent: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        expiryNotified: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
+        lastNotifiedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
     },
     {
         sequelize,
         modelName: 'UserSubscription',
         tableName: 'UserSubscriptions',
         timestamps: true,
+        indexes: [
+            {
+                name: 'idx_user_subs_status_enddate',
+                fields: ['status', 'endDate'],
+            },
+            {
+                name: 'idx_user_subs_user_status',
+                fields: ['userId', 'status'],
+            },
+        ],
     }
 );
 

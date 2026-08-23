@@ -20,7 +20,7 @@ import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
 
 import { azureFaceService } from '../services/azureFaceService';
-import { RankingConfig } from '../utils/rankingConfig';
+import { RankingService } from '../services/rankingService';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 // Target HD/2K quality (~3-4 MB max target size, ultra-sharp & unblurred)
@@ -839,54 +839,17 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
-        const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
-
-        const scoredUsers = allUserIds.map(id => {
-            const receivedLikes = likesMap[id] || 0;
-            const receivedSuperlikes = superLikesMap[id] || 0;
-            const boosts = boostsMap[id] || 0;
-            const plans = plansMap[id] || 0;
-            const tier = tierMap[id] ?? 'FREE';
-            const tierRank = tierRankMap[tier] ?? 0;
-            
-            // Dynamic plan superlikes baseline:
-            const planSuperlikesBase = planSuperlikesMap[tier] || 0;
-            const superlikes = receivedSuperlikes + planSuperlikesBase;
-            const likes = receivedLikes + (tierRank > 0 ? (tierRank * 2) : 0);
-            
-            const hasBoost = boosts > 0;
-            const hasVip = tier !== 'FREE' && tierMap[id] !== undefined;
-
-            let priorityTier = 5;
-            let baseScore = RankingConfig.BASE_USER_SCORE;
-
-            const engagementScore = (likes * RankingConfig.LIKE_WEIGHT) 
-                                  + (superlikes * RankingConfig.SUPER_LIKE_WEIGHT) 
-                                  + (plans * RankingConfig.PARTY_PLAN_WEIGHT);
-
-            if (hasBoost && hasVip) {
-                priorityTier = 1;
-                baseScore = RankingConfig.TIER_1_BASE;
-            } else if (hasBoost) {
-                priorityTier = 2;
-                baseScore = RankingConfig.TIER_2_BASE;
-            } else if (hasVip) {
-                priorityTier = 3;
-                baseScore = RankingConfig.TIER_3_BASE;
-            } else if (engagementScore > 50) {
-                priorityTier = 4;
-            }
-
-            const calcPoints = (likes * 15) + (superlikes * 35) + (boosts * 50) + (plans * 25) + 120;
-            pointsMap[id] = calcPoints;
-
-            const rankScore = baseScore + engagementScore + calcPoints + (tierRank * 250);
-
-            return { id, rankScore, priorityTier, likes, superlikes, plans, boosts };
-        });
-
-        // ── Rank-Score sort (Descending)
-        scoredUsers.sort((a, b) => b.rankScore - a.rankScore);
+        const rankingExplanations = await RankingService.computeRankings(allUserIds);
+        const scoredUsers = rankingExplanations.map((exp) => ({
+            id: exp.userId,
+            rankScore: exp.finalRankScore,
+            priorityTier: exp.priorityTier,
+            likes: exp.rawMetrics.likesCount,
+            superlikes: exp.rawMetrics.superlikesCount,
+            plans: exp.rawMetrics.plansCount,
+            boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
+            explainScore: exp.breakdown,
+        }));
 
         const paginatedScoredUsers = scoredUsers.slice(offset, offset + limit);
         const paginatedUserIds = paginatedScoredUsers.map(u => u.id);
@@ -1908,6 +1871,59 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/user/unlike
+// ─────────────────────────────────────────────────────────────────────────────
+export const unlikeUser = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.user?.id || req.body.userId;
+        const { targetUserId } = req.body;
+
+        if (!userId || !targetUserId) {
+            return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
+        }
+
+        if (String(userId) === String(targetUserId)) {
+            return res.status(400).json({ success: false, message: 'Cannot target yourself' });
+        }
+
+        // Delete UserLike record
+        await UserLike.destroy({
+            where: { userId, targetUserId }
+        });
+
+        // Update UserMatch record if present
+        const existingMatch = await UserMatch.findOne({
+            where: { user1Id: userId, user2Id: targetUserId }
+        });
+
+        if (existingMatch) {
+            existingMatch.status = 'declined' as any;
+            await existingMatch.save();
+        }
+
+        // Log engagement event
+        const { EngagementService } = await import('../services/engagementService');
+        await EngagementService.logLikeRemoved(userId, targetUserId);
+
+        // Emit Socket event to target user
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${targetUserId}`).emit('like_removed', {
+                    senderId: userId,
+                    targetUserId,
+                });
+            }
+        } catch (_) {}
+
+        return res.status(200).json({ success: true, message: 'Like removed successfully' });
+    } catch (error: any) {
+        logger.error('[MobileUser] Error in unlikeUser:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/user/likes-matches
 // Returns a list of swipes/matches involving this user
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2323,6 +2339,7 @@ export default {
     getBlockedUsers,
     getBlockedUsersDetails,
     swipeUser,
+    unlikeUser,
     getMyLikesAndMatches,
     getSwipeStatus,
     backtrackSwipe,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
@@ -27,15 +28,27 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
+        _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
+        _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+      } catch (e) {
+        debugPrint('Razorpay init error: $e');
+      }
+    }
   }
 
   @override
   void dispose() {
-    _razorpay.clear();
+    if (!kIsWeb) {
+      try {
+        _razorpay.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     super.dispose();
   }
 

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import Notification from '../models/Notification';
-import StrangersMeetJoiner, { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
+import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import User from '../models/User';
 import { NotificationService } from '../services/NotificationService';
 import { NightPartnerService } from '../services/NightPartnerService';
@@ -74,29 +74,32 @@ export class NotificationActionController {
                         await rejectPartyPlanRequest(mockReq, mockRes);
                         actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
-                } else if ((notification.entityType === 'StrangersMeetRequest' || notification.entityType === 'StrangersMeetJoiner') && notification.entityId) {
-                    const reqItem = await StrangersMeetJoiner.findByPk(notification.entityId);
-                    if (reqItem) {
-                        reqItem.status = action === 'ACCEPT' ? StrangersMeetJoinerStatus.ACCEPTED : StrangersMeetJoinerStatus.REJECTED;
-                        await reqItem.save();
-
-                        // Notify counterpart
-                        const targetUser = reqItem.userId;
-                        await NotificationService.dispatch({
-                            recipientUserId: targetUser,
-                            actorUserId: currentUserId,
-                            eventType: action === 'ACCEPT' ? 'STRANGER_MEET_ACCEPTED' : 'STRANGER_MEET_DECLINED',
-                            category: 'requests',
-                            entityType: 'StrangersMeetJoiner',
-                            entityId: reqItem.id,
-                            title: action === 'ACCEPT' ? '🟢 Join Request Accepted' : '🔴 Request Declined',
-                            body: action === 'ACCEPT'
-                                ? 'Your request to join the Stranger Meet was accepted!'
-                                : 'Your request to join was declined.',
-                            actionType: action === 'ACCEPT' ? 'VIEW_DETAILS' : 'VIEW_EVENTS',
-                            deepLink: `/stranger-meets/${reqItem.strangersMeetRequestId}`,
-                            priority: 'HIGH',
+                } else if ((notification.entityType === 'StrangersMeetRequest' || notification.entityType === 'StrangersMeetJoiner' || notification.entityType === 'strangers_meet') && notification.entityId) {
+                    const joinerId = notification.metadata?.joinerId || notification.entityId;
+                    let joiner = await StrangersMeetJoiner.findByPk(joinerId);
+                    
+                    if (!joiner && notification.entityId) {
+                        joiner = await StrangersMeetJoiner.findOne({
+                            where: { strangersMeetRequestId: notification.entityId, status: 'pending' },
+                            order: [['createdAt', 'ASC']],
                         });
+                    }
+
+                    if (joiner) {
+                        const { handleJoinRequest } = await import('./strangersMeetController');
+                        const mockReq: any = {
+                            params: { id: joiner.strangersMeetRequestId, joinerId: joiner.id },
+                            body: { action: action.toLowerCase() === 'accept' ? 'accept' : 'reject' },
+                            user: { id: currentUserId },
+                        };
+                        let mockStatus = 200;
+                        let mockJsonPayload: any = null;
+                        const mockRes: any = {
+                            status: (code: number) => { mockStatus = code; return mockRes; },
+                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                        };
+                        await handleJoinRequest(mockReq, mockRes);
+                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
                 } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest') && notification.entityId) {
                     const act = action.toUpperCase() === 'ACCEPT' ? 'accept' : 'decline';

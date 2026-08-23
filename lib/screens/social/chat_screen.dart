@@ -32,6 +32,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   String? _conversationId;
   String? _currentUserId;
   Timer? _statusTimer;
+  Timer? _messagePollingTimer;
 
   // Live online status (fetched from API, overrides widget.user['online'])
   bool? _isOnline;
@@ -80,6 +81,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _scrollController.addListener(_onScroll);
     _fetchUserStatus();
     _startStatusPolling();
+    _startMessagePolling();
+  }
+
+  void _startMessagePolling() {
+    _messagePollingTimer?.cancel();
+    _messagePollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted && _conversationId != null && !_isLoadingMore) {
+        _fetchMessages(isBackgroundRefresh: true, markRead: true);
+      }
+    });
   }
 
   @override
@@ -388,6 +399,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _markAsRead();
       _fetchUserStatus();
+      if (_conversationId != null) {
+        _fetchMessages(isBackgroundRefresh: true, markRead: true);
+      }
     }
   }
 
@@ -398,6 +412,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
     WidgetsBinding.instance.removeObserver(this);
     _removeSocketListeners();
+    _messagePollingTimer?.cancel();
     _statusTimer?.cancel();
     _typingDebounceTimer?.cancel();
     _messageController.dispose();
@@ -636,6 +651,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _fetchMessages({
     bool loadMore = false,
     bool markRead = false,
+    bool isBackgroundRefresh = false,
   }) async {
     final convId = _conversationId;
     final userId = _currentUserId;
@@ -652,6 +668,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (loadMore) {
       if (_isLoadingMore || _messages.isEmpty) return;
       setState(() => _isLoadingMore = true);
+    } else if (!isBackgroundRefresh && _messages.isEmpty) {
+      setState(() => _isLoading = true);
     }
 
     try {
@@ -669,25 +687,62 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final mapped = raw.map(_mapApiMessage).toList();
 
       if (mounted) {
-        setState(() {
-          if (loadMore) {
-            _messages.addAll(mapped);
-          } else {
-            // Keep temporary messages that are still sending
-            final tempMessages = _messages
-                .where((m) => m['id']?.toString().startsWith('temp_') == true)
-                .toList();
-            _messages = mapped;
-            for (final temp in tempMessages) {
-              if (!_messages.any((m) => m['id'] == temp['id'])) {
-                _messages.add(temp);
-              }
+        final tempMessages = _messages
+            .where((m) => m['id']?.toString().startsWith('temp_') == true)
+            .toList();
+
+        List<Map<String, dynamic>> updatedList;
+        if (loadMore) {
+          updatedList = List<Map<String, dynamic>>.from(_messages)..addAll(mapped);
+        } else {
+          updatedList = List<Map<String, dynamic>>.from(mapped);
+          for (final temp in tempMessages) {
+            if (!updatedList.any((m) => m['id'] == temp['id'])) {
+              updatedList.add(temp);
             }
           }
-          _sortMessages();
-          _isLoading = false;
-          _isLoadingMore = false;
+        }
+
+        // Sort descending (newest first)
+        updatedList.sort((a, b) {
+          final aStr = a['createdAt']?.toString();
+          final bStr = b['createdAt']?.toString();
+          if (aStr == null && bStr == null) return 0;
+          if (aStr == null) return 1;
+          if (bStr == null) return -1;
+          final aTime = DateTime.tryParse(aStr) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = DateTime.tryParse(bStr) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
         });
+
+        // Determine if state update is actually needed
+        bool listChanged = _isLoading || _messages.length != updatedList.length;
+        if (!listChanged) {
+          for (int i = 0; i < _messages.length; i++) {
+            if (_messages[i]['id'] != updatedList[i]['id'] ||
+                _messages[i]['status'] != updatedList[i]['status'] ||
+                _messages[i]['text'] != updatedList[i]['text']) {
+              listChanged = true;
+              break;
+            }
+          }
+        }
+
+        if (listChanged) {
+          setState(() {
+            _messages = updatedList;
+            _isLoading = false;
+            _isLoadingMore = false;
+          });
+          _recalculateLatestMessageAndNotify();
+        } else {
+          if (_isLoading || _isLoadingMore) {
+            setState(() {
+              _isLoading = false;
+              _isLoadingMore = false;
+            });
+          }
+        }
 
         // Mark conversation as read whenever new messages are fetched
         if (markRead) _markAsRead();
@@ -787,8 +842,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       'createdAt': DateTime.now().toIso8601String(),
       'isDeleted': false,
       'status': 'sent',
-      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
-      if (replying != null) 'replyTo': replying,
+      'replyToMessageId': ?replyToMessageId,
+      'replyTo': ?replying,
       if (type == 'icebreaker') ...{'isIcebreaker': true},
     };
 

@@ -8,6 +8,7 @@ import Notification from '../models/Notification';
 import { Op } from 'sequelize';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
+import * as reliabilityCtrl from '../controllers/reliabilityController';
 import { enrichPartyPlanNotificationCard } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -707,9 +708,15 @@ async function getUserNotifications(
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
             (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_(?:timeline_)?([^_]+).*/, '$1') : null);
 
+        const partyPlanId = data.partyPlanId?.toString() || data.planId?.toString() ||
+            (n.entityType === 'party_plan' || n.entityType === 'party_plan_request' || n.entityType === 'PartyPlan' || n.entityType === 'PartyPlanRequest' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('party_plan_') ? n.id.replace(/^party_plan_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (n.metadata ? (n.metadata.partyPlanId || n.metadata.planId) : null);
+
         let key: string | null = null;
         if (groupPartyId) key = `gp_${groupPartyId}`;
         else if (bookingId) key = `bk_${bookingId}`;
+        else if (partyPlanId) key = `pp_${partyPlanId}`;
         else if (data.type?.startsWith('strangers_meet') && data.requestId) key = `sm_${data.requestId}`;
 
         if (key) {
@@ -1051,7 +1058,17 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                 ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id'] })
                 : Promise.resolve([]),
             myPartyPlanIds.length > 0
-                ? PartyPlanRequest.findAll({ where: { planId: { [Op.in]: myPartyPlanIds }, status: 'pending' }, attributes: ['id'] })
+                ? PartyPlanRequest.findAll({
+                    where: {
+                        planId: { [Op.in]: myPartyPlanIds },
+                        status: 'pending',
+                    },
+                    include: [{ model: PartyPlan, as: 'plan', attributes: ['selectedUsers'] }]
+                }).then(reqs => reqs.filter(r => {
+                    const planUsers = (r as any).plan?.selectedUsers;
+                    const isPrivateInvite = Array.isArray(planUsers) && planUsers.includes(r.requesterId);
+                    return !isPrivateInvite; // Only voluntary join requests count as incoming requests for host
+                }))
                 : Promise.resolve([]),
             conversationIds.length > 0
                 ? Message.count({
@@ -1087,6 +1104,7 @@ router.get('/badge-counts', authenticate, async (req, res) => {
     }
 });
 router.post('/swipe', authenticate, mobileUserController.swipeUser);
+router.post('/unlike', authenticate, mobileUserController.unlikeUser);
 
 /**
  * GET /api/mobile/user/likes-matches
@@ -1269,5 +1287,8 @@ router.get('/profile-summary', authenticate, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch profile summary' });
     }
 });
+
+router.get('/reliability-summary', optionalAuth, reliabilityCtrl.getReliabilitySummary);
+router.get('/reliability-history', authenticate, reliabilityCtrl.getReliabilityHistory);
 
 export default router;

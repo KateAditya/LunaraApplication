@@ -56,6 +56,9 @@ export enum NotificationEventType {
     ADMIN_REJECTED = 'ADMIN_REJECTED',
     ACCOUNT_WARNING = 'ACCOUNT_WARNING',
     SYSTEM_ANNOUNCEMENT = 'SYSTEM_ANNOUNCEMENT',
+
+    // Schedule / Time-Lock
+    SCHEDULE_UNLOCKED = 'SCHEDULE_UNLOCKED',
 }
 
 export type NotificationCategory =

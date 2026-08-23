@@ -22,6 +22,7 @@ import '../../services/google_places_service.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -4435,14 +4436,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       String errorMsg =
                                               'Failed to save plan data.';
                                       String? errorCode;
+                                      Map<String, dynamic>? errorBody;
                                       try {
-                                        final data = jsonDecode(response.body);
+                                        errorBody = jsonDecode(response.body);
                                         errorMsg =
-                                            data['message'] ??
-                                            data['error'] ??
+                                            errorBody?['message'] ??
+                                            errorBody?['error'] ??
                                             errorMsg;
-                                        errorCode = data['code'];
+                                        errorCode = errorBody?['code'];
                                       } catch (_) {}
+
+                                      if (errorBody != null && (errorBody['reason'] == 'FOUR_HOUR_TIME_LOCK' || errorBody['conflictingEventType'] != null)) {
+                                        setSheetState(() {
+                                          isPosting = false;
+                                        });
+                                        Navigator.pop(context);
+                                        TimeLockBlockedDialog.show(context, errorData: errorBody);
+                                        return;
+                                      }
 
                                       if (errorCode == 'PARTY_PLAN_LIMIT_REACHED' ||
                                           errorCode == 'PARTY_PLAN_DAILY_LIMIT_REACHED' ||

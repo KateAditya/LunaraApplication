@@ -570,6 +570,35 @@ export function generateUniqueTicketCode(typePrefix: string = 'BK'): string {
     return `LUN-${year}-${typePrefix}-${randomHex}`;
 }
 
+const TICKET_MENU_IMAGE_TYPES = ['menu', 'food_menu', 'bar_menu', 'beverage_menu', 'party_packages'];
+
+async function getVenueCoverImageFromDb(venueId: string): Promise<string | null> {
+    if (!venueId) return null;
+    const primaryNonMenu = await VenueImage.findOne({
+        where: {
+            venueId,
+            imageType: { [Op.notIn]: TICKET_MENU_IMAGE_TYPES },
+            isPrimary: true,
+        },
+    });
+    if (primaryNonMenu?.filePath) return primaryNonMenu.filePath;
+
+    const anyNonMenu = await VenueImage.findOne({
+        where: {
+            venueId,
+            imageType: { [Op.notIn]: TICKET_MENU_IMAGE_TYPES },
+        },
+        order: [['displayOrder', 'ASC']],
+    });
+    if (anyNonMenu?.filePath) return anyNonMenu.filePath;
+
+    const fallback = await VenueImage.findOne({
+        where: { venueId },
+        order: [['isPrimary', 'DESC'], ['displayOrder', 'ASC']],
+    });
+    return fallback?.filePath || null;
+}
+
 /**
  * Orchestrator helper to generate ticket for standard Booking model
  */
@@ -588,7 +617,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         }
 
         const hostPhoto = await UserPhoto.findOne({ where: { userId: booking.userId, isPrimary: true } });
-        const venueImg = await VenueImage.findOne({ where: { venueId: booking.venueId, isPrimary: true } });
+        const venueCoverPath = await getVenueCoverImageFromDb(booking.venueId);
 
         let bookingType: 'solo' | 'party_plan' | 'group_party_small' | 'group_party_large' = 'solo';
         let partnerName: string | null = null;
@@ -660,7 +689,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             partnerProfileUrl,
             venueName: (booking as any).venue?.name || 'SAHARA',
             venueAddress: (booking as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
-            venueImageUrl: venueImg?.filePath || null,
+            venueImageUrl: venueCoverPath || null,
             numberOfGuests: booking.numberOfGuests,
             eventDate: booking.bookingDate,
             startTime: booking.startTime,
@@ -716,7 +745,7 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         }
 
         const hostPhoto = await UserPhoto.findOne({ where: { userId: groupParty.userId, isPrimary: true } });
-        const venueImg = await VenueImage.findOne({ where: { venueId: groupParty.venueId, isPrimary: true } });
+        const venueCoverPath = await getVenueCoverImageFromDb(groupParty.venueId);
 
         const ticketCode = groupParty.ticketCode || generateUniqueTicketCode('GP');
         // groupParty.startTime (added for real bookings going forward) holds
@@ -755,9 +784,9 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
             hostName,
             hostUsername,
             hostProfileUrl,
-            venueName: (groupParty as any).venue?.name || 'SAHARA',
-            venueAddress: (groupParty as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
-            venueImageUrl: venueImg?.filePath || null,
+            venueName: (groupParty as any).venue?.name || 'Lunara Venue',
+            venueAddress: (groupParty as any).venue?.addressLine1 || '',
+            venueImageUrl: venueCoverPath || null,
             numberOfGuests: groupParty.numberOfFriends,
             eventDate: groupParty.partyDate,
             startTime: groupParty.startTime || '08:00 PM',
@@ -813,7 +842,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
         }
 
         const hostPhoto = await UserPhoto.findOne({ where: { userId: request.userId, isPrimary: true } });
-        const venueImg = await VenueImage.findOne({ where: { venueId: request.venueId, isPrimary: true } });
+        const venueCoverPath = await getVenueCoverImageFromDb(request.venueId);
 
         const ticketCode = request.ticketId || generateUniqueTicketCode('SM');
         const eventStartAt = new Date(request.eventDateTime);
@@ -855,9 +884,9 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             hostName,
             hostUsername,
             hostProfileUrl,
-            venueName: (request as any).venue?.name || 'SAHARA',
-            venueAddress: (request as any).venue?.addressLine1 || 'Hinjawadi - Aundh Rd, Pune',
-            venueImageUrl: venueImg?.filePath || null,
+            venueName: (request as any).venue?.name || 'Lunara Venue',
+            venueAddress: (request as any).venue?.addressLine1 || '',
+            venueImageUrl: venueCoverPath || null,
             numberOfGuests: dynamicParticipantsCount,
             eventDate: request.eventDateTime,
             startTime: request.eventDateTime ? new Date(request.eventDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '08:00 PM',
@@ -923,7 +952,7 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
 
         const hostPhoto = host ? await UserPhoto.findOne({ where: { userId: host.id, isPrimary: true } }) : null;
         const joinerPhoto = joiner ? await UserPhoto.findOne({ where: { userId: joiner.id, isPrimary: true } }) : null;
-        const venueImg = plan?.venueId ? await VenueImage.findOne({ where: { venueId: plan.venueId, isPrimary: true } }) : null;
+        const venueCoverPath = plan?.venueId ? await getVenueCoverImageFromDb(plan.venueId) : null;
 
         const booking = await Booking.findOne({
             where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan?.userId, venueId: plan?.venueId },
@@ -951,7 +980,7 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
             partnerProfileUrl,
             venueName: plan?.venue?.name || 'SAHARA',
             venueAddress: plan?.venue?.addressLine1 || 'Hinjawadi - Aundh Rd, near Yug Honda Showroom, Shedge Vasti, Wakad, Pune, Pimpri-Chinchwad, Maharashtra 411057',
-            venueImageUrl: venueImg?.filePath || null,
+            venueImageUrl: venueCoverPath || null,
             numberOfGuests: 2,
             eventDate: plan?.planDateTime || new Date(),
             startTime: plan?.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '09:00 PM',

@@ -148,6 +148,7 @@ import adminEventBookingRoutes from './routes/adminEventBooking';
 import { ExpiredTicketCleanupWorker } from './services/ExpiredTicketCleanupWorker';
 import { startPartyPlanCron, startNotificationJobCron, startExpiringPlanAlertCron } from './cron/partyPlanCron';
 import { startSubscriptionCron } from './cron/subscriptionCron';
+import { startBoostCron } from './cron/boostCron';
 import { startStrangersMeetCron } from './cron/strangersMeetCron';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
@@ -399,6 +400,7 @@ const startServer = async () => {
             startNotificationJobCron();
             startExpiringPlanAlertCron();
             startSubscriptionCron();
+            startBoostCron();
             startStrangersMeetCron();
             ExpiredTicketCleanupWorker.startWorker();
             logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
@@ -435,6 +437,7 @@ if (process.env.NODE_ENV !== 'test') {
                 startNotificationJobCron();
                 startExpiringPlanAlertCron();
                 startSubscriptionCron();
+                startBoostCron();
                 startStrangersMeetCron();
                 ExpiredTicketCleanupWorker.startWorker();
                 logger.info('Primary process database connected & initiated background Cron Jobs.');

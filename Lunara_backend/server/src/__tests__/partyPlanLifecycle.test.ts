@@ -4,6 +4,7 @@ import User, { UserRole } from '../models/User';
 import Venue, { VenueCategory } from '../models/Venue';
 import PartyPlan, { PartyPlanStatus, PartyPlanLifecycleStatus, PartyPlanVisibility, PartyPlanPaymentStatus, PartyPlanPaymentType } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
+import { generateAccessToken } from '../utils/jwt';
 
 jest.mock('razorpay', () => {
     return jest.fn().mockImplementation(() => {
@@ -33,6 +34,11 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     let userC: User;
     let venue: Venue;
     let partyPlan: PartyPlan;
+
+    let hostToken: string;
+    let userAToken: string;
+    let userBToken: string;
+    let userCToken: string;
 
     beforeAll(async () => {
         // Create host and requesters
@@ -81,6 +87,11 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
             isVerified: true,
         });
 
+        hostToken = generateAccessToken({ userId: host.id, email: host.email, role: host.role });
+        userAToken = generateAccessToken({ userId: userA.id, email: userA.email, role: userA.role });
+        userBToken = generateAccessToken({ userId: userB.id, email: userB.email, role: userB.role });
+        userCToken = generateAccessToken({ userId: userC.id, email: userC.email, role: userC.role });
+
         venue = await Venue.create({
             ownerId: host.id,
             name: 'The Ruby Hilltop',
@@ -124,6 +135,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
         // User A requests
         const resA = await request(app)
             .post(`/api/mobile/party-plans/${partyPlan.id}/requests`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id });
         expect(resA.status).toBe(201);
         expect(resA.body.success).toBe(true);
@@ -133,6 +145,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
         // User B requests
         const resB = await request(app)
             .post(`/api/mobile/party-plans/${partyPlan.id}/requests`)
+            .set('Authorization', `Bearer ${userBToken}`)
             .send({ userId: userB.id });
         expect(resB.status).toBe(201);
         expect(resB.body.success).toBe(true);
@@ -142,6 +155,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
         // User C requests
         const resC = await request(app)
             .post(`/api/mobile/party-plans/${partyPlan.id}/requests`)
+            .set('Authorization', `Bearer ${userCToken}`)
             .send({ userId: userC.id });
         expect(resC.status).toBe(201);
         expect(resC.body.success).toBe(true);
@@ -158,6 +172,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 2: Duplicate active request from the same user is rejected (409)', async () => {
         const res = await request(app)
             .post(`/api/mobile/party-plans/${partyPlan.id}/requests`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id });
         expect(res.status).toBe(409);
         expect(res.body.success).toBe(false);
@@ -167,6 +182,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 3: User A cancels request -> Request marked CANCELLED without physical deletion', async () => {
         const cancelRes = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqAId}/cancel`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id, reason: 'changed_plans' });
         expect(cancelRes.status).toBe(200);
         expect(cancelRes.body.success).toBe(true);
@@ -189,6 +205,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 5: Cancellation is idempotent (repeated cancel returns 200)', async () => {
         const cancelAgain = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqAId}/cancel`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id });
         expect(cancelAgain.status).toBe(200);
         expect(cancelAgain.body.success).toBe(true);
@@ -198,6 +215,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 6: Host cannot accept User A cancelled request (rejected with 409)', async () => {
         const acceptCancelled = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqAId}/accept`)
+            .set('Authorization', `Bearer ${hostToken}`)
             .send({ userId: host.id });
         expect(acceptCancelled.status).toBe(409);
         expect(acceptCancelled.body.success).toBe(false);
@@ -206,7 +224,8 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
 
     test('Case 7: Host fetching requests only returns active requests (B & C, not cancelled A)', async () => {
         const hostRequestsRes = await request(app)
-            .get(`/api/mobile/party-plans/${partyPlan.id}/requests?userId=${host.id}`);
+            .get(`/api/mobile/party-plans/${partyPlan.id}/requests?userId=${host.id}`)
+            .set('Authorization', `Bearer ${hostToken}`);
         expect(hostRequestsRes.status).toBe(200);
         expect(hostRequestsRes.body.success).toBe(true);
 
@@ -219,6 +238,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 8: User A CAN send a new join request after cancelling previous request', async () => {
         const reRequestRes = await request(app)
             .post(`/api/mobile/party-plans/${partyPlan.id}/requests`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id });
         expect(reRequestRes.status).toBe(201);
         expect(reRequestRes.body.success).toBe(true);
@@ -239,6 +259,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 9: Host accepts User B -> User B goes to PAYMENT_PENDING, User C goes to WAITING', async () => {
         const acceptRes = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqBId}/accept`)
+            .set('Authorization', `Bearer ${hostToken}`)
             .send({ userId: host.id });
         expect(acceptRes.status).toBe(200);
         expect(acceptRes.body.success).toBe(true);
@@ -253,6 +274,7 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
     test('Case 10: While User B is matched, other requests cannot be accepted', async () => {
         const acceptC = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqCId}/accept`)
+            .set('Authorization', `Bearer ${hostToken}`)
             .send({ userId: host.id });
         expect(acceptC.status).toBe(400);
         expect(acceptC.body.success).toBe(false);
@@ -279,12 +301,14 @@ describe('Party Plan Multiple Requests, Cancellation & Re-Request Lifecycle', ()
         // User B cannot cancel User C's request (403)
         const unauthorizedCancel = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqCId}/cancel`)
+            .set('Authorization', `Bearer ${userBToken}`)
             .send({ userId: userB.id });
         expect(unauthorizedCancel.status).toBe(403);
 
         // Non-host (User A) cannot accept requests on host's plan (403)
         const unauthorizedAccept = await request(app)
             .post(`/api/mobile/party-plans/requests/${reqCId}/accept`)
+            .set('Authorization', `Bearer ${userAToken}`)
             .send({ userId: userA.id });
         expect(unauthorizedAccept.status).toBe(403);
     });

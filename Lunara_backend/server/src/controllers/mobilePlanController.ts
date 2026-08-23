@@ -939,6 +939,84 @@ export const getLiveFeed = async (req: Request, res: Response) => {
 
             pendingPayments = pendingPaymentItems;
 
+            // Combine and deduplicate party plan requests between myPartyReqs and incomingPartyReqs
+            const partyReqMap = new Map<string, any>();
+            [...myPartyReqs, ...incomingPartyReqs].forEach((r: any) => {
+                if (r && r.id) partyReqMap.set(r.id, r);
+            });
+            const allPartyReqsList = Array.from(partyReqMap.values());
+
+            const formattedMyPartyReqs: any[] = [];
+            const formattedIncomingPartyReqs: any[] = [];
+
+            allPartyReqsList.forEach((r: any) => {
+                const plan = r.plan;
+                if (!plan) return;
+
+                const hostId = plan.userId;
+                const targetUserId = r.requesterId;
+                const isInvite = !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(targetUserId));
+
+                const senderId = isInvite ? hostId : targetUserId;
+                const recipientId = isInvite ? targetUserId : hostId;
+
+                const reqUser = r.requester;
+                const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
+
+                const itemPayload = {
+                    id: r.id,
+                    requestId: r.id,
+                    planId: r.planId,
+                    partyPlanId: r.planId,
+                    senderId,
+                    recipientId,
+                    hostId,
+                    targetUserId,
+                    isInvite,
+                    status: r.status,
+                    createdAt: r.createdAt,
+                    paymentTimeoutAt: r.paymentTimeoutAt,
+                    paymentDeadlineAt: r.paymentTimeoutAt,
+                    serverTime,
+                    joinerPaymentStatus: r.joinerPaymentStatus,
+                    joinerRazorpayOrderId: r.joinerRazorpayOrderId,
+                    requester: reqUser ? { ...reqUser.toJSON(), profileImageUrl } : null,
+                    plan: {
+                        id: plan.id,
+                        userId: plan.userId,
+                        message: plan.message,
+                        planDateTime: plan.planDateTime,
+                        hostPaymentStatus: plan.hostPaymentStatus,
+                        hostRazorpayOrderId: plan.hostRazorpayOrderId,
+                        depositAmount: plan.depositAmount,
+                        status: plan.status,
+                        isLive: plan.isLive,
+                        paymentStatus: plan.paymentStatus,
+                        visibility: plan.visibility,
+                        selectedUsers: plan.selectedUsers,
+                        paymentType: plan.paymentType,
+                        venue: (plan as any).venue,
+                        creator: (plan as any).creator,
+                    },
+                };
+
+                if (viewerId === recipientId) {
+                    formattedIncomingPartyReqs.push({
+                        ...itemPayload,
+                        type: 'incoming_request',
+                        requestType: isInvite ? 'party_plan_invitation' : 'party_plan',
+                    });
+                }
+
+                if (viewerId === senderId) {
+                    formattedMyPartyReqs.push({
+                        ...itemPayload,
+                        type: 'my_request',
+                        requestType: isInvite ? 'party_plan_invite_sent' : 'party_plan',
+                    });
+                }
+            });
+
             myRequests = [
                 ...myTableReqs.map((r: any) => ({
                     id: r.id,
@@ -948,35 +1026,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     createdAt: r.createdAt,
                     plan: (r as any).plan
                 })),
-                ...myPartyReqs.map((r: any) => ({
-                    id: r.id,
-                    type: 'my_request',
-                    requestType: 'party_plan',
-                    status: r.status,
-                    createdAt: r.createdAt,
-                    paymentTimeoutAt: r.paymentTimeoutAt,
-                    paymentDeadlineAt: r.paymentTimeoutAt,
-                    serverTime,
-                    joinerPaymentStatus: r.joinerPaymentStatus,
-                    joinerRazorpayOrderId: r.joinerRazorpayOrderId,
-                    plan: r.plan ? {
-                        id: r.plan.id,
-                        userId: r.plan.userId,
-                        message: r.plan.message,
-                        planDateTime: r.plan.planDateTime,
-                        hostPaymentStatus: r.plan.hostPaymentStatus,
-                        hostRazorpayOrderId: r.plan.hostRazorpayOrderId,
-                        depositAmount: r.plan.depositAmount,
-                        status: r.plan.status,
-                        isLive: r.plan.isLive,
-                        paymentStatus: r.plan.paymentStatus,
-                        visibility: r.plan.visibility,
-                        selectedUsers: r.plan.selectedUsers,
-                        paymentType: r.plan.paymentType,
-                        venue: (r.plan as any).venue,
-                        creator: (r.plan as any).creator,
-                    } : null,
-                })),
+                ...formattedMyPartyReqs,
 
                 ...pendingPaymentItems,
                 ...myBookings.map((b: any) => ({
@@ -1117,25 +1167,6 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 };
             });
 
-            const incomingPartyMapped = incomingPartyReqs.map((r: any) => {
-                const reqUser = r.requester;
-                const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
-                return {
-                    id: r.id,
-                    type: 'incoming_request',
-                    requestType: 'party_plan',
-                    planId: r.planId,
-                    status: r.status,
-                    createdAt: r.createdAt,
-                    paymentTimeoutAt: r.paymentTimeoutAt,
-                    paymentDeadlineAt: r.paymentTimeoutAt,
-                    serverTime,
-                    joinerPaymentStatus: r.joinerPaymentStatus,
-                    joinerRazorpayOrderId: r.joinerRazorpayOrderId,
-                    requester: { ...reqUser?.toJSON(), profileImageUrl },
-                };
-            });
-
             const incomingStrangerMapped = incomingStrangerReqs.map((r: any) => {
                 const reqUser = r.user;
                 const profileImageUrl = reqUser?.profileImageUrl ?? (reqUser?.photos?.[0]?.filePath ? '/' + reqUser.photos[0].filePath.replace(/\\/g, '/') : null);
@@ -1156,7 +1187,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 };
             });
 
-            incomingRequests = [...incomingTableMapped, ...incomingPartyMapped, ...incomingStrangerMapped]
+            incomingRequests = [...incomingTableMapped, ...formattedIncomingPartyReqs, ...incomingStrangerMapped]
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         }
 

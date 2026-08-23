@@ -16,6 +16,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<Map<String, dynamic>> _conversations = [];
   bool _hasCreatedOrJoinedPlans = false;
   StreamSubscription<Map<String, dynamic>>? _chatUpdateSub;
+  Timer? _conversationTimer;
 
   @override
   void initState() {
@@ -23,6 +24,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _loadConversations();
     _initSocketListeners();
     _initLocalStreamListener();
+    _startConversationPolling();
+  }
+
+  void _startConversationPolling() {
+    _conversationTimer?.cancel();
+    _conversationTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) {
+        _loadConversations(isBackgroundRefresh: true);
+      }
+    });
   }
 
   void _initLocalStreamListener() {
@@ -196,6 +207,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   void dispose() {
+    _conversationTimer?.cancel();
     _chatUpdateSub?.cancel();
     ApiService.removeSocketListener('new_message', _onNewMessageSocket);
     ApiService.removeSocketListener('messages_read', _onMessagesReadSocket);
@@ -206,8 +218,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
-  Future<void> _loadConversations() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadConversations({bool isBackgroundRefresh = false}) async {
+    if (!isBackgroundRefresh && _conversations.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     try {
       final userId = ApiService.currentUserId;
       if (userId == null) {
@@ -217,14 +231,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
       final conversations = await ApiService.fetchConversations(userId);
 
-      // Debug: print raw API shape so we can map fields correctly
-      if (conversations.isNotEmpty) {        
-        debugPrint('[MessagesScreen] First conversation raw: ${conversations.first}');
-      } else {
-        debugPrint('[MessagesScreen] No conversations returned');
-      }
-
-      bool hasPlans = false;
+      bool hasPlans = _hasCreatedOrJoinedPlans;
       if (conversations.isEmpty) {
         try {
           final results = await Future.wait([

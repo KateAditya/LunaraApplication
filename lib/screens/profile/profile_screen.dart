@@ -53,8 +53,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.profileUpdateNotifier.addListener(_onProfileUpdated);
     _initUser();
     _loadAllProfiles();
+  }
+
+  @override
+  void dispose() {
+    ApiService.profileUpdateNotifier.removeListener(_onProfileUpdated);
+    super.dispose();
+  }
+
+  void _onProfileUpdated() {
+    ApiService.fetchProfile(forceRefresh: true).then((me) {
+      if (mounted && me != null) {
+        setState(() {
+          _me = me;
+        });
+      }
+    });
   }
 
   // ── Load subscription plan limits ────────────────────────────────────────────

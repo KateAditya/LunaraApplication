@@ -369,11 +369,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       return '${ApiService.baseUrl}/${clean.startsWith('/') ? clean.substring(1) : clean}';
     }
 
-    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().trim().isNotEmpty) {
+    if (venue['coverImageUrl'] != null && venue['coverImageUrl'].toString().trim().isNotEmpty && !venue['coverImageUrl'].toString().toLowerCase().contains('menu')) {
       return normalize(venue['coverImageUrl'].toString());
     }
 
-    if (venue['profilePhotoUrl'] != null && venue['profilePhotoUrl'].toString().trim().isNotEmpty) {
+    if (venue['profilePhotoUrl'] != null && venue['profilePhotoUrl'].toString().trim().isNotEmpty && !venue['profilePhotoUrl'].toString().toLowerCase().contains('menu')) {
       return normalize(venue['profilePhotoUrl'].toString());
     }
 
@@ -385,10 +385,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       }
     }
 
-    if (venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty) {
+    if (venue['imageUrl'] != null && venue['imageUrl'].toString().isNotEmpty && !venue['imageUrl'].toString().toLowerCase().contains('menu')) {
       return normalize(venue['imageUrl'].toString());
     }
-    if (venue['image'] != null && venue['image'].toString().isNotEmpty) {
+    if (venue['image'] != null && venue['image'].toString().isNotEmpty && !venue['image'].toString().toLowerCase().contains('menu')) {
       return normalize(venue['image'].toString());
     }
 
@@ -396,8 +396,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     if (images is List && images.isNotEmpty) {
       final nonMenuImages = images.where((img) {
         if (img is Map) {
-          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
-          return !type.contains('menu');
+          final type = (img['imageType'] ?? img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu') && !type.contains('package');
         }
         return true;
       }).toList();
@@ -418,8 +418,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     if (gallery is List && gallery.isNotEmpty) {
       final nonMenuGallery = gallery.where((img) {
         if (img is Map) {
-          final type = (img['type'] ?? img['category'] ?? '').toString().toLowerCase();
-          return !type.contains('menu');
+          final type = (img['imageType'] ?? img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+          return !type.contains('menu') && !type.contains('package');
         }
         return true;
       }).toList();
@@ -1166,6 +1166,46 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['ticketId']?.toString() ??
         (booking['id'] != null ? booking['id'].toString().substring(0, 8).toUpperCase() : '');
 
+    final bool isEventTicket = category == 'event_booking' ||
+        booking['isUpcomingNight'] == true ||
+        booking['isEventBooking'] == true;
+
+    String? resolvedBannerUrl;
+    final partyEvent = booking['partyEvent'];
+    if (partyEvent is Map) {
+      resolvedBannerUrl =
+          partyEvent['bannerImageUrl']?.toString().trim().isNotEmpty == true
+              ? partyEvent['bannerImageUrl'].toString()
+              : partyEvent['imagePath']?.toString().trim().isNotEmpty == true
+                  ? partyEvent['imagePath'].toString()
+                  : null;
+    }
+    resolvedBannerUrl ??=
+        booking['bannerImageUrl']?.toString().trim().isNotEmpty == true
+            ? booking['bannerImageUrl'].toString()
+            : booking['eventPoster']?.toString().trim().isNotEmpty == true
+                ? booking['eventPoster'].toString()
+                : null;
+
+    String? resolvedEventTitle;
+    if (partyEvent is Map) {
+      resolvedEventTitle = partyEvent['title']?.toString().trim().isNotEmpty == true
+          ? partyEvent['title'].toString()
+          : null;
+    }
+    resolvedEventTitle ??=
+        booking['eventTitle']?.toString().trim().isNotEmpty == true
+            ? booking['eventTitle'].toString()
+            : booking['partySubject']?.toString().trim().isNotEmpty == true
+                ? booking['partySubject'].toString()
+                : null;
+
+    final cardHeaderImage = (isEventTicket && resolvedBannerUrl != null && resolvedBannerUrl.isNotEmpty)
+        ? (resolvedBannerUrl.startsWith('http')
+            ? resolvedBannerUrl
+            : '${ApiService.baseUrl}/${resolvedBannerUrl.startsWith('/') ? resolvedBannerUrl.substring(1) : resolvedBannerUrl}')
+        : imageUrl;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: GestureDetector(
@@ -1247,42 +1287,6 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
 
           // Standard Digital Ticket Screen (Solo / Event / Venue)
-          final bool isEventTicket = category == 'event_booking' ||
-              booking['isUpcomingNight'] == true ||
-              booking['isEventBooking'] == true;
-
-          // Resolve banner image - prefer partyEvent bannerImageUrl, then booking fields
-          String? resolvedBannerUrl;
-          final partyEvent = booking['partyEvent'];
-          if (partyEvent is Map) {
-            resolvedBannerUrl =
-                partyEvent['bannerImageUrl']?.toString().trim().isNotEmpty == true
-                    ? partyEvent['bannerImageUrl'].toString()
-                    : partyEvent['imagePath']?.toString().trim().isNotEmpty == true
-                        ? partyEvent['imagePath'].toString()
-                        : null;
-          }
-          resolvedBannerUrl ??=
-              booking['bannerImageUrl']?.toString().trim().isNotEmpty == true
-                  ? booking['bannerImageUrl'].toString()
-                  : booking['eventPoster']?.toString().trim().isNotEmpty == true
-                      ? booking['eventPoster'].toString()
-                      : null;
-
-          // Resolve event title
-          String? resolvedEventTitle;
-          if (partyEvent is Map) {
-            resolvedEventTitle = partyEvent['title']?.toString().trim().isNotEmpty == true
-                ? partyEvent['title'].toString()
-                : null;
-          }
-          resolvedEventTitle ??=
-              booking['eventTitle']?.toString().trim().isNotEmpty == true
-                  ? booking['eventTitle'].toString()
-                  : booking['partySubject']?.toString().trim().isNotEmpty == true
-                      ? booking['partySubject'].toString()
-                      : null;
-
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -1334,7 +1338,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     top: Radius.circular(23),
                   ),
                   image: DecorationImage(
-                    image: NetworkImage(imageUrl),
+                    image: NetworkImage(cardHeaderImage),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -1356,41 +1360,50 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                   child: Stack(
                     children: [
                       // Top Row: Category Tag + Status Badge
-                      Align(
-                        alignment: Alignment.topLeft,
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: categoryColor.withValues(alpha: 0.5),
-                                  width: 1.2,
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: categoryColor.withValues(alpha: 0.5),
+                                    width: 1.2,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(categoryIcon, size: 12, color: categoryColor),
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Text(
+                                        categoryName,
+                                        style: TextStyle(
+                                          color: categoryColor,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.8,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(categoryIcon, size: 12, color: categoryColor),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    categoryName,
-                                    style: TextStyle(
-                                      color: categoryColor,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
+                            const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -1420,8 +1433,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                         ),
                       ),
                       // Bottom Details on Image
-                      Align(
-                        alignment: Alignment.bottomLeft,
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1451,11 +1466,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 0.4,
                                     ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
-                            if (ticketCode.isNotEmpty)
+                            if (ticketCode.isNotEmpty) ...[
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
@@ -1472,6 +1490,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                                   ),
                                 ),
                               ),
+                            ],
                           ],
                         ),
                       ),

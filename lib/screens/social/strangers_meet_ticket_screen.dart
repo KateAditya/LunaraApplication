@@ -455,52 +455,65 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0EBFF),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('🎉 ', style: TextStyle(fontSize: 10)),
-                                Text(
-                                  'STRANGERS MEET',
-                                  style: TextStyle(
-                                    color: Color(0xFF6D28D9),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.8,
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0EBFF),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('🎉 ', style: TextStyle(fontSize: 10)),
+                                  Flexible(
+                                    child: Text(
+                                      'STRANGERS MEET',
+                                      style: TextStyle(
+                                        color: Color(0xFF6D28D9),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.8,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                const TextSpan(
-                                  text: 'TICKET ID: ',
-                                  style: TextStyle(
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
-                                  ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: RichText(
+                                text: TextSpan(
+                                  children: [
+                                    const TextSpan(
+                                      text: 'TICKET ID: ',
+                                      style: TextStyle(
+                                        color: Color(0xFF94A3B8),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: ticketId.length > 12
+                                          ? ticketId.substring(0, 12)
+                                          : ticketId,
+                                      style: const TextStyle(
+                                        color: Color(0xFF6D28D9),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                TextSpan(
-                                  text: ticketId.length > 12
-                                      ? ticketId.substring(0, 12)
-                                      : ticketId,
-                                  style: const TextStyle(
-                                    color: Color(0xFF6D28D9),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ],

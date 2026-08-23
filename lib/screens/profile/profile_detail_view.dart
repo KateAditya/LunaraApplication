@@ -63,6 +63,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   @override
   void initState() {
     super.initState();
+    ApiService.profileUpdateNotifier.addListener(_refreshProfile);
     _currentUser = widget.user;
     _localSwipedAction = widget.swipedAction ??
         (widget.user.isSuperLiked
@@ -75,6 +76,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         if (mounted) setState(() => _isLoadingSwipeStatus = false);
       });
     }
+  }
+
+  @override
+  void dispose() {
+    ApiService.profileUpdateNotifier.removeListener(_refreshProfile);
+    super.dispose();
   }
 
   @override
@@ -121,7 +128,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   Future<void> _refreshProfile() async {
-    final updatedUser = await ApiService.fetchProfile(userId: _currentUser.id);
+    final updatedUser = await ApiService.fetchProfile(userId: _currentUser.id, forceRefresh: true);
     if (updatedUser != null && mounted) {
       setState(() {
         _currentUser = updatedUser;

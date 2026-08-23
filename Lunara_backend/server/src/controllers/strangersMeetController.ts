@@ -1436,8 +1436,8 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
 
         // Check capacity limit
         const joiners = await StrangersMeetJoiner.findAll({ where: { strangersMeetRequestId: id } });
-        const paidCount = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid').length;
-        if (paidCount >= request.numberOfPersons) {
+        const acceptedCount = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid').length;
+        if (acceptedCount >= request.numberOfPersons) {
             res.status(400).json({ success: false, message: 'This strangers meet is full' });
             return;
         }
@@ -1478,11 +1478,6 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
             });
         }
 
-        // Notify host — same canonical DB+push+socket pattern used by
-        // accept/reject below, instead of the previous bespoke
-        // notification_created-only emit (which left no DB Notification
-        // row, so it never showed in the persisted Notification Center and
-        // was lost entirely if the host wasn't connected at the moment it fired).
         try {
             const requester = await User.findByPk(userId);
             if (requester) {
@@ -1548,10 +1543,10 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
         }
 
         if (action === 'accept') {
-            // Lock the meet before its joiner. This makes concurrent host
-            // actions deterministic and prevents accepting an already-full
-            // or no-longer-pending request.
             const transaction = await sequelize.transaction();
+            let newAcceptedCount = 0;
+            let isFull = false;
+            let remainingSlots = 0;
             try {
                 await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
                 await joiner.reload({ transaction, lock: transaction.LOCK.UPDATE });
@@ -1569,23 +1564,44 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                     return;
                 }
 
-                const paidCount = await StrangersMeetJoiner.count({
+                const currentAcceptedCount = await StrangersMeetJoiner.count({
                     where: {
                         strangersMeetRequestId: request.id,
                         [Op.or]: [
+                            { status: 'accepted' as any },
                             { status: 'paid' as any },
                             { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
                         ],
                     },
                     transaction,
                 });
-                if (paidCount >= request.numberOfPersons) {
+
+                if (currentAcceptedCount >= request.numberOfPersons) {
                     await transaction.rollback();
-                    res.status(409).json({ success: false, message: 'This Strangers Meet is already full.' });
+                    res.status(409).json({
+                        success: false,
+                        message: 'This Strangers Meet is already full.',
+                        requestStatus: 'FULL',
+                        acceptedCount: currentAcceptedCount,
+                        maximumCapacity: request.numberOfPersons,
+                        remainingCapacity: 0,
+                        isFull: true,
+                    });
                     return;
                 }
 
                 await joiner.update({ status: 'accepted' as any }, { transaction });
+
+                newAcceptedCount = currentAcceptedCount + 1;
+                remainingSlots = Math.max(0, request.numberOfPersons - newAcceptedCount);
+                isFull = newAcceptedCount >= request.numberOfPersons;
+
+                if (isFull) {
+                    await request.update({ slotsFilled: request.numberOfPersons }, { transaction });
+                } else {
+                    await request.update({ slotsFilled: newAcceptedCount }, { transaction });
+                }
+
                 await transaction.commit();
             } catch (err) {
                 await transaction.rollback();
@@ -1601,6 +1617,24 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 entityId: request.id
             });
 
+            // Update single card for Host
+            await StrangersMeetService.emitNotification({
+                recipientUserId: request.userId,
+                eventType: 'strangers_meet_join_request_updated',
+                title: '✨ Request Accepted',
+                body: `Accepted request for "${request.subject}". (${newAcceptedCount}/${request.numberOfPersons} participants)`,
+                entityId: request.id,
+                metadata: {
+                    requestId: request.id,
+                    joinerId: joiner.id,
+                    action: 'accept',
+                    acceptedCount: newAcceptedCount,
+                    maximumCapacity: request.numberOfPersons,
+                    remainingCapacity: remainingSlots,
+                    isFull,
+                }
+            });
+
             // Emit socket event for real-time slots updates
             try {
                 const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
@@ -1612,19 +1646,41 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                         slotsFilled: formatted.slotsFilled,
                         joinedCount: formatted.joinedCount,
                         paymentCount: formatted.paymentCount,
+                        acceptedCount: newAcceptedCount,
+                        maximumCapacity: request.numberOfPersons,
+                        remainingCapacity: remainingSlots,
+                        isFull,
                     });
                 }
             } catch (socketErr) {
                 logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
             }
 
-            res.json({ success: true, message: 'Join request accepted!', data: joiner });
+            res.json({
+                success: true,
+                message: 'Join request accepted!',
+                requestStatus: 'ACCEPTED',
+                acceptedCount: newAcceptedCount,
+                maximumCapacity: request.numberOfPersons,
+                remainingCapacity: remainingSlots,
+                isFull,
+                data: joiner
+            });
         } else {
-            if (joiner.status !== 'pending') {
-                res.status(409).json({ success: false, message: 'This join request has already been handled.' });
-                return;
+            const transaction = await sequelize.transaction();
+            try {
+                await joiner.reload({ transaction, lock: transaction.LOCK.UPDATE });
+                if (joiner.status !== 'pending') {
+                    await transaction.rollback();
+                    res.status(409).json({ success: false, message: 'This join request has already been handled.' });
+                    return;
+                }
+                await joiner.update({ status: 'rejected' as any }, { transaction });
+                await transaction.commit();
+            } catch (err) {
+                await transaction.rollback();
+                throw err;
             }
-            await joiner.update({ status: 'rejected' as any });
 
             // Fetch host details for notification card profile name & image
             const hostUser = await User.findByPk(request.userId);
@@ -1643,13 +1699,20 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                     actorUserId: hostUser?.id,
                     actorName: declinerName,
                     actorProfilePhotoUrl: declinerPhoto,
-                    actor: hostUser ? {
-                        id: hostUser.id,
-                        firstName: hostUser.firstName,
-                        lastName: hostUser.lastName,
-                        profilePhotoUrl: declinerPhoto,
-                        profileImageUrl: declinerPhoto,
-                    } : null
+                }
+            });
+
+            // Update single card for Host
+            await StrangersMeetService.emitNotification({
+                recipientUserId: request.userId,
+                eventType: 'strangers_meet_join_request_updated',
+                title: 'Request Declined ❌',
+                body: `Declined request for "${request.subject}".`,
+                entityId: request.id,
+                metadata: {
+                    requestId: request.id,
+                    joinerId: joiner.id,
+                    action: 'reject',
                 }
             });
 
@@ -1670,7 +1733,7 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
             }
 
-            res.json({ success: true, message: 'Join request rejected.', data: joiner });
+            res.json({ success: true, message: 'Join request rejected!', requestStatus: 'REJECTED', data: joiner });
         }
     } catch (err: any) {
         logger.error('handleJoinRequest error:', err);

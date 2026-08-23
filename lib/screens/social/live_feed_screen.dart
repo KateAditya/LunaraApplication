@@ -110,7 +110,7 @@ class LiveFeedScreen extends StatefulWidget {
 }
 
 class LiveFeedScreenState extends State<LiveFeedScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _pulseController;
 
   List<Map<String, dynamic>> _feedItems = [];
@@ -154,8 +154,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadFeed(showLoader: false);
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sessionUserId = ApiService.currentUserId;
     _pulseController = AnimationController(
       vsync: this,
@@ -177,9 +185,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // Background sync timer every 45 seconds (WebSockets handle real-time events)
-    _pollingTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      _loadFeed(showLoader: false);
+    // Background sync timer every 3 seconds for real-time live feed updates
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) {
+        _loadFeed(showLoader: false);
+      }
     });
 
     ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
@@ -189,13 +199,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ApiService.planPostedNotifier.removeListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
     _disposeSocketListeners();
     _pollingTimer?.cancel();
     _pulseController.dispose();
-    _razorpay?.clear();
+    if (!kIsWeb) {
+      try {
+        _razorpay?.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     super.dispose();
   }
 
@@ -554,8 +571,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _initiateLargePartyPayment(Map<String, dynamic> booking) async {
-    final rawBookingId = booking['partyId']?.toString() ??
-        booking['bookingId']?.toString() ??
+    final rawBookingId = booking['bookingId']?.toString() ??
+        booking['metadata']?['bookingId']?.toString() ??
+        booking['metadata']?['partyId']?.toString() ??
+        booking['entityId']?.toString() ??
+        booking['partyId']?.toString() ??
         booking['groupPartyId']?.toString() ??
         booking['data']?['partyId']?.toString() ??
         booking['data']?['bookingId']?.toString() ??

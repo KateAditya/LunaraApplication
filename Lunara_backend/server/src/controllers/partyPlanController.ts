@@ -26,6 +26,7 @@ import { NotificationService } from '../services/NotificationService';
 import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
+import { EventTimeLockService } from '../services/EventTimeLockService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
@@ -779,6 +780,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
+        const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan');
+        if (!timeLockCheck.allowed) {
+            res.status(400).json({ success: false, ...timeLockCheck });
+            return;
+        }
+
         // Clear the user's own abandoned/unpaid party plan attempt(s) for this
         // exact date first. A PartyPlan row is created below with
         // hostPaymentStatus UNPAID and a fresh Razorpay order BEFORE the host
@@ -1207,18 +1215,23 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                                     actorUserId: plan.userId,
                                     eventType: 'party_plan_invitation',
                                     category: 'requests',
-                                    entityType: 'party_plan',
-                                    entityId: plan.id,
-                                    title: '🎉 Party Plan Invitation',
+                                    entityType: 'party_plan_request',
+                                    entityId: createdReq?.id || plan.id,
+                                    title: '🎉 Private Party Invitation',
                                     body: `${hostName} invited you to join a party plan at ${venueName}!`,
                                     idempotencyKey: `plan_invite_${plan.id}_${invitedUserId}`,
                                     metadata: {
                                         type: 'party_plan_invitation',
                                         partyPlanId: plan.id,
+                                        planId: plan.id,
                                         requestId: createdReq?.id,
+                                        senderId: plan.userId,
+                                        recipientId: invitedUserId,
                                         hostId: plan.userId,
+                                        targetUserId: invitedUserId,
                                         venueName: venueName,
                                         depositAmount: plan.depositAmount,
+                                        status: 'pending',
                                     },
                                 });
 
@@ -2168,9 +2181,17 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        if (callerUserId && plan.userId !== callerUserId) {
+        const isPrivateInvite = !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(request.requesterId));
+        const recipientId = isPrivateInvite ? request.requesterId : plan.userId;
+
+        if (callerUserId && callerUserId.toLowerCase() !== recipientId.toLowerCase()) {
             await transaction.rollback();
-            res.status(403).json({ success: false, message: 'Only the host can accept requests' });
+            res.status(403).json({
+                success: false,
+                message: isPrivateInvite
+                    ? 'Only the invited recipient can accept this invitation'
+                    : 'Only the host can accept join requests'
+            });
             return;
         }
 
@@ -2197,6 +2218,21 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 success: false,
                 message: `This plan cannot accept requests in its current state (${plan.lifecycleStatus}). It may already have an active payment session or be completed/cancelled.`
             });
+            return;
+        }
+
+        // ── Universal 4-Hour Time-Lock Validation (Host & Partner) ────────────
+        const hostLock = await EventTimeLockService.validateFourHourGap(plan.userId, plan.planDateTime, 'party_plan', plan.id, { transaction });
+        if (!hostLock.allowed) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, ...hostLock, message: `Host schedule conflict: ${hostLock.message}` });
+            return;
+        }
+
+        const partnerLock = await EventTimeLockService.validateFourHourGap(request.requesterId, plan.planDateTime, 'party_plan', plan.id, { transaction });
+        if (!partnerLock.allowed) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, ...partnerLock, message: `Partner schedule conflict: ${partnerLock.message}` });
             return;
         }
 
@@ -3478,6 +3514,20 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     // 2. Release lock in Time Lock Engine
     await PlanEligibilityService.releaseLock(plan.id, { transaction });
 
+    // Dispatch 🔓 Schedule Unlocked notification for Host
+    try {
+        const timeStr = plan.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled Time';
+        await NotificationService.sendScheduleUnlockedNotification({
+            recipientUserId: plan.userId,
+            eventTitle: 'Party Plan',
+            eventTimeStr: timeStr,
+            entityType: 'party_plan',
+            entityId: plan.id,
+        });
+    } catch (notifErr: any) {
+        logger.warn('Failed to send Schedule Unlocked notification for host: ' + notifErr?.message);
+    }
+
     // 3. Find and cancel all active requests
     const requests = await PartyPlanRequest.findAll({
         where: {
@@ -3520,6 +3570,20 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
                 partyPlanId: plan.id,
                 transaction,
             });
+        }
+
+        // Dispatch 🔓 Schedule Unlocked notification for Joiner
+        try {
+            const timeStr = plan.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled Time';
+            await NotificationService.sendScheduleUnlockedNotification({
+                recipientUserId: req.requesterId,
+                eventTitle: 'Party Plan',
+                eventTimeStr: timeStr,
+                entityType: 'party_plan',
+                entityId: plan.id,
+            });
+        } catch (notifErr: any) {
+            logger.warn('Failed to send Schedule Unlocked notification for joiner: ' + notifErr?.message);
         }
 
         // Notify joiners
@@ -4003,6 +4067,13 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         const callerUserId = (req as any).user?.id || req.query.userId || req.body.userId;
         if (callerUserId && callerUserId !== plan.userId && request && callerUserId !== request.requesterId) {
             res.status(403).json({ success: false, message: 'You are not authorized to view this ticket.' });
+            return;
+        }
+
+        const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
+        const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || plan.paymentType === 'self_pay';
+        if (!hostPaid || !joinerPaid) {
+            res.status(403).json({ success: false, message: 'Ticket is unavailable until both host and joiner payments are verified.' });
             return;
         }
 
@@ -5187,18 +5258,58 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
                     currentStatusText = 'Action Required: Pay Deposit';
                     primaryAction = 'Pay Deposit';
                     primaryActionUrl = `/party-plans/${plan.id}/pay-host`;
-                } else if (hasRequests) {
-                    currentStatusText = 'Request Received';
-                    primaryAction = 'Accept';
-                    secondaryAction = 'Reject';
-                    primaryActionUrl = `/requests/accept`;
-                    secondaryActionUrl = `/requests/reject`;
+                    permittedActions.push({ key: 'pay_deposit' });
                 } else {
-                    currentStatusText = 'Active';
+                    const requestsList = p.requests || [];
+                    const pendingJoinReqs = requestsList.filter((r: any) =>
+                        r.status === 'pending' &&
+                        !(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(r.requesterId))
+                    );
+                    const pendingPrivateInvites = requestsList.filter((r: any) =>
+                        r.status === 'pending' &&
+                        plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(r.requesterId)
+                    );
+
+                    if (pendingJoinReqs.length > 0) {
+                        currentStatusText = 'Request Received';
+                        primaryAction = 'Review Requests';
+                    } else if (pendingPrivateInvites.length > 0) {
+                        currentStatusText = 'Invitation Sent • Awaiting Response';
+                        primaryAction = null;
+                    } else {
+                        currentStatusText = 'Active';
+                    }
                 }
             } else {
-                currentStatusText = 'Request Sent';
-                primaryAction = 'Pending Review';
+                if (viewerRequest?.status === PartyPlanRequestStatus.WAITING) {
+                    currentStatusText = 'Spot Claimed • On Waiting List';
+                    primaryAction = null;
+                } else {
+                    const isPrivateInviteForUser = !!(
+                        plan.selectedUsers &&
+                        Array.isArray(plan.selectedUsers) &&
+                        plan.selectedUsers.includes(recipientUserId)
+                    );
+
+                    if (isPrivateInviteForUser && viewerRequest?.status === PartyPlanRequestStatus.PENDING) {
+                        currentStatusText = 'Private Party Invitation';
+                        primaryAction = 'Accept';
+                        secondaryAction = 'Decline';
+                        primaryActionUrl = `/party-plans/requests/${viewerRequest.id}/accept-invite`;
+                        secondaryActionUrl = `/party-plans/requests/${viewerRequest.id}/decline-invite`;
+                        permittedActions.push(
+                            { key: 'accept_invite', requestId: viewerRequest.id },
+                            { key: 'decline_invite', requestId: viewerRequest.id }
+                        );
+                    } else if (viewerRequest?.status === PartyPlanRequestStatus.PENDING) {
+                        currentStatusText = 'Request Sent';
+                        primaryAction = 'Cancel Request';
+                        primaryActionUrl = `/party-plans/requests/${viewerRequest.id}/cancel`;
+                        permittedActions.push({ key: 'cancel_request', requestId: viewerRequest.id });
+                    } else {
+                        currentStatusText = 'Active';
+                    }
+                }
             }
         }
 

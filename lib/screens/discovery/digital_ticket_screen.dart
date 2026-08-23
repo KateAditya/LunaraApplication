@@ -507,7 +507,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         'image'
       ]) {
         final val = venue[key]?.toString().trim();
-        if (val != null && val.isNotEmpty) {
+        if (val != null && val.isNotEmpty && !val.toLowerCase().contains('menu')) {
           return val.startsWith('assets/') ? val : normalize(val);
         }
       }
@@ -519,7 +519,16 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       }
       final images = venue['images'];
       if (images is List && images.isNotEmpty) {
-        final img = images[0];
+        final nonMenuImages = images.where((img) {
+          if (img is Map) {
+            final type = (img['imageType'] ?? img['type'] ?? img['category'] ?? '').toString().toLowerCase();
+            return !type.contains('menu') && !type.contains('package');
+          }
+          return true;
+        }).toList();
+
+        final listToUse = nonMenuImages.isNotEmpty ? nonMenuImages : images;
+        final img = listToUse[0];
         if (img is Map) {
           final path = img['filePath'] ?? img['url'];
           if (path != null && path.toString().isNotEmpty) {

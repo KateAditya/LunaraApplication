@@ -286,4 +286,38 @@ export class NotificationService {
             }
         });
     }
+
+    /**
+     * Dispatch specialized schedule unlocked notification when an active event is cancelled
+     */
+    public static async sendScheduleUnlockedNotification(params: {
+        recipientUserId: string;
+        eventTitle: string;
+        eventTimeStr: string;
+        venueName?: string;
+        entityType: 'party_plan' | 'group_party' | 'stranger_meet' | 'booking';
+        entityId: string;
+    }): Promise<Notification | null> {
+        const { recipientUserId, eventTitle, eventTimeStr, venueName, entityType, entityId } = params;
+        const venueInfo = venueName ? ` at ${venueName}` : '';
+        const title = '🔓 Schedule Unlocked';
+        const body = `Your cancelled ${eventTitle}${venueInfo} (${eventTimeStr}) no longer blocks this time slot. You can now create or join another plan.`;
+
+        return await this.dispatch({
+            recipientUserId,
+            eventType: 'SCHEDULE_UNLOCKED' as any,
+            category: 'activity',
+            entityType,
+            entityId,
+            title,
+            body,
+            priority: 'NORMAL',
+            metadata: {
+                eventTitle,
+                eventTimeStr,
+                venueName,
+                unlockedAt: new Date().toISOString(),
+            }
+        });
+    }
 }

@@ -24,6 +24,33 @@ function generateInvoiceNumber(): string {
     return `LUN-${ts}-${rand}`;
 }
 
+async function clearStaleExpirationNotifications(userId: string) {
+    try {
+        const NotificationModel = (await import('../models/Notification')).default;
+        await NotificationModel.update(
+            { isRead: true },
+            {
+                where: {
+                    recipientUserId: userId,
+                    eventType: {
+                        [Op.in]: [
+                            'vip_expiring_1day',
+                            'vip_expiring_8hours',
+                            'vip_expiring_5hours',
+                            'vip_expiring_2hours',
+                            'vip_expiring_1hour',
+                            'vip_expired',
+                        ],
+                    },
+                    isRead: false,
+                },
+            }
+        );
+    } catch (e) {
+        logger.warn('Failed to clear stale VIP notifications:', e);
+    }
+}
+
 
 // ─── Plan Listing ─────────────────────────────────────────────────────────────
 
@@ -330,8 +357,27 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             });
         }
 
-        // Invalidate permission cache
+        // Invalidate permission cache and clear stale expiration alerts
         SubscriptionService.invalidateCache(userId);
+        await clearStaleExpirationNotifications(userId);
+
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${userId}`).emit('subscription_updated', {
+                    subscriptionId: newSub.id,
+                    status: newSub.status,
+                    tier: pkg.tier,
+                });
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'vip_subscription_activity',
+                    userId,
+                    eventType: 'vip_activated',
+                    title: `VIP Subscription Activated (${pkg.name})`,
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        } catch (_) {}
 
         res.status(201).json({
             success: true,
@@ -433,6 +479,25 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
         });
 
         SubscriptionService.invalidateCache(userId);
+        await clearStaleExpirationNotifications(userId);
+
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${userId}`).emit('subscription_updated', {
+                    subscriptionId: subscription.id,
+                    status: subscription.status,
+                    tier: pkg.tier,
+                });
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'vip_subscription_activity',
+                    userId,
+                    eventType: 'vip_renewed',
+                    title: `VIP Subscription Renewed (${pkg.name})`,
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        } catch (_) {}
 
         res.status(200).json({
             success: true,
@@ -746,7 +811,19 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
             await sub.update({ boostsRemaining: sub.boostsRemaining - 1 });
         }
 
-        // Record a BOOST type transaction with amount 0 (representing boost usage)
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes duration
+
+        const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
+        const boost = await ProfileBoostModel.create({
+            userId,
+            startedAt: now,
+            expiresAt,
+            status: 'ACTIVE',
+            durationMinutes: 30,
+        });
+
+        // Record a BOOST type transaction
         await SubscriptionTransaction.create({
             userId,
             packageId: sub.packageId,
@@ -754,15 +831,39 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
             amount: 0,
             status: TransactionStatus.SUCCESS,
             invoiceNumber: `BOOST-USE-${Date.now().toString(36).toUpperCase()}`,
-            metadata: { boostUsed: 1, remaining: sub.boostsRemaining },
+            metadata: { boostId: boost.id, boostUsed: 1, remaining: sub.boostsRemaining, expiresAt },
         });
+
+        const { EngagementService } = await import('../services/engagementService');
+        await EngagementService.logBoostStarted(userId, boost.id, 30);
 
         SubscriptionService.invalidateCache(userId);
 
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${userId}`).emit('boost_activated', {
+                    boostId: boost.id,
+                    expiresAt: expiresAt.toISOString(),
+                    boostsRemaining: sub.boostsRemaining,
+                });
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'profile_boost_started',
+                    userId,
+                    timestamp: now.toISOString(),
+                });
+            }
+        } catch (_) {}
+
         res.status(200).json({
             success: true,
-            message: 'Profile boost activated successfully!',
-            data: { boostsRemaining: sub.boostsRemaining },
+            message: 'Profile boost activated successfully for 30 minutes!',
+            data: {
+                boostId: boost.id,
+                startedAt: now.toISOString(),
+                expiresAt: expiresAt.toISOString(),
+                boostsRemaining: sub.boostsRemaining,
+            },
         });
     } catch (error: any) {
         logger.error('Error activating boost:', error);

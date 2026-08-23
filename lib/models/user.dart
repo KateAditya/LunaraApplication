@@ -220,7 +220,8 @@ class User {
           photoUrls.add(fullUrl);
 
           String id = (p is Map) ? (p['id']?.toString() ?? p['_id']?.toString() ?? '') : '';
-          photoDetailsList.add({'id': id, 'url': fullUrl});
+          bool isPrimary = (p is Map && (p['isPrimary'] == true || p['isPrimary'] == 'true'));
+          photoDetailsList.add({'id': id, 'url': fullUrl, 'isPrimary': isPrimary ? 'true' : 'false'});
         }
       }
     }

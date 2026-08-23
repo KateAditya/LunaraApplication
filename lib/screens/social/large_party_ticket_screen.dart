@@ -64,10 +64,16 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   void initState() {
     super.initState();
     _paymentState = _computeInitialStateFromLocalMap();
-    _razorpay = Razorpay();
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
-    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError);
-    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
+        _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError);
+        _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, (_) {});
+      } catch (e) {
+        debugPrint('Razorpay init error: $e');
+      }
+    }
     _initLocation();
     _initCountdown();
     // Pre-populate fresh fields from widget data synchronously so the first
@@ -80,7 +86,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   void dispose() {
     _positionStreamSubscription?.cancel();
     _countdownTimer?.cancel();
-    _razorpay?.clear();
+    if (!kIsWeb) {
+      try {
+        _razorpay?.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     super.dispose();
   }
 
@@ -188,8 +200,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Future<void> _fetchTicketData() async {
-    final rawId = widget.booking['partyId'] ??
-        widget.booking['bookingId'] ??
+    final rawId = widget.booking['bookingId'] ??
+        widget.booking['metadata']?['bookingId'] ??
+        widget.booking['metadata']?['partyId'] ??
+        widget.booking['entityId'] ??
+        widget.booking['partyId'] ??
         widget.booking['groupPartyId'] ??
         widget.booking['data']?['partyId'] ??
         widget.booking['data']?['bookingId'] ??
@@ -207,8 +222,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         if (booking is Map) {
           // Compute new values first, then only setState if something changed.
           Map<String, dynamic>? newHostUser;
-          if (booking['user'] is Map) newHostUser = Map<String, dynamic>.from(booking['user']);
-          else if (booking['host'] is Map) newHostUser = Map<String, dynamic>.from(booking['host']);
+          if (booking['user'] is Map) {
+            newHostUser = Map<String, dynamic>.from(booking['user']);
+          } else if (booking['host'] is Map) {
+            newHostUser = Map<String, dynamic>.from(booking['host']);
+          }
 
           Map<String, dynamic>? newVenue;
           if (booking['venue'] is Map) newVenue = Map<String, dynamic>.from(booking['venue']);
@@ -803,13 +821,16 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: darkTextColor, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'GROUP PARTY TICKET',
-          style: TextStyle(
-            color: darkTextColor,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-            fontSize: 16,
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'GROUP PARTY TICKET',
+            style: TextStyle(
+              color: darkTextColor,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              fontSize: 16,
+            ),
           ),
         ),
         actions: [
@@ -850,52 +871,65 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0EBFF),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('🎉 ', style: TextStyle(fontSize: 10)),
-                                Text(
-                                  'VIP GROUP PARTY',
-                                  style: TextStyle(
-                                    color: Color(0xFF6D28D9),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.8,
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0EBFF),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('🎉 ', style: TextStyle(fontSize: 10)),
+                                  Flexible(
+                                    child: Text(
+                                      'VIP GROUP PARTY',
+                                      style: TextStyle(
+                                        color: Color(0xFF6D28D9),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.8,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                const TextSpan(
-                                  text: 'TICKET ID: ',
-                                  style: TextStyle(
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
-                                  ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: RichText(
+                                text: TextSpan(
+                                  children: [
+                                    const TextSpan(
+                                      text: 'TICKET ID: ',
+                                      style: TextStyle(
+                                        color: Color(0xFF94A3B8),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: ticketId.length > 14
+                                          ? ticketId.substring(0, 14)
+                                          : ticketId,
+                                      style: const TextStyle(
+                                        color: Color(0xFF6D28D9),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                TextSpan(
-                                  text: ticketId.length > 14
-                                      ? ticketId.substring(0, 14)
-                                      : ticketId,
-                                  style: const TextStyle(
-                                    color: Color(0xFF6D28D9),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ],
