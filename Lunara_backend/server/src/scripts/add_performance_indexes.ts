@@ -9,47 +9,42 @@ export async function applyPerformanceIndexes() {
         {
             name: 'idx_party_plan_requests_status_timeout',
             table: 'party_plan_requests',
-            fields: ['status', 'paymentTimeoutAt'],
+            fields: ['status', 'payment_timeout_at'],
         },
         {
             name: 'idx_party_plans_status_is_live_datetime',
             table: 'party_plans',
-            fields: ['status', 'isLive', 'planDateTime'],
+            fields: ['status', 'is_live', 'plan_date_time'],
         },
         {
             name: 'idx_strangers_meet_status_pay_eventdate',
             table: 'strangers_meet_requests',
-            fields: ['status', 'paymentStatus', 'eventDateTime'],
+            fields: ['status', 'payment_status', 'event_date_time'],
         },
         {
             name: 'idx_user_subscriptions_status_enddate',
             table: 'user_subscriptions',
-            fields: ['status', 'endDate'],
+            fields: ['status', 'end_date'],
         },
         {
             name: 'idx_notification_jobs_status_sendat',
             table: 'notification_jobs',
-            fields: ['status', 'sendAt'],
+            fields: ['status', 'send_at'],
         },
         {
             name: 'idx_bookings_status_pay_createdat',
             table: 'bookings',
-            fields: ['status', 'paymentStatus', 'createdAt'],
-        },
-        {
-            name: 'idx_payment_intents_user_entity_status',
-            table: 'payment_intents',
-            fields: ['userId', 'status', 'entityType', 'entityId'],
+            fields: ['status', 'payment_status', 'created_at'],
         },
         {
             name: 'idx_smart_wallets_user_id',
             table: 'smart_wallets',
-            fields: ['userId'],
+            fields: ['user_id'],
         },
         {
             name: 'idx_wallet_transactions_user_createdat',
             table: 'wallet_transactions',
-            fields: ['userId', 'createdAt'],
+            fields: ['user_id', 'created_at'],
         },
     ];
 
@@ -61,13 +56,12 @@ export async function applyPerformanceIndexes() {
             });
             logger.info(`✅ Successfully created index ${idx.name} on ${idx.table}`);
         } catch (err: any) {
-            // Safe fallback if index already exists
-            if (
+            // Safe fallback if index already exists or table does not yet have the column
+            const alreadyExists =
                 err.message?.includes('already exists') ||
-                err.original?.code === '42P07' ||
-                err.name === 'SequelizeDatabaseError'
-            ) {
-                logger.info(`ℹ️ Index ${idx.name} on ${idx.table} already exists or registered.`);
+                err.original?.code === '42P07';  // duplicate_object in PostgreSQL
+            if (alreadyExists) {
+                logger.info(`ℹ️ Index ${idx.name} on ${idx.table} already exists — skipped.`);
             } else {
                 logger.warn(`⚠️ Warning creating index ${idx.name} on ${idx.table}: ${err.message}`);
             }

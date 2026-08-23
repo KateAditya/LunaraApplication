@@ -3406,8 +3406,13 @@ class ApiService {
   static Future<Map<String, dynamic>?> initiateLargePartyPayment(String bookingId) async {
     try {
       final cleanId = cleanBookingId(bookingId);
+      final userId = currentUserId; // fallback for auth extraction on backend
       final response = await post(
         '/api/mobile/bookings/$cleanId/initiate-large-party-payment',
+        body: {
+          'paymentMethod': 'razorpay',
+          if (userId != null && userId.isNotEmpty) 'userId': userId,
+        },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);

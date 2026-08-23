@@ -524,6 +524,53 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.warn('Failed to verify/seed Smart Credit Wallet schema: ' + walletErr.message);
         }
 
+        // ── Ensure payment_intents table exists (required for Large Party / Group Party Razorpay flow) ──
+        try {
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS payment_intents (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    payment_reference VARCHAR(100) NOT NULL UNIQUE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    entity_type VARCHAR(50) NOT NULL,
+                    entity_id VARCHAR(100) NOT NULL,
+                    amount NUMERIC(10,2) NOT NULL,
+                    wallet_amount_used NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    razorpay_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    currency VARCHAR(3) NOT NULL DEFAULT 'INR',
+                    status VARCHAR(30) NOT NULL DEFAULT 'initiated',
+                    payment_method VARCHAR(30) NOT NULL DEFAULT 'razorpay',
+                    razorpay_order_id VARCHAR(100),
+                    razorpay_payment_id VARCHAR(100),
+                    razorpay_signature VARCHAR(255),
+                    expires_at TIMESTAMP WITH TIME ZONE,
+                    failure_reason TEXT,
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+            `);
+            // Add any missing columns to existing payment_intents table (idempotent upgrades)
+            await sequelize.query(`
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_intents' AND column_name='wallet_amount_used') THEN ALTER TABLE payment_intents ADD COLUMN wallet_amount_used NUMERIC(10,2) NOT NULL DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_intents' AND column_name='razorpay_amount') THEN ALTER TABLE payment_intents ADD COLUMN razorpay_amount NUMERIC(10,2) NOT NULL DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_intents' AND column_name='failure_reason') THEN ALTER TABLE payment_intents ADD COLUMN failure_reason TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_intents' AND column_name='metadata') THEN ALTER TABLE payment_intents ADD COLUMN metadata JSONB; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_intents' AND column_name='expires_at') THEN ALTER TABLE payment_intents ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE; END IF;
+                END $$;
+            `);
+            // Performance indexes for payment_intents
+            await sequelize.query(`
+                CREATE INDEX IF NOT EXISTS idx_payment_intents_user_id ON payment_intents(user_id);
+                CREATE INDEX IF NOT EXISTS idx_payment_intents_entity ON payment_intents(entity_type, entity_id);
+                CREATE INDEX IF NOT EXISTS idx_payment_intents_status ON payment_intents(status);
+                CREATE INDEX IF NOT EXISTS idx_payment_intents_reference ON payment_intents(payment_reference);
+            `);
+            logger.info('payment_intents table and indexes verified successfully.');
+        } catch (piErr: any) {
+            logger.warn('Failed to verify payment_intents schema: ' + piErr.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             try {
                 await sequelize.sync();

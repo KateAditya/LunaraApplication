@@ -1338,10 +1338,20 @@ export const getBookingDetail = async (req: Request, res: Response) => {
 };
 
 // ─── POST /:id/initiate-large-party-payment ─────────────────────────────────
+// Direct Razorpay fallback helper — used when PaymentService/payment_intents is unavailable
+async function createRazorpayOrderDirect(amount: number, entityId: string): Promise<string> {
+    const order = await razorpay.orders.create({
+        amount: Math.round(amount * 100),
+        currency: 'INR',
+        receipt: `lp_${entityId.slice(-10)}_${Date.now()}`,
+    });
+    return (order as any).id;
+}
+
 export const initiateLargePartyPayment = async (req: Request, res: Response) => {
     try {
         const rawId = req.params.id;
-        const paymentMethod = req.body?.paymentMethod;
+        const paymentMethod = (req.body?.paymentMethod || 'razorpay').toLowerCase();
         const currentUserId = (req as any).user?.id || (req as any).user?.userId || req.body?.userId;
 
         const { booking, groupParty } = await resolveBookingOrGroupPartyTarget(rawId);
@@ -1350,12 +1360,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             return res.status(404).json({ success: false, message: 'Booking or Group Party not found' });
         }
 
-        const PaymentIntentModel = await import('../models/PaymentIntent');
-        const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
-        const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
-        const PaymentServiceModule = await import('../services/PaymentService');
-        const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
-
+        // ── GROUP PARTY branch ────────────────────────────────────────────────
         if (groupParty) {
             if (currentUserId && String(groupParty.userId).trim() !== String(currentUserId).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own group party' });
@@ -1367,56 +1372,58 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
             }
             const amount = Number(groupParty.totalAmount || 1999);
             if (isNaN(amount) || amount <= 0) {
-                return res.status(400).json({ success: false, message: 'Invalid total amount set for group party' });
+                return res.status(400).json({ success: false, message: 'Invalid total amount for group party' });
             }
 
-            const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
-                userId: groupParty.userId,
-                entityType: PaymentIntentEntityType.GROUP_PARTY,
-                entityId: groupParty.id,
-                amount,
-                paymentMethod: method,
-                metadata: { groupPartyId: groupParty.id },
-            });
+            // Try PaymentService first; fall back to direct Razorpay on any DB/table error
+            try {
+                const PaymentIntentModel = await import('../models/PaymentIntent');
+                const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+                const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+                const PaymentServiceModule = await import('../services/PaymentService');
+                const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
 
-            if (!result.success && result.shortfallData) {
-                return res.status(200).json({
-                    success: false,
-                    code: 'INSUFFICIENT_WALLET_BALANCE',
-                    message: result.message,
-                    data: result.shortfallData,
-                    paymentIntent: result.paymentIntent,
+                const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+                    userId: groupParty.userId,
+                    entityType: PaymentIntentEntityType.GROUP_PARTY,
+                    entityId: groupParty.id,
+                    amount,
+                    paymentMethod: method,
+                    metadata: { groupPartyId: groupParty.id },
                 });
-            }
 
-            if (result.success && method === PaymentIntentMethod.WALLET) {
-                await groupParty.update({
-                    paymentStatus: GroupPartyPaymentStatus.PAID,
-                    status: GroupPartyStatus.CONFIRMED,
-                });
-                try {
-                    await generateTicketForGroupPartyHelper(groupParty.id);
-                } catch (tErr: any) {
-                    logger.warn('Ticket creation note:', tErr?.message);
+                if (!result.success && result.shortfallData) {
+                    return res.status(200).json({
+                        success: false,
+                        code: 'INSUFFICIENT_WALLET_BALANCE',
+                        message: result.message,
+                        data: result.shortfallData,
+                        paymentIntent: result.paymentIntent,
+                    });
                 }
-                return res.json({
-                    success: true,
-                    message: 'Group Party Paid via Smart Credit Wallet!',
-                    paymentIntent: result.paymentIntent,
-                });
-            }
 
-            const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`;
-            await groupParty.update({ paymentId: orderId });
-            return res.json({
-                success: true,
-                razorpayOrderId: orderId,
-                amount: Math.round(amount * 100),
-                currency: 'INR',
-                razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
-            });
+                if (result.success && method === PaymentIntentMethod.WALLET) {
+                    await groupParty.update({
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                        status: GroupPartyStatus.CONFIRMED,
+                    });
+                    try { await generateTicketForGroupPartyHelper(groupParty.id); } catch (tErr: any) { logger.warn('Ticket note:', tErr?.message); }
+                    return res.json({ success: true, message: 'Group Party Paid via Smart Credit Wallet!', paymentIntent: result.paymentIntent });
+                }
+
+                const orderId = result.razorpayOrder?.id || result.paymentIntent?.razorpayOrderId || await createRazorpayOrderDirect(amount, groupParty.id);
+                await groupParty.update({ paymentId: orderId });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+            } catch (psErr: any) {
+                // PaymentService unavailable — fall back to direct Razorpay order creation
+                logger.warn('PaymentService unavailable for group party, using direct Razorpay fallback:', psErr?.message);
+                const orderId = await createRazorpayOrderDirect(amount, groupParty.id);
+                await groupParty.update({ paymentId: orderId });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+            }
         }
 
+        // ── BOOKING (large party request) branch ─────────────────────────────
         if (booking) {
             if (currentUserId && String(booking.userId).trim() !== String(currentUserId).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
@@ -1444,64 +1451,62 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
                 bookingStatus === 'pending';
 
             if (!isApproved) {
-                return res.status(400).json({ success: false, message: 'Booking is not approved by admin or payment already completed' });
+                return res.status(400).json({ success: false, message: 'Booking is not approved for payment yet' });
             }
 
             const amount = Number(booking.adminPaymentAmount || booking.totalAmount || 1999);
             if (isNaN(amount) || amount <= 0) {
-                return res.status(400).json({ success: false, message: 'Invalid total amount set for booking' });
+                return res.status(400).json({ success: false, message: 'Invalid total amount for booking' });
             }
 
-            const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
-                userId: booking.userId,
-                entityType: PaymentIntentEntityType.LARGE_PARTY,
-                entityId: booking.id,
-                amount,
-                paymentMethod: method,
-                metadata: { bookingId: booking.id },
-            });
+            // Try PaymentService first; fall back to direct Razorpay on any DB/table error
+            try {
+                const PaymentIntentModel = await import('../models/PaymentIntent');
+                const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+                const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+                const PaymentServiceModule = await import('../services/PaymentService');
+                const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
 
-            if (!result.success && result.shortfallData) {
-                return res.status(200).json({
-                    success: false,
-                    code: 'INSUFFICIENT_WALLET_BALANCE',
-                    message: result.message,
-                    data: result.shortfallData,
-                    paymentIntent: result.paymentIntent,
+                const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+                    userId: booking.userId,
+                    entityType: PaymentIntentEntityType.LARGE_PARTY,
+                    entityId: booking.id,
+                    amount,
+                    paymentMethod: method,
+                    metadata: { bookingId: booking.id },
                 });
-            }
 
-            if (result.success && method === PaymentIntentMethod.WALLET) {
-                await (booking as any).update({
-                    paymentStatus: PaymentStatus.PAID,
-                    paymentMode: BookingPaymentMode.PAY_NOW,
-                    status: BookingStatus.CONFIRMED,
-                    adminApprovalStatus: 'payment_done',
-                });
-                try {
-                    await generateTicketForBookingHelper(booking.id);
-                } catch (tErr: any) {
-                    logger.warn('Ticket creation note:', tErr?.message);
+                if (!result.success && result.shortfallData) {
+                    return res.status(200).json({
+                        success: false,
+                        code: 'INSUFFICIENT_WALLET_BALANCE',
+                        message: result.message,
+                        data: result.shortfallData,
+                        paymentIntent: result.paymentIntent,
+                    });
                 }
-                return res.json({
-                    success: true,
-                    message: 'Large Party Paid via Smart Credit Wallet!',
-                    paymentIntent: result.paymentIntent,
-                });
+
+                if (result.success && method === PaymentIntentMethod.WALLET) {
+                    await (booking as any).update({
+                        paymentStatus: PaymentStatus.PAID,
+                        paymentMode: BookingPaymentMode.PAY_NOW,
+                        status: BookingStatus.CONFIRMED,
+                        adminApprovalStatus: 'payment_done',
+                    });
+                    try { await generateTicketForBookingHelper(booking.id); } catch (tErr: any) { logger.warn('Ticket note:', tErr?.message); }
+                    return res.json({ success: true, message: 'Large Party Paid via Smart Credit Wallet!', paymentIntent: result.paymentIntent });
+                }
+
+                const orderId = result.razorpayOrder?.id || result.paymentIntent?.razorpayOrderId || await createRazorpayOrderDirect(amount, booking.id);
+                await (booking as any).update({ razorpayOrderId: orderId });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+            } catch (psErr: any) {
+                // PaymentService unavailable — fall back to direct Razorpay order creation
+                logger.warn('PaymentService unavailable for booking, using direct Razorpay fallback:', psErr?.message);
+                const orderId = await createRazorpayOrderDirect(amount, booking.id);
+                await (booking as any).update({ razorpayOrderId: orderId });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
             }
-
-            const orderId = result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`;
-            await (booking as any).update({
-                razorpayOrderId: orderId,
-            });
-
-            return res.json({
-                success: true,
-                razorpayOrderId: orderId,
-                amount: Math.round(amount * 100),
-                currency: 'INR',
-                razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
-            });
         }
 
         return res.status(404).json({ success: false, message: 'Booking or Group Party target not found' });
