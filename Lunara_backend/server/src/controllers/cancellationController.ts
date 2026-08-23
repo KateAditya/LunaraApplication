@@ -114,7 +114,37 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
 
         const acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
         if (!acceptedRequest) {
-            return res.status(400).json({ success: false, message: 'Cancellation system applies only to confirmed Party Plans with an accepted participant.' });
+            if (plan.userId !== userId) {
+                return res.status(403).json({ success: false, message: 'Only the host can cancel a plan with no accepted participants.' });
+            }
+            // Scenario A: Direct Cancellation for Host (no accepted joiner)
+            const { cancelPartyPlanInternal } = require('./partyPlanController');
+            const transaction = await sequelize.transaction();
+            try {
+                const lockedPlan = await PartyPlan.findByPk(plan.id, { transaction, lock: transaction.LOCK.UPDATE });
+                if (lockedPlan) {
+                    await cancelPartyPlanInternal(lockedPlan, transaction);
+                }
+                await transaction.commit();
+            } catch (tErr) {
+                await transaction.rollback();
+                throw tErr;
+            }
+
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    io.emit('party_plan_deleted', { planId: plan.id });
+                    io.emit('party_plan_cancelled', { planId: plan.id });
+                    io.emit('live_feed_update', { type: 'party_plan_cancelled', planId: plan.id });
+                }
+            } catch (_) {}
+
+            return res.status(200).json({
+                success: true,
+                isDirectCancel: true,
+                message: 'Party Plan cancelled successfully.',
+            });
         }
 
         // Determine Requester & Recipient
@@ -186,6 +216,9 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             reliabilityImpact: -5,
         });
 
+        // Update Party Plan Lifecycle Status
+        await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
+
         // 5. Send Authoritative FCM Push & Socket.io Notifications
         try {
             await NotificationService.dispatch({
@@ -218,15 +251,25 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 });
             }
 
-            // Real-time socket notification
+            // Real-time socket notification & live feed card update
             const { io } = require('../server');
-            io.to(`user_${recipientUserId}`).emit('party_plan_cancellation_requested', {
-                planId: plan.id,
-                requestId: cancellationRequest.id,
-                requestedById: userId,
-                requesterName,
-                reason: cancellationRequest.reason,
-            });
+            if (io) {
+                io.to(`user_${recipientUserId}`).emit('party_plan_cancellation_requested', {
+                    planId: plan.id,
+                    requestId: cancellationRequest.id,
+                    requestedById: userId,
+                    recipientUserId,
+                    requesterName,
+                    reason: cancellationRequest.reason,
+                    otherReasonText: cancellationRequest.otherReasonText,
+                    requestedAt: cancellationRequest.requestedAt,
+                });
+                io.emit('live_feed_update', {
+                    type: 'party_plan_cancellation_requested',
+                    planId: plan.id,
+                    requestId: cancellationRequest.id,
+                });
+            }
         } catch (notifErr: any) {
             logger.warn('[CreateCancellationRequest] Notification warning:', notifErr.message);
         }
@@ -328,6 +371,8 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 respondedById: userId,
             });
 
+            await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
+
             // Notify Requester
             try {
                 const recipientUser = await User.findByPk(userId);
@@ -356,10 +401,16 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 }
 
                 const { io } = require('../server');
-                io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_cancellation_declined', {
-                    planId: plan.id,
-                    requestId: cancellationRequest.id,
-                });
+                if (io) {
+                    io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_cancellation_declined', {
+                        planId: plan.id,
+                        requestId: cancellationRequest.id,
+                    });
+                    io.emit('live_feed_update', {
+                        type: 'party_plan_cancellation_declined',
+                        planId: plan.id,
+                    });
+                }
             } catch (notifErr: any) {
                 logger.warn('[RespondToCancellationRequest] Rejection notification warning:', notifErr.message);
             }

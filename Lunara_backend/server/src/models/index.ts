@@ -772,22 +772,31 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             console.warn('⚠️ Auto-adding StrangersMeetRequest reminder columns note:', colErr);
         }
 
-        await StrangersMeetRequest.sync(options);
-        await StrangersMeetJoiner.sync(options);
-        await PartyPlanRequest.sync(options);
-        await PartyPlanCancellationRequest.sync(options);
-        await UserPenalty.sync(options);
-        await City.sync(options);
-        await Area.sync(options);
-        await ChatSubscription.sync(options);
-        await SubscriptionPackage.sync(options);
-        await UserSubscription.sync(options);
-        await SafetyCheck.sync(options);
-        await DeletedAccount.sync(options);
-        await PlanTimeLock.sync(options);
-        await PlanTimeLockConfig.sync(options);
-        await PlanTimeLockConfigHistory.sync(options);
-        await NotificationJob.sync(options);
+        const modelsToSync = [
+            StrangersMeetRequest,
+            StrangersMeetJoiner,
+            PartyPlanRequest,
+            PartyPlanCancellationRequest,
+            UserPenalty,
+            City,
+            Area,
+            ChatSubscription,
+            SubscriptionPackage,
+            UserSubscription,
+            SafetyCheck,
+            DeletedAccount,
+            PlanTimeLock,
+            PlanTimeLockConfig,
+            PlanTimeLockConfigHistory,
+            NotificationJob,
+        ];
+        for (const m of modelsToSync) {
+            try {
+                await m.sync(options);
+            } catch (mErr: any) {
+                console.warn(`Sync warning for ${m.name}: ${mErr?.message}`);
+            }
+        }
         try {
             await sequelize.query(`
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;

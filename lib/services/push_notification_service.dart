@@ -20,6 +20,7 @@ import '../screens/social/host_party_plan_manager_screen.dart';
 import '../screens/social/party_plan_detail_screen.dart';
 import '../screens/social/notification_center_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
+import '../dialogs/party_plan_cancellation_dialog.dart';
 import '../dialogs/strangers_meet_start_dialog.dart';
 import '../dialogs/strangers_meet_end_dialog.dart';
 
@@ -108,6 +109,7 @@ class PushNotificationService {
     ApiService.addSocketListener('new_ad_published', _onSocketAdPublished);
     ApiService.addSocketListener('strangers_meet_start_prompt', _onSocketStrangersMeetStartPrompt);
     ApiService.addSocketListener('strangers_meet_end_prompt', _onSocketStrangersMeetEndPrompt);
+    ApiService.addSocketListener('party_plan_cancellation_requested', _onSocketPartyPlanCancellationRequested);
 
     // 8. Notification tap handler (app in background, not terminated)
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -312,6 +314,39 @@ class PushNotificationService {
           subject: subject,
           venueName: venueName,
           expectedEndAt: expectedEnd,
+        );
+      }
+    }
+  }
+
+  static void _onSocketPartyPlanCancellationRequested(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> cancelMap = data is Map ? Map<String, dynamic>.from(data) : {};
+    final context = NotificationNavigator.navigatorKey.currentContext;
+    if (context != null) {
+      final planId = cancelMap['planId']?.toString() ?? '';
+      final requestId = cancelMap['requestId']?.toString() ?? '';
+      final requesterName = cancelMap['requesterName']?.toString() ?? 'Participant';
+      final requesterPhoto = cancelMap['requesterPhoto']?.toString();
+      final planTitle = cancelMap['planTitle']?.toString() ?? 'Party Plan';
+      final venueName = cancelMap['venueName']?.toString() ?? 'Selected Venue';
+      final rawDate = cancelMap['eventDateTime']?.toString() ?? cancelMap['requestedAt']?.toString();
+      final eventDate = rawDate != null ? DateTime.tryParse(rawDate)?.toLocal() : null;
+      final reason = cancelMap['reason']?.toString() ?? 'personal_reasons';
+      final otherReasonText = cancelMap['otherReasonText']?.toString();
+
+      if (planId.isNotEmpty && requestId.isNotEmpty) {
+        PartyPlanCancellationDialog.show(
+          context,
+          planId: planId,
+          requestId: requestId,
+          requesterName: requesterName,
+          requesterPhoto: requesterPhoto,
+          planTitle: planTitle,
+          venueName: venueName,
+          eventDateTime: eventDate ?? DateTime.now(),
+          reason: reason,
+          otherReasonText: otherReasonText,
         );
       }
     }

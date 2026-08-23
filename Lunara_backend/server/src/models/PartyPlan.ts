@@ -51,6 +51,7 @@ export enum PartyPlanLifecycleStatus {
     PLAN_COMPLETED          = 'plan_completed',
     COMPLETED               = 'completed',
     ARCHIVED                = 'archived',
+    CANCELLATION_REQUESTED  = 'cancellation_requested',
     CANCELLED               = 'cancelled',
     EXPIRED                 = 'expired',
     FAILED                  = 'failed',

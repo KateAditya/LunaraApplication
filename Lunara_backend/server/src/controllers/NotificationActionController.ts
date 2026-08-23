@@ -44,35 +44,65 @@ export class NotificationActionController {
                                           notification.entityType === 'party_plan';
                 
                 if (isPartyPlanEntity) {
-                    const requestId = notification.metadata?.requestId || 
-                                     (notification.entityType === 'PartyPlanRequest' || notification.entityType === 'party_plan_request' ? notification.entityId : null);
+                    const isCancellationNotif = notification.eventType === 'party_plan_cancellation_requested' || 
+                                               Boolean(notification.metadata?.cancellationId) ||
+                                               (notification.title && notification.title.toLowerCase().includes('cancellation'));
 
-                    if (action === 'ACCEPT' && requestId) {
-                        const mockReq: any = {
-                            params: { reqId: requestId },
-                            body: { userId: currentUserId },
-                        };
-                        let mockStatus = 200;
-                        let mockJsonPayload: any = null;
-                        const mockRes: any = {
-                            status: (code: number) => { mockStatus = code; return mockRes; },
-                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
-                        };
-                        await acceptPartyPlanRequest(mockReq, mockRes);
-                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
-                    } else if ((action === 'DECLINE' || action === 'REJECT') && requestId) {
-                        const mockReq: any = {
-                            params: { reqId: requestId },
-                            body: { userId: currentUserId },
-                        };
-                        let mockStatus = 200;
-                        let mockJsonPayload: any = null;
-                        const mockRes: any = {
-                            status: (code: number) => { mockStatus = code; return mockRes; },
-                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
-                        };
-                        await rejectPartyPlanRequest(mockReq, mockRes);
-                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                    if (isCancellationNotif) {
+                        const planId = notification.entityId || notification.metadata?.planId;
+                        const cancellationReqId = notification.metadata?.requestId || notification.metadata?.cancellationId;
+
+                        if (planId && cancellationReqId) {
+                            const { respondToCancellationRequest } = await import('./cancellationController');
+                            const mockReq: any = {
+                                params: { id: planId },
+                                body: {
+                                    requestId: cancellationReqId,
+                                    action: action === 'ACCEPT' ? 'approve' : 'reject',
+                                    userId: currentUserId,
+                                },
+                                user: { id: currentUserId },
+                            };
+                            let mockStatus = 200;
+                            let mockJsonPayload: any = null;
+                            const mockRes: any = {
+                                status: (code: number) => { mockStatus = code; return mockRes; },
+                                json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                            };
+                            await respondToCancellationRequest(mockReq, mockRes);
+                            actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                        }
+                    } else {
+                        const requestId = notification.metadata?.requestId || 
+                                         (notification.entityType === 'PartyPlanRequest' || notification.entityType === 'party_plan_request' ? notification.entityId : null);
+
+                        if (action === 'ACCEPT' && requestId) {
+                            const mockReq: any = {
+                                params: { reqId: requestId },
+                                body: { userId: currentUserId },
+                            };
+                            let mockStatus = 200;
+                            let mockJsonPayload: any = null;
+                            const mockRes: any = {
+                                status: (code: number) => { mockStatus = code; return mockRes; },
+                                json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                            };
+                            await acceptPartyPlanRequest(mockReq, mockRes);
+                            actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                        } else if ((action === 'DECLINE' || action === 'REJECT') && requestId) {
+                            const mockReq: any = {
+                                params: { reqId: requestId },
+                                body: { userId: currentUserId },
+                            };
+                            let mockStatus = 200;
+                            let mockJsonPayload: any = null;
+                            const mockRes: any = {
+                                status: (code: number) => { mockStatus = code; return mockRes; },
+                                json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                            };
+                            await rejectPartyPlanRequest(mockReq, mockRes);
+                            actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                        }
                     }
                 } else if ((notification.entityType === 'StrangersMeetRequest' || notification.entityType === 'StrangersMeetJoiner' || notification.entityType === 'strangers_meet') && notification.entityId) {
                     const joinerId = notification.metadata?.joinerId || notification.entityId;
