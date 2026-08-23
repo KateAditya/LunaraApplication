@@ -86,40 +86,48 @@ UserSubscription.init(
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'expiration_alert_sent',
         },
         reminder1DaySent: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'reminder1_day_sent',
         },
         reminder8HourSent: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'reminder8_hour_sent',
         },
         reminder5HourSent: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'reminder5_hour_sent',
         },
         reminder2HourSent: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'reminder2_hour_sent',
         },
         reminder1HourSent: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'reminder1_hour_sent',
         },
         expiryNotified: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'expiry_notified',
         },
         lastNotifiedAt: {
             type: DataTypes.DATE,
             allowNull: true,
+            field: 'last_notified_at',
         },
     },
     {

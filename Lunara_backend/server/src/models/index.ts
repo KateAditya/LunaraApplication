@@ -783,6 +783,33 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         } catch (colErr) {
             console.warn('⚠️ Auto-adding StrangersMeetRequest reminder columns note:', colErr);
         }
+        try {
+            await sequelize.query(`
+                CREATE TABLE IF NOT EXISTS profile_boosts (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                    duration_minutes INTEGER NOT NULL DEFAULT 30,
+                    transaction_id UUID,
+                    metadata JSONB,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_day_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder8_hour_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder5_hour_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder2_hour_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_hour_sent BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiry_notified BOOLEAN DEFAULT false;
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMP WITH TIME ZONE;
+            `);
+        } catch (colErr: any) {
+            console.warn('⚠️ ProfileBoost / UserSubscriptions auto-migration warning:', colErr.message);
+        }
 
         const modelsToSync = [
             StrangersMeetRequest,
@@ -801,6 +828,22 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             PlanTimeLockConfig,
             PlanTimeLockConfigHistory,
             NotificationJob,
+            NightInterest,
+            NightPartnerRequest,
+            NightPartnerMatch,
+            PartySafetyCheck,
+            UserLike,
+            UserEngagementEvent,
+            ProfileBoost,
+            Notification,
+            WalletTransaction,
+            Ticket,
+            PartyReview,
+            ReliabilityHistory,
+            RewardPointLedger,
+            SmartWallet,
+            SmartWalletConfig,
+            WalletPromotionalCampaign,
         ];
         for (const m of modelsToSync) {
             try {
@@ -821,23 +864,6 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         } catch (colErr) {
             console.warn('⚠️ Auto-adding NightPartner reminder columns note:', colErr);
         }
-
-        await NightInterest.sync(options);
-        await NightPartnerRequest.sync(options);
-        await NightPartnerMatch.sync(options);
-        await PartySafetyCheck.sync(options);
-        await UserLike.sync(options);
-        await UserEngagementEvent.sync(options);
-        await ProfileBoost.sync(options);
-        await Notification.sync(options);
-        await WalletTransaction.sync(options);
-        await Ticket.sync(options);
-        await PartyReview.sync(options);
-        await ReliabilityHistory.sync(options);
-        await RewardPointLedger.sync(options);
-        await SmartWallet.sync(options);
-        await SmartWalletConfig.sync(options);
-        await WalletPromotionalCampaign.sync(options);
 
         console.log('✅ All models synchronized successfully');
     } catch (error) {
