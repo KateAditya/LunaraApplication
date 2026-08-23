@@ -632,68 +632,91 @@ export {
 // Export sync function
 export const syncModels = async (options?: { force?: boolean; alter?: boolean }) => {
     try {
-        // Ensure new columns across tables exist
-        try {
-            await sequelize.query(`
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_20m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_5m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_on_time_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_5m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_10m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_30m_sent BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS expired_no_show_cancelled BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT false;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_status VARCHAR(30) DEFAULT 'pending';
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_responded_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_status VARCHAR(30) DEFAULT 'pending';
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_responded_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_verification_stage VARCHAR(30) DEFAULT 'pre_event_check';
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS attendance_decision VARCHAR(40) DEFAULT 'pending';
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_refund_decision VARCHAR(40) DEFAULT 'pending';
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS verification_expiry_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);
-            `);
-            await sequelize.query(`ALTER TYPE enum_group_parties_status ADD VALUE IF NOT EXISTS 'completed';`).catch(() => {});
-            await sequelize.query(`
+        // Safe individual startup schema migrations executed BEFORE model syncs
+        const safeQueries = [
+            `CREATE TABLE IF NOT EXISTS profile_boosts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                duration_minutes INTEGER NOT NULL DEFAULT 30,
+                transaction_id UUID,
+                metadata JSONB,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            );`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_status VARCHAR(30) DEFAULT 'pending';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_responded_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_status VARCHAR(30) DEFAULT 'pending';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_responded_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_verification_stage VARCHAR(30) DEFAULT 'pre_event_check';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS attendance_decision VARCHAR(40) DEFAULT 'pending';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_refund_decision VARCHAR(40) DEFAULT 'pending';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS verification_expiry_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_lat_lang_check_in VARCHAR(255);`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS expired_no_show_cancelled BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_20m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_10m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_5m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_on_time_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_5m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_10m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_post_30m_sent BOOLEAN DEFAULT false;`,
 
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT false;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_status VARCHAR(30) DEFAULT 'pending';
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_responded_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_status VARCHAR(30) DEFAULT 'pending';
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_responded_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);
-                ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_status VARCHAR(30) DEFAULT 'pending';`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_responded_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_status VARCHAR(30) DEFAULT 'pending';`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_responded_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in VARCHAR(255);`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS payment_timeout_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_payment_status VARCHAR(50) DEFAULT 'unpaid';`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_order_id VARCHAR(255);`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS joiner_razorpay_payment_id VARCHAR(255);`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);`,
 
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ifsc_code VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat NUMERIC;
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_transaction_id VARCHAR(255);
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount NUMERIC;
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;
-                ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(255);
-            `);
-        } catch (colErr: any) {
-            console.warn('⚠️ Auto-column migration warning:', colErr.message);
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_day_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder8_hour_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder5_hour_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder2_hour_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_hour_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiry_notified BOOLEAN DEFAULT false;`,
+            `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMP WITH TIME ZONE;`,
+
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS ifsc_code VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_id VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS upi_number VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS platform_charge_per_seat NUMERIC;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_transaction_id VARCHAR(255);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount NUMERIC;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(255);`,
+        ];
+
+        for (const q of safeQueries) {
+            try {
+                await sequelize.query(q);
+            } catch (qErr: any) {
+                console.warn('⚠️ Startup migration note:', qErr?.message);
+            }
         }
+        await sequelize.query(`ALTER TYPE enum_group_parties_status ADD VALUE IF NOT EXISTS 'completed';`).catch(() => {});
 
         // Sync in order of dependencies
         await User.sync(options);
