@@ -1426,8 +1426,8 @@ export const paySuperLikesWithWallet = async (req: Request, res: Response): Prom
 // ─────────────────────────────────────────────────────────────────────────────
 export const payBoostWithWallet = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { count } = req.body;
-        const userId = req.user!.id;
+        const count = req.body.count || req.body.boostCount;
+        const userId = (req as any).user?.id || req.body?.userId;
         const purchaseCount = Number(count);
 
         const price = CREDIT_PRICE_TABLE[purchaseCount];

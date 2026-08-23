@@ -4094,6 +4094,32 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> payBoostWithWallet({
+    required int boostCount,
+    required double price,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/wallet/pay-boost',
+        body: {
+          'count': boostCount,
+          'boostCount': boostCount,
+          'price': price,
+        },
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return Map<String, dynamic>.from(data);
+      } else {
+        final data = jsonDecode(response.body);
+        return Map<String, dynamic>.from(data);
+      }
+    } catch (e) {
+      debugPrint('payBoostWithWallet error: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>> purchaseBoost({
     required int boostCount,
     required String gatewayOrderId,

@@ -384,10 +384,73 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   Future<void> _initiateBoostPurchase() async {
     final boost = _boostOptions[_selectedBoostOption];
-    setState(() => _isProcessing = true);
+    final int count = boost['count'] ?? 1;
+    final double price = (boost['price'] as num).toDouble();
 
-    // Call the backend to create a real Razorpay Order!
-    final orderData = await ApiService.createBoostOrder(boost['count']);
+    SmartCheckoutSheet.show(
+      context: context,
+      title: 'Lunara Profile Boost',
+      subtitle: '${boost['label']} ($count Boosts)',
+      itemPrice: price,
+      onWalletPayment: () async {
+        final res = await ApiService.payBoostWithWallet(
+          boostCount: count,
+          price: price,
+        );
+        if (res != null && res['success'] == true) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  res['message'] ?? '$count Profile Boost(s) added! ⚡',
+                ),
+                backgroundColor: const Color(0xFF10B981),
+              ),
+            );
+          }
+          await SubscriptionProvider.instance.refreshAfterPurchase();
+          await _loadData();
+          return true;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res?['message'] ?? 'Wallet payment failed'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          return false;
+        }
+      },
+      onDirectPayment: () async {
+        await _launchRazorpayForBoost(count, price, boost['label'] ?? '');
+      },
+      onHybridPayment: (shortfallAmount) async {
+        final orderData = await ApiService.createWalletRechargeOrder(
+          shortfallAmount,
+        );
+        if (orderData != null) {
+          final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+          final options = {
+            'key': orderData['keyId'] ?? 'rzp_test_key',
+            'amount': (shortfallAmount * 100).toInt(),
+            'name': 'Lunara Boost Shortfall',
+            'description':
+                'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for $count Profile Boost(s)',
+            'order_id': orderId,
+            'theme': {'color': '#7F00FF'},
+          };
+
+          _razorpay.open(options);
+        }
+      },
+    );
+  }
+
+  Future<void> _launchRazorpayForBoost(int count, double price, String label) async {
+    setState(() => _isProcessing = true);
+    final orderData = await ApiService.createBoostOrder(count);
     if (orderData == null) {
       setState(() => _isProcessing = false);
       if (!mounted) return;
@@ -408,7 +471,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       'key': keyId,
       'amount': amount,
       'name': 'Lunara Profile Boost',
-      'description': 'Boost Pack - ${boost['label']}',
+      'description': 'Boost Pack - $label',
       'order_id': orderId,
       'prefill': {'contact': '8888888888', 'email': 'boost@lunara.com'},
     };
@@ -424,7 +487,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     if (!razorpayOpened) {
       Future.delayed(const Duration(seconds: 2), () {
         _confirmBoostPurchase(
-          boost['count'],
+          count,
           orderId,
           'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           'mock_signature',
@@ -652,6 +715,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           bottom: TabBar(
             controller: _tabController,
             isScrollable: true,
+            tabAlignment: TabAlignment.start,
             indicatorColor: LunaraTheme.electricViolet,
             indicatorWeight: 3,
             labelColor: Theme.of(context).colorScheme.onSurface,
