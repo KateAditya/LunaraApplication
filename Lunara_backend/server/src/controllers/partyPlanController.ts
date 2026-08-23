@@ -4600,17 +4600,80 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         const choice = response ? response.toString().toUpperCase() : (hasArrived === false ? 'NO' : 'YES');
         const isYes = choice === 'YES' || hasArrived === true;
         const nowStamp = new Date();
+        const stage = (req.body.stage || 'final_check').toString().toLowerCase();
 
+        // ── STAGE 1: FIRST REACH CHECK (PRE-EVENT EVIDENCE) ──────────────────
+        if (stage === 'first_check' || stage === 'pre_event_check') {
+            if (isHost) {
+                await plan.update({
+                    hostFirstCheckStatus: isYes ? 'yes' : 'no',
+                    hostFirstCheckRespondedAt: nowStamp,
+                    reachVerificationStage: 'pre_event_check',
+                    hostLatLangCheckIn: latitude && longitude ? true : plan.hostLatLangCheckIn
+                }, { transaction });
+            } else if (acceptedReq) {
+                await acceptedReq.update({
+                    guestFirstCheckStatus: isYes ? 'yes' : 'no',
+                    guestFirstCheckRespondedAt: nowStamp,
+                    latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
+                }, { transaction });
+            }
+
+            const AuditLog = (await import('../models/AuditLog')).default;
+            await AuditLog.logAction({
+                userId,
+                partyPlanId: id,
+                action: `Pre-Event Reach First Evidence (${choice})`,
+                metadata: { isHost, response: choice, latitude, longitude, device, ip }
+            });
+
+            await transaction.commit();
+
+            // Broadcast real-time socket updates for First Evidence
+            setImmediate(async () => {
+                try {
+                    const { io } = require('../server');
+                    if (io) {
+                        const partnerId = isHost ? acceptedReq?.requesterId : plan.userId;
+                        if (partnerId) {
+                            io.to(`user_${partnerId}`).emit('party_plan_reach_update', {
+                                planId: id,
+                                stage: 'first_check',
+                                respondedBy: userId,
+                                isHost,
+                                choice,
+                            });
+                        }
+                        io.emit('live_feed_update', { type: 'party_plan_reach_update', planId: id });
+                    }
+                } catch (_) {}
+            });
+
+            res.json({
+              success: true,
+              isFirstCheck: true,
+              message: 'First reach evidence recorded successfully. Final verification will occur at scheduled party time.',
+              firstCheckStatus: choice,
+            });
+            return;
+        }
+
+        // ── STAGE 2: FINAL CONFIRMATION (AT PARTY TIME) ─────────────────────
         if (isHost) {
             await plan.update({
                 hostArrivalConfirmed: isYes,
                 hostArrivalTime: nowStamp,
+                hostFinalCheckStatus: isYes ? 'yes' : 'no',
+                hostFinalCheckRespondedAt: nowStamp,
+                reachVerificationStage: 'final_check',
                 hostLatLangCheckIn: latitude && longitude ? true : plan.hostLatLangCheckIn
             }, { transaction });
         } else if (acceptedReq) {
             await acceptedReq.update({
                 guestArrivalConfirmed: isYes,
                 guestArrivalTime: nowStamp,
+                guestFinalCheckStatus: isYes ? 'yes' : 'no',
+                guestFinalCheckRespondedAt: nowStamp,
                 latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
             }, { transaction });
         }
@@ -4619,7 +4682,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         await AuditLog.logAction({
             userId,
             partyPlanId: id,
-            action: `Arrival Response (${choice})`,
+            action: `Final Partner Reach Response (${choice})`,
             metadata: { isHost, response: choice, latitude, longitude, device, ip }
         });
 
@@ -4686,6 +4749,9 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             await plan.update({
                 status: PartyPlanStatus.INACTIVE,
                 lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                attendanceDecision: 'both_confirmed',
+                reachRefundDecision: 'both_refunded',
+                reachVerificationStage: 'decided',
                 paymentStatus: 'Completed (Both Refunded)'
             }, { transaction });
         } else if (bothAnswered && acceptedReq) {
@@ -4723,6 +4789,9 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 await plan.update({
                     status: PartyPlanStatus.INACTIVE,
                     lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    attendanceDecision: 'host_only_confirmed',
+                    reachRefundDecision: 'host_refunded',
+                    reachVerificationStage: 'decided',
                     paymentStatus: 'Completed (Host Refunded, Guest No-Show)'
                 }, { transaction });
             } else if (!hostArrived && guestArrived) {
@@ -4754,6 +4823,9 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 await plan.update({
                     status: PartyPlanStatus.INACTIVE,
                     lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    attendanceDecision: 'partner_only_confirmed',
+                    reachRefundDecision: 'partner_refunded',
+                    reachVerificationStage: 'decided',
                     paymentStatus: 'Completed (Guest Refunded, Host No-Show)'
                 }, { transaction });
             } else {
@@ -4775,6 +4847,9 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                 await plan.update({
                     status: PartyPlanStatus.INACTIVE,
                     lifecycleStatus: PartyPlanLifecycleStatus.PLAN_COMPLETED,
+                    attendanceDecision: 'both_not_confirmed',
+                    reachRefundDecision: 'no_refund',
+                    reachVerificationStage: 'decided',
                     paymentStatus: 'Closed (Both No-Show)'
                 }, { transaction });
             }

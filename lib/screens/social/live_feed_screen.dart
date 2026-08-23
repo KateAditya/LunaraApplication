@@ -234,6 +234,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
@@ -270,6 +272,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);

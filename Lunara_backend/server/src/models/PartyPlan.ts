@@ -86,6 +86,14 @@ export interface PartyPlanAttributes {
     showDateDetails?: boolean;
     hostArrivalConfirmed?: boolean;
     hostArrivalTime?: Date | null;
+    hostFirstCheckStatus?: string | null;
+    hostFirstCheckRespondedAt?: Date | null;
+    hostFinalCheckStatus?: string | null;
+    hostFinalCheckRespondedAt?: Date | null;
+    reachVerificationStage?: string | null;
+    attendanceDecision?: string | null;
+    reachRefundDecision?: string | null;
+    verificationExpiryAt?: Date | null;
     reminder24hSent?: boolean;
     reminder3hSent?: boolean;
     reminder1hSent?: boolean;
@@ -144,6 +152,14 @@ class PartyPlan
     public showDateDetails!: boolean;
     public hostArrivalConfirmed!: boolean;
     public hostArrivalTime?: Date | null;
+    public hostFirstCheckStatus?: string | null;
+    public hostFirstCheckRespondedAt?: Date | null;
+    public hostFinalCheckStatus?: string | null;
+    public hostFinalCheckRespondedAt?: Date | null;
+    public reachVerificationStage?: string | null;
+    public attendanceDecision?: string | null;
+    public reachRefundDecision?: string | null;
+    public verificationExpiryAt?: Date | null;
     public reminder24hSent!: boolean;
     public reminder3hSent!: boolean;
     public reminder1hSent!: boolean;
@@ -321,6 +337,46 @@ PartyPlan.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'host_arrival_time',
+        },
+        hostFirstCheckStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'pending',
+            field: 'host_first_check_status',
+        },
+        hostFirstCheckRespondedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'host_first_check_responded_at',
+        },
+        hostFinalCheckStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'pending',
+            field: 'host_final_check_status',
+        },
+        hostFinalCheckRespondedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'host_final_check_responded_at',
+        },
+        reachVerificationStage: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'pre_event_check',
+            field: 'reach_verification_stage',
+        },
+        attendanceDecision: {
+            type: DataTypes.STRING(40),
+            defaultValue: 'pending',
+            field: 'attendance_decision',
+        },
+        reachRefundDecision: {
+            type: DataTypes.STRING(40),
+            defaultValue: 'pending',
+            field: 'reach_refund_decision',
+        },
+        verificationExpiryAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'verification_expiry_at',
         },
         reminder24hSent: {
             type: DataTypes.BOOLEAN,

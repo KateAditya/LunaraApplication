@@ -75,6 +75,14 @@ async function runMigration() {
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS show_date_details          BOOLEAN        NOT NULL DEFAULT TRUE`);
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_confirmed     BOOLEAN        NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_arrival_time          TIMESTAMP`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_status       VARCHAR(30)    DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_responded_at TIMESTAMP WITH TIME ZONE`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_status       VARCHAR(30)    DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_responded_at TIMESTAMP WITH TIME ZONE`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_verification_stage      VARCHAR(30)    DEFAULT 'pre_event_check'`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS attendance_decision           VARCHAR(40)    DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_refund_decision         VARCHAR(40)    DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS verification_expiry_at        TIMESTAMP WITH TIME ZONE`);
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_24h_sent          BOOLEAN        NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_3h_sent           BOOLEAN        NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reminder_1h_sent           BOOLEAN        NOT NULL DEFAULT FALSE`);
@@ -97,6 +105,10 @@ async function runMigration() {
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS lat_lang_check_in            BOOLEAN NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_confirmed      BOOLEAN NOT NULL DEFAULT FALSE`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_arrival_time           TIMESTAMP`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_status       VARCHAR(30) DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_first_check_responded_at TIMESTAMP WITH TIME ZONE`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_status       VARCHAR(30) DEFAULT 'pending'`);
+        await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_responded_at TIMESTAMP WITH TIME ZONE`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_at                 TIMESTAMP`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by                 UUID`);
         await sequelize.query(`ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason          VARCHAR(100)`);

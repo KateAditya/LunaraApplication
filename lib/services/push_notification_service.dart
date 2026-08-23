@@ -21,6 +21,7 @@ import '../screens/social/party_plan_detail_screen.dart';
 import '../screens/social/notification_center_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
 import '../dialogs/party_plan_cancellation_dialog.dart';
+import '../dialogs/partner_reach_confirmation_dialog.dart';
 import '../dialogs/strangers_meet_start_dialog.dart';
 import '../dialogs/strangers_meet_end_dialog.dart';
 
@@ -110,6 +111,8 @@ class PushNotificationService {
     ApiService.addSocketListener('strangers_meet_start_prompt', _onSocketStrangersMeetStartPrompt);
     ApiService.addSocketListener('strangers_meet_end_prompt', _onSocketStrangersMeetEndPrompt);
     ApiService.addSocketListener('party_plan_cancellation_requested', _onSocketPartyPlanCancellationRequested);
+    ApiService.addSocketListener('party_plan_arrival_prompt', _onSocketPartyPlanReachPrompt);
+    ApiService.addSocketListener('party_plan_reach_prompt', _onSocketPartyPlanReachPrompt);
 
     // 8. Notification tap handler (app in background, not terminated)
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -347,6 +350,35 @@ class PushNotificationService {
           eventDateTime: eventDate ?? DateTime.now(),
           reason: reason,
           otherReasonText: otherReasonText,
+        );
+      }
+    }
+  }
+
+  static void _onSocketPartyPlanReachPrompt(dynamic data) {
+    if (data == null) return;
+    final Map<String, dynamic> promptMap = data is Map ? Map<String, dynamic>.from(data) : {};
+    final context = NotificationNavigator.navigatorKey.currentContext;
+    if (context != null) {
+      final planId = promptMap['planId']?.toString() ?? promptMap['partyPlanId']?.toString() ?? '';
+      final stage = promptMap['stage']?.toString() ?? promptMap['step']?.toString() ?? 'final_check';
+      final partnerName = promptMap['partnerName']?.toString() ?? 'Partner';
+      final partnerPhoto = promptMap['partnerPhoto']?.toString();
+      final planTitle = promptMap['planTitle']?.toString() ?? 'Party Plan';
+      final venueName = promptMap['venueName']?.toString() ?? 'Venue';
+      final rawDate = promptMap['eventDateTime']?.toString() ?? promptMap['planDateTime']?.toString();
+      final eventDate = rawDate != null ? DateTime.tryParse(rawDate)?.toLocal() : null;
+
+      if (planId.isNotEmpty) {
+        PartnerReachConfirmationDialog.show(
+          context,
+          planId: planId,
+          stage: stage,
+          partnerName: partnerName,
+          partnerPhoto: partnerPhoto,
+          planTitle: planTitle,
+          venueName: venueName,
+          eventDateTime: eventDate ?? DateTime.now(),
         );
       }
     }

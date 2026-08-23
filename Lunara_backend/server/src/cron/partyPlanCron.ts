@@ -772,7 +772,10 @@ export const startPartyPlanCron = () => {
                     await plan.update({
                         status: PartyPlanStatus.CANCELLED,
                         lifecycleStatus: PartyPlanLifecycleStatus.EXPIRED,
-                        paymentStatus: 'Cancelled (Deposit Forfeited - No Confirmation within 5h)',
+                        attendanceDecision: 'expired',
+                        reachRefundDecision: 'expired_no_refund',
+                        reachVerificationStage: 'expired',
+                        paymentStatus: 'Cancelled (Deposit Forfeited - No Confirmation within 8h)',
                         expiredNoShowCancelled: true,
                     });
 

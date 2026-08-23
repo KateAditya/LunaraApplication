@@ -4619,11 +4619,12 @@ class ApiService {
     required String planId,
     required String userId,
     required bool hasArrived,
+    String stage = 'final_check',
   }) async {
     try {
       final response = await _post(
         '/api/mobile/party-plans/$planId/confirm-arrival',
-        {'userId': userId, 'hasArrived': hasArrived},
+        {'userId': userId, 'hasArrived': hasArrived, 'response': hasArrived ? 'YES' : 'NO', 'stage': stage},
       );
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {

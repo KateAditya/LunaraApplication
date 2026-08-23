@@ -39,6 +39,10 @@ export interface PartyPlanRequestAttributes {
     latLangCheckIn: boolean;
     guestArrivalConfirmed?: boolean;
     guestArrivalTime?: Date | null;
+    guestFirstCheckStatus?: string | null;
+    guestFirstCheckRespondedAt?: Date | null;
+    guestFinalCheckStatus?: string | null;
+    guestFinalCheckRespondedAt?: Date | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -46,7 +50,7 @@ export interface PartyPlanRequestAttributes {
 export interface PartyPlanRequestCreationAttributes
     extends Optional<
         PartyPlanRequestAttributes,
-        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus'
+        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus' | 'guestFirstCheckStatus' | 'guestFirstCheckRespondedAt' | 'guestFinalCheckStatus' | 'guestFinalCheckRespondedAt'
     > {}
 
 class PartyPlanRequest
@@ -67,6 +71,10 @@ class PartyPlanRequest
     public latLangCheckIn!: boolean;
     public guestArrivalConfirmed!: boolean;
     public guestArrivalTime?: Date | null;
+    public guestFirstCheckStatus?: string | null;
+    public guestFirstCheckRespondedAt?: Date | null;
+    public guestFinalCheckStatus?: string | null;
+    public guestFinalCheckRespondedAt?: Date | null;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -153,6 +161,26 @@ PartyPlanRequest.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'guest_arrival_time',
+        },
+        guestFirstCheckStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'pending',
+            field: 'guest_first_check_status',
+        },
+        guestFirstCheckRespondedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'guest_first_check_responded_at',
+        },
+        guestFinalCheckStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'pending',
+            field: 'guest_final_check_status',
+        },
+        guestFinalCheckRespondedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'guest_final_check_responded_at',
         },
     },
     {
