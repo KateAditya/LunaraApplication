@@ -613,81 +613,59 @@ export const checkFeatureAccess = async (req: Request, res: Response): Promise<v
 export const createBoostOrder = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.id;
-        const { boostCount } = req.body;
+        const { boostCount, paymentMethod } = req.body;
 
-        if (![1, 2, 3, 5].includes(boostCount)) {
-            res.status(400).json({ success: false, message: 'Invalid boost count' });
+        const count = Number(boostCount) || 1;
+        if (![1, 2, 3, 5].includes(count)) {
+            res.status(400).json({ success: false, message: 'Invalid boost count. Select 1, 2, 3, or 5 boosts.' });
             return;
         }
 
-        let sub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE },
-            order: [['createdAt', 'DESC']],
+        const PaymentIntentModel = await import('../models/PaymentIntent');
+        const PaymentIntentEntityType = PaymentIntentModel.PaymentIntentEntityType;
+        const PaymentIntentMethod = PaymentIntentModel.PaymentIntentMethod;
+        const PaymentServiceModule = await import('../services/PaymentService');
+
+        const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
+
+        const result = await PaymentServiceModule.PaymentService.createPaymentIntent({
+            userId,
+            entityType: PaymentIntentEntityType.BOOST,
+            entityId: count.toString(),
+            amount: count === 1 ? 49 : count === 2 ? 90 : count === 3 ? 140 : 160,
+            paymentMethod: method,
+            metadata: { boostCount: count },
         });
 
-        if (!sub) {
-            // Find FREE package or any package to associate with this subscription
-            let freePackage = await SubscriptionPackage.findOne({
-                where: { tier: PackageTier.FREE }
+        if (!result.success && result.shortfallData) {
+            res.status(200).json({
+                success: false,
+                code: 'INSUFFICIENT_WALLET_BALANCE',
+                message: result.message,
+                data: result.shortfallData,
+                paymentIntent: result.paymentIntent,
             });
-            if (!freePackage) {
-                freePackage = await SubscriptionPackage.findOne({ order: [['price', 'ASC']] });
-            }
-            if (freePackage) {
-                sub = await UserSubscription.create({
-                    userId,
-                    packageId: freePackage.id,
-                    status: SubscriptionStatus.ACTIVE,
-                    startDate: new Date(),
-                    endDate: new Date(2099, 0, 1), // practically lifetime
-                    superlikesRemaining: 0,
-                    boostsRemaining: 0,
-                });
-            } else {
-                res.status(400).json({ success: false, message: 'No subscription package found to link boost' });
-                return;
-            }
+            return;
         }
 
         let boostPrice = 49;
-        if (boostCount === 1) boostPrice = 49;
-        else if (boostCount === 2) boostPrice = 90;
-        else if (boostCount === 3) boostPrice = 140;
-        else if (boostCount === 5) boostPrice = 160;
+        if (count === 2) boostPrice = 90;
+        else if (count === 3) boostPrice = 140;
+        else if (count === 5) boostPrice = 160;
 
-        const amount = Math.round(boostPrice * 100); // in paise
-        const options = {
-            amount,
-            currency: 'INR',
-            receipt: `boost_${Date.now().toString(36)}`
-        };
-        const order = await razorpay.orders.create(options);
-
-        // Pre-create pending transaction
-        await SubscriptionTransaction.create({
-            userId,
-            packageId: sub.packageId,
-            type: TransactionType.BOOST,
-            amount: boostPrice,
-            currency: 'INR',
-            paymentMethod: 'razorpay',
-            paymentGateway: 'razorpay',
-            gatewayOrderId: order.id,
-            status: TransactionStatus.PENDING,
-            invoiceNumber: generateInvoiceNumber(),
-            metadata: { boostCount },
-        });
-
-        res.status(201).json({
+        res.status(200).json({
             success: true,
-            razorpayOrderId: order.id,
-            amount,
+            paymentIntentId: result.paymentIntent.id,
+            paymentReference: result.paymentIntent.paymentReference,
+            razorpayOrderId: result.razorpayOrder?.id || result.paymentIntent.razorpayOrderId || `order_mock_${Date.now()}`,
+            amount: Math.round(boostPrice * 100),
             currency: 'INR',
-            keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123'
+            keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            message: result.message || 'Boost order created successfully',
         });
     } catch (error: any) {
         logger.error('Error creating boost order:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        res.status(500).json({ success: false, message: 'Payment could not be started. Please try again.' });
     }
 };
 

@@ -199,6 +199,8 @@ app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mo
 app.use('/api/areas', areaRoutes);                                 // Areas API (Admin & App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
 app.use('/api/admin/safety-checks', adminSafetyChecksRoutes); // Safety Checks (Admin)
+import mobilePaymentRoutes from './routes/mobilePayment';
+app.use('/api/mobile/payments', mobilePaymentRoutes);         // Central Payments & Webhooks (Mobile)
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)

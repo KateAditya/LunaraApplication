@@ -4,6 +4,7 @@ import Venue from './Venue';
 import Booking from './Booking';
 import GroupBooking from './GroupBooking';
 import Payment from './Payment';
+import PaymentIntent from './PaymentIntent';
 import BookingTablePackage from './BookingTablePackage';
 import BookingMember from './BookingMember';
 import Plan from './Plan';
@@ -646,6 +647,27 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
             );`,
+            `CREATE TABLE IF NOT EXISTS payment_intents (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                payment_reference VARCHAR(100) NOT NULL UNIQUE,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id VARCHAR(100) NOT NULL,
+                amount NUMERIC(10,2) NOT NULL,
+                wallet_amount_used NUMERIC(10,2) DEFAULT 0,
+                razorpay_amount NUMERIC(10,2) DEFAULT 0,
+                currency VARCHAR(3) DEFAULT 'INR',
+                status VARCHAR(30) DEFAULT 'initiated',
+                payment_method VARCHAR(30) DEFAULT 'razorpay',
+                razorpay_order_id VARCHAR(100),
+                razorpay_payment_id VARCHAR(100),
+                razorpay_signature VARCHAR(255),
+                expires_at TIMESTAMP WITH TIME ZONE,
+                failure_reason TEXT,
+                metadata JSONB,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            );`,
             `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_status VARCHAR(30) DEFAULT 'pending';`,
             `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_first_check_responded_at TIMESTAMP WITH TIME ZONE;`,
             `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_final_check_status VARCHAR(30) DEFAULT 'pending';`,
@@ -860,6 +882,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             ProfileBoost,
             Notification,
             WalletTransaction,
+            PaymentIntent,
             Ticket,
             PartyReview,
             ReliabilityHistory,
