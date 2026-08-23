@@ -764,7 +764,26 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             myBookings.forEach((b: any) => {
                 const isPaid = (b.paymentStatus || '').toLowerCase() === 'paid';
                 if (!isPaid && b.status !== 'cancelled' && b.status !== 'rejected') {
-                    const dueAmt = Number(b.totalAmount) || Number(b.depositAmount) || 0;
+                    const isLargeParty = b.isLargePartyRequest || b.goingMode === 'party_request' || (b.numberOfGuests || 0) > 20;
+                    const dueAmt = Number(b.adminPaymentAmount) || Number(b.totalAmount) || Number(b.depositAmount) || 0;
+
+                    if (isLargeParty) {
+                        const adminStatus = (b.adminApprovalStatus || '').toLowerCase();
+                        const isApproved = adminStatus === 'approved' ||
+                            adminStatus === 'approved_awaiting_payment' ||
+                            adminStatus === 'awaiting_payment' ||
+                            adminStatus === 'payment_sent' ||
+                            adminStatus === 'payment_required' ||
+                            adminStatus === 'payment_pending' ||
+                            adminStatus === 'action_required' ||
+                            adminStatus === 'pending_payment';
+                        
+                        // DO NOT show premature ₹0 payment pending card for unapproved Large Party requests!
+                        if (!isApproved || dueAmt <= 0) {
+                            return;
+                        }
+                    }
+
                     pendingPaymentItems.push({
                         id: `pending_bk_${b.id}`,
                         bookingId: b.id,

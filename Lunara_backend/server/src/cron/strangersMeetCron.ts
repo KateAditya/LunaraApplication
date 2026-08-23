@@ -15,9 +15,15 @@ import AuditLog from '../models/AuditLog';
  * 2. 24-HOUR FALLBACK: transitions unconfirmed meets to NEEDS_HOST_CONTACT and alerts admin.
  * 3. END_CONFIRMATION_PENDING when expectedEndAt arrives.
  */
+let isStrangersMeetCronRunning = false;
+
 export const startStrangersMeetCron = () => {
-    // Run every minute
+    // Run every minute with overlap protection
     cron.schedule('* * * * *', async () => {
+        if (isStrangersMeetCronRunning) {
+            return;
+        }
+        isStrangersMeetCronRunning = true;
         try {
             const now = new Date();
             const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -38,6 +44,7 @@ export const startStrangersMeetCron = () => {
                         [Op.lte]: twentyFourHoursAgo,
                     },
                 },
+                limit: 500,
             });
 
             for (const meet of overdueStartMeets) {
@@ -202,6 +209,8 @@ export const startStrangersMeetCron = () => {
             }
         } catch (globalErr) {
             logger.error('[StrangersMeetCron] Global error during execution:', globalErr);
+        } finally {
+            isStrangersMeetCronRunning = false;
         }
     });
 

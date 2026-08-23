@@ -155,13 +155,20 @@ async function expireUnpaidLargePartyRequests(now: Date): Promise<void> {
 
 // Run every 5 minutes with overlap protection
 let isPartyPlanCronRunning = false;
+let isStrangersMeetLifecycleRunning = false;
 export const startPartyPlanCron = () => {
     // Check Strangers Meet lifecycle every 1 minute
     cron.schedule('* * * * *', async () => {
+        if (isStrangersMeetLifecycleRunning) {
+            return;
+        }
+        isStrangersMeetLifecycleRunning = true;
         try {
             await checkAndTriggerStrangersMeetLifecycle();
         } catch (err) {
             logger.error('[Cron] Error running Strangers Meet lifecycle tick:', err);
+        } finally {
+            isStrangersMeetLifecycleRunning = false;
         }
     });
 
@@ -176,8 +183,7 @@ export const startPartyPlanCron = () => {
             
             const now = new Date();
 
-            // 1. Check for expired payment timeouts
-            // Requests that are PAYMENT_PENDING but the timeout has passed
+            // 1. Check for expired payment timeouts (batch limit 500 for scalability)
             const expiredRequests = await PartyPlanRequest.findAll({
                 where: {
                     status: PartyPlanRequestStatus.PAYMENT_PENDING,
@@ -185,7 +191,8 @@ export const startPartyPlanCron = () => {
                         [Op.lt]: now
                     }
                 },
-                include: [{ model: PartyPlan, as: 'plan' }]
+                include: [{ model: PartyPlan, as: 'plan' }],
+                limit: 500,
             });
 
             for (const request of expiredRequests) {

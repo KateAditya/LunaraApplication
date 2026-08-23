@@ -397,7 +397,8 @@ const startServer = async () => {
         // Only run on the master process (if native cluster is disabled) AND only on instance 0 (if PM2 cluster)
         const isMasterProcess = cluster.isPrimary || (cluster as any).isMaster;
         const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
-        if (isMasterProcess && isFirstPm2Instance) {
+        const shouldRunCron = process.env.RUN_CRON !== 'false';
+        if (isMasterProcess && isFirstPm2Instance && shouldRunCron) {
             startPartyPlanCron();
             startNotificationJobCron();
             startExpiringPlanAlertCron();
@@ -407,7 +408,7 @@ const startServer = async () => {
             ExpiredTicketCleanupWorker.startWorker();
             logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
         } else {
-            logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}).`);
+            logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}, RUN_CRON=${process.env.RUN_CRON}).`);
         }
     } catch (error) {
         logger.error('Failed to start server:', error);
@@ -433,7 +434,8 @@ if (process.env.NODE_ENV !== 'test') {
         
         // Connect to database and start cron on primary process
         const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
-        if (isFirstPm2Instance) {
+        const shouldRunCron = process.env.RUN_CRON !== 'false';
+        if (isFirstPm2Instance && shouldRunCron) {
             connectDatabase().then(() => {
                 startPartyPlanCron();
                 startNotificationJobCron();

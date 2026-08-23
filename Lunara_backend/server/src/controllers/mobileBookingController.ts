@@ -1342,6 +1342,8 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
     try {
         const rawId = req.params.id;
         const paymentMethod = req.body?.paymentMethod;
+        const currentUserId = (req as any).user?.id || (req as any).user?.userId || req.body?.userId;
+
         const { booking, groupParty } = await resolveBookingOrGroupPartyTarget(rawId);
 
         if (!booking && !groupParty) {
@@ -1355,7 +1357,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
         const method = paymentMethod === 'wallet' ? PaymentIntentMethod.WALLET : PaymentIntentMethod.RAZORPAY;
 
         if (groupParty) {
-            if (String(groupParty.userId).trim() !== String(req.user!.id).trim()) {
+            if (currentUserId && String(groupParty.userId).trim() !== String(currentUserId).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own group party' });
             }
             const pStatus = (groupParty.status || '').toLowerCase();
@@ -1416,7 +1418,7 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
         }
 
         if (booking) {
-            if (String(booking.userId).trim() !== String(req.user!.id).trim()) {
+            if (currentUserId && String(booking.userId).trim() !== String(currentUserId).trim()) {
                 return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
             }
 
