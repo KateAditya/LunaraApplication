@@ -529,17 +529,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onLargePartyPaymentError(PaymentFailureResponse response) {
     debugPrint('Large Party Payment Error: ${response.code} - ${response.message}');
+    _pendingLargePartyBookingId = null;
     if (mounted) {
+      final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+          response.code == 2 ||
+          (response.message != null &&
+              (response.message!.toLowerCase().contains('cancel') ||
+                  response.message!.toLowerCase().contains('back')));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Payment failed: ${response.message}'),
-          backgroundColor: Colors.red,
+          content: Text(
+            isCancelled
+                ? 'Payment cancelled. You can complete your booking payment anytime.'
+                : 'Payment failed: ${response.message ?? "Please try again"}',
+          ),
+          backgroundColor: isCancelled ? Colors.black87 : Colors.redAccent,
+          duration: const Duration(seconds: 3),
         ),
       );
     }
   }
 
-  void _onLargePartyExternalWallet(ExternalWalletResponse response) {}
+  void _onLargePartyExternalWallet(ExternalWalletResponse response) {
+    debugPrint('External wallet selected: ${response.walletName}');
+  }
 
   Future<void> _handleLargePartySuccess({
     required String paymentId,
@@ -548,7 +561,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }) async {
     final bookingId = _pendingLargePartyBookingId;
     _pendingLargePartyBookingId = null;
-    if (bookingId == null) return;
+    if (bookingId == null || bookingId.isEmpty) return;
 
     try {
       final verified = await ApiService.verifyLargePartyPayment(
@@ -645,22 +658,54 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
           final num amountInPaise = orderData['amount'] ?? ((amount * 100).toInt());
 
-          if (kIsWeb || orderId.startsWith('order_mock_') || _razorpay == null) {
-            final success = await ApiService.verifyLargePartyPayment(
-              bookingId,
-              razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-              razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
-              razorpaySignature: 'mock_signature',
+          if (kIsWeb || _razorpay == null) {
+            final bool? shouldConfirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1E1035),
+                title: const Text('Direct Payment Gateway', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                content: Text('Simulate Razorpay payment of ₹${amount.toInt()} for Group Party at $venueName?', style: const TextStyle(color: Colors.white70)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
+                    child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             );
-            if (success && mounted) {
-              await _loadGroupPartyBookings();
-              _loadFeed(showLoader: false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
-                  backgroundColor: Colors.green,
-                ),
+
+            if (shouldConfirm == true) {
+              final success = await ApiService.verifyLargePartyPayment(
+                bookingId,
+                razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+                razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
+                razorpaySignature: 'mock_signature',
               );
+              if (success && mounted) {
+                await _loadGroupPartyBookings();
+                _loadFeed(showLoader: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } else {
+              _pendingLargePartyBookingId = null;
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Payment cancelled.'),
+                    backgroundColor: Colors.black87,
+                  ),
+                );
+              }
             }
             return;
           }
@@ -682,24 +727,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             _razorpay?.open(options);
           } catch (e) {
             debugPrint('Razorpay open error: $e');
-            final success = await ApiService.verifyLargePartyPayment(
-              bookingId,
-              razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-              razorpayPaymentId: 'payment_${DateTime.now().millisecondsSinceEpoch}',
-              razorpaySignature: 'mock_signature',
-            );
-            if (success && mounted) {
-              await _loadGroupPartyBookings();
-              _loadFeed(showLoader: false);
+            _pendingLargePartyBookingId = null;
+            if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
-                  backgroundColor: Colors.green,
+                SnackBar(
+                  content: Text('Could not open payment gateway: $e'),
+                  backgroundColor: Colors.redAccent,
                 ),
               );
             }
           }
         } else if (mounted) {
+          _pendingLargePartyBookingId = null;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
@@ -717,27 +756,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
           final shortfallPaise = (shortfall * 100).toInt();
 
-          if (kIsWeb || orderId.startsWith('order_mock_') || _razorpay == null) {
-            await ApiService.payWithWallet(
-              amount: amount,
-              bookingId: bookingId,
-              paymentType: 'group_party',
+          if (kIsWeb || _razorpay == null) {
+            final bool? shouldConfirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1E1035),
+                title: const Text('Smart Hybrid Payment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                content: Text('Pay shortfall of ₹${shortfall.toInt()} via Direct Gateway + remaining from wallet for Group Party at $venueName?', style: const TextStyle(color: Colors.white70)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
+                    child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             );
-            final success = await ApiService.verifyLargePartyPayment(
-              bookingId,
-              razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-              razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
-              razorpaySignature: 'mock_signature',
-            );
-            if (success && mounted) {
-              await _loadGroupPartyBookings();
-              _loadFeed(showLoader: false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
-                  backgroundColor: Colors.green,
-                ),
+
+            if (shouldConfirm == true) {
+              await ApiService.payWithWallet(
+                amount: amount,
+                bookingId: bookingId,
+                paymentType: 'group_party',
               );
+              final success = await ApiService.verifyLargePartyPayment(
+                bookingId,
+                razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+                razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
+                razorpaySignature: 'mock_signature',
+              );
+              if (success && mounted) {
+                await _loadGroupPartyBookings();
+                _loadFeed(showLoader: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } else {
+              _pendingLargePartyBookingId = null;
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Payment cancelled.'),
+                    backgroundColor: Colors.black87,
+                  ),
+                );
+              }
             }
             return;
           }
@@ -759,7 +830,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             _razorpay?.open(options);
           } catch (e) {
             debugPrint('Razorpay open error: $e');
+            _pendingLargePartyBookingId = null;
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Could not open payment gateway: $e'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
           }
+        } else if (mounted) {
+          _pendingLargePartyBookingId = null;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
         }
       },
     );

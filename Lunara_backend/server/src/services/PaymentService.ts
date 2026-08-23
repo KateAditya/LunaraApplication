@@ -8,7 +8,8 @@ import PaymentIntent, {
 } from '../models/PaymentIntent';
 import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
-import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
+import Booking, { BookingStatus, PaymentStatus, AdminApprovalStatus } from '../models/Booking';
+import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
@@ -382,7 +383,18 @@ export class PaymentService {
                 return 99; // Default party plan deposit
             }
 
-            if (entityType === PaymentIntentEntityType.GROUP_PARTY || entityType === PaymentIntentEntityType.LARGE_PARTY || entityType === PaymentIntentEntityType.BOOKING) {
+            if (entityType === PaymentIntentEntityType.GROUP_PARTY) {
+                const groupParty = await GroupParty.findByPk(entityId);
+                if (groupParty) {
+                    return Number(groupParty.totalAmount || requestedAmount || 0);
+                }
+                const booking = await Booking.findByPk(entityId);
+                if (booking) {
+                    return Number(booking.totalAmount || booking.depositAmount || requestedAmount || 0);
+                }
+            }
+
+            if (entityType === PaymentIntentEntityType.LARGE_PARTY || entityType === PaymentIntentEntityType.BOOKING) {
                 const booking = await Booking.findByPk(entityId);
                 if (booking) {
                     return Number(booking.totalAmount || booking.depositAmount || requestedAmount || 0);
@@ -482,9 +494,66 @@ export class PaymentService {
             return;
         }
 
-        // 3. GROUP PARTY / LARGE PARTY / BOOKING
+        // 3. GROUP PARTY
+        if (entityType === PaymentIntentEntityType.GROUP_PARTY) {
+            const groupParty = await GroupParty.findByPk(entityId, { transaction: t });
+            if (groupParty) {
+                await groupParty.update(
+                    {
+                        status: GroupPartyStatus.CONFIRMED,
+                        paymentStatus: GroupPartyPaymentStatus.PAID,
+                    },
+                    { transaction: t }
+                );
+
+                try {
+                    await generateTicketForGroupPartyHelper(groupParty.id);
+                } catch (ticketErr: any) {
+                    logger.warn('Group Party Ticket creation note:', ticketErr?.message);
+                }
+
+                await NotificationService.dispatch({
+                    recipientUserId: userId,
+                    eventType: 'booking_confirmed',
+                    category: 'payments',
+                    title: 'Group Party Confirmed! 🎉',
+                    body: `Your group party booking of ₹${amount} is fully confirmed. Get ready!`,
+                    metadata: { groupPartyId: groupParty.id, amount },
+                });
+                return;
+            }
+
+            const booking = await Booking.findByPk(entityId, { transaction: t });
+            if (booking) {
+                await booking.update(
+                    {
+                        status: BookingStatus.CONFIRMED,
+                        paymentStatus: PaymentStatus.PAID,
+                        adminApprovalStatus: AdminApprovalStatus.PAYMENT_DONE,
+                    },
+                    { transaction: t }
+                );
+
+                try {
+                    await generateTicketForBookingHelper(booking.id);
+                } catch (ticketErr: any) {
+                    logger.warn('Booking Ticket creation note:', ticketErr?.message);
+                }
+
+                await NotificationService.dispatch({
+                    recipientUserId: userId,
+                    eventType: 'booking_confirmed',
+                    category: 'payments',
+                    title: 'Group Party Confirmed! 🎉',
+                    body: `Your group party booking of ₹${amount} is fully confirmed. Get ready!`,
+                    metadata: { bookingId: booking.id, amount },
+                });
+                return;
+            }
+        }
+
+        // 4. LARGE PARTY / STANDARD BOOKING
         if (
-            entityType === PaymentIntentEntityType.GROUP_PARTY ||
             entityType === PaymentIntentEntityType.LARGE_PARTY ||
             entityType === PaymentIntentEntityType.BOOKING
         ) {
@@ -494,17 +563,14 @@ export class PaymentService {
                     {
                         status: BookingStatus.CONFIRMED,
                         paymentStatus: PaymentStatus.PAID,
+                        adminApprovalStatus: AdminApprovalStatus.PAYMENT_DONE,
                     },
                     { transaction: t }
                 );
 
                 // Generate Paid Ticket
                 try {
-                    if (entityType === PaymentIntentEntityType.GROUP_PARTY) {
-                        await generateTicketForGroupPartyHelper(booking.id);
-                    } else {
-                        await generateTicketForBookingHelper(booking.id);
-                    }
+                    await generateTicketForBookingHelper(booking.id);
                 } catch (ticketErr: any) {
                     logger.warn('Booking Ticket creation note:', ticketErr?.message);
                 }
@@ -514,7 +580,7 @@ export class PaymentService {
                     recipientUserId: userId,
                     eventType: 'booking_confirmed',
                     category: 'payments',
-                    title: `${entityType === PaymentIntentEntityType.LARGE_PARTY ? 'Large Party' : 'Group Party'} Confirmed! 🎉`,
+                    title: 'Large Party Confirmed! 🎉',
                     body: `Your party booking of ₹${amount} is fully confirmed. Get ready!`,
                     metadata: { bookingId: booking.id, amount },
                 });
@@ -522,7 +588,7 @@ export class PaymentService {
             return;
         }
 
-        // 4. STRANGERS MEET
+        // 5. STRANGERS MEET
         if (entityType === PaymentIntentEntityType.STRANGERS_MEET) {
             const joiner = await StrangersMeetJoiner.findOne({
                 where: { strangersMeetRequestId: entityId, userId },
