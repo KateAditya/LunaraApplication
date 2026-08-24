@@ -4,7 +4,8 @@ import StrangersMeetJoiner, { StrangersMeetJoinerStatus, StrangersMeetJoinerPaym
 import Venue from '../models/Venue';
 import { PlanEligibilityService } from './PlanEligibilityService';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { TimeLockError } from '../utils/bookingLimitValidator';
+import { EventTimeLockService } from './EventTimeLockService';
 import { generateTicketForStrangersMeetHelper } from './ticketService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
@@ -76,9 +77,10 @@ export class StrangersMeetService {
             throw new Error(timingValidation.reason || 'Venue is closed on selected date or time.');
         }
 
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, eventDate, 'strangers_meet');
-        if (bookingConflictMsg) {
-            throw new Error(bookingConflictMsg);
+        // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
+        const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, eventDate, 'stranger_meet');
+        if (!timeLockCheck.allowed) {
+            throw new TimeLockError(timeLockCheck);
         }
 
         const request = await PlanEligibilityService.runAtomicCheckAndCreate(

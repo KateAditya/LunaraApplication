@@ -12,6 +12,7 @@ import '../social/messages_screen.dart';
 import '../social/plan_hub_screen.dart';
 import '../../services/app_tour_service.dart';
 import '../../services/push_notification_service.dart';
+import '../../services/subscription_provider.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
@@ -62,7 +63,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _initApp() async {
     try {
-      await Future.wait([_loadProfile(), _fetchBadges()]);
+      await Future.wait([
+        _loadProfile(),
+        _fetchBadges(),
+        SubscriptionProvider.instance.loadIfNeeded(),
+      ]);
     } catch (e) {
       debugPrint('Error during dashboard initialization: $e');
     } finally {
@@ -170,14 +175,29 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _fetchBadges() async {
-    final counts = await ApiService.fetchBadgeCounts();
+  Future<void> _fetchBadges({bool forceRefresh = false}) async {
+    final counts = await ApiService.fetchBadgeCounts(forceRefresh: forceRefresh);
     if (mounted) {
+      final newLiveFeed = counts['liveFeedCount'] ?? 0;
+      final newChat = counts['chatCount'] ?? 0;
+      if (_liveFeedCount != newLiveFeed || _chatCount != newChat) {
+        setState(() {
+          _liveFeedCount = newLiveFeed;
+          _chatCount = newChat;
+        });
+        _updateAppBadge(counts['totalCount'] ?? 0);
+      }
+    }
+  }
+
+  void _onChatBadgeNotifier() {
+    if (!mounted) return;
+    final val = ApiService.chatBadgeNotifier.value;
+    if (_chatCount != val) {
       setState(() {
-        _liveFeedCount = counts['liveFeedCount'] ?? 0;
-        _chatCount = counts['chatCount'] ?? 0;
+        _chatCount = val;
       });
-      _updateAppBadge(counts['totalCount'] ?? 0);
+      _updateAppBadge(_liveFeedCount + _chatCount);
     }
   }
 
@@ -198,6 +218,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   @override
   void dispose() {
     ApiService.profileUpdateNotifier.removeListener(_onProfileNotify);
+    ApiService.chatBadgeNotifier.removeListener(_onChatBadgeNotifier);
     _disposeSocketListeners();
     WidgetsBinding.instance.removeObserver(this);
     _badgeTimer?.cancel();
@@ -205,30 +226,61 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 
   void _initSocketListeners() {
+    ApiService.chatBadgeNotifier.addListener(_onChatBadgeNotifier);
     ApiService.addSocketListener('new_match', _onNewMatchReceived);
-    ApiService.addSocketListener('new_message', _onChatBadgeSocket);
+    ApiService.addSocketListener('new_message', _onNewMessageBadgeSocket);
     ApiService.addSocketListener('messages_read', _onChatBadgeSocket);
+    ApiService.addSocketListener('chat_badge_updated', _onChatBadgeUpdatedSocket);
   }
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('new_match', _onNewMatchReceived);
-    ApiService.removeSocketListener('new_message', _onChatBadgeSocket);
+    ApiService.removeSocketListener('new_message', _onNewMessageBadgeSocket);
     ApiService.removeSocketListener('messages_read', _onChatBadgeSocket);
+    ApiService.removeSocketListener('chat_badge_updated', _onChatBadgeUpdatedSocket);
+  }
+
+  void _onChatBadgeUpdatedSocket(dynamic data) {
+    if (!mounted || data == null) return;
+    if (data is Map && data['chatCount'] != null) {
+      final newCount = int.tryParse(data['chatCount'].toString()) ?? 0;
+      ApiService.updateChatBadgeCount(newCount);
+    } else {
+      _fetchBadges(forceRefresh: true);
+    }
+  }
+
+  void _onNewMessageBadgeSocket(dynamic data) {
+    if (!mounted) return;
+    if (data is Map) {
+      final senderId = data['senderId']?.toString();
+      final myId = ApiService.currentUserId;
+      if (senderId != null && myId != null && senderId.toLowerCase() != myId.toLowerCase()) {
+        // Optimistically increment badge immediately for 0ms response time
+        if (_currentIndex != 3) {
+          ApiService.updateChatBadgeCount(_chatCount + 1);
+        }
+      }
+    }
+    _fetchBadges(forceRefresh: true);
   }
 
   void _onChatBadgeSocket(dynamic data) {
     if (!mounted) return;
-    _fetchBadges();
+    _fetchBadges(forceRefresh: true);
   }
 
   void _onNewMatchReceived(dynamic data) {
     if (!mounted) return;
-    _fetchBadges();
+    _fetchBadges(forceRefresh: true);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // No location check needed on app resume
+    if (state == AppLifecycleState.resumed) {
+      _fetchBadges(forceRefresh: true);
+      SubscriptionProvider.instance.refresh();
+    }
   }
 
   Future<void> _loadProfile({bool forceRefresh = false}) async {
@@ -371,8 +423,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             label: 'Messages',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined, key: AppTourService.profileTabKey),
-            activeIcon: const Icon(Icons.settings),
+            icon: _buildProfileIcon(false, key: AppTourService.profileTabKey),
+            activeIcon: _buildProfileIcon(true),
             label: 'Settings',
           ),
         ],

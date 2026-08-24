@@ -412,6 +412,16 @@ router.get(
     ],
     getPartyPlanTicket
 );
+router.get(
+    '/plans/:planId/ticket',
+    [authenticate],
+    getPartyPlanTicket
+);
+router.get(
+    '/:reqId/ticket',
+    [authenticate],
+    getPartyPlanTicket
+);
 
 // Safety Check Endpoints
 import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobileSafetyCheckController';

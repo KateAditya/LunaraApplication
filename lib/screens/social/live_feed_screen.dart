@@ -116,7 +116,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   List<Map<String, dynamic>> _feedItems = [];
   List<Map<String, dynamic>> _notifications = [];
   List<Map<String, dynamic>> _largePartyBookings = [];
+  List<UnifiedNotificationItem> _cachedTimeline = [];
   bool _isLoading = true;
+  bool _isFetchingFeed = false;
   Timer? _pollingTimer;
   String? _sessionUserId;
 
@@ -135,7 +137,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   int get totalUnreadCount {
-    final allTimelineItems = _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
     return allTimelineItems.where((i) => !i.isRead && !i.isExpired).length;
   }
 
@@ -185,8 +187,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // Background sync timer every 3 seconds for real-time live feed updates
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Background sync timer every 25 seconds (sockets provide instant real-time pushes)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
       if (mounted) {
         _loadFeed(showLoader: false);
       }
@@ -412,6 +414,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _loadFeed({bool showLoader = true}) async {
     final requestUserId = _sessionUserId;
+    if (_isFetchingFeed) return;
+    _isFetchingFeed = true;
+
     if (showLoader && _feedItems.isEmpty && _notifications.isEmpty) {
       setState(() => _isLoading = true);
     }
@@ -434,16 +439,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ];
 
       if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
+        _feedItems = combined;
+        _largePartyBookings = largeParties;
+        _notifications = notifs.map((n) {
+          final nId = n['id']?.toString() ?? '';
+          if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
+            return {...n, 'read': true, 'isRead': true};
+          }
+          return n;
+        }).toList();
+        _cachedTimeline = _buildUnifiedTimeline();
         setState(() {
-          _feedItems = combined;
-          _largePartyBookings = largeParties;
-          _notifications = notifs.map((n) {
-            final nId = n['id']?.toString() ?? '';
-            if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
-              return {...n, 'read': true, 'isRead': true};
-            }
-            return n;
-          }).toList();
           _isLoading = false;
         });
         widget.onCountChanged?.call();
@@ -451,6 +457,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error loading live feed: $e');
       if (mounted && requestUserId == _sessionUserId) setState(() => _isLoading = false);
+    } finally {
+      _isFetchingFeed = false;
     }
   }
 
@@ -461,6 +469,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _feedItems = [];
       _notifications = [];
       _largePartyBookings = [];
+      _cachedTimeline = [];
       _isLoading = _sessionUserId != null;
     });
     if (_sessionUserId != null) {
@@ -469,7 +478,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> markAllNotificationsAsRead() async {
-    final allItems = _buildUnifiedTimeline();
+    final allItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
     for (final item in allItems) {
       if (item.badgeText == 'ACTION REQUIRED' || item.badgeText == 'INVITE') {
         continue; // Never mark active action required cards (e.g. Pay Deposit) as read/cleared!
@@ -493,18 +502,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     await ApiService.clearAllNotifications();
 
     if (mounted) {
-      setState(() {
-        _notifications = _notifications
-            .map((n) {
-              final String primaryAction = (n['data']?['primaryAction'] ?? n['primaryAction'] ?? '').toString().toLowerCase();
-              final String hostStatus = (n['data']?['hostPaymentStatus'] ?? '').toString().toLowerCase();
-              if (primaryAction.contains('pay') || (hostStatus.isNotEmpty && hostStatus != 'paid' && hostStatus != 'completed')) {
-                return n;
-              }
-              return {...n, 'read': true, 'isRead': true};
-            })
-            .toList();
-      });
+      _notifications = _notifications
+          .map((n) {
+            final String primaryAction = (n['data']?['primaryAction'] ?? n['primaryAction'] ?? '').toString().toLowerCase();
+            final String hostStatus = (n['data']?['hostPaymentStatus'] ?? '').toString().toLowerCase();
+            if (primaryAction.contains('pay') || (hostStatus.isNotEmpty && hostStatus != 'paid' && hostStatus != 'completed')) {
+              return n;
+            }
+            return {...n, 'read': true, 'isRead': true};
+          })
+          .toList();
+      _cachedTimeline = _buildUnifiedTimeline();
+      setState(() {});
       widget.onCountChanged?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -4460,7 +4469,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Widget _buildStatusFilterBar() {
-    final allTimelineItems = _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
     final pills = [
       {'id': 'ALL', 'label': 'All'},
       {'id': 'REQUESTS', 'label': 'Requests'},
@@ -4550,7 +4559,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final allTimelineItems = _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
 
     // Apply category filter
     final categoryFilteredItems = allTimelineItems.where((item) {

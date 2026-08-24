@@ -35,9 +35,11 @@ async function sendExpiryNotificationAndEvents(params: {
             metadata: {
                 subscriptionId: userSub.id,
                 packageId: userSub.packageId,
-                remainingHours,
+                remainingHours: remainingHours ?? 0,
                 isExpired: !!isExpired,
-                expiresAt: userSub.endDate,
+                expiresAt: userSub.endDate ? userSub.endDate.toISOString() : undefined,
+                actionType: 'open_vip_membership',
+                primaryAction: 'Renew VIP',
             },
         });
     } catch (dbErr) {
@@ -57,6 +59,7 @@ async function sendExpiryNotificationAndEvents(params: {
                     subscriptionId: userSub.id,
                     remainingHours: String(remainingHours ?? 0),
                     isExpired: String(!!isExpired),
+                    actionType: 'open_vip_membership',
                 },
             });
         }
@@ -68,15 +71,18 @@ async function sendExpiryNotificationAndEvents(params: {
         // 3. Emit Real-time Socket Events
         const { io } = require('../server');
         if (io) {
+            const pkgName = (userSub as any).package?.name || 'VIP Membership';
             const payload = {
                 subscriptionId: userSub.id,
                 packageId: userSub.packageId,
                 eventType,
                 title,
                 body,
-                remainingHours,
+                message: body,
+                planName: pkgName,
+                remainingHours: remainingHours ?? 0,
                 isExpired: !!isExpired,
-                expiresAt: userSub.endDate.toISOString(),
+                expiresAt: userSub.endDate ? userSub.endDate.toISOString() : new Date().toISOString(),
             };
             if (isExpired) {
                 io.to(`user_${userId}`).emit('subscription_expired', payload);
@@ -84,7 +90,7 @@ async function sendExpiryNotificationAndEvents(params: {
                 io.to(`user_${userId}`).emit('subscription_expiring', payload);
             }
             io.to(`user_${userId}`).emit('notification_updated', payload);
-            io.to('live_feed').emit('live_feed_update', {
+            io.to(`user_${userId}`).emit('live_feed_update', {
                 type: 'vip_subscription_activity',
                 userId,
                 eventType,
@@ -132,54 +138,35 @@ export const startSubscriptionCron = () => {
                 const remainingHours = remainingMs / (1000 * 60 * 60);
                 const pkgName = pkg.name || 'VIP';
 
-                // 1-Day Reminder (2h - 24h remaining)
-                if (remainingHours <= 24 && remainingHours > 2 && !sub.reminder1DaySent) {
-                    await sub.update({ reminder1DaySent: true, lastNotifiedAt: now });
+                // 1-Hour Reminder (0h - 1h remaining)
+                if (remainingHours <= 1 && remainingHours > 0 && !sub.reminder1HourSent) {
+                    await sub.update({
+                        reminder1HourSent: true,
+                        reminder2HourSent: true,
+                        reminder5HourSent: true,
+                        reminder8HourSent: true,
+                        reminder1DaySent: true,
+                        lastNotifiedAt: now,
+                    });
                     await sendExpiryNotificationAndEvents({
                         userSub: sub,
-                        eventType: 'vip_expiring_1day',
-                        title: 'VIP Subscription Expiring Tomorrow ⏳',
-                        body: `Your ${pkgName} subscription expires in 24 hours. Renew now to continue enjoying VIP benefits uninterrupted.`,
-                        remainingHours: Math.round(remainingHours),
+                        eventType: 'vip_expiring_1hour',
+                        title: 'VIP Subscription Expiring in 1 Hour! 🔔',
+                        body: `Final Call: Your ${pkgName} subscription expires in 1 hour. Tap to renew instantly.`,
+                        remainingHours: 1,
                         isExpired: false,
                     });
-                    logger.info(`[SubscriptionCron] Sent 1-day reminder for sub ${sub.id} to user ${sub.userId}`);
-                } else if (remainingHours <= 2 && !sub.reminder1DaySent) {
-                    // Server was offline during 1-day window; mark sent to prevent obsolete 1-day alert
-                    await sub.update({ reminder1DaySent: true });
+                    logger.info(`[SubscriptionCron] Sent 1-hour reminder for sub ${sub.id} to user ${sub.userId}`);
                 }
-
-                // 8-Hour Reminder (5h - 8h remaining)
-                if (remainingHours <= 8 && remainingHours > 5 && !sub.reminder8HourSent) {
-                    await sub.update({ reminder8HourSent: true, lastNotifiedAt: now });
-                    await sendExpiryNotificationAndEvents({
-                        userSub: sub,
-                        eventType: 'vip_expiring_8hours',
-                        title: 'VIP Subscription Expiring in 8 Hours ⚠️',
-                        body: `Your ${pkgName} subscription expires in 8 hours. Renew now to keep your VIP badge and features.`,
-                        remainingHours: 8,
-                        isExpired: false,
-                    });
-                    logger.info(`[SubscriptionCron] Sent 8-hour reminder for sub ${sub.id} to user ${sub.userId}`);
-                }
-
-                // 5-Hour Reminder (2h - 5h remaining)
-                if (remainingHours <= 5 && remainingHours > 2 && !sub.reminder5HourSent) {
-                    await sub.update({ reminder5HourSent: true, lastNotifiedAt: now });
-                    await sendExpiryNotificationAndEvents({
-                        userSub: sub,
-                        eventType: 'vip_expiring_5hours',
-                        title: 'VIP Subscription Expiring in 5 Hours ⏱️',
-                        body: `Your ${pkgName} membership expires in 5 hours. Tap to renew and maintain your VIP status.`,
-                        remainingHours: 5,
-                        isExpired: false,
-                    });
-                    logger.info(`[SubscriptionCron] Sent 5-hour reminder for sub ${sub.id} to user ${sub.userId}`);
-                }
-
                 // 2-Hour Reminder (1h - 2h remaining)
-                if (remainingHours <= 2 && remainingHours > 1 && !sub.reminder2HourSent) {
-                    await sub.update({ reminder2HourSent: true, lastNotifiedAt: now });
+                else if (remainingHours <= 2 && remainingHours > 1 && !sub.reminder2HourSent) {
+                    await sub.update({
+                        reminder2HourSent: true,
+                        reminder5HourSent: true,
+                        reminder8HourSent: true,
+                        reminder1DaySent: true,
+                        lastNotifiedAt: now,
+                    });
                     await sendExpiryNotificationAndEvents({
                         userSub: sub,
                         eventType: 'vip_expiring_2hours',
@@ -190,19 +177,56 @@ export const startSubscriptionCron = () => {
                     });
                     logger.info(`[SubscriptionCron] Sent 2-hour reminder for sub ${sub.id} to user ${sub.userId}`);
                 }
-
-                // 1-Hour Reminder (0h - 1h remaining)
-                if (remainingHours <= 1 && remainingHours > 0 && !sub.reminder1HourSent) {
-                    await sub.update({ reminder1HourSent: true, lastNotifiedAt: now });
+                // 5-Hour Reminder (2h - 5h remaining)
+                else if (remainingHours <= 5 && remainingHours > 2 && !sub.reminder5HourSent) {
+                    await sub.update({
+                        reminder5HourSent: true,
+                        reminder8HourSent: true,
+                        reminder1DaySent: true,
+                        lastNotifiedAt: now,
+                    });
                     await sendExpiryNotificationAndEvents({
                         userSub: sub,
-                        eventType: 'vip_expiring_1hour',
-                        title: 'VIP Subscription Expiring in 1 Hour! 🔔',
-                        body: `Final Call: Your ${pkgName} subscription expires in 1 hour. Tap to renew instantly.`,
-                        remainingHours: 1,
+                        eventType: 'vip_expiring_5hours',
+                        title: 'VIP Subscription Expiring in 5 Hours ⏱️',
+                        body: `Your ${pkgName} membership expires in 5 hours. Tap to renew and maintain your VIP status.`,
+                        remainingHours: 5,
                         isExpired: false,
                     });
-                    logger.info(`[SubscriptionCron] Sent 1-hour reminder for sub ${sub.id} to user ${sub.userId}`);
+                    logger.info(`[SubscriptionCron] Sent 5-hour reminder for sub ${sub.id} to user ${sub.userId}`);
+                }
+                // 8-Hour Reminder (5h - 8h remaining)
+                else if (remainingHours <= 8 && remainingHours > 5 && !sub.reminder8HourSent) {
+                    await sub.update({
+                        reminder8HourSent: true,
+                        reminder1DaySent: true,
+                        lastNotifiedAt: now,
+                    });
+                    await sendExpiryNotificationAndEvents({
+                        userSub: sub,
+                        eventType: 'vip_expiring_8hours',
+                        title: 'VIP Subscription Expiring in 8 Hours ⚠️',
+                        body: `Your ${pkgName} subscription expires in 8 hours. Renew now to keep your VIP badge and features.`,
+                        remainingHours: 8,
+                        isExpired: false,
+                    });
+                    logger.info(`[SubscriptionCron] Sent 8-hour reminder for sub ${sub.id} to user ${sub.userId}`);
+                }
+                // 1-Day Reminder (8h - 24h remaining)
+                else if (remainingHours <= 24 && remainingHours > 8 && !sub.reminder1DaySent) {
+                    await sub.update({
+                        reminder1DaySent: true,
+                        lastNotifiedAt: now,
+                    });
+                    await sendExpiryNotificationAndEvents({
+                        userSub: sub,
+                        eventType: 'vip_expiring_1day',
+                        title: 'VIP Subscription Expiring Tomorrow ⏳',
+                        body: `Your ${pkgName} subscription expires in 24 hours. Renew now to continue enjoying VIP benefits uninterrupted.`,
+                        remainingHours: Math.round(remainingHours),
+                        isExpired: false,
+                    });
+                    logger.info(`[SubscriptionCron] Sent 1-day reminder for sub ${sub.id} to user ${sub.userId}`);
                 }
             }
 

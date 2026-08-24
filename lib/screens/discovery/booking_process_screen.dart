@@ -11,6 +11,7 @@ import 'night_partner_discovery_screen.dart';
 import 'night_invite_partner_screen.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/time_lock_modal.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -1817,31 +1818,56 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     ),
                                   );
 
-                                  final success =
-                                      await ApiService.submitLargePartyRequest(
-                                        venueId: widget.venue['id'],
-                                        date:
-                                            '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                        time: _selectedTime!,
-                                        guests: guests,
-                                        subject: _partySubjectController.text,
-                                        requirement:
-                                            _partyRequirementController.text,
-                                        description:
-                                            _partyDescriptionController.text,
-                                        mobileNumber: _partyMobileController
-                                            .text
-                                            .trim(),
-                                        optionalMobileNumber:
-                                            _partyOptMobileController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : _partyOptMobileController.text
-                                                  .trim(),
-                                      );
+                                  bool success = false;
+                                  try {
+                                    success = await ApiService.submitLargePartyRequest(
+                                      venueId: widget.venue['id'],
+                                      date:
+                                          '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                      time: _selectedTime!,
+                                      guests: guests,
+                                      subject: _partySubjectController.text,
+                                      requirement:
+                                          _partyRequirementController.text,
+                                      description:
+                                          _partyDescriptionController.text,
+                                      mobileNumber: _partyMobileController
+                                          .text
+                                          .trim(),
+                                      optionalMobileNumber:
+                                          _partyOptMobileController.text
+                                              .trim()
+                                              .isEmpty
+                                          ? null
+                                          : _partyOptMobileController.text
+                                                .trim(),
+                                    );
+                                  } catch (e) {
+                                    final eStr = e.toString();
+                                    final isTimeLock = eStr.contains('FOUR_HOUR_TIME_LOCK') ||
+                                        eStr.contains('4 hours') ||
+                                        eStr.contains('already have a');
+                                    if (isTimeLock) {
+                                      if (!outerContext.mounted) return;
+                                      TimeLockBlockedDialog.show(outerContext, errorData: {
+                                        'message': eStr.replaceFirst('Exception: ', ''),
+                                        'conflictingEventTitle': widget.venue['name']?.toString() ?? 'Venue',
+                                      });
+                                      return;
+                                    }
+                                    if (!outerContext.mounted) return;
+                                    ScaffoldMessenger.of(
+                                      outerContext,
+                                    ).showSnackBar(
+                                      SnackBar(
+                                        content: Text(eStr.replaceFirst('Exception: ', '')),
+                                      ),
+                                    );
+                                    return;
+                                  }
 
                                   if (!success) {
+                                    if (!outerContext.mounted) return;
                                     ScaffoldMessenger.of(
                                       outerContext,
                                     ).showSnackBar(
@@ -1853,6 +1879,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     );
                                     return;
                                   }
+
+                                  if (!outerContext.mounted) return;
 
                                   showDialog(
                                     context: outerContext,
@@ -1922,22 +1950,23 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   createdBookingId ??= bookingRes['bookingId']
                                       ?.toString();
                                 } else if (bookingRes != null &&
+                                    (bookingRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                                        bookingRes['conflictingEventType'] != null ||
+                                        bookingRes['message']?.toString().contains('4 hours') == true)) {
+                                  if (!outerContext.mounted) return;
+                                  final payload = Map<String, dynamic>.from(bookingRes);
+                                  if (!payload.containsKey('conflictingEventTitle')) {
+                                    payload['conflictingEventTitle'] = widget.venue['name']?.toString() ?? 'Venue';
+                                  }
+                                  TimeLockBlockedDialog.show(outerContext, errorData: payload);
+                                  return;
+                                } else if (bookingRes != null &&
                                     const [
                                       'PLAN_TIME_LOCKED',
                                       'PLAN_DAILY_LIMIT_REACHED',
                                       'PLAN_ACTIVE_LIMIT_REACHED',
                                       'PLAN_WEEKLY_LIMIT_REACHED',
                                     ].contains(bookingRes['code'])) {
-                                  // These are the actual reasonCode values
-                                  // PlanEligibilityService returns (backend
-                                  // serializes them under 'code', with the
-                                  // full eligibility detail — including
-                                  // remainingSeconds — nested under 'lock').
-                                  // The previous check here matched codes the
-                                  // backend never sends, so this modal was
-                                  // unreachable and every time-lock/daily-
-                                  // limit rejection silently fell through to
-                                  // a plain SnackBar instead.
                                   if (!outerContext.mounted) return;
                                   TimeLockModal.show(
                                     context: outerContext,
@@ -2023,9 +2052,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       venue: widget.venue,
                                       date:
                                           '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                      package: 'Confirmation Charges',
+                                      package: isSolo ? 'Solo Entry' : 'Confirmation Charges',
                                       time: _formatTimeOfBooking(_selectedTime),
-                                      table: 'Confirmation Charges',
+                                      table: isSolo ? 'Solo Entry' : 'Standard Table',
                                       guests: isSolo
                                           ? '1 Guest'
                                           : '$guests Guests',

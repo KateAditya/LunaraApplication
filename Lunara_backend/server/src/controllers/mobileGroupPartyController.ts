@@ -9,6 +9,7 @@ import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
 import { generateTicketForGroupPartyHelper } from '../services/ticketService';
 import { GroupPartyService, PartyType } from '../services/GroupPartyService';
+import { TimeLockError } from '../utils/bookingLimitValidator';
 
 // Calculate pricing
 export const calculatePricing = async (req: Request, res: Response): Promise<void> => {
@@ -78,6 +79,20 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
 
     } catch (err: any) {
         logger.error('createGroupParty error:', err);
+        if (err instanceof TimeLockError || err.name === 'TimeLockError' || err.timeLock || err.reason === 'FOUR_HOUR_TIME_LOCK') {
+            const tl = err.timeLock || err;
+            res.status(400).json({
+                success: false,
+                reason: 'FOUR_HOUR_TIME_LOCK',
+                conflictingEventType: tl.conflictingEventType,
+                conflictingEventId: tl.conflictingEventId,
+                conflictingEventTitle: tl.conflictingEventTitle,
+                conflictingDateTime: tl.conflictingDateTime,
+                nextAvailableTime: tl.nextAvailableTime,
+                message: tl.message,
+            });
+            return;
+        }
         if (err.code && err.code.startsWith('PLAN_')) {
             res.status(409).json({
                 success: false,
@@ -172,27 +187,41 @@ export const getMyGroupParties = async (req: Request, res: Response): Promise<vo
 export const getGroupPartyTicket = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const groupParty = await GroupParty.findByPk(id, {
-            include: [
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
-                    include: [
-                        { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
-                    ],
-                },
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified'],
-                    include: [
-                        { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName'], required: false },
-                        { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
-                    ],
-                },
-            ],
+        const groupPartyInclude = [
+            {
+                model: Venue,
+                as: 'venue',
+                attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'latitude', 'longitude'],
+                include: [
+                    { model: VenueImage, as: 'images', attributes: ['id', 'filePath', 'imageType', 'isPrimary'], required: false },
+                ],
+            },
+            {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified'],
+                include: [
+                    { model: UserProfile, as: 'profile', attributes: ['bio', 'city', 'displayName'], required: false },
+                    { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary'], required: false },
+                ],
+            },
+        ];
+
+        let groupParty = await GroupParty.findByPk(id, {
+            include: groupPartyInclude,
         });
+
+        if (!groupParty) {
+            try {
+                const TicketModel = (await import('../models/Ticket')).default;
+                const ticket = await TicketModel.findByPk(id);
+                if (ticket && ticket.bookingId) {
+                    groupParty = await GroupParty.findByPk(ticket.bookingId, {
+                        include: groupPartyInclude,
+                    });
+                }
+            } catch (_) {}
+        }
 
         if (!groupParty) {
             res.status(404).json({ success: false, message: 'Group party not found' });

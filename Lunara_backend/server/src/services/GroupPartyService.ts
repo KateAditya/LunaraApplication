@@ -5,7 +5,8 @@ import Venue from '../models/Venue';
 import User from '../models/User';
 import { PlanEligibilityService } from './PlanEligibilityService';
 import { validateVenueTimingAndHolidays, normalizeStartTime } from '../utils/venueValidator';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { TimeLockError } from '../utils/bookingLimitValidator';
+import { EventTimeLockService, parseBookingDateTime } from './EventTimeLockService';
 import { generateTicketForGroupPartyHelper } from './ticketService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
@@ -145,10 +146,11 @@ export class GroupPartyService {
             await PlanEligibilityService.releaseLock(stale.id);
         }
 
-        // Check user booking conflict for date
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate, 'group_party');
-        if (bookingConflictMsg) {
-            throw new Error(bookingConflictMsg);
+        // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
+        const partyDateTime = parseBookingDateTime(partyDate, startTime);
+        const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, partyDateTime, 'group_party');
+        if (!timeLockCheck.allowed) {
+            throw new TimeLockError(timeLockCheck);
         }
 
         const partyType = this.resolvePartyType(numberOfFriends, venue.capacity || 500);

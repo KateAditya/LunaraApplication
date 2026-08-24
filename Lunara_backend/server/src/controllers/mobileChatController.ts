@@ -450,6 +450,31 @@ export const getMessages = async (req: Request, res: Response) => {
                 const { io } = require('../server');
                 const otherUserId = conv.getOtherParticipant(userId);
                 io.to(`user_${otherUserId}`).emit('messages_read', { conversationId: id, readAt: new Date() });
+
+                // Emit chat_badge_updated to current user so their badge clears immediately
+                const myConvs = await Conversation.findAll({
+                    where: {
+                        [Op.or]: [
+                            { participantOne: userId },
+                            { participantTwo: userId }
+                        ],
+                        status: { [Op.ne]: ConversationStatus.BLOCKED }
+                    },
+                    attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
+                });
+                let myRemainingChatCount = 0;
+                for (const c of myConvs) {
+                    const isP1 = (c.participantOne || '').toLowerCase() === userId.toLowerCase();
+                    const isP2 = (c.participantTwo || '').toLowerCase() === userId.toLowerCase();
+                    if (isP1 && c.deletedByOne) continue;
+                    if (isP2 && c.deletedByTwo) continue;
+                    myRemainingChatCount += Number(c.getUnreadFor ? c.getUnreadFor(userId) : (isP1 ? (c.unreadOne || 0) : (c.unreadTwo || 0)));
+                }
+                io.to(`user_${userId}`).emit('chat_badge_updated', {
+                    conversationId: id,
+                    chatCount: myRemainingChatCount,
+                    unreadCount: 0
+                });
             } catch (err) {
                 logger.error('Failed to emit messages_read socket event:', err);
             }
@@ -609,10 +634,37 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         const formattedMsg = formatMessage(message as any);
 
-        // Emit new_message to recipient AND sender rooms
+        // Calculate recipient unread chat count quickly
+        let recipientChatCount = 0;
+        try {
+            const recipientConvs = await Conversation.findAll({
+                where: {
+                    [Op.or]: [
+                        { participantOne: recipientId },
+                        { participantTwo: recipientId }
+                    ],
+                    status: { [Op.ne]: ConversationStatus.BLOCKED }
+                },
+                attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
+            });
+            for (const c of recipientConvs) {
+                const isP1 = (c.participantOne || '').toLowerCase() === recipientId.toLowerCase();
+                const isP2 = (c.participantTwo || '').toLowerCase() === recipientId.toLowerCase();
+                if (isP1 && (c as any).deletedByOne) continue;
+                if (isP2 && (c as any).deletedByTwo) continue;
+                recipientChatCount += Number(c.getUnreadFor ? c.getUnreadFor(recipientId) : (isP1 ? ((c as any).unreadOne || 0) : ((c as any).unreadTwo || 0)));
+            }
+        } catch (_) {}
+
+        // Emit new_message and chat_badge_updated to recipient AND sender rooms
         try {
             const { io } = require('../server');
             io.to(`user_${recipientId}`).emit('new_message', formattedMsg);
+            io.to(`user_${recipientId}`).emit('chat_badge_updated', {
+                conversationId: id,
+                chatCount: recipientChatCount,
+                unreadCount: conv.getUnreadFor ? conv.getUnreadFor(recipientId) : (isOne ? currentUnreadTwo + 1 : currentUnreadOne + 1)
+            });
             io.to(`user_${senderId}`).emit('new_message', formattedMsg);
             if (isRecipientOnline) {
                 io.to(`user_${senderId}`).emit('messages_delivered', { conversationId: id });

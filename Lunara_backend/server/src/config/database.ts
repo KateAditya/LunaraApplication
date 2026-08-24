@@ -594,6 +594,25 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.warn('Failed to verify payment_intents schema: ' + piErr.message);
         }
 
+        // ── High-Performance Ticket Dashboard Indexes ──
+        try {
+            await sequelize.query(`
+                CREATE INDEX IF NOT EXISTS idx_tickets_user_event_start ON tickets(user_id, event_start_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_tickets_booking_id ON tickets(booking_id);
+                CREATE INDEX IF NOT EXISTS idx_bookings_user_date ON bookings(user_id, booking_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_group_parties_user_date ON group_parties(user_id, party_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_party_plan_req_user_status ON party_plan_requests(requester_id, status);
+                CREATE INDEX IF NOT EXISTS idx_party_plans_user_date ON party_plans(user_id, plan_date_time DESC);
+                CREATE INDEX IF NOT EXISTS idx_strangers_joiner_user_status ON strangers_meet_joiners(user_id, status);
+                CREATE INDEX IF NOT EXISTS idx_strangers_meet_user_date ON strangers_meet_requests(user_id, event_date_time DESC);
+                CREATE INDEX IF NOT EXISTS idx_plans_user_date ON plans(user_id, plan_date DESC);
+                CREATE INDEX IF NOT EXISTS idx_plan_join_requests_user_status ON plan_join_requests(requester_id, status);
+            `);
+            logger.info('Ticket Dashboard performance indexes verified successfully.');
+        } catch (idxErr: any) {
+            logger.warn('Failed to verify Ticket Dashboard indexes: ' + idxErr.message);
+        }
+
         if (process.env.NODE_ENV === 'development') {
             try {
                 await sequelize.sync();

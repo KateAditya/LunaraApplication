@@ -23,26 +23,55 @@ class TimeLockBlockedDialog extends StatelessWidget {
     required Map<String, dynamic> errorData,
     VoidCallback? onViewExistingPlan,
   }) async {
-    final eventType = (errorData['conflictingEventType'] ?? 'Party Plan').toString().replaceAll('_', ' ');
-    final eventTitle = errorData['conflictingEventTitle'] ?? 'Scheduled Event';
-    final dateTimeRaw = errorData['conflictingDateTime'] ?? '';
-    final nextTimeRaw = errorData['nextAvailableTime'] ?? '';
-    final message = errorData['message'] ?? 'Your next event must be at least 4 hours apart.';
+    String eventType = (errorData['conflictingEventType'] ?? '').toString().replaceAll('_', ' ').trim();
+    String eventTitle = errorData['conflictingEventTitle']?.toString().trim() ?? '';
+    String dateTimeRaw = errorData['conflictingDateTime']?.toString().trim() ?? '';
+    String nextTimeRaw = errorData['nextAvailableTime']?.toString().trim() ?? '';
+    final message = errorData['message']?.toString() ?? 'Your next event must be at least 4 hours apart.';
 
-    String formattedDateTime = 'Upcoming Time';
+    // Try parsing from message if fields are missing
+    if (message.isNotEmpty) {
+      final match1 = RegExp(
+        r'You already have a\s+(.+?)\s+scheduled for\s+([^.]+)',
+        caseSensitive: false,
+      ).firstMatch(message);
+      if (match1 != null) {
+        if (eventType.isEmpty) eventType = match1.group(1) ?? '';
+        if (dateTimeRaw.isEmpty) dateTimeRaw = match1.group(2)?.trim() ?? '';
+      }
+
+      final match2 = RegExp(
+        r'earliest available:\s*([^)]+)',
+        caseSensitive: false,
+      ).firstMatch(message);
+      if (match2 != null && nextTimeRaw.isEmpty) {
+        nextTimeRaw = match2.group(1)?.trim() ?? '';
+      }
+    }
+
+    if (eventType.isEmpty) eventType = 'PARTY PLAN';
+    if (eventTitle.isEmpty) eventTitle = 'Scheduled Event';
+
+    String formattedDateTime = dateTimeRaw.isNotEmpty ? dateTimeRaw : 'Upcoming Time';
     if (dateTimeRaw.isNotEmpty) {
       try {
         final dt = DateTime.parse(dateTimeRaw).toLocal();
-        formattedDateTime = '${dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour)}:${dt.minute.toString().padLeft(2, '0')} ${dt.hour >= 12 ? 'PM' : 'AM'}';
-      } catch (_) {}
+        formattedDateTime =
+            '${dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour)}:${dt.minute.toString().padLeft(2, '0')} ${dt.hour >= 12 ? 'PM' : 'AM'}';
+      } catch (_) {
+        formattedDateTime = dateTimeRaw.toUpperCase();
+      }
     }
 
-    String formattedNextTime = 'In 4 hours';
+    String formattedNextTime = nextTimeRaw.isNotEmpty ? nextTimeRaw : 'In 4 hours';
     if (nextTimeRaw.isNotEmpty) {
       try {
         final dt = DateTime.parse(nextTimeRaw).toLocal();
-        formattedNextTime = '${dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour)}:${dt.minute.toString().padLeft(2, '0')} ${dt.hour >= 12 ? 'PM' : 'AM'}';
-      } catch (_) {}
+        formattedNextTime =
+            '${dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour)}:${dt.minute.toString().padLeft(2, '0')} ${dt.hour >= 12 ? 'PM' : 'AM'}';
+      } catch (_) {
+        formattedNextTime = nextTimeRaw.toUpperCase();
+      }
     }
 
     return showDialog(
@@ -75,7 +104,7 @@ class TimeLockBlockedDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.15),
+                color: Colors.amber.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -103,7 +132,7 @@ class TimeLockBlockedDialog extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFF2A2A3C),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.amber.withOpacity(0.3), width: 1),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3), width: 1),
               ),
               child: Column(
                 children: [
@@ -171,9 +200,9 @@ class TimeLockBlockedDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.12),
+                color: Colors.green.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,

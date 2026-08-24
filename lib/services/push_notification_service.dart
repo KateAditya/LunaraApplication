@@ -7,12 +7,12 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'api_service.dart';
 import 'notification_navigator.dart';
-import '../core/theme.dart';
 import '../widgets/top_notification_banner.dart';
 import '../screens/social/chat_screen.dart';
 import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
 import '../screens/profile/lunara_wallet_screen.dart';
+import '../screens/profile/vip_membership_screen.dart';
 import '../screens/social/post_detail_screen.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
 import '../screens/social/party_plan_requests_screen.dart';
@@ -529,30 +529,29 @@ class PushNotificationService {
     debugPrint('🔔 Navigating from notification payload (type: "$rawType", payload: $data)');
 
     // ── 1. Plan Upgrade, VIP Subscription & Wallet Notifications ────────────
-    final isWalletOrSubscriptionType = rawType.contains('subscription') ||
+    final isVipSubscriptionType = rawType.contains('subscription') ||
         rawType.contains('upgrade') ||
         rawType.contains('vip') ||
         rawType.contains('tier') ||
-        rawType.contains('membership') ||
-        rawType.contains('wallet') ||
+        rawType.contains('membership');
+
+    if (isVipSubscriptionType) {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+      );
+      return;
+    }
+
+    final isWalletType = rawType.contains('wallet') ||
         rawType.contains('credit') ||
         rawType.contains('refund') ||
         rawType.contains('recharge') ||
         rawType.contains('deposit_refund');
 
-    if (isWalletOrSubscriptionType) {
-      if (rawType.contains('expired')) {
-        _showSubscriptionDialog(
-          navigator,
-          title: 'VIP Subscription Expired',
-          message: 'Your VIP subscription has expired or has been terminated. Tap below to view your wallet and options.',
-          buttonText: 'View Wallet',
-        );
-      } else {
-        navigator.push(
-          MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
-        );
-      }
+    if (isWalletType) {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+      );
       return;
     }
 
@@ -782,76 +781,6 @@ class PushNotificationService {
     // Fallback to Notification Center Screen
     navigator.push(
       MaterialPageRoute(builder: (_) => const NotificationCenterScreen()),
-    );
-  }
-
-  static void _showSubscriptionDialog(
-    NavigatorState navigator, {
-    required String title,
-    required String message,
-    required String buttonText,
-  }) {
-    showDialog(
-      context: navigator.context,
-      barrierDismissible: true,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          backgroundColor: Colors.white,
-          title: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              color: Colors.black,
-            ),
-          ),
-          content: Text(
-            message,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.black87,
-              height: 1.4,
-            ),
-          ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'CLOSE',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: LunaraTheme.electricViolet,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                navigator.push(
-                  MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
-                );
-              },
-              child: Text(
-                buttonText.toUpperCase(),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 

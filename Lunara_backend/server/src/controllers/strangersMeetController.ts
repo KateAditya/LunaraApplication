@@ -16,6 +16,8 @@ import { logger } from '../config/logger';
 import crypto from 'crypto';
 import { generateTicketForStrangersMeetHelper } from '../services/ticketService';
 import { StrangersMeetService } from '../services/StrangersMeetService';
+import { EventTimeLockService } from '../services/EventTimeLockService';
+import { TimeLockError } from '../utils/bookingLimitValidator';
 import sequelize from '../config/database';
 
 
@@ -278,6 +280,20 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
         });
     } catch (err: any) {
         logger.error('createRequest error:', err);
+        if (err instanceof TimeLockError || err.name === 'TimeLockError' || err.timeLock || err.reason === 'FOUR_HOUR_TIME_LOCK') {
+            const tl = err.timeLock || err;
+            res.status(400).json({
+                success: false,
+                reason: 'FOUR_HOUR_TIME_LOCK',
+                conflictingEventType: tl.conflictingEventType,
+                conflictingEventId: tl.conflictingEventId,
+                conflictingEventTitle: tl.conflictingEventTitle,
+                conflictingDateTime: tl.conflictingDateTime,
+                nextAvailableTime: tl.nextAvailableTime,
+                message: tl.message,
+            });
+            return;
+        }
         if (err.code && err.code.startsWith('PLAN_')) {
             res.status(409).json({
                 success: false,
@@ -1501,6 +1517,13 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
             }
         }
 
+        // ── Universal 4-Hour Time-Lock Validation (Joiner) ───────────────────
+        const joinerLock = await EventTimeLockService.validateFourHourGap(userId, request.eventDateTime, 'stranger_meet', request.id);
+        if (!joinerLock.allowed) {
+            res.status(400).json({ success: false, ...joinerLock });
+            return;
+        }
+
         let joiner;
         if (existing) {
             await existing.update({
@@ -1630,6 +1653,21 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                         remainingCapacity: 0,
                         isFull: true,
                     });
+                    return;
+                }
+
+                // ── Universal 4-Hour Time-Lock Validation (Host & Joiner) ────
+                const hostLock = await EventTimeLockService.validateFourHourGap(request.userId, request.eventDateTime, 'stranger_meet', request.id, { transaction });
+                if (!hostLock.allowed) {
+                    await transaction.rollback();
+                    res.status(400).json({ success: false, ...hostLock, message: `Host schedule conflict: ${hostLock.message}` });
+                    return;
+                }
+
+                const joinerLock = await EventTimeLockService.validateFourHourGap(joiner.userId, request.eventDateTime, 'stranger_meet', request.id, { transaction });
+                if (!joinerLock.allowed) {
+                    await transaction.rollback();
+                    res.status(400).json({ success: false, ...joinerLock, message: `Participant schedule conflict: ${joinerLock.message}` });
                     return;
                 }
 
@@ -2075,6 +2113,30 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             if (joiner && (joiner as any).strangersMeetRequest) {
                 request = (joiner as any).strangersMeetRequest;
             }
+        }
+
+        if (!request) {
+            try {
+                const TicketModel = (await import('../models/Ticket')).default;
+                const ticket = await TicketModel.findByPk(cleanId);
+                if (ticket && ticket.bookingId) {
+                    request = await StrangersMeetRequest.findByPk(ticket.bookingId, {
+                        include: [venueInclude, userInclude],
+                    });
+                    if (!request) {
+                        const joiner = await StrangersMeetJoiner.findByPk(ticket.bookingId, {
+                            include: [{
+                                model: StrangersMeetRequest,
+                                as: 'strangersMeetRequest',
+                                include: [venueInclude, userInclude],
+                            }],
+                        });
+                        if (joiner && (joiner as any).strangersMeetRequest) {
+                            request = (joiner as any).strangersMeetRequest;
+                        }
+                    }
+                }
+            } catch (_) {}
         }
 
         if (!request) {

@@ -56,8 +56,14 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Countdown logic ────────────────────────────────────────────────────────
   void _initCountdown() {
-    final planDateTime = widget.plan['planDateTime'] != null
-        ? DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal()
+    final rawDate = widget.plan['planDateTime'] ??
+        widget.plan['eventStartAt'] ??
+        widget.plan['bookingDate'] ??
+        widget.request['planDateTime'] ??
+        widget.request['eventStartAt'] ??
+        widget.request['bookingDate'];
+    final planDateTime = rawDate != null
+        ? DateTime.tryParse(rawDate.toString())?.toLocal()
         : null;
     if (planDateTime == null) return;
 
@@ -75,12 +81,13 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
   Future<void> _fetchTicketData() async {
-    final rawId = widget.request['id']?.toString() ??
-        widget.request['reqId']?.toString() ??
-        widget.request['bookingId']?.toString() ??
+    final rawId = widget.request['bookingId']?.toString() ??
+        widget.plan['bookingId']?.toString() ??
         widget.request['planId']?.toString() ??
+        widget.plan['planId']?.toString() ??
         widget.plan['id']?.toString() ??
-        widget.plan['planId']?.toString();
+        widget.request['id']?.toString() ??
+        widget.request['reqId']?.toString();
     if (rawId == null) return;
     if (!mounted) return;
     try {
@@ -333,16 +340,24 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final venue = widget.plan['venue'] ?? {};
-    final venueName = venue['name'] ?? 'Unknown Venue';
+    final venue = (widget.plan['venue'] is Map ? widget.plan['venue'] : null) ??
+        (widget.request['venue'] is Map ? widget.request['venue'] : null) ??
+        {};
+    final venueName = venue['name'] ?? 'Lunara Venue';
     final venueCity = venue['city'] ?? 'Pune';
     final venueArea = venue['area'] ?? '';
     final venueAddress = venue['address'] ??
         venue['addressLine1'] ??
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity, Maharashtra 411057';
 
-    final planDateTime = widget.plan['planDateTime'] != null
-        ? DateTime.tryParse(widget.plan['planDateTime'].toString())?.toLocal() ?? DateTime.now()
+    final rawDate = widget.plan['planDateTime'] ??
+        widget.plan['eventStartAt'] ??
+        widget.plan['bookingDate'] ??
+        widget.request['planDateTime'] ??
+        widget.request['eventStartAt'] ??
+        widget.request['bookingDate'];
+    final planDateTime = rawDate != null
+        ? DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now()
         : DateTime.now();
 
     final hostUser = _resolveHostUser();
@@ -383,15 +398,23 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
             ? '@${(ApiService.cachedCurrentUser!.displayName ?? ApiService.cachedCurrentUser!.firstName).toLowerCase()}'
             : '@guest');
 
-    final ticketId = (_canonicalTicketCode ?? widget.request['id']?.toString() ?? 'C6013F7A-760').toUpperCase();
+    final ticketId = (_canonicalTicketCode ??
+        widget.request['ticketCode']?.toString() ??
+        widget.plan['ticketCode']?.toString() ??
+        widget.request['ticketId']?.toString() ??
+        widget.request['id']?.toString() ??
+        'LUN-PARTY-PLAN').toUpperCase();
     final headlineText = "Let's party at $venueName!";
 
     final rawAmount = widget.request['paymentAmount'] ??
+        widget.request['totalAmount'] ??
         widget.plan['depositAmount'] ??
+        widget.plan['totalAmount'] ??
+        widget.plan['paymentAmount'] ??
         widget.request['amountPaid'] ??
         widget.plan['amountPaid'] ??
-        1980.0;
-    final double amountPaid = double.tryParse(rawAmount.toString()) ?? 1980.0;
+        99.0;
+    final double amountPaid = double.tryParse(rawAmount.toString()) ?? 99.0;
 
     final bookingCreatedDate = widget.request['createdAt'] != null
         ? DateTime.tryParse(widget.request['createdAt'].toString())?.toLocal() ?? planDateTime

@@ -1991,6 +1991,14 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         }
 
+        // ── Universal 4-Hour Time-Lock Validation (Requester) ───────────────
+        const partnerLock = await EventTimeLockService.validateFourHourGap(callerUserId, plan.planDateTime, 'party_plan', plan.id, { transaction });
+        if (!partnerLock.allowed) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, ...partnerLock });
+            return;
+        }
+
         const newReq = await PartyPlanRequest.create({
             planId: id,
             requesterId: callerUserId,
@@ -4039,7 +4047,39 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                 ] as any,
             });
 
-            if (plan) {
+            if (!plan) {
+                try {
+                    const TicketModel = (await import('../models/Ticket')).default;
+                    const ticket = await TicketModel.findByPk(cleanId);
+                    if (ticket && ticket.bookingId) {
+                        request = await PartyPlanRequest.findByPk(ticket.bookingId, {
+                            include: [
+                                {
+                                    model: PartyPlan,
+                                    as: 'plan',
+                                    include: [
+                                        userInclude('creator'),
+                                        venueInclude,
+                                    ] as any,
+                                },
+                                userInclude('requester'),
+                            ],
+                        });
+                        if (request) {
+                            plan = (request as any).plan as PartyPlan;
+                        } else {
+                            plan = await PartyPlan.findByPk(ticket.bookingId, {
+                                include: [
+                                    userInclude('creator'),
+                                    venueInclude,
+                                ] as any,
+                            });
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            if (plan && !request) {
                 request = await PartyPlanRequest.findOne({
                     where: {
                         planId: plan.id,
@@ -5027,9 +5067,11 @@ export const submitPartyReview = async (req: Request, res: Response): Promise<vo
 // ─────────────────────────────────────────────────────────────────────────────
 // Dynamic Payload Enrichment Helper for Notification Timeline
 // ─────────────────────────────────────────────────────────────────────────────
-export async function enrichPartyPlanNotificationCard(planId: string, recipientUserId: string) {
+export async function batchEnrichPartyPlanNotificationCards(planIds: string[], recipientUserId: string) {
+    if (!planIds || planIds.length === 0) return [];
     try {
-        const plan = await PartyPlan.findByPk(planId, {
+        const fullPlans = await PartyPlan.findAll({
+            where: { id: { [Op.in]: planIds } },
             include: [
                 {
                     model: User,
@@ -5066,6 +5108,60 @@ export async function enrichPartyPlanNotificationCard(planId: string, recipientU
                 }
             ]
         });
+
+        const cards = await Promise.all(fullPlans.map(p => enrichPartyPlanNotificationCard(p, recipientUserId)));
+        return cards.filter(Boolean);
+    } catch (e) {
+        logger.error('Error batch enriching party plans:', e);
+        return [];
+    }
+}
+
+export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPlan, recipientUserId: string) {
+    const planId = typeof planOrId === 'string' ? planOrId : (planOrId as any).id;
+    try {
+        let plan: PartyPlan | null;
+        if (typeof planOrId === 'string') {
+            plan = await PartyPlan.findByPk(planOrId, {
+                include: [
+                    {
+                        model: User,
+                        as: 'creator',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'email', 'phone', 'dateOfBirth'],
+                        include: [
+                            { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'gender', 'city'], required: false },
+                            { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                        ]
+                    },
+                    {
+                        model: Venue,
+                        as: 'venue',
+                        attributes: ['id', 'name', 'area', 'addressLine1', 'city', 'category', 'phone'],
+                        include: [{
+                            model: VenueImage,
+                            as: 'images',
+                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                            required: false,
+                        }]
+                    },
+                    {
+                        model: PartyPlanRequest,
+                        as: 'requests',
+                        include: [{
+                            model: User,
+                            as: 'requester',
+                            attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'email', 'phone', 'dateOfBirth'],
+                            include: [
+                                { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'gender', 'city'], required: false },
+                                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                            ]
+                        }]
+                    }
+                ]
+            });
+        } else {
+            plan = planOrId;
+        }
 
         if (!plan) return null;
 

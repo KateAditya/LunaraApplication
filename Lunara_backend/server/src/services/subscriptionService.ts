@@ -572,15 +572,30 @@ export class SubscriptionService {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
             const plan = entry.plan;
 
-            // Get active subscription record (for boosts/superlikes remaining)
+            // 1. Get active subscription record
             const subscription = await UserSubscription.findOne({
                 where: {
                     userId,
                     status: SubscriptionStatus.ACTIVE,
                     endDate: { [Op.gt]: new Date() },
                 },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
                 order: [['createdAt', 'DESC']],
             });
+
+            // 2. Check if there is a recently expired paid subscription (within last 7 days) if no active sub
+            let lastExpiredSub: any = null;
+            if (!subscription) {
+                lastExpiredSub = await UserSubscription.findOne({
+                    where: {
+                        userId,
+                        status: SubscriptionStatus.EXPIRED,
+                        endDate: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+                    },
+                    include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
+                    order: [['endDate', 'DESC']],
+                });
+            }
 
             // Determine tier
             const tier = plan ? plan.tier : 'FREE';
@@ -607,12 +622,73 @@ export class SubscriptionService {
                 usageMap[u.featureKey] = u.used;
             }
 
-            // Remaining days
+            // Remaining days & hours calculation
             let remainingDays = 0;
+            let remainingHours = 0;
+            let isExpiringSoon = false;
+            let isExpired = false;
+            let expirationAlert: any = null;
+
             if (subscription) {
                 const now = new Date();
                 const end = new Date(subscription.endDate);
-                remainingDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                const diffMs = end.getTime() - now.getTime();
+                remainingHours = Math.max(0, Math.round(diffMs / (1000 * 60 * 60)));
+                remainingDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+                const currentPkg = (subscription as any).package || plan;
+                const isPaidTier = currentPkg && currentPkg.tier !== PackageTier.FREE;
+
+                if (isPaidTier && remainingHours <= 24) {
+                    isExpiringSoon = true;
+                    const pkgName = currentPkg.name || 'VIP Membership';
+                    let alertTitle = 'VIP Subscription Expiring Tomorrow ⏳';
+                    let alertBody = `Your ${pkgName} expires in ${remainingHours} hours. Renew now to continue enjoying VIP benefits uninterrupted.`;
+                    let eventType = 'vip_expiring_1day';
+
+                    if (remainingHours <= 1) {
+                        alertTitle = 'VIP Subscription Expiring in 1 Hour! 🔔';
+                        alertBody = `Final Call: Your ${pkgName} expires in 1 hour. Tap to renew instantly.`;
+                        eventType = 'vip_expiring_1hour';
+                    } else if (remainingHours <= 2) {
+                        alertTitle = 'VIP Subscription Expiring in 2 Hours 🚨';
+                        alertBody = `Only 2 hours left on your ${pkgName}! Renew now before VIP features are locked.`;
+                        eventType = 'vip_expiring_2hours';
+                    } else if (remainingHours <= 5) {
+                        alertTitle = 'VIP Subscription Expiring in 5 Hours ⏱️';
+                        alertBody = `Your ${pkgName} expires in 5 hours. Tap to renew and maintain your VIP status.`;
+                        eventType = 'vip_expiring_5hours';
+                    } else if (remainingHours <= 8) {
+                        alertTitle = 'VIP Subscription Expiring in 8 Hours ⚠️';
+                        alertBody = `Your ${pkgName} expires in 8 hours. Renew now to keep your VIP badge and features.`;
+                        eventType = 'vip_expiring_8hours';
+                    }
+
+                    expirationAlert = {
+                        title: alertTitle,
+                        body: alertBody,
+                        message: alertBody,
+                        planName: pkgName,
+                        remainingHours,
+                        isExpired: false,
+                        eventType,
+                        expiresAt: subscription.endDate.toISOString(),
+                    };
+                }
+            } else if (lastExpiredSub) {
+                isExpired = true;
+                const expiredPkg = (lastExpiredSub as any).package;
+                const pkgName = expiredPkg?.name || 'VIP Membership';
+                expirationAlert = {
+                    title: 'VIP Subscription Expired ❌',
+                    body: `Your ${pkgName} has expired. Renew now to unlock unlimited likes, verified badges, and VIP features!`,
+                    message: `Your ${pkgName} has expired. Renew now to unlock unlimited likes, verified badges, and VIP features!`,
+                    planName: pkgName,
+                    remainingHours: 0,
+                    isExpired: true,
+                    eventType: 'vip_expired',
+                    expiresAt: lastExpiredSub.endDate.toISOString(),
+                };
             }
 
             return {
@@ -622,6 +698,11 @@ export class SubscriptionService {
                 planName: plan?.name ?? 'Free',
                 packageId: plan?.id ?? null,
                 remainingDays,
+                remainingHours,
+                endDate: subscription ? subscription.endDate.toISOString() : (lastExpiredSub ? lastExpiredSub.endDate.toISOString() : null),
+                isExpiringSoon,
+                isExpired,
+                expirationAlert,
                 superlikesRemaining: subscription?.superlikesRemaining ?? 0,
                 superlikesPerCycle: plan?.superlikesPerCycle ?? 0,
                 boostsRemaining: subscription?.boostsRemaining ?? 0,

@@ -120,7 +120,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     }
 
     if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
-      await ApiService.payNowBooking(widget.bookingId!);
+      await ApiService.payNowBooking(
+        widget.bookingId!,
+        paymentMethod: 'CARD',
+        razorpayPaymentId: response.paymentId,
+        razorpaySignature: response.signature,
+        razorpayOrderId: response.orderId ?? widget.razorpayOrderId,
+      );
     }
 
     if (widget.onRazorpayPaymentSuccess != null) {
@@ -142,6 +148,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     if (widget.package == 'Party Plan Safety Deposit') {
       // Pop the PaymentConfirmationScreen back to live feed
       Navigator.pop(context);
+    } else if (widget.ticketScreenBuilder != null) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: widget.ticketScreenBuilder!),
+        (route) => route.isFirst,
+      );
     } else {
       final isSolo = (widget.guests?.trim() == '1' ||
           widget.guests?.trim() == '1 Guest' ||
@@ -642,16 +654,24 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           return success;
         }
 
+        final isSolo = (widget.guests?.trim() == '1' ||
+            widget.guests?.trim() == '1 Guest' ||
+            widget.package.toLowerCase().contains('solo'));
         final res = await ApiService.payWithWallet(
           amount: itemPrice,
           bookingId: widget.bookingId,
           planId: widget.bookingId,
-          paymentType: 'group_party',
+          paymentType: isSolo ? 'solo_booking' : 'venue_booking',
         );
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
           if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
-            await ApiService.payNowBooking(widget.bookingId!);
+            await ApiService.payNowBooking(
+              widget.bookingId!,
+              paymentMethod: 'WALLET',
+              transactionId: transactionId,
+              razorpayPaymentId: 'wallet_$transactionId',
+            );
           }
           if (widget.onRazorpayPaymentSuccess != null) {
             await widget.onRazorpayPaymentSuccess!(
@@ -664,7 +684,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
           if (mounted) {
             TopNotificationBanner.show(
               title: 'Booking Confirmed! 🎉',
-              body: 'Your payment via Smart Wallet at ${widget.venue['name'] ?? 'Venue'} is confirmed.',
+              body: 'Your payment via Smart Wallet at ${widget.venue['name'] ?? 'Venue'} is confirmed. Digital ticket generated!',
               data: {'bookingId': widget.bookingId},
             );
             if (widget.package == 'Party Plan Safety Deposit') {
@@ -828,7 +848,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         if (!context.mounted) return;
 
         if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
-          await ApiService.payNowBooking(widget.bookingId!);
+          await ApiService.payNowBooking(
+            widget.bookingId!,
+            paymentMethod: 'CARD',
+            razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
+            razorpaySignature: 'mock_signature',
+          );
         }
 
         if (widget.onRazorpayPaymentSuccess != null) {
@@ -844,6 +869,12 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         Navigator.pop(context); // Close dialog
         if (widget.package == 'Party Plan Safety Deposit') {
           Navigator.pop(context);
+        } else if (widget.ticketScreenBuilder != null) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: widget.ticketScreenBuilder!),
+            (route) => route.isFirst,
+          );
         } else {
           final isSolo = (widget.guests?.trim() == '1' ||
               widget.guests?.trim() == '1 Guest' ||

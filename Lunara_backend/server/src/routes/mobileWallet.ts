@@ -10,6 +10,19 @@ const router = Router();
 router.use(authenticate);
 
 /**
+ * GET /api/mobile/wallet/balance
+ * Ultra-fast balance check endpoint.
+ */
+router.get(
+    '/balance',
+    [
+        query('userId').notEmpty().withMessage('userId is required'),
+        validate,
+    ],
+    ctrl.getWalletBalance
+);
+
+/**
  * GET /api/mobile/wallet
  * Returns Smart Credit Wallet dashboard payload & recent transactions.
  */

@@ -21,6 +21,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
 
   bool _isLoading = true;
   bool _isRecharging = false;
+  bool _isFetchingWallet = false;
 
   Map<String, dynamic> _walletData = {};
   List<dynamic> _transactions = [];
@@ -56,7 +57,7 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
 
   void _onWalletUpdatedSocket(dynamic data) {
     if (mounted) {
-      _loadWalletData();
+      _loadWalletData(showLoader: false);
     }
   }
 
@@ -76,72 +77,84 @@ class _LunaraWalletScreenState extends State<LunaraWalletScreen>
     super.dispose();
   }
 
-  Future<void> _loadWalletData() async {
-    setState(() => _isLoading = true);
-    final data = await ApiService.fetchWalletData();
-    if (mounted) {
-      if (data != null) {
-        setState(() {
-          _walletData = data['wallet'] ?? {};
-          _summary = data['summary'] ?? {};
-          
-          // Combine all transaction types for modern filter tabs with strict deduplication
-          final txns = (data['transactions'] as List? ?? []);
-          final subTxns = (data['subscriptionTransactions'] as List? ?? []);
-          final smartTxns = (data['smartTransactions'] as List? ?? []);
+  Future<void> _loadWalletData({bool showLoader = true}) async {
+    if (_isFetchingWallet) return;
+    _isFetchingWallet = true;
 
-          final combined = <Map<String, dynamic>>[];
-          final seenKeys = <String>{};
+    if (showLoader && mounted) {
+      setState(() => _isLoading = true);
+    }
+    try {
+      final data = await ApiService.fetchWalletData();
+      if (mounted) {
+        if (data != null) {
+          setState(() {
+            _walletData = data['wallet'] ?? {};
+            _summary = data['summary'] ?? {};
+            
+            // Combine all transaction types for modern filter tabs with strict deduplication
+            final txns = (data['transactions'] as List? ?? []);
+            final subTxns = (data['subscriptionTransactions'] as List? ?? []);
+            final smartTxns = (data['smartTransactions'] as List? ?? []);
 
-          void addDeduped(dynamic rawItem, [String? forcedType]) {
-            if (rawItem is! Map) return;
-            final map = Map<String, dynamic>.from(rawItem);
-            if (forcedType != null) map['type'] = forcedType;
-            final planId = map['partyPlanId'] ?? map['context']?['partyPlanId'];
-            final role = map['role'] ?? map['context']?['role'] ?? '';
-            final key = (planId != null && planId.toString().isNotEmpty)
-                ? 'party_plan_${planId}_$role'
-                : (map['txnId'] ??
-                        map['paymentId'] ??
-                        map['reference'] ??
-                        map['id'] ??
-                        '${map['type']}_${map['createdAt']}_${map['amount']}')
-                    .toString();
-            if (key.isNotEmpty && key != 'null') {
-              if (seenKeys.contains(key)) return;
-              seenKeys.add(key);
+            final combined = <Map<String, dynamic>>[];
+            final seenKeys = <String>{};
+
+            void addDeduped(dynamic rawItem, [String? forcedType]) {
+              if (rawItem is! Map) return;
+              final map = Map<String, dynamic>.from(rawItem);
+              if (forcedType != null) map['type'] = forcedType;
+              final planId = map['partyPlanId'] ?? map['context']?['partyPlanId'];
+              final role = map['role'] ?? map['context']?['role'] ?? '';
+              final key = (planId != null && planId.toString().isNotEmpty)
+                  ? 'party_plan_${planId}_$role'
+                  : (map['txnId'] ??
+                          map['paymentId'] ??
+                          map['reference'] ??
+                          map['id'] ??
+                          '${map['type']}_${map['createdAt']}_${map['amount']}')
+                      .toString();
+              if (key.isNotEmpty && key != 'null') {
+                if (seenKeys.contains(key)) return;
+                seenKeys.add(key);
+              }
+              combined.add(map);
             }
-            combined.add(map);
-          }
 
-          for (final t in smartTxns) {
-            addDeduped(t);
-          }
-          for (final t in txns) {
-            addDeduped(t);
-          }
-          for (final t in subTxns) {
-            addDeduped(t, 'subscription');
-          }
+            for (final t in smartTxns) {
+              addDeduped(t);
+            }
+            for (final t in txns) {
+              addDeduped(t);
+            }
+            for (final t in subTxns) {
+              addDeduped(t, 'subscription');
+            }
 
-          // Sort by createdAt descending
-          combined.sort((a, b) {
-            final dateA = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(1970);
-            final dateB = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(1970);
-            return dateB.compareTo(dateA);
+            // Sort by createdAt descending
+            combined.sort((a, b) {
+              final dateA = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(1970);
+              final dateB = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(1970);
+              return dateB.compareTo(dateA);
+            });
+
+            _transactions = combined;
+            _isLoading = false;
           });
-
-          _transactions = combined;
-          _isLoading = false;
-        });
-      } else {
+        } else {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to load wallet data. Please check connection.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    } finally {
+      _isFetchingWallet = false;
+      if (mounted && _isLoading) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to load wallet data. Please check connection.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
       }
     }
   }

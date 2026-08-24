@@ -104,7 +104,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     final paymentStatus = (widget.booking['paymentStatus'])?.toString().toLowerCase();
     final totalAmount = double.tryParse((widget.booking['totalAmount'] ?? widget.booking['paymentAmount'] ?? '0').toString()) ?? 0.0;
     if (localStatus == 'expired') return _LargePartyPaymentState.expired;
-    if (paymentStatus == 'paid' || localStatus == 'payment_done' || (localStatus == 'confirmed' && totalAmount <= 0) || (localStatus == 'completed' && totalAmount <= 0)) {
+    if (paymentStatus == 'paid' ||
+        localStatus == 'payment_done' ||
+        localStatus == 'confirmed' ||
+        localStatus == 'completed' ||
+        totalAmount <= 0) {
       return _LargePartyPaymentState.paid;
     }
     // Any other/unknown status: never assume paid — wait for server fetch to confirm
@@ -126,12 +130,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
     if (b['venue'] is Map) {
       _freshVenue = Map<String, dynamic>.from(b['venue']);
+    } else if (widget.venue.isNotEmpty) {
+      _freshVenue = Map<String, dynamic>.from(widget.venue);
     }
     _freshTotalAmount ??= double.tryParse(
         (b['totalAmount'] ?? b['paymentAmount'] ?? b['depositAmount'] ?? '').toString());
-    _freshPaymentStatus ??= b['paymentStatus']?.toString();
+    _freshPaymentStatus ??= b['paymentStatus']?.toString() ?? 'paid';
     _freshPaymentMethod ??= b['paymentMethod']?.toString();
-    _canonicalTicketCode ??= b['ticketCode']?.toString();
+    _canonicalTicketCode ??= b['ticketCode']?.toString() ?? b['ticketId']?.toString();
     _amountDue ??= _freshTotalAmount;
 
     final rawParticipants = b['totalParticipants'] ?? b['numberOfFriends'] ?? b['numberOfGuests'];
@@ -141,13 +147,15 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         _freshMemberCount = _freshTotalParticipants! > 1 ? _freshTotalParticipants! - 1 : 1;
       }
     }
-    final rawDate = b['bookingDate'] ?? b['partyDate'];
+    final rawDate = b['bookingDate'] ?? b['partyDate'] ?? b['eventStartAt'];
     if (rawDate != null && _freshPartyDate == null) {
       _freshPartyDate = DateTime.tryParse(rawDate.toString())?.toLocal();
     }
     final rawTime = b['startTime'];
     if (rawTime != null && rawTime.toString().trim().isNotEmpty && _freshStartTime == null) {
       _freshStartTime = rawTime.toString().trim();
+    } else if (_freshPartyDate != null && _freshStartTime == null) {
+      _freshStartTime = DateFormat('hh:mm a').format(_freshPartyDate!);
     }
   }
 
@@ -332,8 +340,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               final gpStatus = groupParty['status']?.toString().toLowerCase();
               final isFreeGp = (_freshTotalAmount == null || _freshTotalAmount! <= 0);
               final isPaid = _freshPaymentStatus == 'paid' || 
-                             (gpStatus == 'confirmed' && isFreeGp) ||
-                             (gpStatus == 'completed' && isFreeGp);
+                             gpStatus == 'confirmed' ||
+                             gpStatus == 'completed' ||
+                             isFreeGp;
               final isExpired = gpStatus == 'expired';
 
               if (isPaid) {
@@ -353,6 +362,44 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     } catch (e) {
       debugPrint('_fetchTicketData error for GroupParty: $e');
     }
+
+    // Fall back to /api/mobile/tickets/$id
+    try {
+      final response = await ApiService.get('/api/mobile/tickets/$id');
+      if (response.statusCode == 200 && mounted) {
+        final mapData = jsonDecode(response.body);
+        if (mapData != null && mapData['data'] != null) {
+          final ticketObj = mapData['data'];
+          setState(() {
+            if (ticketObj['user'] is Map) {
+              _freshHostUser = Map<String, dynamic>.from(ticketObj['user']);
+            }
+            if (ticketObj['venue'] is Map) {
+              _freshVenue = Map<String, dynamic>.from(ticketObj['venue']);
+            }
+            if (ticketObj['numberOfGuests'] != null) {
+              _freshTotalParticipants = int.tryParse(ticketObj['numberOfGuests'].toString());
+            }
+            if (_freshTotalParticipants != null && _freshMemberCount == null) {
+              _freshMemberCount = _freshTotalParticipants! > 1 ? _freshTotalParticipants! - 1 : 1;
+            }
+            if (ticketObj['totalAmount'] != null) {
+              _freshTotalAmount = double.tryParse(ticketObj['totalAmount'].toString());
+            }
+            if (ticketObj['eventStartAt'] != null || ticketObj['bookingDate'] != null) {
+              _freshPartyDate = DateTime.tryParse((ticketObj['eventStartAt'] ?? ticketObj['bookingDate']).toString())?.toLocal();
+            }
+            if (ticketObj['startTime'] != null) {
+              _freshStartTime = ticketObj['startTime'].toString();
+            }
+            _canonicalTicketCode = ticketObj['ticketCode']?.toString() ?? ticketObj['ticketId']?.toString();
+            _paymentState = _LargePartyPaymentState.paid;
+          });
+          _initCountdown();
+          return;
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _initiatePayment() async {

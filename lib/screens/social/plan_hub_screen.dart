@@ -3886,12 +3886,22 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       }
                                     } catch (e) {
                                       if (!mounted) return;
+                                      final cleanErr = e.toString().replaceAll('Exception: ', '');
+                                      if (cleanErr.contains('4 hours') || cleanErr.contains('already have a') || cleanErr.contains('FOUR_HOUR_TIME_LOCK')) {
+                                        setSheetState(() => isPosting = false);
+                                        Navigator.pop(context); // Close bottom sheet
+                                        TimeLockBlockedDialog.show(
+                                          context,
+                                          errorData: {
+                                            'message': cleanErr,
+                                            'conflictingEventTitle': selectedVenue?.name ?? 'Venue',
+                                          },
+                                        );
+                                        return;
+                                      }
                                       setSheetState(() {
                                         isPosting = false;
-                                        sheetErrorMsg = e.toString().replaceAll(
-                                          'Exception: ',
-                                          '',
-                                        );
+                                        sheetErrorMsg = cleanErr;
                                       });
                                     }
                                     return;
@@ -6121,11 +6131,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             } catch (e) {
                               if (context.mounted) {
                                 Navigator.pop(context); // Close loading dialog
-                                setSheetState(() {
-                                  sheetErrorMsg = e.toString().replaceAll(
-                                    'Exception: ',
-                                    '',
+                                final cleanErr = e.toString().replaceAll('Exception: ', '');
+                                if (cleanErr.contains('4 hours') || cleanErr.contains('already have a') || cleanErr.contains('FOUR_HOUR_TIME_LOCK')) {
+                                  Navigator.pop(context); // Close bottom sheet
+                                  TimeLockBlockedDialog.show(
+                                    context,
+                                    errorData: {
+                                      'message': cleanErr,
+                                      'conflictingEventTitle': selectedVenue?.name ?? 'Venue',
+                                    },
                                   );
+                                  return;
+                                }
+                                setSheetState(() {
+                                  sheetErrorMsg = cleanErr;
                                 });
                               }
                             }

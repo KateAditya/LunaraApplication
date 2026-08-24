@@ -32,6 +32,12 @@ class PlanStatus {
   final bool hasEliteBadge;
   final bool canSeeWhoLiked;
 
+  final int remainingHours;
+  final String? endDate;
+  final bool isExpiringSoon;
+  final bool isExpired;
+  final Map<String, dynamic>? expirationAlert;
+
   // Full features map from backend
   final Map<String, dynamic> features;
   final Map<String, dynamic> usage;
@@ -43,6 +49,11 @@ class PlanStatus {
     this.planName = 'Free',
     this.packageId,
     this.remainingDays = 0,
+    this.remainingHours = 0,
+    this.endDate,
+    this.isExpiringSoon = false,
+    this.isExpired = false,
+    this.expirationAlert,
     this.superlikesRemaining = 0,
     this.superlikesPerCycle = 0,
     this.boostsRemaining = 0,
@@ -119,6 +130,11 @@ class PlanStatus {
       planName: json['planName']?.toString() ?? 'Free',
       packageId: json['packageId']?.toString(),
       remainingDays: _parseInt(json['remainingDays'], 0),
+      remainingHours: _parseInt(json['remainingHours'], 0),
+      endDate: json['endDate']?.toString(),
+      isExpiringSoon: json['isExpiringSoon'] == true,
+      isExpired: json['isExpired'] == true,
+      expirationAlert: json['expirationAlert'] is Map ? Map<String, dynamic>.from(json['expirationAlert']) : null,
       superlikesRemaining: _parseInt(json['superlikesRemaining'], 0),
       superlikesPerCycle: _parseInt(json['superlikesPerCycle'], 0),
       boostsRemaining: _parseInt(json['boostsRemaining'], 0),

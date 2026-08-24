@@ -64,7 +64,7 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
   }
 
   Future<void> _fetchWalletBalance() async {
-    final data = await ApiService.fetchWalletData();
+    final data = await ApiService.fetchWalletBalance() ?? await ApiService.fetchWalletData();
     if (mounted) {
       setState(() {
         if (data != null && data['wallet'] != null) {

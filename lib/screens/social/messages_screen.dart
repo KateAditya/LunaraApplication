@@ -29,7 +29,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   void _startConversationPolling() {
     _conversationTimer?.cancel();
-    _conversationTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    _conversationTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) {
         _loadConversations(isBackgroundRefresh: true);
       }
@@ -51,7 +51,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               data['lastMessagePreview'] ?? '';
           _conversations[idx]['lastMessageAt'] = data['lastMessageAt'];
         } else {
-          _loadConversations();
+          _loadConversations(isBackgroundRefresh: true);
         }
       });
     });
@@ -82,6 +82,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (type == 'sticker') preview = '😄 Sticker';
     if (type == 'voice') preview = '🎙 Voice message';
     if (type == 'invitation') preview = '📅 Party invitation';
+    if (type == 'icebreaker') preview = '⚡ $content';
 
     setState(() {
       final idx = _conversations.indexWhere(
@@ -91,12 +92,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
         final target = _conversations.removeAt(idx);
         target['lastMessagePreview'] = preview;
         target['lastMessageAt'] = data['createdAt'] ?? DateTime.now().toIso8601String();
-        if (senderId != currentUserId) {
+        if (senderId != null && currentUserId != null && senderId.toLowerCase() != currentUserId.toLowerCase()) {
           target['unreadCount'] = (target['unreadCount'] as num? ?? 0).toInt() + 1;
         }
         _conversations.insert(0, target);
       } else {
-        _loadConversations();
+        _loadConversations(isBackgroundRefresh: true);
       }
     });
   }
@@ -242,7 +243,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
           final myPartyPlans = results[0];
           final myPartyRequests = results[1];
           final myStrangersMeets = results[2];
-          
+
           hasPlans = myPartyPlans.isNotEmpty || myPartyRequests.isNotEmpty || myStrangersMeets.isNotEmpty;
         } catch (e) {
           debugPrint('Error fetching plans check: $e');
@@ -250,11 +251,43 @@ class _MessagesScreenState extends State<MessagesScreen> {
       }
 
       if (mounted) {
-        setState(() {
-          _conversations = conversations;
-          _hasCreatedOrJoinedPlans = hasPlans;
-          _isLoading = false;
-        });
+        // Smart reconciliation: only trigger setState if data actually changed
+        bool hasChanges = false;
+        if (_conversations.length != conversations.length) {
+          hasChanges = true;
+        } else {
+          for (int i = 0; i < conversations.length; i++) {
+            final oldC = _conversations[i];
+            final newC = conversations[i];
+            final oldId = (oldC['conversationId'] ?? oldC['id'])?.toString();
+            final newId = (newC['conversationId'] ?? newC['id'])?.toString();
+            final oldPreview = oldC['lastMessagePreview']?.toString() ?? '';
+            final newPreview = newC['lastMessagePreview']?.toString() ?? '';
+            final oldUnread = _unreadCount(oldC);
+            final newUnread = _unreadCount(newC);
+            final oldTime = oldC['lastMessageAt']?.toString() ?? '';
+            final newTime = newC['lastMessageAt']?.toString() ?? '';
+            final oldOnline = _isOnline(oldC);
+            final newOnline = _isOnline(newC);
+
+            if (oldId != newId ||
+                oldPreview != newPreview ||
+                oldUnread != newUnread ||
+                oldTime != newTime ||
+                oldOnline != newOnline) {
+              hasChanges = true;
+              break;
+            }
+          }
+        }
+
+        if (hasChanges || _isLoading || _hasCreatedOrJoinedPlans != hasPlans) {
+          setState(() {
+            _conversations = conversations;
+            _hasCreatedOrJoinedPlans = hasPlans;
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error loading conversations: $e');
@@ -427,6 +460,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
         conversation['_id']?.toString();
     final otherId = _otherUserId(conversation);
 
+    // Optimistically zero unread count immediately in local list and update badge
+    final currentUnread = _unreadCount(conversation);
+    if (currentUnread > 0) {
+      setState(() {
+        conversation['unreadCount'] = 0;
+      });
+      final currentTotal = ApiService.chatBadgeNotifier.value;
+      if (currentTotal >= currentUnread) {
+        ApiService.updateChatBadgeCount(currentTotal - currentUnread);
+      }
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -452,7 +497,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             (otherId.isNotEmpty && _otherUserId(item) == otherId));
         });
       }
-      _loadConversations();
+      _loadConversations(isBackgroundRefresh: true);
     });
   }
 
@@ -626,6 +671,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
             fontSize: 22,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_square, color: Colors.white),
+            tooltip: 'New Chat',
+            onPressed: _showContactsPicker,
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF7F00FF)))

@@ -51,7 +51,27 @@ class SubscriptionProvider extends ChangeNotifier {
   bool get canSuperLike => _status.canSuperLike;
   bool get canBoost => _status.canBoost;
 
+  String? _lastShownAlertKey;
+
   // ── Load / Refresh ────────────────────────────────────────────────────────
+
+  /// Check and dispatch expiration popup alert if present in PlanStatus
+  void _checkAndDispatchExpirationAlert() {
+    final alert = _status.expirationAlert;
+    if (alert != null && alert.isNotEmpty) {
+      final eventType = alert['eventType']?.toString() ?? 'vip_expiring';
+      final remainingHours = alert['remainingHours']?.toString() ?? '0';
+      final isExpired = alert['isExpired'] == true;
+      final alertKey = '${eventType}_${remainingHours}_${isExpired ? "exp" : "act"}_${DateTime.now().day}';
+
+      if (_lastShownAlertKey != alertKey) {
+        _lastShownAlertKey = alertKey;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onShowExpirationAlert?.call(alert);
+        });
+      }
+    }
+  }
 
   /// Force-refresh from backend (bypasses cache).
   Future<void> refresh() async {
@@ -63,6 +83,7 @@ class SubscriptionProvider extends ChangeNotifier {
       if (data.isNotEmpty) {
         _status = PlanStatus.fromJson(data);
         _lastFetched = DateTime.now();
+        _checkAndDispatchExpirationAlert();
       }
     } catch (e) {
       debugPrint('[SubscriptionProvider] refresh error: $e');
@@ -85,6 +106,7 @@ class SubscriptionProvider extends ChangeNotifier {
   Future<void> refreshAfterPurchase() async {
     // Invalidate cache and force reload
     _lastFetched = null;
+    _lastShownAlertKey = null;
     await refresh();
   }
 
@@ -92,6 +114,7 @@ class SubscriptionProvider extends ChangeNotifier {
   void reset() {
     _status = PlanStatus.free;
     _lastFetched = null;
+    _lastShownAlertKey = null;
     _isLoading = false;
     notifyListeners();
   }
@@ -258,7 +281,7 @@ class _SubscriptionScopeState extends State<SubscriptionScope> {
     if (navContext == null) return;
 
     final title = data['title']?.toString() ?? 'VIP Subscription Alert';
-    final body = data['body']?.toString() ?? 'Your VIP subscription status has changed.';
+    final body = data['body']?.toString() ?? (data['message']?.toString() ?? 'Your VIP subscription status has changed.');
     final planName = data['planName']?.toString() ?? 'VIP Membership';
     final remainingHours = (data['remainingHours'] is num)
         ? (data['remainingHours'] as num).toInt()

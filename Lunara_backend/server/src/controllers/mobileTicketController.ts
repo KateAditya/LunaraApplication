@@ -122,7 +122,7 @@ export class MobileTicketController {
                 required: false,
             };
 
-            // Parallel fetch across all potential ticket sources for this user
+            // Parallel fetch across all potential ticket sources for this user with exact projections
             const [
                 tickets,
                 confirmedBookings,
@@ -136,6 +136,7 @@ export class MobileTicketController {
             ] = await Promise.all([
                 Ticket.findAll({
                     where: { userId },
+                    attributes: ['id', 'ticketId', 'bookingId', 'bookingType', 'ticketStatus', 'eventStartAt', 'eventEndAt', 'issuedAt', 'expiresAt', 'usedAt', 'pdfUrl', 'qrToken', 'venueId', 'userId'],
                     include: [venueInclude, userInclude],
                     order: [['eventStartAt', 'DESC']],
                 }).catch((err: any) => {
@@ -144,6 +145,7 @@ export class MobileTicketController {
                 }),
                 Booking.findAll({
                     where: { userId },
+                    attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'createdAt'],
                     include: [
                         venueInclude,
                         userInclude,
@@ -161,6 +163,7 @@ export class MobileTicketController {
                 }),
                 GroupParty.findAll({
                     where: { userId },
+                    attributes: ['id', 'partyDate', 'startTime', 'status', 'paymentStatus', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId', 'ticketUrl', 'ticketCode', 'expiresAt', 'createdAt'],
                     include: [venueInclude, userInclude],
                     order: [['partyDate', 'DESC'], ['startTime', 'DESC']],
                 }).catch(err => {
@@ -172,10 +175,12 @@ export class MobileTicketController {
                         requesterId: userId,
                         status: { [Op.ne]: PartyPlanRequestStatus.PAYMENT_FAILED },
                     },
+                    attributes: ['id', 'requesterId', 'planId', 'status', 'joinerPaymentStatus', 'createdAt'],
                     include: [
                         {
                             model: PartyPlan,
                             as: 'plan',
+                            attributes: ['id', 'userId', 'planDateTime', 'status', 'lifecycleStatus', 'hostPaymentStatus', 'depositAmount', 'matchedRequestId', 'venueId', 'paymentType', 'createdAt'],
                             include: [
                                 venueInclude,
                                 { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] },
@@ -190,6 +195,7 @@ export class MobileTicketController {
                 }),
                 PartyPlan.findAll({
                     where: { userId },
+                    attributes: ['id', 'userId', 'planDateTime', 'status', 'lifecycleStatus', 'hostPaymentStatus', 'depositAmount', 'matchedRequestId', 'venueId', 'paymentType', 'createdAt'],
                     include: [venueInclude, userInclude],
                     order: [['planDateTime', 'DESC']],
                 }).catch(err => {
@@ -201,10 +207,12 @@ export class MobileTicketController {
                         userId,
                         status: { [Op.ne]: StrangersMeetJoinerStatus.REJECTED },
                     },
+                    attributes: ['id', 'userId', 'strangersMeetRequestId', 'status', 'paymentStatus', 'paymentAmount', 'createdAt'],
                     include: [
                         {
                             model: StrangersMeetRequest,
                             as: 'strangersMeetRequest',
+                            attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'status', 'paymentStatus', 'paymentAmount', 'ticketId', 'ticketUrl', 'expectedEndAt', 'createdAt'],
                             include: [venueInclude, userInclude],
                         },
                         userInclude,
@@ -219,6 +227,7 @@ export class MobileTicketController {
                         userId,
                         status: { [Op.ne]: StrangersMeetStatus.REJECTED },
                     },
+                    attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'status', 'paymentStatus', 'paymentAmount', 'ticketId', 'ticketUrl', 'expectedEndAt', 'createdAt'],
                     include: [venueInclude, userInclude],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
@@ -227,7 +236,8 @@ export class MobileTicketController {
                 }),
                 Plan.findAll({
                     where: { userId },
-                    include: [venueInclude, userInclude],
+                    attributes: ['id', 'userId', 'planDate', 'startTime', 'tablePackage', 'paymentOption', 'totalAmount', 'maxJoiners', 'currentJoiners', 'status', 'bookingId', 'venueId', 'createdAt'],
+                    include: [venueInclude, { model: User, as: 'host', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
                     order: [['planDate', 'DESC']],
                 }).catch(err => {
                     logger.error('getUserTickets Plan query error:', err);
@@ -235,11 +245,13 @@ export class MobileTicketController {
                 }),
                 PlanJoinRequest.findAll({
                     where: { requesterId: userId },
+                    attributes: ['id', 'requesterId', 'planId', 'status', 'createdAt'],
                     include: [
                         {
                             model: Plan,
                             as: 'plan',
-                            include: [venueInclude, { model: User, as: 'user' }],
+                            attributes: ['id', 'userId', 'planDate', 'startTime', 'tablePackage', 'paymentOption', 'totalAmount', 'maxJoiners', 'currentJoiners', 'status', 'bookingId', 'venueId', 'createdAt'],
+                            include: [venueInclude, { model: User, as: 'host', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
                         },
                         userInclude,
                     ],
@@ -256,43 +268,52 @@ export class MobileTicketController {
 
             // 1. Process explicit Ticket table records
             const bookingIds = tickets.map((t: any) => t.bookingId).filter(Boolean);
-            const [sourceBookings, sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = await Promise.all([
-                Booking.findAll({
-                    where: { id: { [Op.in]: bookingIds } },
-                    attributes: ['id', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId'],
-                    include: [
-                        {
-                            model: Ad,
-                            as: 'partyEvent',
-                            attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
-                            required: false,
-                        },
-                    ],
-                }),
-                GroupParty.findAll({
-                    where: { id: { [Op.in]: bookingIds } },
-                    attributes: ['id', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId'],
-                }),
-                StrangersMeetRequest.findAll({
-                    where: { id: { [Op.in]: bookingIds } },
-                    include: [venueInclude, userInclude],
-                }),
-                StrangersMeetJoiner.findAll({
-                    where: { id: { [Op.in]: bookingIds } },
-                    include: [
-                        {
-                            model: StrangersMeetRequest,
-                            as: 'strangersMeetRequest',
-                            include: [venueInclude, userInclude],
-                        },
-                        userInclude,
-                    ],
-                }),
-                PartyPlan.findAll({
-                    where: { id: { [Op.in]: bookingIds } },
-                    include: [venueInclude, userInclude],
-                }),
-            ]);
+            const [sourceBookings, sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = bookingIds.length === 0
+                ? [[], [], [], [], []]
+                : await Promise.all([
+                    Booking.findAll({
+                        where: { id: { [Op.in]: bookingIds } },
+                        attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'createdAt'],
+                        include: [
+                            venueInclude,
+                            userInclude,
+                            {
+                                model: Ad,
+                                as: 'partyEvent',
+                                attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                                required: false,
+                            },
+                        ],
+                    }),
+                    GroupParty.findAll({
+                        where: { id: { [Op.in]: bookingIds } },
+                        attributes: ['id', 'partyDate', 'startTime', 'status', 'paymentStatus', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId', 'ticketUrl', 'ticketCode', 'createdAt'],
+                        include: [venueInclude, userInclude],
+                    }),
+                    StrangersMeetRequest.findAll({
+                        where: { id: { [Op.in]: bookingIds } },
+                        attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'paymentAmount', 'status', 'ticketId', 'ticketUrl'],
+                        include: [venueInclude, userInclude],
+                    }),
+                    StrangersMeetJoiner.findAll({
+                        where: { id: { [Op.in]: bookingIds } },
+                        attributes: ['id', 'userId', 'strangersMeetRequestId', 'paymentAmount', 'status'],
+                        include: [
+                            {
+                                model: StrangersMeetRequest,
+                                as: 'strangersMeetRequest',
+                                attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'paymentAmount', 'status', 'ticketId', 'ticketUrl'],
+                                include: [venueInclude, userInclude],
+                            },
+                            userInclude,
+                        ],
+                    }),
+                    PartyPlan.findAll({
+                        where: { id: { [Op.in]: bookingIds } },
+                        attributes: ['id', 'userId', 'venueId', 'planDateTime', 'depositAmount', 'status', 'lifecycleStatus', 'hostPaymentStatus', 'matchedRequestId', 'createdAt'],
+                        include: [venueInclude, userInclude],
+                    }),
+                ]);
             const bookingById = new Map(sourceBookings.map(b => [b.id, b]));
             const groupPartyById = new Map(sourceGroupParties.map(g => [g.id, g]));
             const strangersMeetById = new Map(sourceStrangersMeets.map(sm => [sm.id, sm]));
@@ -438,6 +459,33 @@ export class MobileTicketController {
                     subject: isStrangersMeet ? smSubject : undefined,
                     tagline: isStrangersMeet ? smTagline : undefined,
                     rawRequest: rawRequestObj,
+                    plan: isPartyPlan && sourcePartyPlan ? {
+                        ...(sourcePartyPlan.toJSON ? sourcePartyPlan.toJSON() : sourcePartyPlan),
+                        venue: (sourcePartyPlan as any).venue || t.venue,
+                        creator: (sourcePartyPlan as any).user || userObj,
+                        user: (sourcePartyPlan as any).user || userObj,
+                        host: (sourcePartyPlan as any).user || userObj,
+                        planDateTime: sourcePartyPlan.planDateTime || t.eventStartAt,
+                        depositAmount: sourcePartyPlan.depositAmount || amountVal,
+                    } : undefined,
+                    groupParty: isGroupParty && sourceGroupParty ? {
+                        ...(sourceGroupParty.toJSON ? sourceGroupParty.toJSON() : sourceGroupParty),
+                        venue: (sourceGroupParty as any).venue || t.venue,
+                        user: (sourceGroupParty as any).user || userObj,
+                        host: (sourceGroupParty as any).user || userObj,
+                        partyDate: sourceGroupParty.partyDate || t.eventStartAt,
+                        startTime: sourceGroupParty.startTime || startTimeStr,
+                        totalAmount: sourceGroupParty.totalAmount || amountVal,
+                    } : undefined,
+                    booking: sourceBooking ? {
+                        ...(sourceBooking.toJSON ? sourceBooking.toJSON() : sourceBooking),
+                        venue: (sourceBooking as any).venue || t.venue,
+                        user: (sourceBooking as any).user || userObj,
+                        host: (sourceBooking as any).user || userObj,
+                        bookingDate: sourceBooking.bookingDate || t.eventStartAt,
+                        startTime: sourceBooking.startTime || startTimeStr,
+                        totalAmount: sourceBooking.totalAmount || amountVal,
+                    } : undefined,
                     partyEvent: sbPartyEvent ? {
                         id: sbPartyEvent.id,
                         title: sbPartyEvent.title,

@@ -21,6 +21,7 @@ import crypto from 'crypto';
 import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
 import { VenueBookingService } from '../services/VenueBookingService';
 import { NotificationService } from '../services/NotificationService';
+import { TimeLockError } from '../utils/bookingLimitValidator';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -86,6 +87,19 @@ async function resolveBookingOrGroupPartyTarget(rawId: string) {
                 groupParty = await GroupParty.findByPk(cleanTargetId);
                 if (groupParty) return { booking: null, groupParty };
             }
+        }
+    } catch (_) {}
+
+    // 5. Ticket table primary key lookup (if client passed a Ticket UUID from Ticket Pocket)
+    try {
+        const TicketModel = (await import('../models/Ticket')).default;
+        const ticket = await TicketModel.findByPk(id);
+        if (ticket && ticket.bookingId) {
+            const cleanTargetId = sanitizeBookingId(String(ticket.bookingId));
+            booking = await Booking.findByPk(cleanTargetId);
+            if (booking) return { booking, groupParty: null };
+            groupParty = await GroupParty.findByPk(cleanTargetId);
+            if (groupParty) return { booking: null, groupParty };
         }
     } catch (_) {}
 
@@ -321,6 +335,20 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         });
     } catch (err: any) {
         logger.error('createBooking error:', err);
+        if (err instanceof TimeLockError || err.name === 'TimeLockError' || err.timeLock || err.reason === 'FOUR_HOUR_TIME_LOCK') {
+            const tl = err.timeLock || err;
+            res.status(400).json({
+                success: false,
+                reason: 'FOUR_HOUR_TIME_LOCK',
+                conflictingEventType: tl.conflictingEventType,
+                conflictingEventId: tl.conflictingEventId,
+                conflictingEventTitle: tl.conflictingEventTitle,
+                conflictingDateTime: tl.conflictingDateTime,
+                nextAvailableTime: tl.nextAvailableTime,
+                message: tl.message,
+            });
+            return;
+        }
         if (err.code && err.code.startsWith('PLAN_')) {
             res.status(409).json({
                 success: false,
@@ -770,34 +798,50 @@ export const getTicket = async (req: Request, res: Response) => {
     try {
         const id = sanitizeBookingId(req.params.id);
 
-        const booking = await Booking.findByPk(id, {
-            include: [
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
-                    include: [
-                        {
-                            model: VenueImage,
-                            as: 'images',
-                            attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
-                            required: false,
-                        },
-                    ],
-                },
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
-                },
-                {
-                    model: Ad,
-                    as: 'partyEvent',
-                    attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
-                    required: false,
-                },
-            ],
+        const bookingInclude = [
+            {
+                model: Venue,
+                as: 'venue',
+                attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
+                include: [
+                    {
+                        model: VenueImage,
+                        as: 'images',
+                        attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                        required: false,
+                    },
+                ],
+            },
+            {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+            },
+            {
+                model: Ad,
+                as: 'partyEvent',
+                attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                required: false,
+            },
+        ];
+
+        let booking = await Booking.findByPk(id, {
+            include: bookingInclude,
         });
+
+        if (!booking) {
+            try {
+                const TicketModel = (await import('../models/Ticket')).default;
+                const ticket = await TicketModel.findByPk(id);
+                if (ticket && ticket.bookingId) {
+                    const cleanTargetId = sanitizeBookingId(String(ticket.bookingId));
+                    booking = await Booking.findByPk(cleanTargetId, {
+                        include: bookingInclude,
+                    });
+                }
+            } catch (_) {}
+        }
+
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
         if (booking.userId !== (req as any).user?.id) {
             return res.status(403).json({ success: false, message: 'You can only view your own ticket' });

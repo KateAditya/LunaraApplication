@@ -16,7 +16,8 @@ import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus }
 import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import SubscriptionTransaction from '../models/SubscriptionTransaction';
 import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
-import WalletTransaction from '../models/WalletTransaction';
+import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
+import WalletService from '../services/walletService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet?userId=<uuid>
@@ -26,16 +27,124 @@ import WalletTransaction from '../models/WalletTransaction';
 //   transactions:     all Payment records linked to this user, enriched with
 //                     booking / party-plan context
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Background auto-heal (non-blocking). Runs after response is sent to correct
+// any missed wallet refunds for cancelled Party Plans without slowing the user.
+// ─────────────────────────────────────────────────────────────────────────────
+async function _runAutoHeal(userId: string): Promise<void> {
+    try {
+        const { PartyPlanStatus } = await import('../models/PartyPlan');
+        const { PartyPlanRequestStatus: PPRStatus } = await import('../models/PartyPlanRequest');
+
+        const hostCancelledPlans = await PartyPlan.findAll({
+            where: {
+                userId,
+                [Op.or]: [
+                    { status: PartyPlanStatus.CANCELLED },
+                    { lifecycleStatus: 'cancelled' },
+                    { paymentStatus: { [Op.iLike]: '%refund%' } },
+                    { hostPaymentStatus: { [Op.iLike]: '%refund%' } },
+                ],
+            },
+            attributes: ['id', 'depositAmount', 'paymentStatus', 'hostPaymentStatus', 'hostRazorpayPaymentId'],
+            limit: 10,
+        });
+
+        for (const plan of hostCancelledPlans) {
+            const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
+            const hostCreditRef = `PARTY_PLAN_CANCEL_CREDIT_HOST_${plan.id}`;
+            const existingRefund = await WalletTransaction.findOne({
+                where: {
+                    userId,
+                    partyPlanId: plan.id,
+                    [Op.or]: [
+                        { reference: hostRefundRef },
+                        { reference: hostCreditRef },
+                        { transactionType: 'refund' },
+                        { transactionType: 'deposit_unlock' },
+                    ],
+                },
+            });
+            if (!existingRefund) {
+                const depositAmt = Number(plan.depositAmount) || 99.00;
+                await WalletService.creditRefund({
+                    userId,
+                    amount: depositAmt,
+                    referenceId: hostRefundRef,
+                    reason: 'Party Plan Cancelled Deposit Refund (Auto-Healed)',
+                    partyPlanId: plan.id,
+                });
+            }
+        }
+
+        const joinerCancelledRequests = await PartyPlanRequest.findAll({
+            where: {
+                requesterId: userId,
+                [Op.or]: [
+                    { status: PPRStatus.CANCELLED },
+                    { joinerPaymentStatus: { [Op.iLike]: '%refund%' } },
+                ],
+            },
+            attributes: ['id', 'planId', 'joinerPaymentStatus', 'joinerRazorpayPaymentId'],
+            limit: 10,
+        });
+
+        for (const reqItem of joinerCancelledRequests) {
+            const joinerRefundRef = `REFUND_JOINER_CANCEL_${reqItem.id}`;
+            const joinerRepostRef = `REFUND_JOINER_REPOST_${reqItem.id}`;
+            const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${reqItem.planId}_${userId}`;
+            const existingRefund = await WalletTransaction.findOne({
+                where: {
+                    userId,
+                    [Op.or]: [
+                        { reference: joinerRefundRef },
+                        { reference: joinerRepostRef },
+                        { reference: joinerCreditRef },
+                    ],
+                },
+            });
+            if (!existingRefund) {
+                await WalletService.creditRefund({
+                    userId,
+                    amount: 99.00,
+                    referenceId: joinerRefundRef,
+                    reason: 'Party Plan Request Cancelled Deposit Refund (Auto-Healed)',
+                    partyPlanId: reqItem.planId,
+                });
+            }
+        }
+    } catch (e: any) {
+        logger.warn('[auto-heal] background refund error:', e.message);
+    }
+}
+
 export const getWalletData = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user?.id || req.body?.userId;
 
-        // ── 1. Incomplete Events ─────────────────────────────────────────────
-        //
+        // ── Parallel Data Fetch ──────────────────────────────────────────────
+        // All 13 queries are independent and run simultaneously, reducing total
+        // DB round-trip time to the duration of the single slowest query.
+        const [
+            hostPlans,
+            joinerRequests,
+            hostStrangersMeets,
+            joinerStrangersMeets,
+            payments,
+            hostPartyPayments,
+            joinerPartyPayments,
+            hostStrangersMeetPayments,
+            joinerStrangersMeetPayments,
+            subTransactions,
+            smartWallet,
+            rawSmartTransactions,
+            config,
+        ] = await Promise.all([
+
         // Case A – User is the HOST and has already paid the deposit,
         //          but the event hasn't been fully confirmed (no accepted joiner
         //          with joiner payment PAID, or plan is still ACTIVE/INACTIVE).
-        const hostPlans = await PartyPlan.findAll({
+        PartyPlan.findAll({
             where: {
                 userId,
                 hostPaymentStatus: PartyPlanPaymentStatus.PAID,
@@ -87,11 +196,11 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     ],
                 },
             ],
-        });
+        }),
 
         // Case B – User is a JOINER who has paid the deposit,
         //          but the plan hasn't been fully confirmed yet.
-        const joinerRequests = await PartyPlanRequest.findAll({
+        PartyPlanRequest.findAll({
             where: {
                 requesterId: userId,
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
@@ -146,10 +255,10 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     ],
                 },
             ],
-        });
+        }),
 
         // Case C – User is Strangers Meet Host, safety deposit PAID, but meet is not completed
-        const hostStrangersMeets = await StrangersMeetRequest.findAll({
+        StrangersMeetRequest.findAll({
             where: {
                 userId,
                 paymentStatus: StrangersMeetPaymentStatus.PAID,
@@ -192,10 +301,10 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     ],
                 },
             ],
-        });
+        }),
 
         // Case D – User is Strangers Meet Joiner, join fee PAID, but meet is not completed
-        const joinerStrangersMeets = await StrangersMeetJoiner.findAll({
+        StrangersMeetJoiner.findAll({
             where: {
                 userId,
                 paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
@@ -240,7 +349,105 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
                     ],
                 },
             ],
-        });
+        }),
+
+        // ── 2. Transaction History ────────────────────────────────────────────
+        Payment.findAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            include: [
+                {
+                    model: Booking,
+                    as: 'booking',
+                    attributes: [
+                        'id', 'bookingNumber', 'bookingDate', 'startTime',
+                        'tablePackage', 'goingMode', 'status', 'totalAmount',
+                        'venueId',
+                    ],
+                    required: false,
+                    include: [
+                        {
+                            model: Venue,
+                            as: 'venue',
+                            attributes: ['id', 'name', 'addressLine1', 'city'],
+                            required: false,
+                        },
+                    ],
+                },
+            ],
+        }),
+        PartyPlan.findAll({
+            where: {
+                userId,
+                hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                hostRazorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: [
+                'id', 'planDateTime', 'depositAmount', 'hostRazorpayOrderId',
+                'hostRazorpayPaymentId', 'createdAt',
+            ],
+            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] }],
+        }),
+        PartyPlanRequest.findAll({
+            where: {
+                requesterId: userId,
+                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
+                joinerRazorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: ['id', 'planId', 'joinerRazorpayOrderId', 'joinerRazorpayPaymentId', 'createdAt'],
+            include: [
+                {
+                    model: PartyPlan,
+                    as: 'plan',
+                    attributes: ['id', 'planDateTime', 'depositAmount'],
+                    include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] }],
+                },
+            ],
+        }),
+        StrangersMeetRequest.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetPaymentStatus.PAID,
+                razorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: ['id', 'eventDateTime', 'paymentAmount', 'razorpayOrderId', 'razorpayPaymentId', 'createdAt', 'subject'],
+            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] }],
+        }),
+        StrangersMeetJoiner.findAll({
+            where: {
+                userId,
+                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+                razorpayPaymentId: { [Op.ne]: null as any },
+            },
+            attributes: ['id', 'strangersMeetRequestId', 'razorpayOrderId', 'razorpayPaymentId', 'paymentAmount', 'createdAt'],
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    attributes: ['id', 'eventDateTime', 'subject'],
+                    include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] }],
+                },
+            ],
+        }),
+
+        // ── 2b. Subscription Transactions ────────────────────────────────────
+        SubscriptionTransaction.findAll({
+            where: { userId },
+            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'] }],
+            order: [['created_at', 'DESC']],
+        }),
+
+        // ── 3. Smart Wallet (runs concurrently with all the above) ────────────
+        WalletService.getOrCreateWallet(userId),
+        WalletTransaction.findAll({
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            limit: 50,
+        }),
+        WalletService.getGlobalConfig(),
+        ]); // end Promise.all
+
+        await smartWallet.reload();
 
         // Build a unified incomplete-events list
         const buildVenueCover = (venue: any): string | null => {
@@ -430,125 +637,7 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         // Sort incomplete events by planDateTime (ascending — soonest first)
         incompleteEvents.sort((a, b) => new Date(a.planDateTime).getTime() - new Date(b.planDateTime).getTime());
 
-        // ── 2. Transaction History ────────────────────────────────────────────
-        const payments = await Payment.findAll({
-            where: { userId },
-            order: [['createdAt', 'DESC']],
-            include: [
-                {
-                    model: Booking,
-                    as: 'booking',
-                    attributes: [
-                        'id', 'bookingNumber', 'bookingDate', 'startTime',
-                        'tablePackage', 'goingMode', 'status', 'totalAmount',
-                        'venueId',
-                    ],
-                    required: false,
-                    include: [
-                        {
-                            model: Venue,
-                            as: 'venue',
-                            attributes: ['id', 'name', 'addressLine1', 'city'],
-                            required: false,
-                        },
-                    ],
-                },
-            ],
-        });
-
-        // Also pull party-plan payments (stored in gatewayResponse.partyPlanId)
-        // plus any host/joiner payment IDs from PartyPlan/PartyPlanRequest
-        const hostPartyPayments = await PartyPlan.findAll({
-            where: {
-                userId,
-                hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                hostRazorpayPaymentId: { [Op.ne]: null as any },
-            },
-            attributes: [
-                'id', 'planDateTime', 'depositAmount', 'hostRazorpayOrderId',
-                'hostRazorpayPaymentId', 'createdAt',
-            ],
-            include: [
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'city'],
-                },
-            ],
-        });
-
-        const joinerPartyPayments = await PartyPlanRequest.findAll({
-            where: {
-                requesterId: userId,
-                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
-                joinerRazorpayPaymentId: { [Op.ne]: null as any },
-            },
-            attributes: [
-                'id', 'planId', 'joinerRazorpayOrderId', 'joinerRazorpayPaymentId',
-                'createdAt',
-            ],
-            include: [
-                {
-                    model: PartyPlan,
-                    as: 'plan',
-                    attributes: ['id', 'planDateTime', 'depositAmount'],
-                    include: [
-                        {
-                            model: Venue,
-                            as: 'venue',
-                            attributes: ['id', 'name', 'city'],
-                        },
-                    ],
-                },
-            ],
-        });
-
-        // Pull Strangers Meet host payments
-        const hostStrangersMeetPayments = await StrangersMeetRequest.findAll({
-            where: {
-                userId,
-                paymentStatus: StrangersMeetPaymentStatus.PAID,
-                razorpayPaymentId: { [Op.ne]: null as any },
-            },
-            attributes: [
-                'id', 'eventDateTime', 'paymentAmount', 'razorpayOrderId',
-                'razorpayPaymentId', 'createdAt', 'subject',
-            ],
-            include: [
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'city'],
-                },
-            ],
-        });
-
-        // Pull Strangers Meet joiner payments
-        const joinerStrangersMeetPayments = await StrangersMeetJoiner.findAll({
-            where: {
-                userId,
-                paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
-                razorpayPaymentId: { [Op.ne]: null as any },
-            },
-            attributes: [
-                'id', 'strangersMeetRequestId', 'razorpayOrderId', 'razorpayPaymentId',
-                'paymentAmount', 'createdAt',
-            ],
-            include: [
-                {
-                    model: StrangersMeetRequest,
-                    as: 'strangersMeetRequest',
-                    attributes: ['id', 'eventDateTime', 'subject'],
-                    include: [
-                        {
-                            model: Venue,
-                            as: 'venue',
-                            attributes: ['id', 'name', 'city'],
-                        },
-                    ],
-                },
-            ],
-        });
+        // ── 2. Transaction History (all data vars fetched in parallel above) ──────
 
         // Unified transactions list with strict multi-source deduplication
         const transactions: any[] = [];
@@ -756,13 +845,6 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         // Sort by createdAt descending
         transactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-        // ── 2b. Subscription Transactions ──────────────────────────────────────
-        const subTransactions = await SubscriptionTransaction.findAll({
-            where: { userId },
-            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'] }],
-            order: [['created_at', 'DESC']],
-        });
-
         // Tier → icon mapping (sent to client for rendering)
         const tierIconMap: Record<string, string> = {
             FREE: 'free_badge',
@@ -827,106 +909,9 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
             .filter(t => t.status === 'success')
             .reduce((sum, t) => sum + t.amount, 0);
 
-        // ── Auto-heal any missed Party Plan refund for Host or Joiner ──
-        try {
-            const { PartyPlan, PartyPlanRequest } = await import('../models');
-            const { PartyPlanStatus } = await import('../models/PartyPlan');
-            const { PartyPlanRequestStatus } = await import('../models/PartyPlanRequest');
-            const Op = (await import('sequelize')).Op;
-
-            // Check host cancelled plans
-            const hostCancelledPlans = await PartyPlan.findAll({
-                where: {
-                    userId,
-                    [Op.or]: [
-                        { status: PartyPlanStatus.CANCELLED },
-                        { lifecycleStatus: 'cancelled' },
-                        { paymentStatus: { [Op.iLike]: '%refund%' } },
-                        { hostPaymentStatus: { [Op.iLike]: '%refund%' } },
-                    ],
-                },
-                attributes: ['id', 'depositAmount', 'paymentStatus', 'hostPaymentStatus', 'hostRazorpayPaymentId'],
-                limit: 10,
-            });
-
-            for (const plan of hostCancelledPlans) {
-                const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
-                const hostCreditRef = `PARTY_PLAN_CANCEL_CREDIT_HOST_${plan.id}`;
-                const existingRefund = await WalletTransaction.findOne({
-                    where: {
-                        userId,
-                        partyPlanId: plan.id,
-                        [Op.or]: [
-                            { reference: hostRefundRef },
-                            { reference: hostCreditRef },
-                            { transactionType: 'refund' },
-                            { transactionType: 'deposit_unlock' },
-                        ],
-                    },
-                });
-                if (!existingRefund) {
-                    const depositAmt = Number(plan.depositAmount) || 99.00;
-                    await WalletService.creditRefund({
-                        userId,
-                        amount: depositAmt,
-                        referenceId: hostRefundRef,
-                        reason: 'Party Plan Cancelled Deposit Refund (Auto-Healed)',
-                        partyPlanId: plan.id,
-                    });
-                }
-            }
-
-            // Check joiner cancelled requests
-            const joinerCancelledRequests = await PartyPlanRequest.findAll({
-                where: {
-                    requesterId: userId,
-                    [Op.or]: [
-                        { status: PartyPlanRequestStatus.CANCELLED },
-                        { joinerPaymentStatus: { [Op.iLike]: '%refund%' } },
-                    ],
-                },
-                attributes: ['id', 'planId', 'joinerPaymentStatus', 'joinerRazorpayPaymentId'],
-                limit: 10,
-            });
-
-            for (const reqItem of joinerCancelledRequests) {
-                const joinerRefundRef = `REFUND_JOINER_CANCEL_${reqItem.id}`;
-                const joinerRepostRef = `REFUND_JOINER_REPOST_${reqItem.id}`;
-                const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${reqItem.planId}_${userId}`;
-                const existingRefund = await WalletTransaction.findOne({
-                    where: {
-                        userId,
-                        [Op.or]: [
-                            { reference: joinerRefundRef },
-                            { reference: joinerRepostRef },
-                            { reference: joinerCreditRef },
-                        ],
-                    },
-                });
-                if (!existingRefund) {
-                    await WalletService.creditRefund({
-                        userId,
-                        amount: 99.00,
-                        referenceId: joinerRefundRef,
-                        reason: 'Party Plan Request Cancelled Deposit Refund (Auto-Healed)',
-                        partyPlanId: reqItem.planId,
-                    });
-                }
-            }
-        } catch (autoHealErr: any) {
-            logger.warn('[getWalletData] Auto-heal refund error:', autoHealErr.message);
-        }
-
-        const smartWallet = await WalletService.getOrCreateWallet(userId);
-        await smartWallet.reload();
-        const config = await WalletService.getGlobalConfig();
-        const rawSmartTransactions = await WalletTransaction.findAll({
-            where: { userId },
-            order: [['createdAt', 'DESC']],
-            limit: 50,
-        });
-
-        const { WalletTransactionType, WalletTransactionStatus } = await import('../models/WalletTransaction');
+        // ── Auto-heal: fire-and-forget after response is sent ─────────────────
+        // Corrects any missed wallet refunds without blocking the current request.
+        setImmediate(() => { _runAutoHeal(userId).catch((e: any) => logger.warn('[auto-heal]', e.message)); });
 
         // Exclude smart transactions that duplicate gateway ledger entries or recorded party plan payments, but keep all refunds & deposit unlocks
         const smartTransactions = rawSmartTransactions.filter(st => {
@@ -993,8 +978,6 @@ export const getWalletData = async (req: Request, res: Response): Promise<void> 
         res.status(500).json({ success: false, message: 'Failed to fetch wallet data', error: err.message });
     }
 };
-
-import WalletService from '../services/walletService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/wallet/pay-with-wallet
@@ -1470,13 +1453,61 @@ export const payBoostWithWallet = async (req: Request, res: Response): Promise<v
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/wallet/balance
+// Ultra-lightweight endpoint for checkout sheets and instant balance checks.
+// Only queries SmartWallet & Config (0.5ms - 2ms).
+// ─────────────────────────────────────────────────────────────────────────────
+export const getWalletBalance = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user?.id || req.query?.userId || req.body?.userId;
+        if (!userId) {
+            res.status(400).json({ success: false, message: 'userId is required' });
+            return;
+        }
+
+        const [wallet, config] = await Promise.all([
+            WalletService.getOrCreateWallet(userId),
+            WalletService.getGlobalConfig(),
+        ]);
+
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.json({
+            success: true,
+            data: {
+                wallet: {
+                    id: wallet.id,
+                    userId: wallet.userId,
+                    availableBalance: Number(wallet.totalAvailableBalance || wallet.balance || 0),
+                    balance: Number(wallet.balance || 0),
+                    lockedBalance: Number(wallet.lockedBalance || 0),
+                    pendingBalance: Number(wallet.pendingBalance || 0),
+                    promotionalBalance: Number(wallet.promotionalBalance || 0),
+                    cashbackBalance: Number(wallet.cashbackBalance || 0),
+                    rewardBalance: Number(wallet.rewardBalance || 0),
+                    isFrozen: wallet.isFrozen,
+                    frozenReason: wallet.frozenReason,
+                },
+                config: {
+                    minRecharge: config.minRechargeAmount,
+                    maxRecharge: config.maxRechargeAmount,
+                    suggestedAmounts: config.suggestedAmounts,
+                    isWalletActive: config.isWalletActive,
+                },
+            },
+        });
+    } catch (err: any) {
+        logger.error('getWalletBalance error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch wallet balance', error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/mobile/wallet/transactions
 // ─────────────────────────────────────────────────────────────────────────────
 export const getWalletTransactions = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user?.id || req.body?.userId;
 
-        const WalletTransaction = (await import('../models/WalletTransaction')).default;
         const transactions = await WalletTransaction.findAll({
             where: { userId },
             order: [['createdAt', 'DESC']],

@@ -44,7 +44,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   static const Color _lunaraPurple = Color(0xFF7C3AED);
 
   late TabController _tabController;
-  List<dynamic> _allBookings = [];
+  List<Map<String, dynamic>> _allBookings = [];
+  List<Map<String, dynamic>> _activeBookings = [];
+  List<Map<String, dynamic>> _pastBookings = [];
+  final Map<String, int> _activeCategoryCounts = {};
+  final Map<String, int> _pastCategoryCounts = {};
   bool _isLoading = true;
   TicketFilterCategory _selectedCategory = TicketFilterCategory.all;
 
@@ -84,22 +88,46 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   void _onAutoRefresh() {
     if (!mounted) return;
-    _loadBookings();
+    _loadBookings(forceRefresh: true);
   }
 
   void _onSocketUpdate(dynamic data) {
     if (!mounted) return;
-    _loadBookings();
+    _loadBookings(forceRefresh: true);
   }
 
-  Future<void> _loadBookings() async {
-    setState(() {
-      _isLoading = true;
-    });
-    final tickets = await ApiService.fetchAllUserTickets();
+  Future<void> _loadBookings({bool forceRefresh = false}) async {
+    if (_allBookings.isEmpty) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+    final tickets = await ApiService.fetchAllUserTickets(forceRefresh: forceRefresh);
     if (mounted) {
+      final active = <Map<String, dynamic>>[];
+      final past = <Map<String, dynamic>>[];
+      final activeCounts = <String, int>{};
+      final pastCounts = <String, int>{};
+
+      for (final t in tickets) {
+        final cat = _getTicketCategory(t);
+        if (_isActiveBooking(t)) {
+          active.add(t);
+          activeCounts[cat] = (activeCounts[cat] ?? 0) + 1;
+        } else {
+          past.add(t);
+          pastCounts[cat] = (pastCounts[cat] ?? 0) + 1;
+        }
+      }
+
       setState(() {
         _allBookings = tickets;
+        _activeBookings = active;
+        _pastBookings = past;
+        _activeCategoryCounts.clear();
+        _activeCategoryCounts.addAll(activeCounts);
+        _pastCategoryCounts.clear();
+        _pastCategoryCounts.addAll(pastCounts);
         _isLoading = false;
       });
     }
@@ -316,32 +344,6 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
   }
 
-  List<Map<String, dynamic>> _getActiveBookings() {
-    return _allBookings.where((b) {
-      if (b is Map) {
-        try {
-          return _isActiveBooking(Map<String, dynamic>.from(b));
-        } catch (_) {
-          return false;
-        }
-      }
-      return false;
-    }).map((b) => Map<String, dynamic>.from(b as Map)).toList();
-  }
-
-  List<Map<String, dynamic>> _getPastBookings() {
-    return _allBookings.where((b) {
-      if (b is Map) {
-        try {
-          return !_isActiveBooking(Map<String, dynamic>.from(b));
-        } catch (_) {
-          return false;
-        }
-      }
-      return false;
-    }).map((b) => Map<String, dynamic>.from(b as Map)).toList();
-  }
-
   List<Map<String, dynamic>> _filterListByCategory(
     List<Map<String, dynamic>> list,
     TicketFilterCategory category,
@@ -351,11 +353,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   int _getCategoryCount(
-    List<Map<String, dynamic>> list,
-    TicketFilterCategory category,
-  ) {
-    if (category == TicketFilterCategory.all) return list.length;
-    return list.where((b) => _getTicketCategory(b) == category.key).length;
+    TicketFilterCategory category, {
+    required bool isActive,
+  }) {
+    if (category == TicketFilterCategory.all) {
+      return isActive ? _activeBookings.length : _pastBookings.length;
+    }
+    final counts = isActive ? _activeCategoryCounts : _pastCategoryCounts;
+    return counts[category.key] ?? 0;
   }
 
   String _getVenueImageUrl(Map<String, dynamic>? venue) {
@@ -615,9 +620,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   @override
   Widget build(BuildContext context) {
-    final activeList = _getActiveBookings();
-    final pastList = _getPastBookings();
-    final currentPool = _tabController.index == 0 ? activeList : pastList;
+    final bool isViewingActive = _tabController.index == 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -625,21 +628,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         child: Column(
           children: [
             _buildHeader(context),
-            _buildStatsBanner(activeList.length, pastList.length),
-            _buildTabBar(activeList.length, pastList.length),
-            _buildCategoryFilterBar(currentPool),
+            _buildStatsBanner(_activeBookings.length, _pastBookings.length),
+            _buildTabBar(_activeBookings.length, _pastBookings.length),
+            _buildCategoryFilterBar(isActive: isViewingActive),
             Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: _lunaraPurple,
-                      ),
-                    )
+              child: (_isLoading && _allBookings.isEmpty)
+                  ? _buildSkeletonList()
                   : TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildTicketListView(activeList, isActive: true),
-                        _buildTicketListView(pastList, isActive: false),
+                        _buildTicketListView(_activeBookings, isActive: true),
+                        _buildTicketListView(_pastBookings, isActive: false),
                       ],
                     ),
             ),
@@ -688,7 +687,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.black, size: 22),
-            onPressed: _loadBookings,
+            onPressed: () => _loadBookings(forceRefresh: true),
           ),
         ],
       ),
@@ -905,7 +904,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildCategoryFilterBar(List<Map<String, dynamic>> currentPool) {
+  Widget _buildCategoryFilterBar({required bool isActive}) {
     return Container(
       height: 42,
       margin: const EdgeInsets.only(top: 4, bottom: 8),
@@ -917,7 +916,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         itemBuilder: (context, index) {
           final cat = TicketFilterCategory.values[index];
           final isSelected = _selectedCategory == cat;
-          final count = _getCategoryCount(currentPool, cat);
+          final count = _getCategoryCount(cat, isActive: isActive);
           final catColor = cat == TicketFilterCategory.all
               ? _lunaraPurple
               : _getCategoryColor(cat.key);
@@ -1002,6 +1001,90 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
+  Widget _buildSkeletonList() {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      itemCount: 3,
+      itemBuilder: (context, index) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.grey[200]!),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 145,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 16,
+                      width: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      height: 12,
+                      width: 220,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          height: 28,
+                          width: 80,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        Container(
+                          height: 28,
+                          width: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTicketListView(List<Map<String, dynamic>> rawList, {required bool isActive}) {
     final filteredTickets = _filterListByCategory(rawList, _selectedCategory);
 
@@ -1015,10 +1098,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
     return RefreshIndicator(
       color: _lunaraPurple,
-      onRefresh: _loadBookings,
+      onRefresh: () => _loadBookings(forceRefresh: true),
       child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         itemCount: filteredTickets.length,
+        addAutomaticKeepAlives: true,
+        addRepaintBoundaries: true,
         itemBuilder: (context, index) {
           final booking = filteredTickets[index];
           return _buildTicketCard(booking, isActive: isActive);
@@ -1212,12 +1298,63 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         onTap: () {
           // Party plan tickets have dedicated matched UI
           if (category == 'party_plan') {
+            final rawPlan = booking['plan'] is Map ? Map<String, dynamic>.from(booking['plan']) : <String, dynamic>{};
+            final rawReq = booking['rawRequest'] is Map ? Map<String, dynamic>.from(booking['rawRequest']) : <String, dynamic>{};
+
+            // Enrich plan
+            if (rawPlan['venue'] == null && venue != null) rawPlan['venue'] = venue;
+            if (rawPlan['planDateTime'] == null && booking['bookingDate'] != null) {
+              rawPlan['planDateTime'] = booking['bookingDate'];
+            }
+            if (rawPlan['eventStartAt'] == null && booking['eventStartAt'] != null) {
+              rawPlan['eventStartAt'] = booking['eventStartAt'];
+            }
+            if (rawPlan['depositAmount'] == null && booking['totalAmount'] != null) {
+              rawPlan['depositAmount'] = booking['totalAmount'];
+            }
+            if (rawPlan['id'] == null && booking['bookingId'] != null) {
+              rawPlan['id'] = booking['bookingId'];
+            }
+            if (rawPlan['ticketCode'] == null && ticketCode.isNotEmpty) {
+              rawPlan['ticketCode'] = ticketCode;
+            }
+            if (rawPlan['user'] == null && booking['user'] != null) {
+              rawPlan['user'] = booking['user'];
+            }
+            if (rawPlan['host'] == null && booking['host'] != null) {
+              rawPlan['host'] = booking['host'];
+            }
+
+            // Enrich request
+            if (rawReq['venue'] == null && venue != null) rawReq['venue'] = venue;
+            if (rawReq['planDateTime'] == null && booking['bookingDate'] != null) {
+              rawReq['planDateTime'] = booking['bookingDate'];
+            }
+            if (rawReq['eventStartAt'] == null && booking['eventStartAt'] != null) {
+              rawReq['eventStartAt'] = booking['eventStartAt'];
+            }
+            if (rawReq['paymentAmount'] == null && booking['totalAmount'] != null) {
+              rawReq['paymentAmount'] = booking['totalAmount'];
+            }
+            if (rawReq['depositAmount'] == null && booking['totalAmount'] != null) {
+              rawReq['depositAmount'] = booking['totalAmount'];
+            }
+            if (rawReq['id'] == null && booking['bookingId'] != null) {
+              rawReq['id'] = booking['bookingId'];
+            }
+            if (rawReq['ticketCode'] == null && ticketCode.isNotEmpty) {
+              rawReq['ticketCode'] = ticketCode;
+            }
+            if (rawReq['user'] == null && booking['user'] != null) {
+              rawReq['user'] = booking['user'];
+            }
+
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => PartyPlanTicketScreen(
-                  request: Map<String, dynamic>.from(booking['rawRequest'] ?? booking['plan'] ?? booking),
-                  plan: Map<String, dynamic>.from(booking['plan'] ?? booking),
+                  request: rawReq.isNotEmpty ? rawReq : (rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking)),
+                  plan: rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking),
                   isHost: booking['isHost'] == true,
                 ),
               ),
@@ -1227,11 +1364,40 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
           // Group party / Large party tickets via LargePartyTicketScreen
           if (category == 'large_party' || category == 'group_party') {
+            final bookingMap = Map<String, dynamic>.from(booking);
+            if (bookingMap['venue'] == null && venue != null) {
+              bookingMap['venue'] = venue;
+            }
+            if (bookingMap['partyDate'] == null && booking['bookingDate'] != null) {
+              bookingMap['partyDate'] = booking['bookingDate'];
+            }
+            if (bookingMap['startTime'] == null && startTime.isNotEmpty) {
+              bookingMap['startTime'] = startTime;
+            }
+            if (bookingMap['totalParticipants'] == null && booking['numberOfGuests'] != null) {
+              bookingMap['totalParticipants'] = booking['numberOfGuests'];
+            }
+            if (bookingMap['numberOfFriends'] == null && booking['numberOfGuests'] != null) {
+              bookingMap['numberOfFriends'] = booking['numberOfGuests'];
+            }
+            if (bookingMap['paymentStatus'] == null || bookingMap['paymentStatus'].toString().isEmpty) {
+              bookingMap['paymentStatus'] = 'paid';
+            }
+            if (bookingMap['status'] == null || bookingMap['status'].toString().isEmpty) {
+              bookingMap['status'] = 'confirmed';
+            }
+            if (bookingMap['ticketCode'] == null && ticketCode.isNotEmpty) {
+              bookingMap['ticketCode'] = ticketCode;
+            }
+            if (booking['bookingId'] != null && bookingMap['bookingId'] == null) {
+              bookingMap['bookingId'] = booking['bookingId'];
+            }
+
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => LargePartyTicketScreen(
-                  booking: booking,
+                  booking: bookingMap,
                   venue: venue ?? {'name': venueName, 'id': booking['venueId']},
                 ),
               ),
@@ -1264,6 +1430,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               if (totalAmt != null && (rawMap['paymentAmount'] == null || rawMap['paymentAmount'] == 0)) {
                 rawMap['paymentAmount'] = totalAmt;
               }
+              if (totalAmt != null && (rawMap['chargesPerHead'] == null || rawMap['chargesPerHead'] == 0)) {
+                rawMap['chargesPerHead'] = totalAmt;
+              }
               if (booking['subject'] != null && rawMap['subject'] == null) {
                 rawMap['subject'] = booking['subject'];
               }
@@ -1273,6 +1442,19 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               if (booking['startTime'] != null && rawMap['startTime'] == null) {
                 rawMap['startTime'] = booking['startTime'];
               }
+              if (booking['bookingDate'] != null && rawMap['eventDateTime'] == null) {
+                rawMap['eventDateTime'] = booking['bookingDate'];
+              }
+              if (booking['eventStartAt'] != null && rawMap['eventDateTime'] == null) {
+                rawMap['eventDateTime'] = booking['eventStartAt'];
+              }
+              if (booking['bookingId'] != null) {
+                rawMap['bookingId'] = booking['bookingId'];
+                rawMap['id'] = booking['bookingId'];
+              }
+              rawMap['paymentStatus'] = 'paid';
+              rawMap['status'] = 'confirmed';
+
               final req = StrangersMeetRequest.fromJson(rawMap);
               Navigator.push(
                 context,
@@ -1287,22 +1469,40 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
 
           // Standard Digital Ticket Screen (Solo / Event / Venue)
+          final rawBookingDate = booking['bookingDate']?.toString() ?? booking['eventStartAt']?.toString() ?? bookingDate;
+          final rawStartTime = booking['startTime']?.toString() ?? startTime;
+          final bookingMap = Map<String, dynamic>.from(booking);
+          if (bookingMap['venue'] == null && venue != null) {
+            bookingMap['venue'] = venue;
+          }
+          if (bookingMap['startTime'] == null && rawStartTime.isNotEmpty) {
+            bookingMap['startTime'] = rawStartTime;
+          }
+          if (bookingMap['bookingDate'] == null && rawBookingDate.isNotEmpty) {
+            bookingMap['bookingDate'] = rawBookingDate;
+          }
+          if (bookingMap['ticketCode'] == null && ticketCode.isNotEmpty) {
+            bookingMap['ticketCode'] = ticketCode;
+          }
+          if (bookingMap['totalAmount'] == null && amountPaid > 0) {
+            bookingMap['totalAmount'] = amountPaid;
+          }
+
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => DigitalTicketScreen(
                 venue: venue ?? {'name': venueName, 'imageUrl': imageUrl},
-                date: dateStr,
+                date: rawBookingDate,
+                time: rawStartTime,
                 table: table,
                 guests: guests.toString(),
                 package: table,
-                totalPrice:
-                    booking['totalAmount']?.toString() ??
-                    booking['paymentAmount']?.toString(),
+                totalPrice: amountPaid > 0 ? '₹${amountPaid.toStringAsFixed(0)}' : 'FREE',
                 ticketId: ticketCode,
                 ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
                 status: status,
-                booking: booking,
+                booking: bookingMap,
                 bannerImageUrl: resolvedBannerUrl,
                 eventTitle: resolvedEventTitle,
                 user: booking['user'] ?? booking['host'] ?? ApiService.cachedCurrentUser,
@@ -1331,34 +1531,48 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header Banner on Image ───────────────────────────
-              Container(
+              SizedBox(
                 height: 145,
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(23),
-                  ),
-                  image: DecorationImage(
-                    image: NetworkImage(cardHeaderImage),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(23),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(23),
+                      ),
+                      child: Image.network(
+                        cardHeaderImage,
+                        fit: BoxFit.cover,
+                        cacheWidth: 800,
+                        cacheHeight: 350,
+                        filterQuality: FilterQuality.low,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[900],
+                            child: Center(
+                              child: Icon(categoryIcon, size: 36, color: categoryColor.withValues(alpha: 0.4)),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.45),
-                        Colors.black.withValues(alpha: 0.85),
-                      ],
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: Stack(
-                    children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(23),
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.45),
+                            Colors.black.withValues(alpha: 0.85),
+                          ],
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Stack(
+                        children: [
                       // Top Row: Category Tag + Status Badge
                       Positioned(
                         top: 0,
@@ -1503,7 +1717,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     ],
                   ),
                 ),
-              ),
+              ],
+            ),
+          ),
 
               // ── Card Body ─────────────────────────────────────────
               Padding(

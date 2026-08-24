@@ -62,33 +62,44 @@ export const getAvailablePackages = async (_req: Request, res: Response): Promis
             order: [['display_order', 'ASC'], ['price', 'ASC']],
         });
 
-        // Attach dynamic features to each package
-        const enriched = await Promise.all(packages.map(async (pkg) => {
-            const planFeatures = await SubscriptionPlanFeature.findAll({
-                where: { packageId: pkg.id, isEnabled: true },
-                include: [{ model: SubscriptionFeature, as: 'feature' }],
-                order: [[{ model: SubscriptionFeature, as: 'feature' }, 'display_order', 'ASC']],
-            });
+        if (packages.length === 0) {
+            res.status(200).json({ success: true, data: [] });
+            return;
+        }
 
-            const features: Record<string, any> = {};
-            if (planFeatures.length > 0) {
-                for (const pf of planFeatures) {
-                    const feat = (pf as any).feature;
-                    if (feat) {
-                        features[feat.key] = { 
-                            ...pf.value, 
-                            name: feat.name, 
-                            icon: feat.icon,
-                            description: feat.description
-                        };
-                    }
-                } 
+        // Batch-fetch all active plan features across all packages in a single query (eliminating N+1)
+        const packageIds = packages.map(pkg => pkg.id);
+        const planFeatures = await SubscriptionPlanFeature.findAll({
+            where: {
+                packageId: { [Op.in]: packageIds },
+                isEnabled: true,
+            },
+            include: [{ model: SubscriptionFeature, as: 'feature' }],
+            order: [[{ model: SubscriptionFeature, as: 'feature' }, 'display_order', 'ASC']],
+        });
+
+        // Group features by packageId
+        const featuresByPkg: Record<string, Record<string, any>> = {};
+        for (const pf of planFeatures) {
+            const feat = (pf as any).feature;
+            if (feat) {
+                if (!featuresByPkg[pf.packageId]) {
+                    featuresByPkg[pf.packageId] = {};
+                }
+                featuresByPkg[pf.packageId][feat.key] = {
+                    ...pf.value,
+                    name: feat.name,
+                    icon: feat.icon,
+                    description: feat.description,
+                };
             }
+        }
 
-            return {
-                ...pkg.toJSON(),
-                features: Object.keys(features).length > 0 ? features : null,
-            };
+        const enriched = packages.map(pkg => ({
+            ...pkg.toJSON(),
+            features: featuresByPkg[pkg.id] && Object.keys(featuresByPkg[pkg.id]).length > 0
+                ? featuresByPkg[pkg.id]
+                : null,
         }));
 
         res.status(200).json({ success: true, data: enriched });

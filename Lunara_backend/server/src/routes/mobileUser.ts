@@ -3,13 +3,13 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { uploadTempPhotos } from '../middleware/upload';
 import mobileUserController from '../controllers/mobileUserController';
-import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Message, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
+import { User, UserMatch, Payment, PartyPlanRequest, PlanJoinRequest, Conversation, Plan, PartyPlan, Venue, StrangersMeetRequest, StrangersMeetJoiner, SafetyCheck, Booking, GroupParty } from '../models';
 import Notification from '../models/Notification';
 import { Op } from 'sequelize';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
 import * as reliabilityCtrl from '../controllers/reliabilityController';
-import { enrichPartyPlanNotificationCard } from '../controllers/partyPlanController';
+import { batchEnrichPartyPlanNotificationCards } from '../controllers/partyPlanController';
 
 const router = Router();
 
@@ -260,8 +260,10 @@ async function getUserNotifications(
             include: [{
                 model: PartyPlanRequest,
                 as: 'requests',
-                required: false
+                required: false,
+                attributes: ['id', 'partyPlanId', 'requesterId', 'status']
             }],
+            attributes: ['id'],
             subQuery: false,
             limit: 20
         });
@@ -272,56 +274,55 @@ async function getUserNotifications(
         console.error('Error fetching recent plans for notifications:', planErr);
     }
 
-    // Build/Enrich Unified Party Plan Timeline Cards
-    // Build/Enrich Unified Party Plan Timeline Cards in parallel
-    const planCardResults = await Promise.all(
-        Array.from(partyPlanIds).map(async (planId) => {
-            try {
-                const card = await enrichPartyPlanNotificationCard(planId, uId);
-                if (card && card.currentStatus !== 'Waiting other user') {
-                    // Find all DB notifications associated with this plan
-                    const planNotifs = notifications.filter(n => {
-                        const metadata = n.data || {};
-                        const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
-                        return pId === planId;
-                    });
+    // Build/Enrich Unified Party Plan Timeline Cards in ONE single batch query
+    let timelineCards: any[] = [];
+    if (partyPlanIds.size > 0) {
+        try {
+            const enrichedCards = await batchEnrichPartyPlanNotificationCards(Array.from(partyPlanIds), uId);
+            const planCardResults = enrichedCards.map((card: any) => {
+                if (!card || card.currentStatus === 'Waiting other user') return null;
+                const planId = card.planId || card.id;
+                // Find all DB notifications associated with this plan
+                const planNotifs = notifications.filter(n => {
+                    const metadata = n.data || {};
+                    const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
+                    return pId === planId;
+                });
 
-                    const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
-                    let maxTime = new Date(card.lastUpdated).getTime();
-                    for (const pn of planNotifs) {
-                        const pt = new Date(pn.createdAt).getTime();
-                        if (pt > maxTime) maxTime = pt;
-                    }
-
-                    return {
-                        id: `party_plan_timeline_${planId}`,
-                        title: card.planTitle,
-                        body: card.currentStatus,
-                        category: 'events',
-                        type: 'party_plan_timeline',
-                        createdAt: new Date(maxTime).toISOString(),
-                        read: !hasUnread,
-                        isRead: !hasUnread,
-                        imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
-                        host: card.host,
-                        creator: card.creator,
-                        user: card.user,
-                        actor: card.host || card.creator || card.user,
-                        sender: card.host || card.creator || card.user,
-                        hostProfilePhotoUrl: card.hostProfilePhotoUrl,
-                        guestProfilePhotoUrl: card.guestProfilePhotoUrl,
-                        data: card,
-                        plan: card,
-                        deepLink: `/party-plans/${planId}`,
-                    };
+                const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
+                let maxTime = new Date(card.lastUpdated).getTime();
+                for (const pn of planNotifs) {
+                    const pt = new Date(pn.createdAt).getTime();
+                    if (pt > maxTime) maxTime = pt;
                 }
-            } catch (err) {
-                console.error(`Error enriching party plan ${planId}:`, err);
-            }
-            return null;
-        })
-    );
-    const timelineCards = planCardResults.filter(Boolean);
+
+                return {
+                    id: `party_plan_timeline_${planId}`,
+                    title: card.planTitle,
+                    body: card.currentStatus,
+                    category: 'events',
+                    type: 'party_plan_timeline',
+                    createdAt: new Date(maxTime).toISOString(),
+                    read: !hasUnread,
+                    isRead: !hasUnread,
+                    imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
+                    host: card.host,
+                    creator: card.creator,
+                    user: card.user,
+                    actor: card.host || card.creator || card.user,
+                    sender: card.host || card.creator || card.user,
+                    hostProfilePhotoUrl: card.hostProfilePhotoUrl,
+                    guestProfilePhotoUrl: card.guestProfilePhotoUrl,
+                    data: card,
+                    plan: card,
+                    deepLink: `/party-plans/${planId}`,
+                };
+            });
+            timelineCards = planCardResults.filter(Boolean);
+        } catch (enrichErr) {
+            console.error('Error batch enriching party plans:', enrichErr);
+        }
+    }
 
     // Filter out raw party plan notifications (they are now unified in timelineCards)
     const otherNotifs = notifications.filter(n => {
@@ -1058,21 +1059,30 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                     [Op.or]: [
                         { participantOne: uId },
                         { participantTwo: uId }
-                    ]
+                    ],
+                    status: { [Op.ne]: 'blocked' }
                 },
-                attributes: ['id']
+                attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
             })
         ]);
 
         const myTablePlanIds = myTablePlans.map(p => p.id);
         const myPartyPlanIds = myPartyPlans.map(p => p.id);
-        const conversationIds = userConversations.map(c => c.id);
+
+        let chatCount = 0;
+        for (const conv of userConversations) {
+            const isP1 = (conv.participantOne || '').toLowerCase() === uId.toLowerCase();
+            const isP2 = (conv.participantTwo || '').toLowerCase() === uId.toLowerCase();
+            if (isP1 && (conv as any).deletedByOne) continue;
+            if (isP2 && (conv as any).deletedByTwo) continue;
+            const unread = isP1 ? ((conv as any).unreadOne || 0) : ((conv as any).unreadTwo || 0);
+            chatCount += Number(unread || 0);
+        }
 
         // Execute phase 2 dependent queries in parallel
         const [
             incomingTableReqs,
-            incomingPartyReqs,
-            chatCount
+            incomingPartyReqs
         ] = await Promise.all([
             myTablePlanIds.length > 0
                 ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id'] })
@@ -1089,16 +1099,7 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                     const isPrivateInvite = Array.isArray(planUsers) && planUsers.includes(r.requesterId);
                     return !isPrivateInvite; // Only voluntary join requests count as incoming requests for host
                 }))
-                : Promise.resolve([]),
-            conversationIds.length > 0
-                ? Message.count({
-                    where: {
-                        conversationId: { [Op.in]: conversationIds },
-                        senderId: { [Op.ne]: uId },
-                        status: { [Op.ne]: 'read' }
-                    }
-                })
-                : Promise.resolve(0)
+                : Promise.resolve([])
         ]);
 
         const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id)).length;

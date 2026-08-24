@@ -105,18 +105,24 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final packages = await ApiService.fetchSubscriptionPackages();
-      final plans = await ApiService.fetchUserSubscriptions();
-      await ApiService.fetchProfile();
+      final results = await Future.wait([
+        ApiService.fetchSubscriptionPackages(),
+        ApiService.fetchUserSubscriptions(),
+        ApiService.fetchProfile(),
+      ]);
 
-      setState(() {
-        _allPackages = packages;
-        _userSubscriptions = plans;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _allPackages = (results[0] as List<dynamic>?) ?? [];
+          _userSubscriptions = (results[1] as List<dynamic>?) ?? [];
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading VIP screen data: $e');
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

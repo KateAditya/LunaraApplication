@@ -106,27 +106,35 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
   DateTime? _getEventDateTime() {
     try {
-      String dateStr = (widget.date ?? '').trim();
-      String timeStr = (widget.time ?? '').trim();
-      
-      if (dateStr.isEmpty) return null;
+      // 0. Check eventStartAt directly if available in booking map
+      if (widget.booking?['eventStartAt'] != null) {
+        final dt = DateTime.tryParse(widget.booking!['eventStartAt'].toString())?.toLocal();
+        if (dt != null) return dt;
+      }
 
-      // 1. Try direct parsing of the date string
-      var parsed = DateTime.tryParse(dateStr);
-      if (parsed != null) {
-        if (timeStr.isNotEmpty) {
-          final timeParts = _parseTimeStr(timeStr);
-          return DateTime(parsed.year, parsed.month, parsed.day, timeParts[0], timeParts[1]);
+      String dateStr = (widget.date ?? widget.booking?['bookingDate']?.toString() ?? widget.booking?['partyDate']?.toString() ?? '').trim();
+      String timeStr = (widget.time ?? widget.booking?['startTime']?.toString() ?? '').trim();
+
+      if (dateStr.isEmpty && timeStr.isEmpty) return null;
+
+      // 1. If dateStr is a full ISO timestamp (contains 'T')
+      if (dateStr.contains('T')) {
+        final dt = DateTime.tryParse(dateStr)?.toLocal();
+        if (dt != null) {
+          if (timeStr.isNotEmpty) {
+            final timeParts = _parseTimeStr(timeStr);
+            return DateTime(dt.year, dt.month, dt.day, timeParts[0], timeParts[1]);
+          }
+          return dt;
         }
-        return parsed;
       }
 
       // 2. Try direct parsing of combined date and time
-      if (timeStr.isNotEmpty) {
-        parsed = DateTime.tryParse('$dateStr $timeStr');
-        if (parsed != null) return parsed;
+      if (dateStr.isNotEmpty && timeStr.isNotEmpty) {
+        var parsed = DateTime.tryParse('$dateStr $timeStr');
+        if (parsed != null) return parsed.toLocal();
         parsed = DateTime.tryParse('${dateStr}T$timeStr');
-        if (parsed != null) return parsed;
+        if (parsed != null) return parsed.toLocal();
       }
 
       // 3. Handle split if contains '•' or 'at'
@@ -144,11 +152,18 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         }
       }
 
-      final timeParts = _parseTimeStr(timeStr);
+      // 4. Try direct parsing of dateStr
+      var parsed = DateTime.tryParse(dateStr);
+      if (parsed != null) {
+        final timeParts = _parseTimeStr(timeStr.isNotEmpty ? timeStr : '20:00');
+        return DateTime(parsed.year, parsed.month, parsed.day, timeParts[0], timeParts[1]);
+      }
+
+      final timeParts = _parseTimeStr(timeStr.isNotEmpty ? timeStr : '20:00');
       final hour = timeParts[0];
       final minute = timeParts[1];
 
-      // 4. Try regex for YYYY-MM-DD
+      // 5. Try regex for YYYY-MM-DD
       final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
       var match = ymdRegex.firstMatch(dateStr);
       if (match != null) {
@@ -158,7 +173,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // 5. Try regex for DD-MM-YYYY
+      // 6. Try regex for DD-MM-YYYY
       final dmyRegex = RegExp(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})');
       match = dmyRegex.firstMatch(dateStr);
       if (match != null) {
@@ -168,7 +183,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // 6. Try word-based month format (e.g., "FRI, JUL 24", "24 JUL 2026")
+      // 7. Try word-based month format (e.g., "SUN, 24 AUG 2026", "24 AUG 2026", "SUN, 24 AUG")
       final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
       final cleanDate = dateStr.toUpperCase();
       int? foundMonth;
@@ -189,12 +204,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         int? day;
         for (final m in dayMatches) {
           final val = int.parse(m.group(1)!);
-          if (val != year % 100 && val != year / 100 && val <= 31) {
+          if (val != year % 100 && val != (year ~/ 100) && val <= 31) {
             day = val;
             break;
           }
         }
-        day ??= 1;
+        day ??= DateTime.now().day;
         return DateTime(year, foundMonth, day, hour, minute);
       }
     } catch (e) {
@@ -204,9 +219,11 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   bool _isTicketExpired() {
+    final statusStr = (widget.status ?? widget.booking?['status'] ?? '').toString().toLowerCase();
+    if (statusStr == 'expired' || statusStr == 'cancelled') return true;
     final eventDateTime = _getEventDateTime();
     if (eventDateTime != null) {
-      final expirationTime = eventDateTime.add(const Duration(hours: 3));
+      final expirationTime = eventDateTime.add(const Duration(hours: 30));
       return DateTime.now().isAfter(expirationTime);
     }
     return false;
@@ -713,33 +730,40 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     final bool isSolo = _isSoloBooking;
 
     // Date & Time formatting
-    String displayDate = (widget.date ?? widget.booking?['bookingDate']?.toString() ?? 'SAT, OCT 24').trim();
-    String displayTime = (widget.time ?? widget.booking?['startTime']?.toString() ?? '10:30 PM').trim();
-    String displayDateTime;
+    final eventDt = _getEventDateTime();
+    String displayDate;
+    String displayTime;
 
-    if (displayDate.contains('•')) {
-      final parts = displayDate.split('•');
-      displayDate = parts[0].trim();
-      displayTime = parts.length > 1 ? parts[1].trim() : displayTime;
+    if (eventDt != null) {
+      displayDate = DateFormat('EEE, d MMM yyyy').format(eventDt).toUpperCase();
+      displayTime = DateFormat('hh:mm a').format(eventDt);
     } else {
+      displayDate = (widget.date ?? widget.booking?['bookingDate']?.toString() ?? 'SAT, OCT 24').trim();
+      displayTime = (widget.time ?? widget.booking?['startTime']?.toString() ?? '10:30 PM').trim();
+
+      if (displayDate.contains('•')) {
+        final parts = displayDate.split('•');
+        displayDate = parts[0].trim();
+        displayTime = parts.length > 1 ? parts[1].trim() : displayTime;
+      }
       final dt = DateTime.tryParse(displayDate);
       if (dt != null) {
         displayDate = DateFormat('EEE, d MMM yyyy').format(dt.toLocal()).toUpperCase();
       }
-    }
 
-    if (!displayTime.toUpperCase().contains('AM') && !displayTime.toUpperCase().contains('PM')) {
-      final parts = displayTime.split(':');
-      if (parts.isNotEmpty) {
-        int h = int.tryParse(parts[0].trim()) ?? 20;
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        final period = h >= 12 ? 'PM' : 'AM';
-        if (h > 12) h -= 12;
-        if (h == 0) h = 12;
-        displayTime = '$h:${m.toString().padLeft(2, '0')} $period';
+      if (!displayTime.toUpperCase().contains('AM') && !displayTime.toUpperCase().contains('PM')) {
+        final parts = displayTime.split(':');
+        if (parts.isNotEmpty) {
+          int h = int.tryParse(parts[0].trim()) ?? 20;
+          int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+          final period = h >= 12 ? 'PM' : 'AM';
+          if (h > 12) h -= 12;
+          if (h == 0) h = 12;
+          displayTime = '$h:${m.toString().padLeft(2, '0')} $period';
+        }
       }
     }
-    displayDateTime = '$displayDate • $displayTime';
+    final String displayDateTime = '$displayDate • $displayTime';
 
     // Table / Package display
     String displayTable;

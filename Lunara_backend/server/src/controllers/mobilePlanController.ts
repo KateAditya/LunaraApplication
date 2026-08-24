@@ -388,10 +388,12 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                                 model: UserProfile,
                                 as: 'profile',
                                 attributes: ['occupation', 'bio'],
+                                required: false,
                             },
                             {
                                 model: UserPhoto,
                                 as: 'photos',
+                                where: { isPrimary: true },
                                 required: false,
                                 attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
                             }
@@ -404,13 +406,14 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         include: [{
                             model: VenueImage,
                             as: 'images',
+                            where: { isPrimary: true },
                             attributes: ['filePath', 'imageType', 'isPrimary', 'displayOrder'],
                             required: false,
                         }],
                     },
                 ],
                 order: [['createdAt', 'DESC']],
-                limit: 50,
+                limit: 30,
             }),
 
             // 2. Party Plans
@@ -426,10 +429,12 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                                 model: UserProfile,
                                 as: 'profile',
                                 attributes: ['occupation', 'bio'],
+                                required: false,
                             },
                             {
                                 model: UserPhoto,
                                 as: 'photos',
+                                where: { isPrimary: true },
                                 required: false,
                                 attributes: ['id', 'filePath', 'isPrimary', 'displayOrder']
                             }
@@ -442,7 +447,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     },
                 ],
                 order: [['createdAt', 'DESC']],
-                limit: 50,
+                limit: 30,
             }),
 
             // 3. My outgoing requests for Table Plans

@@ -55,10 +55,12 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
   void _prefillFromWidget() {
     _freshSubject = widget.request.subject;
     _freshTagline = widget.request.tagline;
-    _freshAmountPaid = (widget.request.paymentAmount ?? widget.request.chargesPerHead).toDouble();
-    _freshPaymentStatus = widget.request.paymentStatus;
-    _freshStatus = widget.request.status;
+    final totalAmt = widget.request.paymentAmount ?? widget.request.chargesPerHead;
+    _freshAmountPaid = totalAmt.toDouble();
+    _freshPaymentStatus = widget.request.paymentStatus.isNotEmpty ? widget.request.paymentStatus : 'paid';
+    _freshStatus = widget.request.status.isNotEmpty ? widget.request.status : 'confirmed';
     _freshEventDateTime = widget.request.eventDateTime;
+    _freshStartTime = DateFormat('hh:mm a').format(_freshEventDateTime!);
     _canonicalTicketCode = widget.request.ticketId;
     _freshTargetCapacity = widget.request.numberOfPersons;
     if (widget.request.venue != null) {
@@ -192,6 +194,32 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
             }
           });
           _initCountdown();
+          return;
+        }
+      }
+
+      // Fallback to /api/mobile/tickets/$cleanId
+      final ticketRes = await ApiService.get('/api/mobile/tickets/$cleanId');
+      if (ticketRes.statusCode == 200 && mounted) {
+        final mapData = jsonDecode(ticketRes.body);
+        if (mapData != null && mapData['data'] != null) {
+          final tObj = mapData['data'];
+          setState(() {
+            if (tObj['user'] is Map) _freshHostUser = Map<String, dynamic>.from(tObj['user']);
+            if (tObj['venue'] is Map) _freshVenue = Map<String, dynamic>.from(tObj['venue']);
+            _canonicalTicketCode = tObj['ticketCode']?.toString() ?? tObj['ticketId']?.toString();
+            if (tObj['eventStartAt'] != null || tObj['bookingDate'] != null) {
+              _freshEventDateTime = DateTime.tryParse((tObj['eventStartAt'] ?? tObj['bookingDate']).toString())?.toLocal();
+            }
+            if (tObj['startTime'] != null) _freshStartTime = tObj['startTime'].toString();
+            if (tObj['totalAmount'] != null) {
+              _freshAmountPaid = double.tryParse(tObj['totalAmount'].toString());
+            }
+            _freshPaymentStatus = 'paid';
+            _freshStatus = 'confirmed';
+          });
+          _initCountdown();
+          return;
         }
       }
     } catch (e) {

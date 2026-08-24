@@ -4,7 +4,8 @@ import Venue from '../models/Venue';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import { PlanEligibilityService } from './PlanEligibilityService';
 import { validateVenueTimingAndHolidays, normalizeStartTime } from '../utils/venueValidator';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
+import { TimeLockError } from '../utils/bookingLimitValidator';
+import { EventTimeLockService, parseBookingDateTime } from './EventTimeLockService';
 import { generateTicketForBookingHelper } from './ticketService';
 import { NotificationService } from './NotificationService';
 import { logger } from '../config/logger';
@@ -113,11 +114,15 @@ export class VenueBookingService {
 
         const isLargeParty = goingMode === GoingMode.PARTY_REQUEST && numberOfGuests > 20;
 
-        if (isLargeParty) {
-            const bookingConflictMsg = await checkExistingBookingForDate(userId, bookingDate, 'group_party');
-            if (bookingConflictMsg) {
-                throw new Error(bookingConflictMsg);
-            }
+        // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
+        const bookingDateTime = parseBookingDateTime(bookingDate, startTime);
+        const timeLockCheck = await EventTimeLockService.validateFourHourGap(
+            userId,
+            bookingDateTime,
+            isLargeParty ? 'large_party' : 'solo_booking'
+        );
+        if (!timeLockCheck.allowed) {
+            throw new TimeLockError(timeLockCheck);
         }
 
         const cleanBookingDate = typeof bookingDate === 'string' && bookingDate.includes('T')

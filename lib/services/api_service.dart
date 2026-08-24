@@ -785,32 +785,52 @@ class ApiService {
     }
   }
 
+  static List<Map<String, dynamic>>? _cachedTickets;
+  static DateTime? _ticketsCacheTime;
+  static Future<List<Map<String, dynamic>>>? _inFlightTickets;
+
   /// Fetches ALL tickets for current user across standard bookings, group parties (<= 20), and confirmed party plans.
   /// Reads directly from the backend `Ticket` table (`GET /api/mobile/tickets`)
-  /// — the actual source of truth every real ticket-generation helper writes
-  /// to. Previously this reconstructed a synthetic list from four unrelated
-  /// endpoints (bookings/group-parties/party-plans/strangers-meets), each
-  /// with its own brittle status filtering, which silently dropped real,
-  /// already-generated tickets whenever a source status string didn't match
-  /// exactly what the aggregator expected.
-  static Future<List<Map<String, dynamic>>> fetchAllUserTickets() async {
+  /// — the actual source of truth every real ticket-generation helper writes to.
+  static Future<List<Map<String, dynamic>>> fetchAllUserTickets({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) return [];
 
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedTickets != null && _ticketsCacheTime != null && now.difference(_ticketsCacheTime!).inSeconds < 6) {
+      return _cachedTickets!;
+    }
+
+    if (_inFlightTickets != null) {
+      return _inFlightTickets!;
+    }
+
+    _inFlightTickets = _doFetchAllUserTickets(userId);
+    return _inFlightTickets!;
+  }
+
+  static Future<List<Map<String, dynamic>>> _doFetchAllUserTickets(String userId) async {
     try {
       final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all', 'userId': userId});
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
           final list = List<Map<String, dynamic>>.from(data['data']);
-          if (list.isNotEmpty) return list;
+          _cachedTickets = list;
+          _ticketsCacheTime = DateTime.now();
+          return list;
         }
       }
     } catch (e) {
       debugPrint('fetchAllUserTickets error: $e');
+    } finally {
+      _inFlightTickets = null;
     }
 
-    // Resilient fallback to fetchBookings if mobile/tickets returns empty or in-flight migration
+    // If we have cached tickets from a previous successful load, serve them on transient network drop
+    if (_cachedTickets != null) return _cachedTickets!;
+
+    // Resilient fallback to fetchBookings ONLY if network/API failed
     try {
       final bookings = await fetchBookings(forceRefresh: true);
       if (bookings != null && bookings.isNotEmpty) {
@@ -820,7 +840,7 @@ class ApiService {
       debugPrint('fetchAllUserTickets fallback error: $e');
     }
 
-    return [];
+    return <Map<String, dynamic>>[];
   }
 
 
@@ -1444,6 +1464,26 @@ class ApiService {
       debugPrint('repostPartyPlan error: $e');
       return {'success': false, 'message': e.toString()};
     }
+  }
+
+  static Future<Map<String, dynamic>?> fetchWalletBalance() async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await get(
+        '/api/mobile/wallet/balance',
+        queryParameters: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data['data'];
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchWalletBalance error: $e');
+    }
+    return null;
   }
 
   static Future<Map<String, dynamic>?> fetchWalletData() async {
@@ -3053,6 +3093,18 @@ class ApiService {
   static DateTime? _badgeCountsCacheTime;
   static Map<String, int>? _cachedBadgeCounts;
 
+  static final ValueNotifier<int> chatBadgeNotifier = ValueNotifier<int>(0);
+
+  /// Optimistically update the chat badge count in memory and notify listeners
+  static void updateChatBadgeCount(int count) {
+    final cleanCount = count < 0 ? 0 : count;
+    if (_cachedBadgeCounts != null) {
+      _cachedBadgeCounts!['chatCount'] = cleanCount;
+      _cachedBadgeCounts!['totalCount'] = (_cachedBadgeCounts!['liveFeedCount'] ?? 0) + cleanCount;
+    }
+    chatBadgeNotifier.value = cleanCount;
+  }
+
   /// Fetches real unread count for badge indicators
   static Future<Map<String, int>> fetchBadgeCounts({bool forceRefresh = false}) async {
     final userId = currentUserId;
@@ -3061,7 +3113,9 @@ class ApiService {
     }
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 3) {
+    if (forceRefresh) {
+      _badgeCountsCacheTime = null;
+    } else if (_cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 3) {
       return _cachedBadgeCounts!;
     }
 
@@ -3095,12 +3149,14 @@ class ApiService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['success'] == true && data['data'] != null) {
+            final chatCount = data['data']['chatCount'] ?? 0;
             _cachedBadgeCounts = {
               'liveFeedCount': data['data']['liveFeedCount'] ?? 0,
-              'chatCount': data['data']['chatCount'] ?? 0,
+              'chatCount': chatCount,
               'totalCount': data['data']['totalCount'] ?? 0,
             };
             _badgeCountsCacheTime = DateTime.now();
+            chatBadgeNotifier.value = chatCount;
             return _cachedBadgeCounts!;
           }
         }
