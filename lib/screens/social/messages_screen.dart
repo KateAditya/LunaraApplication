@@ -59,6 +59,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   void _initSocketListeners() {
     ApiService.addSocketListener('new_message', _onNewMessageSocket);
+    ApiService.addSocketListener('chat_badge_updated', _onChatBadgeUpdatedSocket);
     ApiService.addSocketListener('messages_read', _onMessagesReadSocket);
     ApiService.addSocketListener('user_status_changed', _onUserStatusSocket);
     ApiService.addSocketListener('conversation_deleted', _onConversationDeletedSocket);
@@ -102,20 +103,31 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  void _onMessagesReadSocket(dynamic rawData) {
+  void _onChatBadgeUpdatedSocket(dynamic rawData) {
     if (!mounted || rawData == null) return;
     final data = rawData is Map ? Map<String, dynamic>.from(rawData) : <String, dynamic>{};
     final convId = data['conversationId']?.toString();
-    if (convId == null) return;
+    final unreadCount = data['unreadCount'] != null ? int.tryParse(data['unreadCount'].toString()) : null;
+    final chatCount = data['chatCount'] != null ? int.tryParse(data['chatCount'].toString()) : null;
 
-    setState(() {
-      final idx = _conversations.indexWhere(
-        (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
-      );
-      if (idx != -1) {
-        _conversations[idx]['unreadCount'] = 0;
-      }
-    });
+    if (chatCount != null) {
+      ApiService.updateChatBadgeCount(chatCount);
+    }
+
+    if (convId != null && unreadCount != null) {
+      setState(() {
+        final idx = _conversations.indexWhere(
+          (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
+        );
+        if (idx != -1) {
+          _conversations[idx]['unreadCount'] = unreadCount;
+        }
+      });
+    }
+  }
+
+  void _onMessagesReadSocket(dynamic rawData) {
+    // Read receipts update for sent messages (handled in chat screen).
   }
 
   void _onUserStatusSocket(dynamic rawData) {
@@ -211,6 +223,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _conversationTimer?.cancel();
     _chatUpdateSub?.cancel();
     ApiService.removeSocketListener('new_message', _onNewMessageSocket);
+    ApiService.removeSocketListener('chat_badge_updated', _onChatBadgeUpdatedSocket);
     ApiService.removeSocketListener('messages_read', _onMessagesReadSocket);
     ApiService.removeSocketListener('user_status_changed', _onUserStatusSocket);
     ApiService.removeSocketListener('conversation_deleted', _onConversationDeletedSocket);
@@ -231,6 +244,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
       }
 
       final conversations = await ApiService.fetchConversations(userId);
+
+      int totalUnread = 0;
+      for (final c in conversations) {
+        totalUnread += _unreadCount(c);
+      }
+      ApiService.updateChatBadgeCount(totalUnread);
 
       bool hasPlans = _hasCreatedOrJoinedPlans;
       if (conversations.isEmpty) {
@@ -257,10 +276,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
           hasChanges = true;
         } else {
           for (int i = 0; i < conversations.length; i++) {
-            final oldC = _conversations[i];
             final newC = conversations[i];
-            final oldId = (oldC['conversationId'] ?? oldC['id'])?.toString();
             final newId = (newC['conversationId'] ?? newC['id'])?.toString();
+            final oldC = _conversations.firstWhere(
+              (c) => (c['conversationId'] ?? c['id'])?.toString() == newId,
+              orElse: () => {},
+            );
+            if (oldC.isEmpty) {
+              hasChanges = true;
+              break;
+            }
             final oldPreview = oldC['lastMessagePreview']?.toString() ?? '';
             final newPreview = newC['lastMessagePreview']?.toString() ?? '';
             final oldUnread = _unreadCount(oldC);
@@ -270,8 +295,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             final oldOnline = _isOnline(oldC);
             final newOnline = _isOnline(newC);
 
-            if (oldId != newId ||
-                oldPreview != newPreview ||
+            if (oldPreview != newPreview ||
                 oldUnread != newUnread ||
                 oldTime != newTime ||
                 oldOnline != newOnline) {

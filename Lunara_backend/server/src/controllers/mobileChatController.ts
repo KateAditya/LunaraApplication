@@ -102,6 +102,7 @@ export const getConversations = async (req: Request, res: Response) => {
 
         // Deduplicate conversations by otherUser ID (keep the one with latest lastMessageAt)
         const mapByOtherUser = new Map<string, any>();
+        const aggregatedUnreadMap = new Map<string, number>();
 
         for (const conv of conversations) {
             const otherUserId = conv.getOtherParticipant(userId);
@@ -127,6 +128,9 @@ export const getConversations = async (req: Request, res: Response) => {
             }
 
             const key = otherUserId.toLowerCase();
+            const unread = conv.getUnreadFor ? conv.getUnreadFor(userId) : (isP1 ? (conv.unreadOne || 0) : (conv.unreadTwo || 0));
+            aggregatedUnreadMap.set(key, (aggregatedUnreadMap.get(key) || 0) + Number(unread || 0));
+
             const existing = mapByOtherUser.get(key);
             if (!existing) {
                 mapByOtherUser.set(key, conv);
@@ -146,45 +150,16 @@ export const getConversations = async (req: Request, res: Response) => {
                 ? (conv as any).userOne
                 : (conv as any).userTwo;
 
-            let effectivePreview = conv.lastMessagePreview ?? '';
-            let effectiveLastMsgAt = conv.lastMessageAt;
-
-            // If the conversation's shared "last message" was individually deleted-for-me
-            // by this user, fall back to the latest message this user can still see.
-            if (conv.lastMessageId) {
-                const lastMsg = await Message.findByPk(conv.lastMessageId);
-                const dfu = lastMsg ? (lastMsg as any).deletedForUsers : null;
-                let hiddenForUser = false;
-                if (dfu) {
-                    const parsed = Array.isArray(dfu) ? dfu : (typeof dfu === 'string' ? (() => { try { return JSON.parse(dfu); } catch (_) { return []; } })() : []);
-                    hiddenForUser = Array.isArray(parsed) && parsed.map((x: any) => String(x).toLowerCase()).includes(userId.toLowerCase());
-                }
-                if (hiddenForUser) {
-                    // JSONB "not contains" isn't portable to filter in the query itself,
-                    // so scan a small recent batch and filter in application code.
-                    const recentMsgs = await Message.findAll({
-                        where: { conversationId: conv.id, deletedAt: null as any },
-                        order: [['createdAt', 'DESC']],
-                        limit: 50,
-                    });
-                    const nextVisible = recentMsgs.find(m => {
-                        const d = (m as any).deletedForUsers;
-                        if (!d) return true;
-                        const arr = Array.isArray(d) ? d : (typeof d === 'string' ? (() => { try { return JSON.parse(d); } catch (_) { return []; } })() : []);
-                        return !(Array.isArray(arr) && arr.map((x: any) => String(x).toLowerCase()).includes(userId.toLowerCase()));
-                    });
-                    effectivePreview = nextVisible ? nextVisible.getPreview() : '';
-                    effectiveLastMsgAt = nextVisible ? nextVisible.createdAt : undefined;
-                }
-            }
+            const key = otherUserId.toLowerCase();
+            const totalUnreadForUser = aggregatedUnreadMap.get(key) ?? (conv.getUnreadFor ? conv.getUnreadFor(userId) : 0);
 
             list.push({
                 conversationId:      conv.id,
                 id:                  conv.id,
                 otherUser:           formatUserBrief(otherUser),
-                lastMessagePreview:  effectivePreview,
-                lastMessageAt:       effectiveLastMsgAt,
-                unreadCount:         conv.getUnreadFor(userId),
+                lastMessagePreview:  conv.lastMessagePreview ?? '',
+                lastMessageAt:       conv.lastMessageAt,
+                unreadCount:         totalUnreadForUser,
                 status:              conv.status,
                 contextType:         conv.contextType,
                 contextId:           conv.contextId,
@@ -807,8 +782,33 @@ export const markConversationRead = async (req: Request, res: Response) => {
             const { io } = require('../server');
             const otherUserId = conv.getOtherParticipant(userId);
             io.to(`user_${otherUserId}`).emit('messages_read', { conversationId: id, readAt: new Date() });
+
+            // Emit chat_badge_updated to current user so their badge and row clear immediately
+            const myConvs = await Conversation.findAll({
+                where: {
+                    [Op.or]: [
+                        { participantOne: userId },
+                        { participantTwo: userId }
+                    ],
+                    status: { [Op.ne]: ConversationStatus.BLOCKED }
+                },
+                attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
+            });
+            let myRemainingChatCount = 0;
+            for (const c of myConvs) {
+                const isP1 = (c.participantOne || '').toLowerCase() === userId.toLowerCase();
+                const isP2 = (c.participantTwo || '').toLowerCase() === userId.toLowerCase();
+                if (isP1 && (c as any).deletedByOne) continue;
+                if (isP2 && (c as any).deletedByTwo) continue;
+                myRemainingChatCount += Number(c.getUnreadFor ? c.getUnreadFor(userId) : (isP1 ? ((c as any).unreadOne || 0) : ((c as any).unreadTwo || 0)));
+            }
+            io.to(`user_${userId}`).emit('chat_badge_updated', {
+                conversationId: id,
+                chatCount: myRemainingChatCount,
+                unreadCount: 0
+            });
         } catch (err) {
-            logger.error('Failed to emit messages_read socket event:', err);
+            logger.error('Failed to emit messages_read / chat_badge_updated socket event:', err);
         }
 
         return res.json({ success: true, message: 'Conversation marked as read' });

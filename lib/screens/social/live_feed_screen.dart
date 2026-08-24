@@ -1771,6 +1771,81 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
+  DateTime? _parseEventDateTime(dynamic rawDate, [dynamic rawTime]) {
+    if (rawDate == null) return null;
+    try {
+      final dateStr = rawDate.toString().trim();
+      if (dateStr.isEmpty) return null;
+
+      final timeStr = (rawTime ?? '').toString().trim();
+
+      // If dateStr is already a full ISO timestamp containing time (contains 'T')
+      if (dateStr.contains('T')) {
+        final dt = DateTime.tryParse(dateStr)?.toLocal();
+        if (dt != null) {
+          // If time was midnight 00:00 and rawTime has specific time, apply rawTime
+          if (timeStr.isNotEmpty && dt.hour == 0 && dt.minute == 0) {
+            final tp = _parseTimeComponent(timeStr);
+            return DateTime(dt.year, dt.month, dt.day, tp[0], tp[1]);
+          }
+          return dt;
+        }
+      }
+
+      // Parse date part
+      final parsedDate = DateTime.tryParse(dateStr);
+      int year, month, day;
+      if (parsedDate != null) {
+        year = parsedDate.year;
+        month = parsedDate.month;
+        day = parsedDate.day;
+      } else {
+        final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
+        final match = ymdRegex.firstMatch(dateStr);
+        if (match != null) {
+          year = int.parse(match.group(1)!);
+          month = int.parse(match.group(2)!);
+          day = int.parse(match.group(3)!);
+        } else {
+          return null;
+        }
+      }
+
+      final tp = _parseTimeComponent(timeStr.isNotEmpty ? timeStr : '20:00');
+      return DateTime(year, month, day, tp[0], tp[1]);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<int> _parseTimeComponent(String timeStr) {
+    int hour = 20; // default 8:00 PM
+    int minute = 0;
+    if (timeStr.isNotEmpty) {
+      final cleanTime = timeStr.toUpperCase().trim();
+      if (cleanTime.contains('AM') || cleanTime.contains('PM')) {
+        final isPm = cleanTime.contains('PM');
+        final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+        final parts = timeOnly.split(':');
+        if (parts.isNotEmpty) {
+          int h = int.tryParse(parts[0]) ?? 12;
+          int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+          if (isPm && h < 12) h += 12;
+          if (!isPm && h == 12) h = 0;
+          hour = h;
+          minute = m;
+        }
+      } else {
+        final parts = cleanTime.split(':');
+        if (parts.isNotEmpty) {
+          hour = int.tryParse(parts[0]) ?? 20;
+          minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+        }
+      }
+    }
+    return [hour, minute];
+  }
+
   static String? _extractUserPhoto(dynamic source) {
     if (source == null) return null;
     if (source is String) {
@@ -2118,13 +2193,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       bool isExpired = false;
       final planData = n['plan'] is Map ? n['plan'] : n;
       final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'] ?? n['entityDetails']?['planDateTime'] ?? n['entityDetails']?['eventDateTime'];
+      final rawStartTime = planData['startTime'] ?? planData['time'] ?? planData['bookingTime'] ?? n['entityDetails']?['startTime'];
       if (rawDateTime != null) {
-        try {
-          final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
-          if (planTime.isBefore(DateTime.now())) {
-            isExpired = true;
-          }
-        } catch (_) {}
+        final planTime = _parseEventDateTime(rawDateTime, rawStartTime);
+        if (planTime != null && DateTime.now().isAfter(planTime.add(const Duration(hours: 4)))) {
+          isExpired = true;
+        }
       }
 
       List<NotificationAction>? actionsList;
@@ -2375,7 +2449,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         hasUnread = true;
       }
 
-      final rawDt = e['updatedAt'] ?? e['createdAt'] ?? e['partyDate'] ?? e['bookingDate'];
+      final rawDt = e['updatedAt'] ?? e['createdAt'];
       if (rawDt != null) {
         try {
           final dt = DateTime.parse(rawDt.toString()).toLocal();
@@ -2383,15 +2457,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             latestTime = dt;
           }
         } catch (_) {}
+      } else {
+        final dt = _parseEventDateTime(e['partyDate'] ?? e['bookingDate'], e['startTime'] ?? e['time']);
+        if (dt != null && dt.isAfter(latestTime)) {
+          latestTime = dt;
+        }
       }
     }
     if (latestTime.millisecondsSinceEpoch == 0) {
       latestTime = DateTime.now();
     }
 
+    final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
+    final rawStartTime = partyMap['startTime'] ?? partyMap['time'];
+    final parsedEventDate = _parseEventDateTime(rawPartyDate, rawStartTime);
+
+    // Format event date & time if available
+    String formattedTimeStr = '';
+    if (parsedEventDate != null) {
+      const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final w = weekdayNames[parsedEventDate.weekday - 1];
+      final m = monthNames[parsedEventDate.month - 1];
+      final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+      final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
+      final minute = parsedEventDate.minute.toString().padLeft(2, '0');
+      formattedTimeStr = ' on $w, ${parsedEventDate.day} $m at $hour:$minute $ampm';
+    }
+
     // Construct Title, Body, Badge, and Actions
     String cardTitle = '👥 Group Party';
-    String cardBody = 'Your group party of $guestCount friends at $venueName.';
+    String cardBody = 'Your group party of $guestCount friends at $venueName$formattedTimeStr.';
     Color accentColor = const Color(0xFF7C3AED);
     String badgeText = 'BOOKING';
     String? actionButtonText;
@@ -2402,14 +2498,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // guess only when the server hasn't reported one yet (e.g. stale card).
     bool isExpired = isExpiredFromServer;
     if (!isExpired) {
-      final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
-      if (rawPartyDate != null) {
-        try {
-          final pTime = DateTime.parse(rawPartyDate.toString()).toLocal();
-          if (pTime.isBefore(DateTime.now())) {
-            isExpired = true;
-          }
-        } catch (_) {}
+      if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
+        isExpired = true;
       }
     }
 
@@ -2431,7 +2521,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       onActionTap = null;
     } else if (overallStatus == 'confirmed') {
       cardTitle = isLargeParty ? 'Large Party Confirmed! 🎉' : 'Group Party Confirmed! 🎉';
-      cardBody = 'Your party of $guestCount guests at $venueName is fully confirmed. Get ready!';
+      cardBody = 'Your party of $guestCount guests at $venueName$formattedTimeStr is fully confirmed. Get ready!';
       badgeText = 'CONFIRMED';
       accentColor = const Color(0xFF10B981);
       actionButtonText = 'View Ticket';
@@ -2706,10 +2796,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // 4. Format plan date & time
     String formattedDateTime = '';
     final rawDateTime = planMap['planDateTime'] ?? planMap['eventDateTime'] ?? planMap['planDate'];
-    DateTime? parsedEventDate;
-    if (rawDateTime != null) {
+    final rawStartTime = planMap['startTime'] ?? planMap['time'];
+    final parsedEventDate = _parseEventDateTime(rawDateTime, rawStartTime);
+    if (parsedEventDate != null) {
       try {
-        parsedEventDate = DateTime.parse(rawDateTime.toString()).toLocal();
         const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         final w = weekdayNames[parsedEventDate.weekday - 1];
@@ -2723,7 +2813,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // 5. Expiration & Status Checks
     bool isExpired = false;
-    if (parsedEventDate != null && parsedEventDate.isBefore(DateTime.now())) {
+    if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
       isExpired = true;
     }
 
@@ -3501,11 +3591,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     String formattedDateTime = '';
-    final rawDateTime = meetMap['eventDateTime'] ?? meetMap['planDate'] ?? meetMap['partyDate'];
-    DateTime? parsedEventDate;
-    if (rawDateTime != null) {
+    final rawDateTime = meetMap['eventDateTime'] ?? meetMap['planDate'] ?? meetMap['partyDate'] ?? meetMap['bookingDate'];
+    final rawStartTime = meetMap['startTime'] ?? meetMap['time'];
+    final parsedEventDate = _parseEventDateTime(rawDateTime, rawStartTime);
+    if (parsedEventDate != null) {
       try {
-        parsedEventDate = DateTime.parse(rawDateTime.toString()).toLocal();
         const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         final w = weekdayNames[parsedEventDate.weekday - 1];
@@ -3518,7 +3608,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     bool isExpired = false;
-    if (parsedEventDate != null && parsedEventDate.isBefore(DateTime.now())) {
+    if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
       isExpired = true;
     }
     final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();

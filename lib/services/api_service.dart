@@ -746,7 +746,9 @@ class ApiService {
                   'partySubject': 'Group Party',
                   'bookingDate': gp['partyDate'],
                   'partyDate': gp['partyDate'],
-                  'startTime': '08:00 PM',
+                  'startTime': (gp['startTime'] != null && gp['startTime'].toString().trim().isNotEmpty)
+                      ? gp['startTime'].toString().trim()
+                      : '08:00 PM',
                   'approvedAmount': gp['totalAmount'],
                   'charges': gp['totalAmount'],
                   'totalAmount': gp['totalAmount'],
