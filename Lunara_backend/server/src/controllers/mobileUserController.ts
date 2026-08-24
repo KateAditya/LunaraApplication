@@ -21,6 +21,9 @@ import UserPenalty from '../models/UserPenalty';
 
 import { azureFaceService } from '../services/azureFaceService';
 import { RankingService } from '../services/rankingService';
+import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
+import { SubscriptionService } from '../services/subscriptionService';
+import { EntitlementService } from '../services/EntitlementService';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 // Target HD/2K quality (~3-4 MB max target size, ultra-sharp & unblurred)
@@ -163,10 +166,19 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
             });
 
             if (photoIsPrimary) {
+                const newProfileUrl = '/' + relativePath.replace(/\\/g, '/');
                 await User.update(
-                    { profileImageUrl: '/' + relativePath.replace(/\\/g, '/') },
+                    { profileImageUrl: newProfileUrl },
                     { where: { id: userId } }
                 );
+                RealtimeEventBroker.emitToUser(userId, 'profile_photo_updated', 'user', userId, {
+                    userId,
+                    profileImageUrl: newProfileUrl,
+                });
+                RealtimeEventBroker.emitToLiveFeed('profile_photo_updated', 'user', userId, {
+                    userId,
+                    profileImageUrl: newProfileUrl,
+                });
             }
 
             if (file.path && fs.existsSync(file.path)) {
@@ -232,7 +244,6 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
         const data = req.body as ProfileSetupBody;
 
         if (data.showMeInMatching === false) {
-            const { SubscriptionService } = require('../services/subscriptionService');
             const canHide = await SubscriptionService.hasAccess(userId, 'hide_profile');
             if (!canHide) {
                 return res.status(403).json({
@@ -278,6 +289,16 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
         // Fetch updated profile
         const updatedProfile = await UserProfile.findOne({ where: { userId } });
         const updatedPreferences = await UserPreference.findOne({ where: { userId } });
+
+        RealtimeEventBroker.emitToUser(userId, 'profile_updated', 'user', userId, {
+            userId,
+            profile: updatedProfile,
+            preferences: updatedPreferences,
+        });
+        RealtimeEventBroker.emitToLiveFeed('profile_updated', 'user', userId, {
+            userId,
+            profile: updatedProfile,
+        });
 
         return res.status(200).json({
             success: true,
@@ -664,7 +685,18 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             raw: true,
         });
 
-        const allUserIds = [...new Set(matchingUsersRaw.map((u: any) => u.id))];
+        // Filter out users who hid their profile (showMeInMatching === false)
+        // If targetUserId is explicitly requested (e.g. direct profile lookup), do not filter
+        const visibleMatchingUsers = targetUserId
+            ? matchingUsersRaw
+            : matchingUsersRaw.filter((u: any) => {
+                const show = u['preferences.showMeInMatching'] !== undefined
+                    ? u['preferences.showMeInMatching']
+                    : u.showMeInMatching;
+                return show !== false && show !== 0 && show !== 'false';
+            });
+
+        const allUserIds = [...new Set(visibleMatchingUsers.map((u: any) => u.id))];
         const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit);
 
@@ -1473,6 +1505,21 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 }
             }
         } else if (action === 'superlike') {
+            const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'superlike', 1, {
+                requestId: `SUPERLIKE_${userId}_${targetUserId}_${Date.now()}`,
+                metadata: { targetUserId },
+            });
+
+            if (!consumption.success) {
+                return res.status(403).json({
+                    success: false,
+                    code: consumption.code || 'ADDON_REQUIRED',
+                    limitReached: true,
+                    message: consumption.message || 'You have no super likes remaining. Upgrade your plan or purchase more super likes!',
+                    availableAddons: consumption.availableAddons || [],
+                });
+            }
+
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
@@ -1483,81 +1530,45 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 order: [['createdAt', 'DESC']],
             });
 
-            if (!activeSub || activeSub.superlikesRemaining <= 0) {
-                return res.status(403).json({
-                    success: false,
-                    code: 'LIMIT_REACHED',
-                    limitReached: true,
-                    message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
-                });
-            }
+            const totalGranted = (activeSub as any)?.package?.superlikesPerCycle || 0;
+            const remaining = consumption.totalRemaining ?? 0;
 
-            const totalGranted = (activeSub as any).package?.superlikesPerCycle || activeSub.superlikesRemaining;
+            if (totalGranted > 0 && totalGranted < 9999) {
+                const used = Math.max(0, totalGranted - remaining);
+                const percentage = Math.round((used / totalGranted) * 100);
 
-            // Atomic database-level conditional decrement for transaction & concurrency safety
-            if (activeSub.superlikesRemaining < 9999) {
-                const [affectedCount] = await UserSubscription.update(
-                    { superlikesRemaining: sequelize.literal('superlikes_remaining - 1') },
-                    {
-                        where: {
-                            id: activeSub.id,
-                            superlikesRemaining: { [Op.gt]: 0 }
+                if (percentage >= 66) {
+                    usageWarning = {
+                        triggered: true,
+                        feature: 'superlike',
+                        used,
+                        limit: totalGranted,
+                        remaining,
+                        percentage,
+                        message: `You've used ${used} of ${totalGranted} Super Likes for this cycle. ${remaining > 0 ? `Only ${remaining} remaining!` : 'None remaining.'}`,
+                    };
+
+                    // Create In-App Notification
+                    try {
+                        const NotificationModel = (await import('../models/Notification')).default;
+                        const cycleKey = `limit_warn_superlike_${userId}_${activeSub?.id || 'cycle'}_${used}`;
+                        const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey: cycleKey } });
+                        if (!existingNotif) {
+                            await NotificationModel.create({
+                                recipientUserId: userId,
+                                eventType: 'LIMIT_WARNING',
+                                category: 'system' as any,
+                                title: '⭐ Super Likes Usage Alert',
+                                body: `You've used ${used} of ${totalGranted} Super Likes for your current plan. Top up credits or upgrade to Plus/Pro for more!`,
+                                actionType: 'open_vip_upgrade',
+                                deepLink: '/vip-membership',
+                                isRead: false,
+                                priority: 'NORMAL' as any,
+                                idempotencyKey: cycleKey,
+                            });
                         }
-                    }
-                );
-
-                if (affectedCount === 0) {
-                    return res.status(403).json({
-                        success: false,
-                        code: 'LIMIT_REACHED',
-                        limitReached: true,
-                        message: 'You have no super likes remaining. Upgrade your plan or purchase more super likes!'
-                    });
-                }
-
-                activeSub.superlikesRemaining = Math.max(0, activeSub.superlikesRemaining - 1);
-                const { SubscriptionService } = require('../services/subscriptionService');
-                SubscriptionService.invalidateCache(userId);
-
-                // Threshold Check: for 3 superlikes, 2 used is 66.7% (>= 66%), for 10 superlikes, 7 used is 70% (>= 66%), etc.
-                if (totalGranted > 0 && totalGranted < 9999) {
-                    const remaining = activeSub.superlikesRemaining;
-                    const used = totalGranted - remaining;
-                    const percentage = Math.round((used / totalGranted) * 100);
-
-                    if (percentage >= 66) {
-                        usageWarning = {
-                            triggered: true,
-                            feature: 'superlike',
-                            used,
-                            limit: totalGranted,
-                            remaining,
-                            percentage,
-                            message: `You've used ${used} of ${totalGranted} Super Likes for this cycle. ${remaining > 0 ? `Only ${remaining} remaining!` : 'None remaining.'}`,
-                        };
-
-                        // Create In-App Notification
-                        try {
-                            const NotificationModel = (await import('../models/Notification')).default;
-                            const cycleKey = `limit_warn_superlike_${userId}_${activeSub.id}_${used}`;
-                            const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey: cycleKey } });
-                            if (!existingNotif) {
-                                await NotificationModel.create({
-                                    recipientUserId: userId,
-                                    eventType: 'LIMIT_WARNING',
-                                    category: 'system' as any,
-                                    title: '⭐ Super Likes Usage Alert',
-                                    body: `You've used ${used} of ${totalGranted} Super Likes for your current plan. Top up credits or upgrade to Plus/Pro for more!`,
-                                    actionType: 'open_vip_upgrade',
-                                    deepLink: '/vip-membership',
-                                    isRead: false,
-                                    priority: 'NORMAL' as any,
-                                    idempotencyKey: cycleKey,
-                                });
-                            }
-                        } catch (notifErr) {
-                            logger.warn('[swipeUser] Failed to create superlike limit notification:', notifErr);
-                        }
+                    } catch (notifErr) {
+                        logger.warn('[swipeUser] Failed to create superlike limit notification:', notifErr);
                     }
                 }
             }

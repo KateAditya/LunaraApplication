@@ -12,6 +12,7 @@ import 'edit_profile_screen.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../../services/subscription_provider.dart';
 import '../../models/user.dart';
+import '../../services/push_notification_service.dart';
 import '../../services/onboarding_service.dart';
 import '../onboarding/welcome_carousel.dart';
 
@@ -38,11 +39,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final user = await ApiService.fetchProfile();
+    final pushEnabled = prefs.getBool('push_notifications_enabled') ?? true;
 
     if (mounted) {
       setState(() {
         _currentUser = user;
         _biometricAuth = prefs.getBool('biometric_enabled') ?? false;
+        _pushNotifications = pushEnabled;
 
         if (user != null) {
           // If showMeInMatching is false, then profile is hidden
@@ -168,7 +171,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSwitchTile(
                     'Push Notifications',
                     _pushNotifications,
-                    (v) => setState(() => _pushNotifications = v),
+                    (v) async {
+                      final prev = _pushNotifications;
+                      setState(() => _pushNotifications = v);
+
+                      final success =
+                          await PushNotificationService.setPushNotificationsEnabled(
+                            v,
+                          );
+
+                      if (!success && mounted) {
+                        setState(() => _pushNotifications = prev);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Failed to update notification settings.',
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      } else if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              v
+                                  ? '🔔 Push notifications enabled.'
+                                  : '🔕 Push notifications disabled.',
+                            ),
+                            backgroundColor: v
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFF64748B),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
                   ),
                   const SizedBox(height: 40),
                   _buildSectionHeader('SUPPORT & LEGAL'),
@@ -308,7 +345,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               activeTrackColor: LunaraTheme.electricViolet.withValues(
                 alpha: 0.3,
               ),
-              activeColor: LunaraTheme.electricViolet,
+              activeThumbColor: LunaraTheme.electricViolet,
             ),
           ],
         ),
@@ -345,12 +382,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
         setState(() => _hideProfile = prevValue);
       } else if (mounted) {
+        ApiService.profileUpdateNotifier.value++;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              v ? 'Profile is now hidden.' : 'Profile is now visible.',
+              v
+                  ? '🔒 Profile is now hidden from matching & discovery.'
+                  : '👁️ Profile is now visible in matching & discovery.',
             ),
             backgroundColor: LunaraTheme.electricViolet,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -2600,6 +2641,9 @@ class _PermissionsSheetState extends State<PermissionsSheet>
         await openAppSettings();
       } else {
         final newStatus = await permission.request();
+        if (permission == Permission.notification) {
+          PushNotificationService.setPushNotificationsEnabled(newStatus.isGranted);
+        }
         if (newStatus.isPermanentlyDenied) {
           await openAppSettings();
         }

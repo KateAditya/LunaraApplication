@@ -18,6 +18,7 @@ import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'notification_navigator.dart';
 import 'push_notification_service.dart';
 import 'subscription_provider.dart';
+import 'realtime_sync_manager.dart';
 import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
@@ -238,15 +239,47 @@ class ApiService {
     socket!.onConnect((_) {
       debugPrint('Socket connected: ${socket!.id}');
       socket!.emit('join_user_room', userId);
+      if (selectedCity != null && selectedCity!.isNotEmpty) {
+        joinCityRoom(selectedCity!);
+      }
       // Re-bind all registered listeners
       _socketListeners.forEach((event, callbacks) {
         for (final cb in callbacks) {
           socket!.on(event, cb);
         }
       });
+      // Initialize or reconcile RealtimeSyncManager
+      RealtimeSyncManager.instance.init();
+      RealtimeSyncManager.instance.reconcileDelta();
     });
 
     socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
+  }
+
+  static void joinCityRoom(String city) {
+    if (socket != null && socket!.connected && city.isNotEmpty) {
+      socket!.emit('join_city_room', city);
+    }
+  }
+
+  static void leaveCityRoom(String city) {
+    if (socket != null && socket!.connected && city.isNotEmpty) {
+      socket!.emit('leave_city_room', city);
+    }
+  }
+
+  /// Fetch lightweight delta synchronization from server
+  static Future<Map<String, dynamic>?> fetchDeltaSync(DateTime since) async {
+    try {
+      final isoSince = since.toUtc().toIso8601String();
+      final res = await get('/api/mobile/sync/delta?since=$isoSince');
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] fetchDeltaSync error: $e');
+    }
+    return null;
   }
 
   static void disconnectSocket() {
@@ -3970,6 +4003,104 @@ class ApiService {
       debugPrint('fetchSubscriptionStatus error: $e');
     }
     return {};
+  }
+
+  /// Fetches comprehensive VIP entitlements breakdown, usage, add-ons, and checklist
+  static Future<Map<String, dynamic>> fetchEntitlementsSummary() async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+    try {
+      final response = await get('/api/mobile/subscriptions/entitlements');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchEntitlementsSummary error: $e');
+    }
+    return {};
+  }
+
+  /// Fetches available Add-on packages catalog
+  static Future<List<Map<String, dynamic>>> fetchAvailableAddons() async {
+    try {
+      final response = await get('/api/mobile/subscriptions/addons');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchAvailableAddons error: $e');
+    }
+    return [];
+  }
+
+  /// Purchases an Add-on using Smart Credit Wallet
+  static Future<Map<String, dynamic>> purchaseAddonWithWallet(String addonPackageId, {int count = 1}) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/addons/pay-wallet',
+        body: {
+          'addonPackageId': addonPackageId,
+          'count': count,
+        },
+      );
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Unknown response'};
+    } catch (e) {
+      debugPrint('purchaseAddonWithWallet error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Creates a Razorpay Order for an Add-on package
+  static Future<Map<String, dynamic>?> createAddonRazorpayOrder(String addonPackageId) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/addons/create-order',
+        body: {
+          'addonPackageId': addonPackageId,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('createAddonRazorpayOrder error: $e');
+    }
+    return null;
+  }
+
+  /// Verifies Razorpay payment for an Add-on package
+  static Future<Map<String, dynamic>> verifyAddonRazorpayPayment({
+    required String addonPackageId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/addons/purchase',
+        body: {
+          'addonPackageId': addonPackageId,
+          'gatewayOrderId': razorpayOrderId,
+          'gatewayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+        },
+      );
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Verification failed'};
+    } catch (e) {
+      debugPrint('verifyAddonRazorpayPayment error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
   }
 
 

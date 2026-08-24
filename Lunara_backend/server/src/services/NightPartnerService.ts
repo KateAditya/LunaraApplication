@@ -6,6 +6,7 @@ import NightPartnerMatch, { NightPartnerMatchStatus } from '../models/NightPartn
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
+import UserPreference from '../models/UserPreference';
 import Venue from '../models/Venue';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } from '../models/Booking';
 import Conversation, { ConversationStatus } from '../models/Conversation';
@@ -257,6 +258,7 @@ export class NightPartnerService {
             include: [
                 { model: UserProfile, as: 'profile' },
                 { model: UserPhoto, as: 'photos' },
+                { model: UserPreference, as: 'preferences', attributes: ['showMeInMatching'], required: false },
             ],
             limit: 50,
             order: [['createdAt', 'DESC']],
@@ -265,6 +267,12 @@ export class NightPartnerService {
         const available: SafePartnerProfile[] = [];
 
         for (const u of candidates) {
+            // Respect user's hidden profile preference
+            const prefs = (u as any).preferences;
+            if (prefs && prefs.showMeInMatching === false) {
+                continue;
+            }
+
             // Check if user already has a plan/booking on this date
             const conflict = await checkExistingBookingForDate(u.id, eventDate);
             if (conflict) {

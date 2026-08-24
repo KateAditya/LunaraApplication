@@ -331,8 +331,15 @@ class User {
       maxAgePreference: parsedMaxAge,
       matchDistanceKm: parsedDistance,
       invisibleMode:
-          preferences['invisibleMode'] == true || data['invisibleMode'] == true,
-      showMeInMatching: preferences['showMeInMatching'] ?? true,
+          preferences['invisibleMode'] == true ||
+          data['invisibleMode'] == true ||
+          preferences['showMeInMatching'] == false ||
+          data['showMeInMatching'] == false,
+      showMeInMatching:
+          preferences['showMeInMatching'] != false &&
+          data['showMeInMatching'] != false &&
+          preferences['invisibleMode'] != true &&
+          data['invisibleMode'] != true,
       bookingAlertsEnabled:
           preferences['bookingAlertsEnabled'] ??
           data['bookingAlertsEnabled'] ??

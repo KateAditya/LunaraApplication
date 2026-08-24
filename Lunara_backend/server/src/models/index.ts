@@ -38,6 +38,9 @@ import Area from './Area';
 import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
+import SubscriptionAddonPackage from './SubscriptionAddonPackage';
+import UserAddon from './UserAddon';
+import EntitlementAuditLog from './EntitlementAuditLog';
 import UserEngagementEvent from './UserEngagementEvent';
 import ProfileBoost from './ProfileBoost';
 import SafetyCheck from './SafetyCheck';
@@ -211,6 +214,38 @@ SubscriptionPackage.hasMany(UserSubscription, {
 UserSubscription.belongsTo(SubscriptionPackage, {
     foreignKey: 'packageId',
     as: 'package',
+});
+
+// User -> UserAddon (1:N)
+User.hasMany(UserAddon, {
+    foreignKey: 'userId',
+    as: 'addons',
+    onDelete: 'CASCADE',
+});
+UserAddon.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
+});
+
+// SubscriptionAddonPackage -> UserAddon (1:N)
+SubscriptionAddonPackage.hasMany(UserAddon, {
+    foreignKey: 'addonPackageId',
+    as: 'userAddons',
+});
+UserAddon.belongsTo(SubscriptionAddonPackage, {
+    foreignKey: 'addonPackageId',
+    as: 'addonPackage',
+});
+
+// User -> EntitlementAuditLog (1:N)
+User.hasMany(EntitlementAuditLog, {
+    foreignKey: 'userId',
+    as: 'entitlementAuditLogs',
+    onDelete: 'CASCADE',
+});
+EntitlementAuditLog.belongsTo(User, {
+    foreignKey: 'userId',
+    as: 'user',
 });
 
 // ============================================================================
@@ -602,6 +637,9 @@ export {
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
+    SubscriptionAddonPackage,
+    UserAddon,
+    EntitlementAuditLog,
     SafetyCheck,
     DeletedAccount,
     PartySafetyCheck,
@@ -956,6 +994,9 @@ export default {
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
+    SubscriptionAddonPackage,
+    UserAddon,
+    EntitlementAuditLog,
     SafetyCheck,
     PlanTimeLock,
     PlanTimeLockConfig,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../core/theme.dart';
 import '../screens/discovery/venue_detail_screen.dart';
@@ -10,16 +11,68 @@ class AdAnnouncementDialog extends StatefulWidget {
 
   const AdAnnouncementDialog({super.key, required this.ads});
 
-  static Future<void> show(BuildContext context, Map<String, dynamic> ad) async {
-    return showList(context, [ad]);
+  static const int maxDailyShows = 2;
+  static const String _prefKeyDate = 'live_party_announcement_last_date';
+  static const String _prefKeyCount = 'live_party_announcement_daily_count';
+
+  /// Check if the automatic app-start announcement can be shown today (max 2x/day)
+  static Future<bool> shouldShowAutoPopup() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      final lastDate = prefs.getString(_prefKeyDate);
+      int count = prefs.getInt(_prefKeyCount) ?? 0;
+
+      if (lastDate != todayStr) {
+        count = 0;
+      }
+
+      return count < maxDailyShows;
+    } catch (_) {
+      return true;
+    }
   }
 
-  static Future<void> showList(BuildContext context, List<Map<String, dynamic>> adsList) async {
+  /// Record that an announcement popup was displayed
+  static Future<void> recordPopupShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      final lastDate = prefs.getString(_prefKeyDate);
+      int count = prefs.getInt(_prefKeyCount) ?? 0;
+
+      if (lastDate != todayStr) {
+        count = 0;
+      }
+
+      await prefs.setString(_prefKeyDate, todayStr);
+      await prefs.setInt(_prefKeyCount, count + 1);
+    } catch (_) {}
+  }
+
+  static Future<void> show(BuildContext context, Map<String, dynamic> ad) async {
+    return showList(context, [ad], isAutomaticAppStart: false);
+  }
+
+  static Future<void> showList(
+    BuildContext context,
+    List<Map<String, dynamic>> adsList, {
+    bool isAutomaticAppStart = false,
+  }) async {
     final partyOnly = adsList.where((ad) {
       final adType = (ad['type'] ?? 'Party').toString();
       return adType == 'Party' || adType != 'Ads';
     }).toList();
     if (partyOnly.isEmpty) return;
+
+    if (isAutomaticAppStart) {
+      final canShow = await shouldShowAutoPopup();
+      if (!canShow) return;
+      await recordPopupShown();
+    }
+
+    if (!context.mounted) return;
+
     return showDialog(
       context: context,
       barrierDismissible: true,

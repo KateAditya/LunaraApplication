@@ -23,6 +23,7 @@ import '../profile/profile_screen.dart';
 import '../profile/edit_profile_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../services/app_tour_service.dart';
+import '../../services/realtime_sync_manager.dart';
 import '../../widgets/vip_upgrade_button.dart';
 import '../../widgets/ad_announcement_dialog.dart';
 import '../../widgets/lunara_pulsing_logo_button.dart';
@@ -64,6 +65,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   void initState() {
     super.initState();
     GooglePlacesService.addListener(_onDistanceUpdated);
+    _initRealtimeListeners();
     _loadVenues();
     _determinePosition(requestIfNeeded: true);
   }
@@ -74,8 +76,109 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  void _initRealtimeListeners() {
+    RealtimeSyncManager.instance.partyPlanNotifier.addListener(_onRealtimePartyPlan);
+    RealtimeSyncManager.instance.venueNotifier.addListener(_onRealtimeVenue);
+    RealtimeSyncManager.instance.profileNotifier.addListener(_onRealtimeProfile);
+  }
+
+  void _disposeRealtimeListeners() {
+    RealtimeSyncManager.instance.partyPlanNotifier.removeListener(_onRealtimePartyPlan);
+    RealtimeSyncManager.instance.venueNotifier.removeListener(_onRealtimeVenue);
+    RealtimeSyncManager.instance.profileNotifier.removeListener(_onRealtimeProfile);
+  }
+
+  void _onRealtimePartyPlan() {
+    if (!mounted) return;
+    final event = RealtimeSyncManager.instance.partyPlanNotifier.value;
+    if (event == null) return;
+    final eventType = event['eventType']?.toString() ?? '';
+    final data = event['data'];
+
+    if (eventType == 'party_plan_created' && data is Map) {
+      final planMap = Map<String, dynamic>.from(data);
+      final planId = (planMap['id'] ?? planMap['planId'])?.toString();
+      if (planId != null) {
+        setState(() {
+          final idx = _partyPlans.indexWhere((p) => (p['id'] ?? p['planId'])?.toString() == planId);
+          if (idx == -1) {
+            _partyPlans.insert(0, planMap);
+          } else {
+            _partyPlans[idx] = planMap;
+          }
+        });
+      }
+    } else if (eventType == 'party_plan_deleted') {
+      final entityId = event['entityId']?.toString() ?? (data is Map ? data['planId']?.toString() : null);
+      if (entityId != null) {
+        setState(() {
+          _partyPlans.removeWhere((p) => (p['id'] ?? p['planId'])?.toString() == entityId);
+        });
+      }
+    } else if (eventType == 'delta_sync') {
+      _loadVenues();
+    }
+  }
+
+  void _onRealtimeVenue() {
+    if (!mounted) return;
+    final event = RealtimeSyncManager.instance.venueNotifier.value;
+    if (event == null) return;
+    final eventType = event['eventType']?.toString() ?? '';
+    final data = event['data'];
+
+    if (eventType == 'venue_created' && data is Map) {
+      try {
+        final venueObj = Venue.fromJson(Map<String, dynamic>.from(data));
+        setState(() {
+          if (!_allVenues.any((v) => v.id == venueObj.id)) {
+            _allVenues.insert(0, venueObj);
+          }
+        });
+      } catch (_) {}
+    } else if (eventType == 'venue_updated' && data is Map) {
+      try {
+        final venueObj = Venue.fromJson(Map<String, dynamic>.from(data));
+        setState(() {
+          final idx = _allVenues.indexWhere((v) => v.id == venueObj.id);
+          if (idx != -1) {
+            _allVenues[idx] = venueObj;
+          }
+        });
+      } catch (_) {}
+    } else if (eventType == 'venue_deleted') {
+      final entityId = event['entityId']?.toString();
+      if (entityId != null) {
+        setState(() {
+          _allVenues.removeWhere((v) => v.id == entityId);
+        });
+      }
+    }
+  }
+
+  void _onRealtimeProfile() {
+    if (!mounted) return;
+    final event = RealtimeSyncManager.instance.profileNotifier.value;
+    if (event == null) return;
+    final data = event['data'];
+    if (data is Map) {
+      final updatedUid = (data['userId'] ?? data['id'])?.toString();
+      final currentUid = ApiService.currentUserId;
+      if (updatedUid != null && currentUid != null && updatedUid == currentUid) {
+        ApiService.fetchProfile().then((u) {
+          if (mounted && u != null) {
+            setState(() {
+              _currentUser = u;
+            });
+          }
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _disposeRealtimeListeners();
     _positionStreamSubscription?.cancel();
     GooglePlacesService.removeListener(_onDistanceUpdated);
     _scrollController.dispose();
@@ -314,7 +417,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             if (popupAds.isNotEmpty) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  AdAnnouncementDialog.showList(context, popupAds);
+                  AdAnnouncementDialog.showList(context, popupAds, isAutomaticAppStart: true);
                 }
               });
             }

@@ -2391,27 +2391,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Widget _buildMessageList() {
     if (_messages.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 48,
-              color: Color(0xFF008069),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'No messages yet.',
-              style: TextStyle(
-                color: Color(0xFF008069),
-                fontWeight: FontWeight.w600,
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7F00FF).withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                size: 42,
+                color: Color(0xFF7F00FF),
               ),
             ),
-            SizedBox(height: 4),
-            Text(
-              'Say hello! ⚡',
-              style: TextStyle(color: Color(0xFF008069), fontSize: 13),
+            const SizedBox(height: 14),
+            const Text(
+              'No messages yet',
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Say hello or send an icebreaker! ⚡',
+              style: TextStyle(color: Colors.black54, fontSize: 13),
             ),
           ],
         ),

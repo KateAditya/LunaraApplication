@@ -9,6 +9,7 @@ import { compressImageTo300KB } from '../utils/imageProcessor';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
 
 // ── Helper: build structured menu & media sections from flat images array ─────
 const buildVenueMediaSections = (images: VenueImage[]) => {
@@ -342,6 +343,11 @@ export const createVenue = async (req: Request, res: Response) => {
         const completeVenue = await Venue.findByPk(newVenue.id, {
             include: [{ model: VenueImage, as: 'images' }],
         });
+
+        if (completeVenue) {
+            RealtimeEventBroker.emitToCity(completeVenue.city, 'venue_created', 'venue', completeVenue.id, completeVenue);
+            RealtimeEventBroker.emitToLiveFeed('venue_created', 'venue', completeVenue.id, completeVenue);
+        }
 
         return res.status(201).json({ success: true, venue: completeVenue });
     } catch (error: any) {
@@ -691,6 +697,11 @@ export const updateVenue = async (req: Request, res: Response) => {
             include: [{ model: VenueImage, as: 'images' }]
         });
 
+        if (completeVenue) {
+            RealtimeEventBroker.emitToCity(completeVenue.city, 'venue_updated', 'venue', completeVenue.id, completeVenue);
+            RealtimeEventBroker.emitToLiveFeed('venue_updated', 'venue', completeVenue.id, completeVenue);
+        }
+
         return res.status(200).json({ success: true, venue: completeVenue });
     } catch (error) {
         console.error('Error updating venue:', error);
@@ -796,7 +807,13 @@ export const deleteVenue = async (req: Request, res: Response) => {
             console.error(`Failed to remove venue directory ${venueDir}:`, dirErr);
         }
 
+        const deletedId = venue.id;
+        const deletedCity = venue.city;
         await venue.destroy();
+
+        RealtimeEventBroker.emitToCity(deletedCity, 'venue_deleted', 'venue', deletedId, { id: deletedId });
+        RealtimeEventBroker.emitToLiveFeed('venue_deleted', 'venue', deletedId, { id: deletedId });
+
         return res.status(200).json({ success: true, message: 'Venue deleted successfully' });
     } catch (error) {
         console.error('Error deleting venue:', error);

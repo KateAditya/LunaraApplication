@@ -314,11 +314,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
+    _liveFeedDebounceTimer?.cancel();
   }
+
+  Timer? _liveFeedDebounceTimer;
 
   void _onPartyPlanRequestUpdated(dynamic data) {
     if (!mounted) return;
-    _loadFeed(showLoader: false);
+    _liveFeedDebounceTimer?.cancel();
+    _liveFeedDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _loadFeed(showLoader: false);
+      }
+    });
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -1702,7 +1710,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         debugPrint('Error parsing strangers meet on tap: $e');
       }
     } else if (category.contains('booking') || category.contains('group')) {
-      final bookingData = item.rawData['booking'] ?? item.rawData;
+      final rawDataMap = Map<String, dynamic>.from(item.rawData);
+      final bookingData = Map<String, dynamic>.from(rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap);
+      if (bookingData['startTime'] == null || bookingData['startTime'].toString().trim().isEmpty || bookingData['startTime'] == '12:00 AM' || bookingData['startTime'] == '00:00' || bookingData['startTime'] == '0:00') {
+        final st = rawDataMap['startTime'] ?? rawDataMap['time'] ?? rawDataMap['bookingTime'];
+        if (st != null && st.toString().trim().isNotEmpty && st.toString().trim() != '12:00 AM' && st.toString().trim() != '00:00') {
+          bookingData['startTime'] = st.toString().trim();
+        } else {
+          bookingData['startTime'] = '08:00 PM';
+        }
+      }
       final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue'};
       if (status == 'confirmed' || status == 'paid') {
         Navigator.push(
@@ -2357,6 +2374,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     if (totalAmount > 0) {
       partyMap['totalAmount'] = totalAmount;
+    }
+
+    // Ensure startTime is extracted from entries into partyMap
+    for (final e in entries) {
+      final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['data']?['time'];
+      if (st != null && st.toString().trim().isNotEmpty && st.toString().trim() != '12:00 AM' && st.toString().trim() != '00:00' && st.toString().trim() != '0:00') {
+        partyMap['startTime'] = st.toString().trim();
+        break;
+      }
+    }
+    if (partyMap['startTime'] == null || partyMap['startTime'].toString().trim().isEmpty || partyMap['startTime'] == '12:00 AM' || partyMap['startTime'] == '00:00' || partyMap['startTime'] == '0:00') {
+      partyMap['startTime'] = '08:00 PM';
     }
 
     // Determine status from entries
@@ -3038,6 +3067,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ];
     } else if (isHost) {
       userRoleLabel = '👑 Your Party Plan';
+      final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
+      final selectedUsers = planMap['selectedUsers'];
+      final bool isPrivatePlan = planVis == 'PRIVATE' || (selectedUsers is List && selectedUsers.isNotEmpty);
+
       if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
         final double depositAmt = (planMap['depositAmount'] ?? 99.0) is num ? (planMap['depositAmount'] ?? 99.0).toDouble() : 99.0;
         final hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
@@ -3142,9 +3175,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
         final reqId = acceptedJoinerRequest['id']?.toString() ?? '';
 
-        title = '⏳ Approved — Awaiting Payment';
+        final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
+        final selectedUsers = planMap['selectedUsers'];
+        final bool isPrivatePlan = planVis == 'PRIVATE' || (selectedUsers is List && selectedUsers.isNotEmpty);
+
+        title = isPrivatePlan ? '⏳ Invite Accepted — Awaiting Deposit' : '⏳ Approved — Awaiting Payment';
         badge = 'AWAITING PAYMENT';
-        body = 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
+        body = isPrivatePlan
+            ? '$joinerName accepted your private invite. Waiting for safety deposit payment to unlock chat.'
+            : 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
         partnerUser = joiner.isNotEmpty ? joiner : null;
         partnerRoleLabel = 'Partner:';
         statusSummary = 'Awaiting Joiner Deposit';
@@ -3166,6 +3205,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               context,
               MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
             ),
+          ),
+        ];
+      } else if (isPrivatePlan) {
+        final inviteCount = pendingIncomingRequests.length;
+        final firstInvitee = pendingIncomingRequests.isNotEmpty ? pendingIncomingRequests.first['requester'] : null;
+        final inviteeName = (firstInvitee is Map && firstInvitee['firstName'] != null)
+            ? '${firstInvitee["firstName"]} ${firstInvitee["lastName"] ?? ""}'.trim()
+            : 'your invited friends';
+
+        title = '💌 Private Invitations Sent';
+        badge = 'INVITATIONS SENT';
+        accent = const Color(0xFF7C3AED);
+        body = inviteCount == 1
+            ? 'You privately invited $inviteeName to your Party Plan at $venueName. Waiting for them to accept.'
+            : inviteCount > 1
+                ? 'You privately invited $inviteCount friends to your Party Plan at $venueName. Waiting for them to accept.'
+                : 'Your Private Party Plan at $venueName is active. Waiting for your invited friends to accept.';
+        statusSummary = 'Awaiting Friend Response';
+        actionsList = [
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ),
+          ),
+          NotificationAction(
+            label: 'Cancel Plan',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
@@ -3250,9 +3326,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
       final selectedUsers = planMap['selectedUsers'];
-      final bool isPrivateInvite = planVis == 'PRIVATE' &&
-          selectedUsers is List &&
-          selectedUsers.any((u) => u?.toString() == currentUserId);
+      final bool isPrivateInvite = (planVis == 'PRIVATE' || planVis == 'BOTH' || myRequest?['isPrivateInvite'] == true) &&
+          ((selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUserId)) || myRequest != null);
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
 
@@ -3312,10 +3387,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       } else if (myStatus == 'accepted' || myStatus == 'payment_pending') {
         final reqId = myRequest?['id']?.toString() ?? '';
-        title = '✅ Approved! Pay Safety Deposit';
+        title = isPrivateInvite ? '💌 Invite Accepted! Pay Deposit' : '✅ Approved! Pay Safety Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        body = '$hostName accepted your request! Pay your safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm match.';
+        body = isPrivateInvite
+            ? 'You accepted $hostName\'s private invite! Pay safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm your match.'
+            : '$hostName accepted your request! Pay your safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm match.';
         statusSummary = timeRemainingText.isNotEmpty ? timeRemainingText : 'Window: $countdownLabel';
 
         actionsList = [
@@ -3341,11 +3418,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
           NotificationAction(
-            label: 'Withdraw Request',
+            label: isPrivateInvite ? 'Decline Invite' : 'Withdraw Request',
             icon: Icons.cancel_rounded,
             isPrimary: false,
             color: Colors.grey[200],
-            onTap: () => _handleCancelMyRequest(reqId),
+            onTap: () => isPrivateInvite ? _handleRejectPartyPlan(reqId) : _handleCancelMyRequest(reqId),
           ),
         ];
       } else if (isPrivateInvite && (myStatus == 'pending' || myStatus.isEmpty)) {

@@ -11,9 +11,11 @@
 
 import 'package:flutter/material.dart';
 import '../models/plan_status.dart';
+import '../models/vip_entitlement_model.dart';
 import '../widgets/vip_expiration_dialog.dart';
 import 'api_service.dart';
 import 'notification_navigator.dart';
+import 'realtime_sync_manager.dart';
 
 enum VipFeature {
   hideProfile,
@@ -29,27 +31,49 @@ class SubscriptionProvider extends ChangeNotifier {
   // ── Singleton ──────────────────────────────────────────────────────────────
   static final SubscriptionProvider _instance = SubscriptionProvider._();
   static SubscriptionProvider get instance => _instance;
-  SubscriptionProvider._();
+  SubscriptionProvider._() {
+    RealtimeSyncManager.instance.vipStatusNotifier.addListener(_onVipRealtimeEvent);
+  }
+
+  void _onVipRealtimeEvent() {
+    final event = RealtimeSyncManager.instance.vipStatusNotifier.value;
+    if (event != null) {
+      refresh();
+      fetchEntitlementsSummary();
+    }
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   PlanStatus _status = PlanStatus.free;
+  EntitlementsSummaryModel? _entitlementsSummary;
+  List<SubscriptionAddonPackageModel> _availableAddons = [];
   bool _isLoading = false;
+  bool _isLoadingEntitlements = false;
+  bool _isLoadingAddons = false;
   DateTime? _lastFetched;
   static const _cacheDuration = Duration(minutes: 3);
 
   PlanStatus get status => _status;
+  EntitlementsSummaryModel? get entitlementsSummary => _entitlementsSummary;
+  List<SubscriptionAddonPackageModel> get availableAddons => _availableAddons;
   bool get isLoading => _isLoading;
+  bool get isLoadingEntitlements => _isLoadingEntitlements;
+  bool get isLoadingAddons => _isLoadingAddons;
 
   // ── Convenience passthrough getters ───────────────────────────────────────
   String get tier => _status.tier;
   int get tierRank => _status.tierRank;
   bool get isFree => _status.isFree;
   bool get isPaid => _status.isPaid;
-  int get superlikesRemaining => _status.superlikesRemaining;
-  int get boostsRemaining => _status.boostsRemaining;
+  int get superlikesRemaining => (_entitlementsSummary != null)
+      ? _entitlementsSummary!.superlikesAvailable
+      : _status.superlikesRemaining;
+  int get boostsRemaining => (_entitlementsSummary != null)
+      ? _entitlementsSummary!.boostsAvailable
+      : _status.boostsRemaining;
   int get dailyLikesRemaining => _status.dailyLikesRemaining;
-  bool get canSuperLike => _status.canSuperLike;
-  bool get canBoost => _status.canBoost;
+  bool get canSuperLike => superlikesRemaining > 0;
+  bool get canBoost => boostsRemaining > 0;
 
   String? _lastShownAlertKey;
 
@@ -93,6 +117,50 @@ class SubscriptionProvider extends ChangeNotifier {
     }
   }
 
+  /// Fetches the full breakdown of plan entitlements, usage, and separated add-on balances.
+  Future<void> fetchEntitlementsSummary({bool force = false}) async {
+    if (_isLoadingEntitlements && !force) return;
+    _isLoadingEntitlements = true;
+    notifyListeners();
+    try {
+      final data = await ApiService.fetchEntitlementsSummary();
+      if (data.isNotEmpty) {
+        _entitlementsSummary = EntitlementsSummaryModel.fromJson(data);
+      }
+    } catch (e) {
+      debugPrint('[SubscriptionProvider] fetchEntitlementsSummary error: $e');
+    } finally {
+      _isLoadingEntitlements = false;
+      notifyListeners();
+    }
+  }
+
+  /// Fetches available Add-on packs catalog.
+  Future<void> fetchAvailableAddons() async {
+    if (_isLoadingAddons) return;
+    _isLoadingAddons = true;
+    notifyListeners();
+    try {
+      final list = await ApiService.fetchAvailableAddons();
+      _availableAddons = list.map((e) => SubscriptionAddonPackageModel.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('[SubscriptionProvider] fetchAvailableAddons error: $e');
+    } finally {
+      _isLoadingAddons = false;
+      notifyListeners();
+    }
+  }
+
+  /// Purchases an Add-on package using Smart Credit Wallet.
+  Future<Map<String, dynamic>> purchaseAddonWithWallet(String addonPackageId, {int count = 1}) async {
+    final result = await ApiService.purchaseAddonWithWallet(addonPackageId, count: count);
+    if (result['success'] == true) {
+      await refresh();
+      await fetchEntitlementsSummary(force: true);
+    }
+    return result;
+  }
+
   /// Load with cache — only fetches if cache is stale or empty.
   Future<void> loadIfNeeded() async {
     if (_lastFetched != null &&
@@ -100,6 +168,8 @@ class SubscriptionProvider extends ChangeNotifier {
       return; // Still fresh
     }
     await refresh();
+    await fetchEntitlementsSummary();
+    await fetchAvailableAddons();
   }
 
   /// Called after a purchase to immediately reflect the new subscription.
@@ -108,14 +178,19 @@ class SubscriptionProvider extends ChangeNotifier {
     _lastFetched = null;
     _lastShownAlertKey = null;
     await refresh();
+    await fetchEntitlementsSummary(force: true);
   }
 
   /// Reset to free state on logout.
   void reset() {
     _status = PlanStatus.free;
+    _entitlementsSummary = null;
+    _availableAddons = [];
     _lastFetched = null;
     _lastShownAlertKey = null;
     _isLoading = false;
+    _isLoadingEntitlements = false;
+    _isLoadingAddons = false;
     notifyListeners();
   }
 
@@ -216,8 +291,8 @@ class SubscriptionProvider extends ChangeNotifier {
 
     switch (feature) {
       case VipFeature.hideProfile:
-        // Hide profile is available to PLUS, PRO, and ELITE
-        return _status.isPlus || _status.isPro || _status.isElite;
+        // Hide profile is available to PLUS, PRO, and ELITE, or when hasHideProfile / dynamic feature flag is active
+        return _status.hasHideProfile || _status.isPlus || _status.isPro || _status.isElite || isFeatureEnabled('hide_profile');
       case VipFeature.priorityVisibility:
         return _status.hasPriorityVisibility;
       case VipFeature.trustBadge:

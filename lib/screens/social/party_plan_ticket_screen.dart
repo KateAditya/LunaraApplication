@@ -81,13 +81,14 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
   Future<void> _fetchTicketData() async {
-    final rawId = widget.request['bookingId']?.toString() ??
+    final rawId = widget.request['id']?.toString() ??
+        widget.request['reqId']?.toString() ??
+        widget.plan['matchedRequestId']?.toString() ??
+        widget.request['bookingId']?.toString() ??
         widget.plan['bookingId']?.toString() ??
         widget.request['planId']?.toString() ??
         widget.plan['planId']?.toString() ??
-        widget.plan['id']?.toString() ??
-        widget.request['id']?.toString() ??
-        widget.request['reqId']?.toString();
+        widget.plan['id']?.toString();
     if (rawId == null) return;
     if (!mounted) return;
     try {
@@ -99,6 +100,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           final requestData = data['request'];
 
           final hostObj = data['host'] ??
+              data['creator'] ??
               (planData is Map
                   ? (planData['host'] ?? planData['creator'] ?? planData['user'])
                   : null);
@@ -108,8 +110,13 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
           final joinerObj = data['joiner'] ??
               data['partner'] ??
+              data['requester'] ??
+              data['matchedJoiner'] ??
               (requestData is Map
-                  ? (requestData['requester'] ?? requestData['joiner'] ?? requestData['user'])
+                  ? (requestData['requester'] ?? requestData['joiner'] ?? requestData['partner'] ?? requestData['user'])
+                  : null) ??
+              (planData is Map
+                  ? (planData['matchedJoiner'] ?? planData['partner'] ?? planData['joiner'])
                   : null);
           if (joinerObj is Map) {
             _freshJoinerUser = Map<String, dynamic>.from(joinerObj);
@@ -256,23 +263,34 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
       return _freshHostUser!;
     }
-    if (widget.plan['host'] is Map) return Map<String, dynamic>.from(widget.plan['host']);
-    if (widget.plan['creator'] is Map) return Map<String, dynamic>.from(widget.plan['creator']);
-    if (widget.plan['user'] is Map) return Map<String, dynamic>.from(widget.plan['user']);
-    
-    if (widget.request['host'] is Map) return Map<String, dynamic>.from(widget.request['host']);
+    if (widget.plan['host'] is Map && (widget.plan['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['host']);
+    }
+    if (widget.plan['creator'] is Map && (widget.plan['creator'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['creator']);
+    }
+    if (widget.request['host'] is Map && (widget.request['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.request['host']);
+    }
+    if (widget.request['creator'] is Map && (widget.request['creator'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.request['creator']);
+    }
     if (widget.request['plan'] is Map) {
       final p = widget.request['plan'];
-      if (p['host'] is Map) return Map<String, dynamic>.from(p['host']);
-      if (p['creator'] is Map) return Map<String, dynamic>.from(p['creator']);
-      if (p['user'] is Map) return Map<String, dynamic>.from(p['user']);
+      if (p['host'] is Map && (p['host'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['host']);
+      if (p['creator'] is Map && (p['creator'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['creator']);
+      if (p['user'] is Map && (p['user'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['user']);
+    }
+    if (widget.plan['user'] is Map && widget.isHost && (widget.plan['user'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['user']);
     }
 
     final myUser = ApiService.cachedCurrentUser;
     final planUserId = widget.plan['userId']?.toString() ??
         widget.plan['creatorId']?.toString() ??
         widget.request['plan']?['userId']?.toString() ??
-        widget.request['plan']?['creatorId']?.toString();
+        widget.request['plan']?['creatorId']?.toString() ??
+        widget.request['userId']?.toString();
 
     final isMe = widget.isHost || (myUser != null && planUserId != null && planUserId == myUser.id);
     if (isMe && myUser != null) {
@@ -282,9 +300,14 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         'lastName': myUser.lastName,
         'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
         'profilePhotoUrl': myUser.profilePhoto,
+        'profileImageUrl': myUser.profilePhoto,
         'image': myUser.profilePhoto,
         'bio': myUser.bio,
       };
+    }
+
+    if (widget.plan['user'] is Map && (widget.plan['user'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['user']);
     }
 
     return <String, dynamic>{};
@@ -295,26 +318,37 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (_freshJoinerUser != null && _freshJoinerUser!.isNotEmpty) {
       return _freshJoinerUser!;
     }
-    if (widget.request['requester'] is Map) {
+    if (widget.request['requester'] is Map && (widget.request['requester'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(widget.request['requester']);
     }
-    if (widget.request['joiner'] is Map) {
+    if (widget.request['joiner'] is Map && (widget.request['joiner'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(widget.request['joiner']);
     }
-    if (widget.request['partner'] is Map) {
+    if (widget.request['partner'] is Map && (widget.request['partner'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(widget.request['partner']);
     }
-    if (widget.plan['matchedJoiner'] is Map) {
-      return Map<String, dynamic>.from(widget.plan['matchedJoiner']);
-    }
-    if (widget.plan['joiner'] is Map) {
-      return Map<String, dynamic>.from(widget.plan['joiner']);
-    }
-    if (widget.plan['partner'] is Map) {
+    if (widget.plan['partner'] is Map && (widget.plan['partner'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(widget.plan['partner']);
     }
-    if (widget.request['user'] is Map) {
+    if (widget.plan['matchedJoiner'] is Map && (widget.plan['matchedJoiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['matchedJoiner']);
+    }
+    if (widget.plan['joiner'] is Map && (widget.plan['joiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.plan['joiner']);
+    }
+    if (widget.request['matchedJoiner'] is Map && (widget.request['matchedJoiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(widget.request['matchedJoiner']);
+    }
+    if (widget.request['user'] is Map && (widget.request['user'] as Map).isNotEmpty) {
       final cand = Map<String, dynamic>.from(widget.request['user']);
+      final hostId = hostUser['id']?.toString();
+      final candId = cand['id']?.toString();
+      if (hostId == null || candId == null || hostId != candId) {
+        return cand;
+      }
+    }
+    if (widget.plan['user'] is Map && (widget.plan['user'] as Map).isNotEmpty) {
+      final cand = Map<String, dynamic>.from(widget.plan['user']);
       final hostId = hostUser['id']?.toString();
       final candId = cand['id']?.toString();
       if (hostId == null || candId == null || hostId != candId) {
@@ -330,6 +364,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         'lastName': myUser.lastName,
         'username': myUser.displayName ?? myUser.firstName.toLowerCase(),
         'profilePhotoUrl': myUser.profilePhoto,
+        'profileImageUrl': myUser.profilePhoto,
         'image': myUser.profilePhoto,
         'bio': myUser.bio,
       };

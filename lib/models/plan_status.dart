@@ -31,6 +31,7 @@ class PlanStatus {
   final bool hasTrustBadge;
   final bool hasEliteBadge;
   final bool canSeeWhoLiked;
+  final bool hasHideProfile;
 
   final int remainingHours;
   final String? endDate;
@@ -70,6 +71,7 @@ class PlanStatus {
     this.hasTrustBadge = false,
     this.hasEliteBadge = false,
     this.canSeeWhoLiked = false,
+    this.hasHideProfile = false,
     this.features = const {},
     this.usage = const {},
   });
@@ -151,6 +153,7 @@ class PlanStatus {
       hasTrustBadge: json['hasTrustBadge'] == true,
       hasEliteBadge: json['hasEliteBadge'] == true,
       canSeeWhoLiked: json['canSeeWhoLiked'] == true,
+      hasHideProfile: json['hasHideProfile'] == true || json['features']?['hide_profile']?['enabled'] == true,
       features: Map<String, dynamic>.from(json['features'] ?? {}),
       usage: Map<String, dynamic>.from(json['usage'] ?? {}),
     );

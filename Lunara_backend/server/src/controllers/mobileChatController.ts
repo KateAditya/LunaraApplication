@@ -150,15 +150,27 @@ export const getConversations = async (req: Request, res: Response) => {
                 ? (conv as any).userOne
                 : (conv as any).userTwo;
 
+            const uId = userId.toLowerCase();
+            const isP1 = (conv.participantOne || '').toLowerCase() === uId;
+            const clearedTime = isP1
+                ? (conv.clearedAtOne ? new Date(conv.clearedAtOne).getTime() : 0)
+                : (conv.clearedAtTwo ? new Date(conv.clearedAtTwo).getTime() : 0);
+            const lastMsgTime = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+            const isClearedForUser = clearedTime > 0 && lastMsgTime <= clearedTime;
+
             const key = otherUserId.toLowerCase();
-            const totalUnreadForUser = aggregatedUnreadMap.get(key) ?? (conv.getUnreadFor ? conv.getUnreadFor(userId) : 0);
+            const totalUnreadForUser = isClearedForUser ? 0 : (aggregatedUnreadMap.get(key) ?? (conv.getUnreadFor ? conv.getUnreadFor(userId) : 0));
+
+            const rawPreview = conv.lastMessagePreview?.toString().trim();
+            const preview = isClearedForUser ? 'Tap to chat' : ((rawPreview && rawPreview.length > 0) ? rawPreview : 'Tap to chat');
+            const lastMsgAt = isClearedForUser ? null : conv.lastMessageAt;
 
             list.push({
                 conversationId:      conv.id,
                 id:                  conv.id,
                 otherUser:           formatUserBrief(otherUser),
-                lastMessagePreview:  conv.lastMessagePreview ?? '',
-                lastMessageAt:       conv.lastMessageAt,
+                lastMessagePreview:  preview,
+                lastMessageAt:       lastMsgAt,
                 unreadCount:         totalUnreadForUser,
                 status:              conv.status,
                 contextType:         conv.contextType,
@@ -1083,8 +1095,39 @@ export const clearChat = async (req: Request, res: Response) => {
                     io.to(`user_${otherUserId}`).emit('chat_cleared', { conversationId: convId, otherUserId: userId });
                 }
             }
+
+            const myConvs = await Conversation.findAll({
+                where: {
+                    [Op.or]: [
+                        { participantOne: userId },
+                        { participantTwo: userId }
+                    ],
+                    status: { [Op.ne]: ConversationStatus.BLOCKED }
+                },
+                attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo', 'clearedAtOne', 'clearedAtTwo', 'lastMessageAt']
+            });
+            let myRemainingChatCount = 0;
+            for (const c of myConvs) {
+                const isP1 = (c.participantOne || '').toLowerCase() === userId.toLowerCase();
+                const isP2 = (c.participantTwo || '').toLowerCase() === userId.toLowerCase();
+                if (isP1 && (c as any).deletedByOne) continue;
+                if (isP2 && (c as any).deletedByTwo) continue;
+                const cTime = isP1
+                    ? ((c as any).clearedAtOne ? new Date((c as any).clearedAtOne).getTime() : 0)
+                    : ((c as any).clearedAtTwo ? new Date((c as any).clearedAtTwo).getTime() : 0);
+                const lmTime = c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : 0;
+                if (cTime > 0 && lmTime <= cTime) continue;
+                myRemainingChatCount += Number(c.getUnreadFor ? c.getUnreadFor(userId) : (isP1 ? ((c as any).unreadOne || 0) : ((c as any).unreadTwo || 0)));
+            }
+            for (const convId of allConvIds) {
+                io.to(`user_${userId}`).emit('chat_badge_updated', {
+                    conversationId: convId,
+                    chatCount: myRemainingChatCount,
+                    unreadCount: 0
+                });
+            }
         } catch (err) {
-            logger.error('Failed to emit chat_cleared socket event:', err);
+            logger.error('Failed to emit chat_cleared / chat_badge_updated socket event:', err);
         }
 
         return res.json({ success: true, message: 'Chat cleared successfully' });

@@ -16,10 +16,15 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  late VideoPlayerController _controller;
+  static const String _prefKeyLastSplashVideoTime = 'last_splash_video_time';
+  static const String _prefKeyLastSplashVideoDate = 'last_splash_video_date';
+  static const int _minHoursBetweenVideo = 18;
+
+  VideoPlayerController? _controller;
   bool _isInit = false;
   bool _isApiInitDone = false;
   bool _hasNavigated = false;
+  bool _shouldPlayVideo = true;
 
   @override
   void initState() {
@@ -28,70 +33,126 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initApp() async {
-    _controller = VideoPlayerController.asset('assets/videos/splash.mp4');
-    
-    // Safety fallback: if video fails or takes too long, force navigation
-    Future.delayed(const Duration(seconds: 4), () {
-      if (!_hasNavigated) {
-        debugPrint('Splash screen fallback triggered');
-        _checkAndNavigate(force: true);
-      }
-    });
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final todayStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final lastTimeMs = prefs.getInt(_prefKeyLastSplashVideoTime);
+    final lastDateStr = prefs.getString(_prefKeyLastSplashVideoDate);
 
-    // Run both video initialization and API auth in parallel
-    Future.wait([
-      _controller.initialize().then((_) {
-        if (mounted) {
-          _controller.setVolume(0.0); // Mute to allow autoplay on Web
-          setState(() {
-            _isInit = true;
-          });
-          _controller.play();
-          _controller.addListener(_videoListener);
+    bool playVideo = false;
+    if (lastTimeMs == null || lastDateStr == null) {
+      // First launch ever
+      playVideo = true;
+    } else {
+      final lastTime = DateTime.fromMillisecondsSinceEpoch(lastTimeMs);
+      final difference = now.difference(lastTime);
+      final isNewDay = lastDateStr != todayStr;
+
+      if (isNewDay || difference.inHours >= _minHoursBetweenVideo) {
+        playVideo = true;
+      }
+    }
+
+    _shouldPlayVideo = playVideo;
+
+    if (playVideo) {
+      // Record that we showed the video splash
+      await prefs.setInt(_prefKeyLastSplashVideoTime, now.millisecondsSinceEpoch);
+      await prefs.setString(_prefKeyLastSplashVideoDate, todayStr);
+
+      _controller = VideoPlayerController.asset('assets/videos/splash.mp4');
+
+      // Safety fallback: if video fails or takes too long, force navigation
+      Future.delayed(const Duration(seconds: 4), () {
+        if (!_hasNavigated) {
+          debugPrint('Splash screen fallback triggered');
+          _checkAndNavigate(force: true);
         }
-      }).catchError((error) {
-        debugPrint('Error initializing splash video: $error');
-        _checkAndNavigate(force: true);
-      }),
-      ApiService.initAuthToken().then((_) {
-        _isApiInitDone = true;
-        if (ApiService.currentUserId != null) {
-          PushNotificationService.initialize();
-        }
+      });
+
+      // Run both video initialization and API auth in parallel
+      Future.wait([
+        _controller!.initialize().then((_) {
+          if (mounted) {
+            _controller!.setVolume(0.0); // Mute to allow autoplay on Web
+            setState(() {
+              _isInit = true;
+            });
+            _controller!.play();
+            _controller!.addListener(_videoListener);
+          }
+        }).catchError((error) {
+          debugPrint('Error initializing splash video: $error');
+          _checkAndNavigate(force: true);
+        }),
+        _initAuthAndPush(),
+      ]);
+    } else {
+      // Fast start (app restarted / already shown today)
+      if (mounted) {
+        setState(() {
+          _isInit = true;
+        });
+      }
+
+      await Future.wait([
+        _initAuthAndPush(),
+        Future.delayed(const Duration(milliseconds: 350)),
+      ]);
+
+      _checkAndNavigate(force: true);
+    }
+  }
+
+  Future<void> _initAuthAndPush() async {
+    try {
+      await ApiService.initAuthToken();
+      _isApiInitDone = true;
+      if (ApiService.currentUserId != null) {
+        PushNotificationService.initialize();
+      }
+      if (_shouldPlayVideo) {
         _checkAndNavigate();
-      }).catchError((error) {
-        debugPrint('Error in initAuthToken: $error');
-        _isApiInitDone = true;
+      }
+    } catch (error) {
+      debugPrint('Error in initAuthToken: $error');
+      _isApiInitDone = true;
+      if (_shouldPlayVideo) {
         _checkAndNavigate();
-      }),
-    ]);
+      }
+    }
   }
 
   void _videoListener() {
-    if (_controller.value.isInitialized && 
-        _controller.value.position >= _controller.value.duration) {
+    if (_controller != null &&
+        _controller!.value.isInitialized &&
+        _controller!.value.position >= _controller!.value.duration) {
       _checkAndNavigate();
     }
   }
 
   void _checkAndNavigate({bool force = false}) {
     if (_hasNavigated) return;
-    
-    if (force || (_isApiInitDone && 
-        _controller.value.isInitialized && 
-        _controller.value.position >= _controller.value.duration)) {
-      
+
+    if (force ||
+        (!_shouldPlayVideo && _isApiInitDone) ||
+        (_isApiInitDone &&
+            _controller != null &&
+            _controller!.value.isInitialized &&
+            _controller!.value.position >= _controller!.value.duration)) {
       _hasNavigated = true;
-      _controller.removeListener(_videoListener);
+      _controller?.removeListener(_videoListener);
       _navigateToNext();
     }
   }
 
   void _navigateToNext() async {
     if (!mounted) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
-    final hasSeenPermissions = prefs.getBool('has_seen_permissions_screen') ?? false;
+    final hasSeenPermissions =
+        prefs.getBool('has_seen_permissions_screen') ?? false;
 
     if (!mounted) return;
 
@@ -100,7 +161,8 @@ class _SplashScreenState extends State<SplashScreen> {
         context,
         PageRouteBuilder(
           pageBuilder: (_, _, _) => const PermissionsScreen(),
-          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionsBuilder: (_, a, _, child) =>
+              FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
@@ -120,7 +182,8 @@ class _SplashScreenState extends State<SplashScreen> {
         context,
         PageRouteBuilder(
           pageBuilder: (_, _, _) => resumeScreen,
-          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionsBuilder: (_, a, _, child) =>
+              FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
@@ -141,7 +204,8 @@ class _SplashScreenState extends State<SplashScreen> {
         context,
         PageRouteBuilder(
           pageBuilder: (_, _, _) => const Dashboard(),
-          transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+          transitionsBuilder: (_, a, _, child) =>
+              FadeTransition(opacity: a, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
@@ -154,7 +218,8 @@ class _SplashScreenState extends State<SplashScreen> {
       context,
       PageRouteBuilder(
         pageBuilder: (_, _, _) => const WelcomeCarousel(),
-        transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+        transitionsBuilder: (_, a, _, child) =>
+            FadeTransition(opacity: a, child: child),
         transitionDuration: const Duration(milliseconds: 400),
       ),
     );
@@ -162,27 +227,56 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   void dispose() {
-    _controller.removeListener(_videoListener);
-    _controller.dispose();
+    _controller?.removeListener(_videoListener);
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_shouldPlayVideo &&
+        _controller != null &&
+        _isInit &&
+        _controller!.value.isInitialized) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller!.value.size.width,
+              height: _controller!.value.size.height,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Branded static splash shown on fast restarts
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _isInit 
-        ? SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _controller.value.size.width,
-                height: _controller.value.size.height,
-                child: VideoPlayer(_controller),
+      body: Center(
+        child: Image.asset(
+          'assets/images/logo_vertical_dark.png',
+          width: 180,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => Image.asset(
+            'assets/images/lunara_logo.png',
+            width: 180,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Text(
+              'LUNARA',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 4,
               ),
             ),
-          )
-        : const SizedBox.shrink(),
+          ),
+        ),
+      ),
     );
   }
 }

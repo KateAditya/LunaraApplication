@@ -22,6 +22,7 @@ import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
+import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
 
 function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
     const baseDate = dateVal ? (dateVal instanceof Date ? dateVal : new Date(dateVal)) : new Date();
@@ -814,7 +815,6 @@ export class MobileTicketController {
                     isFree: false,
                     numberOfGuests: 2,
                     tablePackage: 'Party Plan Match',
-                    rawRequest: reqAny,
                     plan: plan,
                     isHost: false,
                     isPartyPlan: true,
@@ -828,6 +828,13 @@ export class MobileTicketController {
                     isVenueBooking: false,
                     user: reqUser,
                     host: hostUser,
+                    creator: hostUser,
+                    partner: hostUser,
+                    joiner: reqUser,
+                    matchedJoiner: reqUser,
+                    requester: reqUser,
+                    request: reqAny,
+                    rawRequest: reqAny,
                     venueName: plan.venue?.name || 'Lunara Venue',
                     venueAddress: `${plan.venue?.area || plan.venue?.addressLine1 || ''}, ${plan.venue?.city || ''}`.trim(),
                     venue: plan.venue ? {
@@ -884,6 +891,61 @@ export class MobileTicketController {
                     profileImageUrl: planAny.user.profileImageUrl || null,
                 } : null;
 
+                let matchedRequestObj: any = null;
+                let joinerUserObj: any = null;
+                const mReqId = plan.matchedRequestId || planAny.matchedRequestId;
+                if (mReqId) {
+                    const mReq = await PartyPlanRequest.findByPk(mReqId, {
+                        include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
+                    });
+                    if (mReq) {
+                        matchedRequestObj = mReq;
+                        const reqUser = (mReq as any).requester;
+                        if (reqUser) {
+                            joinerUserObj = {
+                                id: reqUser.id,
+                                fullName: `${reqUser.firstName || ''} ${reqUser.lastName || ''}`.trim() || 'Guest',
+                                firstName: reqUser.firstName,
+                                lastName: reqUser.lastName,
+                                email: reqUser.email,
+                                phone: reqUser.phone,
+                                mobileNumber: reqUser.phone,
+                                profilePhotoUrl: reqUser.profileImageUrl || null,
+                                profileImageUrl: reqUser.profileImageUrl || null,
+                            };
+                        }
+                    }
+                }
+                if (!joinerUserObj) {
+                    const mReq = await PartyPlanRequest.findOne({
+                        where: {
+                            planId: plan.id,
+                            [Op.or]: [
+                                { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, 'chat_enabled' as any, 'match_confirmed' as any] } },
+                                { joinerPaymentStatus: 'paid' as any },
+                            ],
+                        },
+                        include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
+                    });
+                    if (mReq) {
+                        matchedRequestObj = mReq;
+                        const reqUser = (mReq as any).requester;
+                        if (reqUser) {
+                            joinerUserObj = {
+                                id: reqUser.id,
+                                fullName: `${reqUser.firstName || ''} ${reqUser.lastName || ''}`.trim() || 'Guest',
+                                firstName: reqUser.firstName,
+                                lastName: reqUser.lastName,
+                                email: reqUser.email,
+                                phone: reqUser.phone,
+                                mobileNumber: reqUser.phone,
+                                profilePhotoUrl: reqUser.profileImageUrl || null,
+                                profileImageUrl: reqUser.profileImageUrl || null,
+                            };
+                        }
+                    }
+                }
+
                 formattedTickets.push({
                     id: plan.id,
                     ticketId: ticketCode,
@@ -919,6 +981,13 @@ export class MobileTicketController {
                     isVenueBooking: false,
                     user: planUser,
                     host: planUser,
+                    creator: planUser,
+                    partner: joinerUserObj,
+                    joiner: joinerUserObj,
+                    matchedJoiner: joinerUserObj,
+                    requester: joinerUserObj,
+                    request: matchedRequestObj,
+                    rawRequest: matchedRequestObj,
                     venueName: planAny.venue?.name || 'Lunara Venue',
                     venueAddress: `${planAny.venue?.area || planAny.venue?.addressLine1 || ''}, ${planAny.venue?.city || ''}`.trim(),
                     venue: planAny.venue ? {
@@ -1876,6 +1945,13 @@ export class MobileTicketController {
             await t.commit();
 
             logger.info(`Gate scanner verified & redeemed Ticket ${ticket.ticketId} at ${now}`);
+
+            RealtimeEventBroker.emitToUser(ticket.userId, 'ticket_updated', 'ticket', ticket.ticketId, {
+                ticketId: ticket.ticketId,
+                bookingId: ticket.bookingId,
+                status: TicketStatus.USED,
+                usedAt: now,
+            });
 
             return res.status(200).json({
                 success: true,

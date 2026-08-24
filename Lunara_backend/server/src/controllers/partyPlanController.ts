@@ -4080,14 +4080,24 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             }
 
             if (plan && !request) {
-                request = await PartyPlanRequest.findOne({
-                    where: {
-                        planId: plan.id,
-                        status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, PartyPlanRequestStatus.PAYMENT_PENDING] },
-                    },
-                    order: [['updatedAt', 'DESC']],
-                    include: [userInclude('requester')],
-                });
+                if ((plan as any).matchedRequestId) {
+                    request = await PartyPlanRequest.findByPk((plan as any).matchedRequestId, {
+                        include: [userInclude('requester')],
+                    });
+                }
+                if (!request) {
+                    request = await PartyPlanRequest.findOne({
+                        where: {
+                            planId: plan.id,
+                            [Op.or]: [
+                                { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, 'chat_enabled' as any, 'match_confirmed' as any, PartyPlanRequestStatus.PAYMENT_PENDING] } },
+                                { joinerPaymentStatus: 'paid' as any },
+                            ],
+                        },
+                        order: [['updatedAt', 'DESC']],
+                        include: [userInclude('requester')],
+                    });
+                }
 
                 if (!request) {
                     request = await PartyPlanRequest.findOne({
@@ -4112,8 +4122,9 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
 
         const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
         const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || plan.paymentType === 'self_pay';
-        if (!hostPaid || !joinerPaid) {
-            res.status(403).json({ success: false, message: 'Ticket is unavailable until both host and joiner payments are verified.' });
+        const isPlanConfirmed = plan.lifecycleStatus === 'match_confirmed' || plan.lifecycleStatus === 'chat_enabled' || plan.lifecycleStatus === 'event_upcoming';
+        if (!hostPaid && !joinerPaid && !isPlanConfirmed) {
+            res.status(403).json({ success: false, message: 'Ticket is unavailable until payments are verified.' });
             return;
         }
 

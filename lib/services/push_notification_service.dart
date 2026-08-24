@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
 import 'notification_navigator.dart';
@@ -13,12 +14,7 @@ import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
 import '../screens/profile/lunara_wallet_screen.dart';
 import '../screens/profile/vip_membership_screen.dart';
-import '../screens/social/post_detail_screen.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
-import '../screens/social/party_plan_requests_screen.dart';
-import '../screens/social/host_party_plan_manager_screen.dart';
-import '../screens/social/party_plan_detail_screen.dart';
-import '../screens/social/notification_center_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
 import '../dialogs/party_plan_cancellation_dialog.dart';
 import '../dialogs/partner_reach_confirmation_dialog.dart';
@@ -36,6 +32,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 class PushNotificationService {
   PushNotificationService._();
+
+  /// Whether push notifications are enabled by the user in Settings
+  static bool isEnabled = true;
+  static bool get isPushEnabled => isEnabled;
 
   /// Currently open conversation ID — used to suppress popups for active chat screen
   static String? activeConversationId;
@@ -61,6 +61,44 @@ class PushNotificationService {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
+  /// Dynamically enable or disable push notifications from Settings
+  static Future<bool> setPushNotificationsEnabled(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('push_notifications_enabled', enabled);
+      isEnabled = enabled;
+
+      if (enabled) {
+        // 1. Request permission & set up channels
+        await _requestPermission();
+        await _createNotificationChannel();
+        await _initLocalNotifications();
+
+        // 2. Register token with backend
+        await _registerToken();
+        debugPrint('🔔 Push notifications dynamically ENABLED');
+      } else {
+        // 1. Unregister FCM token from backend so backend doesn't dispatch notifications
+        try {
+          final token = await _messaging.getToken();
+          if (token != null) {
+            await ApiService.unregisterFcmToken(token);
+          }
+        } catch (e) {
+          debugPrint('🔔 Error unregistering token on disable: $e');
+        }
+
+        // 2. Clear all active local notifications on device
+        await _localNotifications.cancelAll();
+        debugPrint('🔔 Push notifications dynamically DISABLED');
+      }
+      return true;
+    } catch (e) {
+      debugPrint('🔔 Error updating push notification state: $e');
+      return false;
+    }
+  }
+
   /// Mark the main UI app state as ready and process any pending notification tap
   static void setAppReady() {
     isAppReady = true;
@@ -82,22 +120,32 @@ class PushNotificationService {
 
   /// Call once after Firebase.initializeApp() and after the user is authenticated.
   static Future<void> initialize() async {
-    // 1. Request permission (iOS + Android 13+)
-    await _requestPermission();
+    final prefs = await SharedPreferences.getInstance();
+    isEnabled = prefs.getBool('push_notifications_enabled') ?? true;
 
-    // 2. Create the Android notification channel
-    await _createNotificationChannel();
+    if (isEnabled) {
+      // 1. Request permission (iOS + Android 13+)
+      await _requestPermission();
 
-    // 3. Initialize flutter_local_notifications for foreground display
-    await _initLocalNotifications();
+      // 2. Create the Android notification channel
+      await _createNotificationChannel();
 
-    // 4. Get the FCM token and send to backend
-    await _registerToken();
+      // 3. Initialize flutter_local_notifications for foreground display
+      await _initLocalNotifications();
+
+      // 4. Get the FCM token and send to backend
+      await _registerToken();
+    } else {
+      debugPrint('🔔 Push notifications are disabled in settings; skipping token registration');
+      await _localNotifications.cancelAll();
+    }
 
     // 5. Listen for token refresh
     _messaging.onTokenRefresh.listen((newToken) {
       debugPrint('🔔 FCM token refreshed');
-      _sendTokenToBackend(newToken);
+      if (isEnabled) {
+        _sendTokenToBackend(newToken);
+      }
     });
 
     // 6. Foreground message handler — show a local notification & top banner
@@ -128,13 +176,17 @@ class PushNotificationService {
       checkAndProcessPendingNotification();
     }
 
-    debugPrint('🔔 PushNotificationService initialized');
+    debugPrint('🔔 PushNotificationService initialized (isEnabled: $isEnabled)');
   }
 
   /// Call this immediately after a successful login / registration
   /// to ensure the FCM token is registered with the backend.
   /// Safe to call multiple times — it just re-sends the current token.
   static Future<void> registerTokenAfterLogin() async {
+    if (!isEnabled) {
+      debugPrint('🔔 Push notifications disabled in settings; skipping registerTokenAfterLogin');
+      return;
+    }
     try {
       final token = await _messaging.getToken();
       if (token != null) {
@@ -240,7 +292,7 @@ class PushNotificationService {
   // ── Foreground Message ──────────────────────────────────────────────────────
 
   static void _onSocketNotificationReceived(dynamic data) {
-    if (data == null) return;
+    if (!isEnabled || data == null) return;
     final Map<String, dynamic> notifMap = data is Map ? Map<String, dynamic>.from(data) : {};
 
     final title = (notifMap['title'] ?? notifMap['heading'] ?? notifMap['name'] ?? 'Notification').toString();
@@ -385,6 +437,10 @@ class PushNotificationService {
   }
 
   static void _onForegroundMessage(RemoteMessage message) {
+    if (!isEnabled) {
+      debugPrint('🔔 Foreground FCM message ignored (push notifications disabled in settings)');
+      return;
+    }
     debugPrint('🔔 Foreground FCM message received: ${message.messageId}');
 
     final notification = message.notification;
@@ -580,37 +636,6 @@ class PushNotificationService {
         rawType.contains('entry_confirmed');
 
     if (isTicketType) {
-      final partyPlanId = (data['partyPlanId'] ??
-              data['planId'] ??
-              data['entityId'] ??
-              data['id'])
-          ?.toString();
-
-      final strangersMeetId = (data['strangersMeetRequestId'] ??
-              data['strangersMeetId'] ??
-              data['requestId'] ??
-              data['meetId'] ??
-              data['entityId'] ??
-              data['id'])
-          ?.toString();
-
-      if (rawType.contains('stranger') || rawType.contains('meet')) {
-        if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
-          _navigateToStrangersMeet(navigator, strangersMeetId, data);
-          return;
-        }
-      } else if (rawType.contains('party') || rawType.contains('plan')) {
-        if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
-          navigator.push(
-            MaterialPageRoute(
-              builder: (_) => PartyPlanDetailScreen(
-                plan: {'id': partyPlanId, 'planId': partyPlanId, ...data},
-              ),
-            ),
-          );
-          return;
-        }
-      }
       navigator.push(
         MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
       );
@@ -640,12 +665,6 @@ class PushNotificationService {
     }
 
     // ── 5. Party Plan Notifications & Action Prompts ─────────────────────────
-    final partyPlanId = (data['partyPlanId'] ??
-            data['planId'] ??
-            data['entityId'] ??
-            data['id'])
-        ?.toString();
-
     final isPartyPlanType = rawType.contains('party') ||
         rawType.contains('plan') ||
         rawType.contains('reminder') ||
@@ -656,62 +675,29 @@ class PushNotificationService {
         rawType.contains('deposit');
 
     if (isPartyPlanType) {
-      if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
-        navigator.push(
-          MaterialPageRoute(
-            builder: (_) => PartyPlanDetailScreen(
-              plan: {
-                'id': partyPlanId,
-                'planId': partyPlanId,
-                ...data,
-              },
-            ),
-          ),
-        );
+      if (rawType.contains('match_success') && senderId != null && senderId.isNotEmpty) {
+        _navigateToChat(navigator, data);
         return;
       }
-
-      if (rawType.contains('request') || rawType.contains('participant')) {
-        navigator.push(
-          MaterialPageRoute(builder: (_) => const PartyPlanRequestsScreen()),
-        );
-        return;
-      }
-
-      if (rawType.contains('host')) {
-        navigator.push(
-          MaterialPageRoute(builder: (_) => const HostPartyPlanManagerScreen()),
-        );
-        return;
-      }
-
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plan
+          builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plans in Live Feed
         ),
       );
       return;
     }
 
     // ── 6. Stranger Meets Notifications ─────────────────────────────────────
-    final strangersMeetId = (data['strangersMeetRequestId'] ??
-            data['strangersMeetId'] ??
-            data['requestId'] ??
-            data['meetId'] ??
-            data['entityId'] ??
-            data['id'])
-        ?.toString();
-
     final isStrangerMeetType = rawType.contains('stranger') || rawType.contains('meet');
 
     if (isStrangerMeetType) {
-      if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
-        _navigateToStrangersMeet(navigator, strangersMeetId, data);
+      if (rawType.contains('match_success') && senderId != null && senderId.isNotEmpty) {
+        _navigateToChat(navigator, data);
         return;
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meet
+          builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meets in Live Feed
         ),
       );
       return;
@@ -751,20 +737,9 @@ class PushNotificationService {
       return;
     }
 
-    // ── 10. Generic Fallbacks based on IDs ──────────────────────────────────
-    if (partyPlanId != null && partyPlanId.isNotEmpty && _isValidUuid(partyPlanId)) {
-      navigator.push(
-        MaterialPageRoute(
-          builder: (_) => PartyPlanDetailScreen(
-            plan: {'id': partyPlanId, 'planId': partyPlanId, ...data},
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (strangersMeetId != null && strangersMeetId.isNotEmpty && _isValidUuid(strangersMeetId)) {
-      _navigateToStrangersMeet(navigator, strangersMeetId, data);
+    // ── 10. Generic Fallbacks based on Payload ──────────────────────────────
+    if (senderId != null && senderId.isNotEmpty) {
+      _navigateToChat(navigator, data);
       return;
     }
 
@@ -773,14 +748,9 @@ class PushNotificationService {
       return;
     }
 
-    if (senderId != null && senderId.isNotEmpty) {
-      _navigateToChat(navigator, data);
-      return;
-    }
-
-    // Fallback to Notification Center Screen
+    // Default Fallback to Live Feed
     navigator.push(
-      MaterialPageRoute(builder: (_) => const NotificationCenterScreen()),
+      MaterialPageRoute(builder: (_) => const LiveFeedScreen(initialTabIndex: 0)),
     );
   }
 
@@ -852,25 +822,6 @@ class PushNotificationService {
 
     navigator.push(
       MaterialPageRoute(builder: (_) => ChatScreen(user: userMap)),
-    );
-  }
-
-  static void _navigateToStrangersMeet(
-    NavigatorState navigator,
-    String requestId,
-    Map<String, dynamic> data,
-  ) {
-    navigator.push(
-      MaterialPageRoute(
-        builder: (_) => PostDetailScreen(
-          post: {
-            'type': 'strangers_meet',
-            'id': requestId,
-            'requestId': requestId,
-            ...data,
-          },
-        ),
-      ),
     );
   }
 }

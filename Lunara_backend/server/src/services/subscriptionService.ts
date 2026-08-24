@@ -392,8 +392,21 @@ export class SubscriptionService {
         try {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
             const featureValue = entry.features.get(featureKey);
-            if (!featureValue) return false;
-            return !!featureValue.enabled;
+            if (featureValue && (featureValue.enabled || featureValue.value)) {
+                return true;
+            }
+
+            const plan = entry.plan;
+            if (plan) {
+                if (featureKey === 'hide_profile') {
+                    return !!plan.hasHideProfile || ['PLUS', 'PRO', 'ELITE'].includes(plan.tier);
+                }
+                if (featureKey === 'priority_visibility') return !!plan.hasPriorityVisibility;
+                if (featureKey === 'trust_badge') return !!plan.hasTrustBadge;
+                if (featureKey === 'elite_badge') return !!plan.hasEliteBadge;
+                if (featureKey === 'who_liked_me') return !!plan.canSeeWhoLiked;
+            }
+            return false;
         } catch (err) {
             logger.error(`SubscriptionService.hasAccess error [${featureKey}]:`, err);
             return false;
@@ -711,6 +724,7 @@ export class SubscriptionService {
                 hasTrustBadge: plan?.hasTrustBadge ?? false,
                 hasEliteBadge: plan?.hasEliteBadge ?? false,
                 canSeeWhoLiked: plan?.canSeeWhoLiked ?? false,
+                hasHideProfile: plan?.hasHideProfile ?? (['PLUS', 'PRO', 'ELITE'].includes(tier)),
                 dailyLikesLimit: featuresOut['daily_likes']?.limit ?? 7,
                 dailyLikesUsed: usageMap['daily_likes'] ?? 0,
                 dailyMatchRequestsLimit: featuresOut['daily_match_requests']?.limit ?? 3,

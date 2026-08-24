@@ -29,9 +29,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   void _startConversationPolling() {
     _conversationTimer?.cancel();
-    _conversationTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Adaptive fallback: Only check every 45s if socket is disconnected to eliminate polling storms
+    _conversationTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (mounted) {
-        _loadConversations(isBackgroundRefresh: true);
+        final isConnected = ApiService.socket?.connected ?? false;
+        if (!isConnected) {
+          _loadConversations(isBackgroundRefresh: true);
+        }
       }
     });
   }
@@ -177,7 +181,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
         (c) => (c['conversationId'] ?? c['id'])?.toString() == convId,
       );
       if (idx != -1) {
-        _conversations[idx]['lastMessagePreview'] = '';
+        _conversations[idx]['lastMessagePreview'] = 'Tap to chat';
+        _conversations[idx]['lastMessageAt'] = null;
         _conversations[idx]['unreadCount'] = 0;
       }
     });
@@ -424,27 +429,29 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   String _lastMessage(Map<String, dynamic> c) {
-    final preview = c['lastMessagePreview'];
-    if (preview != null && preview.toString().isNotEmpty) return preview.toString();
+    final preview = c['lastMessagePreview']?.toString().trim();
+    if (preview != null && preview.isNotEmpty) return preview;
 
     // Check for a nested lastMessage object
     final lm = c['lastMessage'] ?? c['lastMessageText'];
     if (lm is Map) {
-      return lm['content']?.toString() ??
-          lm['text']?.toString() ??
-          lm['body']?.toString() ??
-          lm['message']?.toString() ??
-          'Tap to chat';
+      final content = lm['content']?.toString().trim() ??
+          lm['text']?.toString().trim() ??
+          lm['body']?.toString().trim() ??
+          lm['message']?.toString().trim();
+      if (content != null && content.isNotEmpty) return content;
     }
 
     // Try direct message fields as fallback
     final direct = c['message'] ?? c['lastMessageText'] ?? c['preview'] ?? c['lastMessage'];
-    if (direct != null && direct.toString().isNotEmpty) return direct.toString();
+    if (direct != null && direct.toString().trim().isNotEmpty) return direct.toString().trim();
 
     return 'Tap to chat';
   }
 
   String _formattedTime(Map<String, dynamic> c) {
+    final lastMsg = _lastMessage(c);
+    if (lastMsg == 'Tap to chat') return '';
     final raw = c['lastMessageAt'] ?? c['updatedAt'] ?? c['createdAt'] ?? c['timestamp'];
     if (raw == null) return '';
     DateTime? dt;
@@ -525,157 +532,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  /// Open a fresh chat by tapping a profile in the People strip.
-  void _openChatWithCustomer(Map<String, dynamic> customer) {     
-    final id = customer['id']?.toString() ?? customer['_id']?.toString() ?? '';
-    final firstName = customer['firstName']?.toString() ?? customer['name']?.toString() ?? '';
-    final lastName = customer['lastName']?.toString() ?? '';
-    final name = '$firstName $lastName'.trim();
-    final avatar = _formatAvatarUrl(customer['profilePhotoUrl']?.toString() ??
-        customer['profileImage']?.toString() ??
-        customer['avatar']?.toString() ??
-        customer['image']?.toString());
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          user: {
-            'id': id,
-            'name': name,
-            'image': avatar,
-            'isAsset': false,
-            'online': customer['isOnline'] == true || customer['online'] == true,
-          },
-        ),
-      ),
-    ).then((_) => _loadConversations());
-  }
-
-  // ── Build ────────────────────────────────────────────────────────────────────
-
-  void _showContactsPicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(
-                  'Select Contact',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Color(0xFF7F00FF),
-                  ),
-                ),
-              ),
-              const Divider(),
-              Expanded(
-                child: FutureBuilder<List<dynamic>>(
-                  future: Future.wait([
-                    ApiService.fetchCustomers(),
-                    ApiService.fetchMyLikesAndMatches(),
-                  ]),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(color: Color(0xFF7F00FF)));
-                    }
-                    if (snapshot.hasError || snapshot.data == null || snapshot.data!.length < 2) {
-                      return const Center(child: Text('Error loading contacts'));
-                    }
-
-                    final allUsers = List<Map<String, dynamic>>.from(snapshot.data![0] as List);
-                    final swipes = List<Map<String, dynamic>>.from(snapshot.data![1] as List);
-                    final myId = ApiService.currentUserId;
-
-                    final Set<String> matchedUserIds = {};
-                    for (var s in swipes) {
-                      final status = s['status']?.toString().toLowerCase();
-                      if (status == 'connected') {
-                        final u1 = s['user1Id']?.toString();
-                        final u2 = s['user2Id']?.toString();
-                        if (u1 == myId && u2 != null) {
-                          matchedUserIds.add(u2);
-                        } else if (u2 == myId && u1 != null) {
-                          matchedUserIds.add(u1);
-                        }
-                      }
-                    }
-
-                    final matchedUsers = allUsers.where((u) {
-                      final uid = u['id']?.toString() ?? u['_id']?.toString();
-                      return uid != null && matchedUserIds.contains(uid);
-                    }).toList();
-
-                    if (matchedUsers.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.people_outline, size: 48, color: Colors.grey),
-                              SizedBox(height: 12),
-                              Text(
-                                'No matched users found',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black54),
-                              ),
-                              SizedBox(height: 6),
-                              Text(
-                                'You can only start chats with users you have matched with.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      itemCount: matchedUsers.length,
-                      itemBuilder: (context, index) {
-                        final u = matchedUsers[index];
-                        final firstName = u['firstName']?.toString() ?? u['name']?.toString() ?? '';
-                        final lastName = u['lastName']?.toString() ?? '';
-                        final displayName = '$firstName $lastName'.trim();
-                        final avatar = _formatAvatarUrl(u['profilePhotoUrl']?.toString() ??
-                            u['profileImage']?.toString() ??
-                            u['avatar']?.toString() ??
-                            u['image']?.toString());
-                        final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
-
-                        return ListTile(
-                          leading: _buildUserAvatar(avatar: avatar, initial: initial, radius: 20),
-                          title: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(u['isOnline'] == true ? 'Online' : 'Offline'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _openChatWithCustomer(u);
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
@@ -695,13 +551,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
             fontSize: 22,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_square, color: Colors.white),
-            tooltip: 'New Chat',
-            onPressed: _showContactsPicker,
-          ),
-        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF7F00FF)))
@@ -992,14 +841,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                lastMsg.isEmpty ? 'No messages' : lastMsg,
+                                (lastMsg.isEmpty || lastMsg == 'Tap to chat') ? 'Tap to chat' : lastMsg,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: unread > 0 ? Colors.black87 : Colors.grey[500],
-                                  fontWeight: unread > 0 ? FontWeight.w500 : FontWeight.normal,
-                                  fontStyle: lastMsg.isEmpty ? FontStyle.italic : FontStyle.normal,
+                                  color: unread > 0
+                                      ? Colors.black87
+                                      : (lastMsg == 'Tap to chat' || lastMsg.isEmpty
+                                          ? const Color(0xFF7F00FF)
+                                          : Colors.grey[600]),
+                                  fontWeight: unread > 0
+                                      ? FontWeight.w600
+                                      : ((lastMsg == 'Tap to chat' || lastMsg.isEmpty) ? FontWeight.w500 : FontWeight.normal),
+                                  fontStyle: (lastMsg == 'Tap to chat' || lastMsg.isEmpty) ? FontStyle.italic : FontStyle.normal,
                                 ),
                               ),
                             ),

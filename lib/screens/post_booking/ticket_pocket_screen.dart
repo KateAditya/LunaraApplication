@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
@@ -70,8 +71,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     super.dispose();
   }
 
+  Timer? _ticketDebounceTimer;
+
   void _initListeners() {
     ApiService.planPostedNotifier.addListener(_onAutoRefresh);
+    ApiService.addSocketListener('party_plan_ticket_generated', _onSocketUpdate);
+    ApiService.addSocketListener('ticket_updated', _onSocketUpdate);
+    ApiService.addSocketListener('ticket_status_update', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
     ApiService.addSocketListener('group_party_payment_success', _onSocketUpdate);
     ApiService.addSocketListener('strangers_meet_settled', _onSocketUpdate);
@@ -79,7 +85,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   void _disposeListeners() {
+    _ticketDebounceTimer?.cancel();
     ApiService.planPostedNotifier.removeListener(_onAutoRefresh);
+    ApiService.removeSocketListener('party_plan_ticket_generated', _onSocketUpdate);
+    ApiService.removeSocketListener('ticket_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('ticket_status_update', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
     ApiService.removeSocketListener('group_party_payment_success', _onSocketUpdate);
     ApiService.removeSocketListener('strangers_meet_settled', _onSocketUpdate);
@@ -88,12 +98,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   void _onAutoRefresh() {
     if (!mounted) return;
-    _loadBookings(forceRefresh: true);
+    _ticketDebounceTimer?.cancel();
+    _ticketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _loadBookings(forceRefresh: true);
+    });
   }
 
   void _onSocketUpdate(dynamic data) {
     if (!mounted) return;
-    _loadBookings(forceRefresh: true);
+    _ticketDebounceTimer?.cancel();
+    _ticketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _loadBookings(forceRefresh: true);
+    });
   }
 
   Future<void> _loadBookings({bool forceRefresh = false}) async {
@@ -1298,8 +1314,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         onTap: () {
           // Party plan tickets have dedicated matched UI
           if (category == 'party_plan') {
-            final rawPlan = booking['plan'] is Map ? Map<String, dynamic>.from(booking['plan']) : <String, dynamic>{};
-            final rawReq = booking['rawRequest'] is Map ? Map<String, dynamic>.from(booking['rawRequest']) : <String, dynamic>{};
+            final rawPlan = booking['plan'] is Map
+                ? Map<String, dynamic>.from(booking['plan'])
+                : <String, dynamic>{};
+            final rawReq = booking['rawRequest'] is Map
+                ? Map<String, dynamic>.from(booking['rawRequest'])
+                : (booking['request'] is Map
+                    ? Map<String, dynamic>.from(booking['request'])
+                    : <String, dynamic>{});
 
             // Enrich plan
             if (rawPlan['venue'] == null && venue != null) rawPlan['venue'] = venue;
@@ -1312,8 +1334,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             if (rawPlan['depositAmount'] == null && booking['totalAmount'] != null) {
               rawPlan['depositAmount'] = booking['totalAmount'];
             }
-            if (rawPlan['id'] == null && booking['bookingId'] != null) {
-              rawPlan['id'] = booking['bookingId'];
+            if (rawPlan['id'] == null && (booking['bookingId'] != null || booking['id'] != null)) {
+              rawPlan['id'] = booking['bookingId'] ?? booking['id'];
             }
             if (rawPlan['ticketCode'] == null && ticketCode.isNotEmpty) {
               rawPlan['ticketCode'] = ticketCode;
@@ -1321,8 +1343,20 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             if (rawPlan['user'] == null && booking['user'] != null) {
               rawPlan['user'] = booking['user'];
             }
-            if (rawPlan['host'] == null && booking['host'] != null) {
-              rawPlan['host'] = booking['host'];
+            if (rawPlan['host'] == null && (booking['host'] != null || booking['creator'] != null)) {
+              rawPlan['host'] = booking['host'] ?? booking['creator'];
+            }
+            if (rawPlan['creator'] == null && (booking['creator'] != null || booking['host'] != null)) {
+              rawPlan['creator'] = booking['creator'] ?? booking['host'];
+            }
+            if (rawPlan['partner'] == null && (booking['partner'] != null || booking['joiner'] != null)) {
+              rawPlan['partner'] = booking['partner'] ?? booking['joiner'];
+            }
+            if (rawPlan['matchedJoiner'] == null && (booking['matchedJoiner'] != null || booking['joiner'] != null || booking['partner'] != null)) {
+              rawPlan['matchedJoiner'] = booking['matchedJoiner'] ?? booking['joiner'] ?? booking['partner'];
+            }
+            if (rawPlan['joiner'] == null && (booking['joiner'] != null || booking['partner'] != null)) {
+              rawPlan['joiner'] = booking['joiner'] ?? booking['partner'];
             }
 
             // Enrich request
@@ -1339,15 +1373,37 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             if (rawReq['depositAmount'] == null && booking['totalAmount'] != null) {
               rawReq['depositAmount'] = booking['totalAmount'];
             }
-            if (rawReq['id'] == null && booking['bookingId'] != null) {
-              rawReq['id'] = booking['bookingId'];
+            if (rawReq['id'] == null && (booking['id'] != null || booking['bookingId'] != null)) {
+              rawReq['id'] = booking['id'] ?? booking['bookingId'];
+            }
+            if (rawReq['planId'] == null && (booking['bookingId'] != null || booking['id'] != null)) {
+              rawReq['planId'] = booking['bookingId'] ?? booking['id'];
             }
             if (rawReq['ticketCode'] == null && ticketCode.isNotEmpty) {
               rawReq['ticketCode'] = ticketCode;
             }
-            if (rawReq['user'] == null && booking['user'] != null) {
-              rawReq['user'] = booking['user'];
+            if (rawReq['host'] == null && (booking['host'] != null || booking['creator'] != null)) {
+              rawReq['host'] = booking['host'] ?? booking['creator'];
             }
+            if (rawReq['creator'] == null && (booking['creator'] != null || booking['host'] != null)) {
+              rawReq['creator'] = booking['creator'] ?? booking['host'];
+            }
+            if (rawReq['requester'] == null && (booking['partner'] != null || booking['joiner'] != null || booking['requester'] != null)) {
+              rawReq['requester'] = booking['partner'] ?? booking['joiner'] ?? booking['requester'];
+            }
+            if (rawReq['joiner'] == null && (booking['joiner'] != null || booking['partner'] != null)) {
+              rawReq['joiner'] = booking['joiner'] ?? booking['partner'];
+            }
+            if (rawReq['partner'] == null && (booking['partner'] != null || booking['joiner'] != null)) {
+              rawReq['partner'] = booking['partner'] ?? booking['joiner'];
+            }
+            if (rawReq['plan'] == null && rawPlan.isNotEmpty) {
+              rawReq['plan'] = rawPlan;
+            }
+
+            final isHost = booking['isHost'] == true ||
+                (booking['creator'] != null && booking['creator']['id']?.toString() == ApiService.currentUserId) ||
+                (booking['host'] != null && booking['host']['id']?.toString() == ApiService.currentUserId);
 
             Navigator.push(
               context,
@@ -1355,7 +1411,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 builder: (_) => PartyPlanTicketScreen(
                   request: rawReq.isNotEmpty ? rawReq : (rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking)),
                   plan: rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking),
-                  isHost: booking['isHost'] == true,
+                  isHost: isHost,
                 ),
               ),
             );

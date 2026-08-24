@@ -6,9 +6,13 @@ import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionTransaction from '../models/SubscriptionTransaction';
 import SubscriptionUsage from '../models/SubscriptionUsage';
+import SubscriptionAddonPackage from '../models/SubscriptionAddonPackage';
+import UserAddon from '../models/UserAddon';
+import EntitlementAuditLog from '../models/EntitlementAuditLog';
 import User from '../models/User';
 import { logger } from '../config/logger';
 import { SubscriptionService } from '../services/subscriptionService';
+import { EntitlementService } from '../services/EntitlementService';
 import { sendPushNotification } from '../services/fcmService';
 
 // Fields that may be -1 (unlimited) or any non-negative integer.
@@ -1121,3 +1125,198 @@ export const bulkConfigureTierFeatures = async (req: Request, res: Response): Pr
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
+
+// ─── Admin Add-on Packages Catalog CRUD ────────────────────────────────────────
+
+// @route GET /api/admin/subscriptions/addons
+export const getAllAddonPackages = async (_req: Request, res: Response): Promise<void> => {
+    try {
+        await EntitlementService.seedDefaultAddons();
+        const addons = await SubscriptionAddonPackage.findAll({
+            order: [['displayOrder', 'ASC'], ['price', 'ASC']],
+        });
+        res.status(200).json({ success: true, data: addons });
+    } catch (error: any) {
+        logger.error('Error fetching admin addon packages:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route POST /api/admin/subscriptions/addons
+export const createAddonPackage = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { name, featureKey, quantity, price, currency, isActive, badge, description, displayOrder } = req.body;
+
+        if (!name || !featureKey || !quantity || price === undefined) {
+            res.status(400).json({ success: false, message: 'name, featureKey, quantity, and price are required' });
+            return;
+        }
+
+        const addon = await SubscriptionAddonPackage.create({
+            name,
+            featureKey,
+            quantity: Number(quantity),
+            price: Number(price),
+            currency: currency || 'INR',
+            isActive: isActive !== false,
+            badge: badge || null,
+            description: description || null,
+            displayOrder: displayOrder ? Number(displayOrder) : 0,
+        });
+
+        res.status(201).json({ success: true, message: 'Add-on package created successfully', data: addon });
+    } catch (error: any) {
+        logger.error('Error creating admin addon package:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route PUT /api/admin/subscriptions/addons/:id
+export const updateAddonPackage = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const addon = await SubscriptionAddonPackage.findByPk(id);
+
+        if (!addon) {
+            res.status(404).json({ success: false, message: 'Add-on package not found' });
+            return;
+        }
+
+        const { name, featureKey, quantity, price, currency, isActive, badge, description, displayOrder } = req.body;
+
+        await addon.update({
+            ...(name !== undefined && { name }),
+            ...(featureKey !== undefined && { featureKey }),
+            ...(quantity !== undefined && { quantity: Number(quantity) }),
+            ...(price !== undefined && { price: Number(price) }),
+            ...(currency !== undefined && { currency }),
+            ...(isActive !== undefined && { isActive }),
+            ...(badge !== undefined && { badge }),
+            ...(description !== undefined && { description }),
+            ...(displayOrder !== undefined && { displayOrder: Number(displayOrder) }),
+        });
+
+        res.status(200).json({ success: true, message: 'Add-on package updated successfully', data: addon });
+    } catch (error: any) {
+        logger.error('Error updating admin addon package:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route DELETE /api/admin/subscriptions/addons/:id
+export const deleteAddonPackage = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const addon = await SubscriptionAddonPackage.findByPk(id);
+
+        if (!addon) {
+            res.status(404).json({ success: false, message: 'Add-on package not found' });
+            return;
+        }
+
+        await addon.destroy();
+        res.status(200).json({ success: true, message: 'Add-on package deleted successfully' });
+    } catch (error: any) {
+        logger.error('Error deleting admin addon package:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── User Entitlement Inspector & Manual Override ─────────────────────────────
+
+// @route GET /api/admin/subscriptions/users/:userId/entitlements
+export const getUserEntitlementsBreakdown = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findByPk(userId);
+        if (!user) {
+            res.status(404).json({ success: false, message: 'User not found' });
+            return;
+        }
+
+        const summary = await EntitlementService.getEntitlementsSummary(userId);
+        const userAddons = await UserAddon.findAll({
+            where: { userId },
+            include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
+            order: [['createdAt', 'DESC']],
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ...summary,
+                detailedAddonPurchases: userAddons,
+            },
+        });
+    } catch (error: any) {
+        logger.error('Error fetching admin user entitlements breakdown:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @route POST /api/admin/subscriptions/users/:userId/adjust-entitlement
+export const adminAdjustUserEntitlement = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const adminId = (req as any).user.id;
+        const { userId } = req.params;
+        const { feature, target, adjustmentType, amount, reason } = req.body;
+
+        if (!feature || !target || !adjustmentType || amount === undefined) {
+            res.status(400).json({
+                success: false,
+                message: 'feature, target (PLAN|ADDON), adjustmentType (SET|ADD), and amount are required',
+            });
+            return;
+        }
+
+        const result = await EntitlementService.adminAdjustEntitlement({
+            adminId,
+            userId,
+            feature,
+            target: target.toUpperCase() as 'PLAN' | 'ADDON',
+            adjustmentType: adjustmentType.toUpperCase() as 'SET' | 'ADD',
+            amount: Number(amount),
+            reason: reason || 'Manual Admin adjustment',
+        });
+
+        SubscriptionService.invalidateCache(userId);
+        res.status(200).json(result);
+    } catch (error: any) {
+        logger.error('Error adjusting user entitlement:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to adjust entitlement' });
+    }
+};
+
+// @route GET /api/admin/subscriptions/audit-logs
+export const getEntitlementAuditLogs = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { userId, feature, action, limit = 50, offset = 0 } = req.query;
+
+        const where: any = {};
+        if (userId) where.userId = userId;
+        if (feature) where.feature = feature;
+        if (action) where.action = action;
+
+        const { count, rows } = await EntitlementAuditLog.findAndCountAll({
+            where,
+            include: [
+                { model: User, as: 'user', attributes: ['id', 'name', 'phone', 'avatar'] },
+            ],
+            order: [['createdAt', 'DESC']],
+            limit: Number(limit),
+            offset: Number(offset),
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                total: count,
+                logs: rows,
+            },
+        });
+    } catch (error: any) {
+        logger.error('Error fetching entitlement audit logs:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+

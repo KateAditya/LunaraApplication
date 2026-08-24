@@ -128,18 +128,31 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     ApiService.removeSocketListener('strangers_meet_started', _onSocketUpdate);
     ApiService.removeSocketListener('strangers_meet_updated', _onSocketUpdate);
     ApiService.removeSocketListener('notification_created', _onSocketUpdate);
+    _socketDebounceTimer?.cancel();
   }
+
+  Timer? _socketDebounceTimer;
 
   void _onPlanPostedOrAction() {
     if (!mounted) return;
-    _loadCustomers();
-    _loadVenues();
+    _socketDebounceTimer?.cancel();
+    _socketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _loadCustomers();
+        _loadVenues();
+      }
+    });
   }
 
   void _onSocketUpdate(dynamic data) {
     if (!mounted) return;
-    _loadCustomers();
-    _loadVenues();
+    _socketDebounceTimer?.cancel();
+    _socketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _loadCustomers();
+        _loadVenues();
+      }
+    });
   }
 
   String _formatToISTString(DateTime date, TimeOfDay time) {

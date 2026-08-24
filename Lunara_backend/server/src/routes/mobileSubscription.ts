@@ -34,4 +34,13 @@ router.get('/plans', ctrl.getUserSubscriptions);
 // ── Feature Access Check ───────────────────────────────────────────────────────
 router.get('/check/:featureKey', ctrl.checkFeatureAccess);
 
+// ── Entitlements & Usage Breakdown ───────────────────────────────────────────
+router.get('/entitlements', ctrl.getEntitlementsSummary);
+
+// ── Addon Store & Purchases ──────────────────────────────────────────────────
+router.get('/addons', ctrl.getAvailableAddons);
+router.post('/addons/create-order', ctrl.createAddonOrder);
+router.post('/addons/purchase', ctrl.purchaseAddon);
+router.post('/addons/pay-wallet', ctrl.payAddonWithWallet);
+
 export default router;

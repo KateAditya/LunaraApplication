@@ -6,7 +6,9 @@ import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionTransaction, { TransactionType, TransactionStatus } from '../models/SubscriptionTransaction';
 import SubscriptionUsage from '../models/SubscriptionUsage';
+import SubscriptionAddonPackage from '../models/SubscriptionAddonPackage';
 import { SubscriptionService } from '../services/subscriptionService';
+import { EntitlementService } from '../services/EntitlementService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -780,24 +782,19 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.id;
 
-        const sub = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE },
-            order: [['createdAt', 'DESC']],
+        // Consume boost entitlement via EntitlementService (Priority: Plan -> Add-on -> ADDON_REQUIRED)
+        const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'profile_boost', 1, {
+            requestId: `BOOST_USE_${Date.now()}`,
         });
 
-        if (!sub) {
-            res.status(400).json({ success: false, message: 'No active subscription found to use a boost' });
+        if (!consumption.success) {
+            res.status(403).json({
+                success: false,
+                code: consumption.code || 'ADDON_REQUIRED',
+                message: consumption.message || 'No boost credits remaining. Purchase an add-on or upgrade your plan.',
+                availableAddons: consumption.availableAddons || [],
+            });
             return;
-        }
-
-        if (sub.boostsRemaining <= 0) {
-            res.status(400).json({ success: false, message: 'No boost credits remaining. Upgrade or purchase boosts.' });
-            return;
-        }
-
-        // Decrement boostsRemaining (if not unlimited / 9999)
-        if (sub.boostsRemaining < 9999) {
-            await sub.update({ boostsRemaining: sub.boostsRemaining - 1 });
         }
 
         const now = new Date();
@@ -812,15 +809,26 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
             durationMinutes: 30,
         });
 
+        const activeSub = await UserSubscription.findOne({
+            where: { userId, status: SubscriptionStatus.ACTIVE },
+            order: [['createdAt', 'DESC']],
+        });
+
         // Record a BOOST type transaction
         await SubscriptionTransaction.create({
             userId,
-            packageId: sub.packageId,
+            packageId: activeSub?.packageId,
             type: TransactionType.BOOST,
             amount: 0,
             status: TransactionStatus.SUCCESS,
             invoiceNumber: `BOOST-USE-${Date.now().toString(36).toUpperCase()}`,
-            metadata: { boostId: boost.id, boostUsed: 1, remaining: sub.boostsRemaining, expiresAt },
+            metadata: {
+                boostId: boost.id,
+                boostUsed: 1,
+                source: consumption.source,
+                totalRemaining: consumption.totalRemaining,
+                expiresAt,
+            },
         });
 
         const { EngagementService } = await import('../services/engagementService');
@@ -834,7 +842,7 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
                 io.to(`user_${userId}`).emit('boost_activated', {
                     boostId: boost.id,
                     expiresAt: expiresAt.toISOString(),
-                    boostsRemaining: sub.boostsRemaining,
+                    boostsRemaining: consumption.totalRemaining,
                 });
                 io.to('live_feed').emit('live_feed_update', {
                     type: 'profile_boost_started',
@@ -851,7 +859,8 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
                 boostId: boost.id,
                 startedAt: now.toISOString(),
                 expiresAt: expiresAt.toISOString(),
-                boostsRemaining: sub.boostsRemaining,
+                source: consumption.source,
+                boostsRemaining: consumption.totalRemaining,
             },
         });
     } catch (error: any) {
@@ -888,6 +897,123 @@ export const getUserSubscriptions = async (req: Request, res: Response): Promise
     } catch (error: any) {
         logger.error('Error fetching user subscriptions:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Entitlements & Addons Endpoints ──────────────────────────────────────────
+
+// @route GET /api/mobile/subscriptions/entitlements
+export const getEntitlementsSummary = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const summary = await EntitlementService.getEntitlementsSummary(userId);
+        res.status(200).json({ success: true, data: summary });
+    } catch (error: any) {
+        logger.error('Error fetching entitlements summary:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching entitlements' });
+    }
+};
+
+// @route GET /api/mobile/subscriptions/addons
+export const getAvailableAddons = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { featureKey } = req.query;
+        await EntitlementService.seedDefaultAddons();
+
+        const where: any = { isActive: true };
+        if (featureKey) where.featureKey = featureKey;
+
+        const addons = await SubscriptionAddonPackage.findAll({
+            where,
+            order: [['displayOrder', 'ASC'], ['price', 'ASC']],
+        });
+
+        res.status(200).json({ success: true, data: addons });
+    } catch (error: any) {
+        logger.error('Error fetching addon packages:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching addons' });
+    }
+};
+
+// @route POST /api/mobile/subscriptions/addons/create-order
+export const createAddonOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { addonPackageId } = req.body;
+
+        if (!addonPackageId) {
+            res.status(400).json({ success: false, message: 'addonPackageId is required' });
+            return;
+        }
+
+        const orderData = await EntitlementService.createAddonRazorpayOrder({
+            userId,
+            addonPackageId,
+        });
+
+        res.status(200).json({ success: true, data: orderData });
+    } catch (error: any) {
+        logger.error('Error creating addon order:', error);
+        res.status(500).json({ success: false, message: error.message || 'Failed to create addon order' });
+    }
+};
+
+// @route POST /api/mobile/subscriptions/addons/purchase
+export const purchaseAddon = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { addonPackageId, gatewayOrderId, gatewayPaymentId, razorpaySignature } = req.body;
+
+        if (!addonPackageId || !gatewayOrderId || !gatewayPaymentId || !razorpaySignature) {
+            res.status(400).json({
+                success: false,
+                message: 'addonPackageId, gatewayOrderId, gatewayPaymentId, and razorpaySignature are required',
+            });
+            return;
+        }
+
+        const result = await EntitlementService.purchaseAddonWithRazorpay({
+            userId,
+            addonPackageId,
+            gatewayOrderId,
+            gatewayPaymentId,
+            razorpaySignature,
+        });
+
+        SubscriptionService.invalidateCache(userId);
+        res.status(200).json(result);
+    } catch (error: any) {
+        logger.error('Error purchasing addon with Razorpay:', error);
+        res.status(500).json({ success: false, message: error.message || 'Payment verification failed' });
+    }
+};
+
+// @route POST /api/mobile/subscriptions/addons/pay-wallet
+export const payAddonWithWallet = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { addonPackageId, count } = req.body;
+
+        if (!addonPackageId) {
+            res.status(400).json({ success: false, message: 'addonPackageId is required' });
+            return;
+        }
+
+        const result = await EntitlementService.purchaseAddonWithWallet({
+            userId,
+            addonPackageId,
+            count: count ? Number(count) : 1,
+        });
+
+        SubscriptionService.invalidateCache(userId);
+        res.status(200).json(result);
+    } catch (error: any) {
+        if (error.statusCode === 402) {
+            res.status(402).json({ success: false, insufficientBalance: true, data: error.shortfallData });
+            return;
+        }
+        logger.error('Error purchasing addon with wallet:', error);
+        res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Wallet payment failed' });
     }
 };
 

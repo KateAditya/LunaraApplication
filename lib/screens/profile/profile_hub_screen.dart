@@ -27,7 +27,20 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.profileUpdateNotifier.addListener(_onProfileUpdated);
     _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    ApiService.profileUpdateNotifier.removeListener(_onProfileUpdated);
+    super.dispose();
+  }
+
+  void _onProfileUpdated() {
+    if (mounted) {
+      _loadProfile();
+    }
   }
 
   Future<void> _loadProfile() async {

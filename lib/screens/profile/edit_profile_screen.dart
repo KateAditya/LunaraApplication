@@ -568,6 +568,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'maxAgePreference': maxAge,
       'matchDistanceKm': _selectedDistance,
       'invisibleMode': _invisibleMode,
+      'showMeInMatching': !_invisibleMode,
       'bookingAlertsEnabled': _bookingAlerts,
     };
     

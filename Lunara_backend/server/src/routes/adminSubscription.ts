@@ -53,4 +53,17 @@ router.patch('/:id/toggle-status', ctrl.togglePackageStatus);
 router.get('/:id/features', ctrl.getPlanFeatures);
 router.put('/:id/features', ctrl.updatePlanFeatures);
 
+// ── Admin Add-on Packages Catalog CRUD ────────────────────────────────────────
+router.get('/addons/catalog', ctrl.getAllAddonPackages);
+router.post('/addons/catalog', ctrl.createAddonPackage);
+router.put('/addons/catalog/:id', ctrl.updateAddonPackage);
+router.delete('/addons/catalog/:id', ctrl.deleteAddonPackage);
+
+// ── User Entitlements Breakdown & Adjustment ──────────────────────────────────
+router.get('/users/:userId/entitlements', ctrl.getUserEntitlementsBreakdown);
+router.post('/users/:userId/adjust-entitlement', ctrl.adminAdjustUserEntitlement);
+
+// ── Entitlement Audit Logs ────────────────────────────────────────────────────
+router.get('/audit-logs/entitlements', ctrl.getEntitlementAuditLogs);
+
 export default router;

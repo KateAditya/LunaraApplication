@@ -11,9 +11,10 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
 import '../../widgets/upcoming_night_invite_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
-import 'party_plan_detail_screen.dart';
+import 'live_feed_screen.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_countdown_button.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -1565,6 +1566,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     );
   }
 
+  void _onNotificationCardTapped(dynamic item) {
+    _markAsRead(item);
+    if (item == null) return;
+    final payloadData = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map
+            ? Map<String, dynamic>.from(item['metadata'])
+            : <String, dynamic>{});
+    final type = (item['type'] ?? item['category'] ?? payloadData['type'] ?? '').toString();
+    final payload = <String, dynamic>{
+      'type': type,
+      'category': item['category'] ?? type,
+      'title': item['title'] ?? '',
+      'body': item['body'] ?? '',
+      ...payloadData,
+    };
+    final actor = item['actor'] ?? item['sender'];
+    if (actor is Map) {
+      payload['actor'] = Map<String, dynamic>.from(actor);
+      payload['actorUserId'] = actor['id'] ?? actor['_id'];
+      payload['actorName'] = '${actor['firstName'] ?? ''} ${actor['lastName'] ?? ''}'.trim();
+      payload['senderId'] = actor['id'] ?? actor['_id'];
+      payload['senderName'] = payload['actorName'];
+      payload['senderImage'] = actor['profilePhotoUrl'] ?? actor['photoUrl'] ?? actor['image'];
+    }
+    PushNotificationService.navigateFromPayload(payload);
+  }
+
   void _openUpcomingNightInvite(dynamic item) {
     final payloadData = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
@@ -1730,7 +1759,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1865,9 +1894,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(
-                            plan: {'id': partyPlanId, ...data},
-                          ),
+                          builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
                       );
                     },
@@ -1910,16 +1937,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         item['body']?.toString() ??
         '$actorName requested to join your Party Plan.';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
-    final data = item['metadata'] is Map
-        ? Map<String, dynamic>.from(item['metadata'])
-        : (item['data'] is Map
-              ? Map<String, dynamic>.from(item['data'])
-              : <String, dynamic>{});
-    final partyPlanId = data['partyPlanId']?.toString() ?? '';
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2003,16 +2024,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 child: ElevatedButton(
                   onPressed: () {
                     _markAsRead(item);
-                    if (partyPlanId.isNotEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(
-                            plan: {'id': partyPlanId, ...data},
-                          ),
-                        ),
-                      ).then((_) => _fetchNotifications());
-                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                      ),
+                    ).then((_) => _fetchNotifications());
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF7C3AED),
@@ -2142,7 +2159,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2434,7 +2451,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2494,7 +2511,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               child: ElevatedButton.icon(
                 onPressed: () {
                   _markAsRead(item);
-                  Navigator.pushNamed(context, '/wallet');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LunaraWalletScreen(),
+                    ),
+                  );
                 },
                 icon: const Icon(
                   Icons.account_balance_wallet_rounded,
@@ -2623,7 +2645,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ? item['data'] as Map<String, dynamic>
               : <String, dynamic>{});
 
-    final String planId = (data['planId'] ?? item['entityId'] ?? '').toString();
     final String requestId = (data['requestId'] ?? '').toString();
     final String title = (item['title'] ?? '🎉 Party Plan Invitation')
         .toString();
@@ -2643,7 +2664,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2706,9 +2727,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => PartyPlanDetailScreen(
-                        plan: {'id': planId, 'isInvite': true},
-                      ),
+                      builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                     ),
                   );
                 },
@@ -2770,9 +2789,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PartyPlanDetailScreen(
-                              plan: {'id': planId, 'isInvite': true},
-                            ),
+                            builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                           ),
                         );
                       }
@@ -2801,9 +2818,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(
-                            plan: {'id': planId, 'isInvite': true},
-                          ),
+                          builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
                       );
                     },
@@ -2900,7 +2915,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3003,7 +3018,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3125,7 +3140,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3196,7 +3211,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => _markAsRead(item),
+                  onTap: () => _onNotificationCardTapped(item),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -3256,7 +3271,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3346,7 +3361,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3459,7 +3474,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3552,7 +3567,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Row(
         children: [
           Container(
@@ -3632,7 +3647,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Row(
         children: [
           GestureDetector(
@@ -3692,7 +3707,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3777,7 +3792,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: false,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Row(
         children: [
           Container(
@@ -4035,7 +4050,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(plan: firstPlan),
+                          builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
                       );
                     },
@@ -4072,7 +4087,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
-      onTap: () => _markAsRead(item),
+      onTap: () => _onNotificationCardTapped(item),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

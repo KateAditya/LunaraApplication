@@ -204,6 +204,8 @@ app.use('/api/mobile/payments', mobilePaymentRoutes);         // Central Payment
 app.use('/api/mobile/subscriptions', mobileSubscriptionRoutes); // Subscriptions (Mobile)
 app.use('/api/mobile/wallet', mobileWalletRoutes);             // Wallet (Mobile)
 app.use('/api/mobile/tickets', mobileTicketRoutes);           // Digital Tickets (Mobile)
+import mobileSyncRoutes from './routes/mobileSyncRoutes';
+app.use('/api/mobile/sync', mobileSyncRoutes);                 // Delta Synchronization (Mobile)
 import adminWalletRoutes from './routes/adminWalletRoutes';
 app.use('/api/admin/wallet', adminWalletRoutes);                  // Smart Credit Wallet (Admin)
 app.use('/api/admin/payments', adminPaymentsRoutes);          // Payments (Admin)
@@ -319,6 +321,22 @@ io.on('connection', (socket) => {
             }
         } catch (err) {
             logger.error('Failed to update online status or delivery:', err);
+        }
+    });
+
+    socket.on('join_city_room', (city: string) => {
+        if (city && typeof city === 'string') {
+            const cleanCity = city.trim().toLowerCase().replace(/\s+/g, '_');
+            socket.join(`city_${cleanCity}`);
+            logger.info(`Socket ${socket.id} joined city room: city_${cleanCity}`);
+        }
+    });
+
+    socket.on('leave_city_room', (city: string) => {
+        if (city && typeof city === 'string') {
+            const cleanCity = city.trim().toLowerCase().replace(/\s+/g, '_');
+            socket.leave(`city_${cleanCity}`);
+            logger.info(`Socket ${socket.id} left city room: city_${cleanCity}`);
         }
     });
 

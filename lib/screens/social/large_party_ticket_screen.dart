@@ -147,15 +147,23 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         _freshMemberCount = _freshTotalParticipants! > 1 ? _freshTotalParticipants! - 1 : 1;
       }
     }
-    final rawDate = b['bookingDate'] ?? b['partyDate'] ?? b['eventStartAt'];
+    final rawDate = b['bookingDate'] ?? b['partyDate'] ?? b['eventStartAt'] ?? b['eventDate'];
     if (rawDate != null && _freshPartyDate == null) {
       _freshPartyDate = DateTime.tryParse(rawDate.toString())?.toLocal();
     }
-    final rawTime = b['startTime'];
+    final rawTime = b['startTime'] ?? b['time'] ?? b['bookingTime'];
     if (rawTime != null && rawTime.toString().trim().isNotEmpty && _freshStartTime == null) {
-      _freshStartTime = rawTime.toString().trim();
-    } else if (_freshPartyDate != null && _freshStartTime == null) {
-      _freshStartTime = DateFormat('hh:mm a').format(_freshPartyDate!);
+      final tStr = rawTime.toString().trim();
+      if (tStr != '12:00 AM' && tStr != '00:00' && tStr != '0:00') {
+        _freshStartTime = tStr;
+      }
+    }
+    if (_freshStartTime == null) {
+      if (_freshPartyDate != null && (_freshPartyDate!.hour != 0 || _freshPartyDate!.minute != 0)) {
+        _freshStartTime = DateFormat('hh:mm a').format(_freshPartyDate!);
+      } else {
+        _freshStartTime = '08:00 PM';
+      }
     }
   }
 
@@ -171,11 +179,17 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
       }
     }
 
-    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
-      final tStr = rawTime.toString().trim();
-      final isPm = tStr.toUpperCase().contains('PM');
-      final isAm = tStr.toUpperCase().contains('AM');
-      final cleanTime = tStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+    String timeStr = (rawTime ?? '').toString().trim();
+    if (timeStr.isEmpty || timeStr == '12:00 AM' || timeStr == '00:00' || timeStr == '0:00') {
+      if (baseDate.hour == 0 && baseDate.minute == 0) {
+        timeStr = '08:00 PM';
+      }
+    }
+
+    if (timeStr.isNotEmpty) {
+      final isPm = timeStr.toUpperCase().contains('PM');
+      final isAm = timeStr.toUpperCase().contains('AM');
+      final cleanTime = timeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
       final parts = cleanTime.split(':');
       if (parts.isNotEmpty) {
         int? h = int.tryParse(parts[0].trim());
@@ -186,6 +200,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
         }
       }
+    } else if (baseDate.hour == 0 && baseDate.minute == 0) {
+      return DateTime(baseDate.year, baseDate.month, baseDate.day, 20, 0);
     }
     return baseDate;
   }
@@ -330,7 +346,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                 _freshPartyDate = DateTime.tryParse(groupParty['partyDate'].toString())?.toLocal();
               }
               final rawStartTime = groupParty['startTime']?.toString();
-              if (rawStartTime != null && rawStartTime.trim().isNotEmpty) {
+              if (rawStartTime != null && rawStartTime.trim().isNotEmpty && rawStartTime.trim() != '12:00 AM' && rawStartTime.trim() != '00:00' && rawStartTime.trim() != '0:00') {
                 _freshStartTime = rawStartTime.trim();
               }
               _freshPaymentStatus = groupParty['paymentStatus']?.toString();
@@ -389,8 +405,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             if (ticketObj['eventStartAt'] != null || ticketObj['bookingDate'] != null) {
               _freshPartyDate = DateTime.tryParse((ticketObj['eventStartAt'] ?? ticketObj['bookingDate']).toString())?.toLocal();
             }
-            if (ticketObj['startTime'] != null) {
-              _freshStartTime = ticketObj['startTime'].toString();
+            if (ticketObj['startTime'] != null && ticketObj['startTime'].toString().trim().isNotEmpty && ticketObj['startTime'].toString().trim() != '12:00 AM' && ticketObj['startTime'].toString().trim() != '00:00') {
+              _freshStartTime = ticketObj['startTime'].toString().trim();
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString() ?? ticketObj['ticketId']?.toString();
             _paymentState = _LargePartyPaymentState.paid;
