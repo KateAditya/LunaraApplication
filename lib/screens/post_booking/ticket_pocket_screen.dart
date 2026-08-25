@@ -283,7 +283,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
           final parts = timeOnly.split(':');
           if (parts.isNotEmpty) {
-            int h = int.tryParse(parts[0].trim()) ?? 20;
+            int h = int.tryParse(parts[0].trim()) ?? 0;
             final m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
             if (isPm && h < 12) h += 12;
             if (isAm && h == 12) h = 0;
@@ -291,7 +291,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
         }
         if (bDate.hour == 5 && bDate.minute == 30 && dateStr.endsWith('Z')) {
-          return DateTime(bDate.year, bDate.month, bDate.day, 20, 0);
+          return DateTime(bDate.year, bDate.month, bDate.day, 0, 0);
         }
         return bDate;
       } catch (_) {}
@@ -477,7 +477,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         !cleanTime.toUpperCase().contains('PM')) {
       final parts = cleanTime.split(':');
       if (parts.isNotEmpty) {
-        int h = int.tryParse(parts[0].trim()) ?? 20;
+        int h = int.tryParse(parts[0].trim()) ?? 0;
         int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
         final ampm = h >= 12 ? 'PM' : 'AM';
         final dh = h % 12 == 0 ? 12 : h % 12;
@@ -489,6 +489,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
     try {
       final date = DateTime.parse(bookingDateStr).toLocal();
+      if (cleanTime.isEmpty) {
+        if (date.hour == 5 && date.minute == 30 && bookingDateStr.endsWith('Z')) {
+          cleanTime = '12:00 AM';
+        } else if (date.hour != 0 || date.minute != 0) {
+          cleanTime = DateFormat('hh:mm a').format(date);
+        }
+      }
       final formattedDate = DateFormat('MMM d, yyyy').format(date).toUpperCase();
       return cleanTime.isNotEmpty ? '$formattedDate • $cleanTime' : formattedDate;
     } catch (_) {
@@ -1257,8 +1264,16 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['venueName']?.toString() ??
         'LUNARA VENUE';
     final imageUrl = _getVenueImageUrl(venue);
-    final bookingDate = booking['bookingDate']?.toString() ?? '';
-    final startTime = booking['startTime']?.toString() ?? '';
+    final bookingDate = booking['bookingDate']?.toString() ??
+        booking['partyDate']?.toString() ??
+        booking['eventStartAt']?.toString() ??
+        booking['eventDateTime']?.toString() ??
+        booking['planDateTime']?.toString() ??
+        '';
+    final startTime = booking['startTime']?.toString() ??
+        booking['partyTime']?.toString() ??
+        booking['time']?.toString() ??
+        '';
     final dateStr = _formatBookingDateTime(bookingDate, startTime);
 
     final eventTitle = booking['subject']?.toString().trim().isNotEmpty == true
@@ -1448,10 +1463,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             if (bookingMap['venue'] == null && venue != null) {
               bookingMap['venue'] = venue;
             }
-            if (bookingMap['partyDate'] == null && booking['bookingDate'] != null) {
-              bookingMap['partyDate'] = booking['bookingDate'];
+            if (bookingMap['partyDate'] == null) {
+              bookingMap['partyDate'] = booking['partyDate'] ?? booking['bookingDate'] ?? booking['eventStartAt'] ?? booking['eventDateTime'];
             }
-            if (bookingMap['startTime'] == null && startTime.isNotEmpty) {
+            if ((bookingMap['startTime'] == null || bookingMap['startTime'].toString().trim().isEmpty) && startTime.isNotEmpty) {
               bookingMap['startTime'] = startTime;
             }
             if (bookingMap['totalParticipants'] == null && booking['numberOfGuests'] != null) {

@@ -140,7 +140,7 @@ class StrangersMeetRequest {
         }
       }
     } else if (parsedDate.hour == 5 && parsedDate.minute == 30 && eventDateRaw.toString().endsWith('Z')) {
-      parsedDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, 20, 0);
+      parsedDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, 0, 0);
     }
 
     final int numPersons = int.tryParse(numPersonsRaw?.toString() ?? '') ?? 2;

@@ -1718,13 +1718,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (category.contains('booking') || category.contains('group')) {
       final rawDataMap = Map<String, dynamic>.from(item.rawData);
       final bookingData = Map<String, dynamic>.from(rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap);
-      if (bookingData['startTime'] == null || bookingData['startTime'].toString().trim().isEmpty || bookingData['startTime'] == '12:00 AM' || bookingData['startTime'] == '00:00' || bookingData['startTime'] == '0:00') {
-        final st = rawDataMap['startTime'] ?? rawDataMap['time'] ?? rawDataMap['bookingTime'];
-        if (st != null && st.toString().trim().isNotEmpty && st.toString().trim() != '12:00 AM' && st.toString().trim() != '00:00') {
-          bookingData['startTime'] = st.toString().trim();
-        } else {
-          bookingData['startTime'] = '08:00 PM';
+      final rawSt = bookingData['startTime'] ?? bookingData['time'] ?? bookingData['bookingTime'] ?? rawDataMap['startTime'] ?? rawDataMap['time'] ?? rawDataMap['bookingTime'];
+      if (rawSt != null && rawSt.toString().trim().isNotEmpty) {
+        String cleanSt = rawSt.toString().trim();
+        if (!cleanSt.toUpperCase().contains('AM') && !cleanSt.toUpperCase().contains('PM')) {
+          final parts = cleanSt.split(':');
+          if (parts.isNotEmpty) {
+            int h = int.tryParse(parts[0].trim()) ?? 0;
+            int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+            final ampm = h >= 12 ? 'PM' : 'AM';
+            final dh = h % 12 == 0 ? 12 : h % 12;
+            cleanSt = '$dh:${m.toString().padLeft(2, '0')} $ampm';
+          }
         }
+        bookingData['startTime'] = cleanSt;
       }
       final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue'};
       if (status == 'confirmed' || status == 'paid') {
@@ -1802,47 +1809,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final timeStr = (rawTime ?? '').toString().trim();
 
-      // If dateStr is already a full ISO timestamp containing time (contains 'T')
-      if (dateStr.contains('T')) {
-        final dt = DateTime.tryParse(dateStr)?.toLocal();
-        if (dt != null) {
-          // If time was midnight 00:00 and rawTime has specific time, apply rawTime
-          if (timeStr.isNotEmpty && dt.hour == 0 && dt.minute == 0) {
-            final tp = _parseTimeComponent(timeStr);
-            return DateTime(dt.year, dt.month, dt.day, tp[0], tp[1]);
-          }
-          return dt;
-        }
-      }
-
-      // Parse date part
-      final parsedDate = DateTime.tryParse(dateStr);
-      int year, month, day;
-      if (parsedDate != null) {
-        year = parsedDate.year;
-        month = parsedDate.month;
-        day = parsedDate.day;
-      } else {
+      DateTime? baseDt = DateTime.tryParse(dateStr)?.toLocal();
+      if (baseDt == null) {
         final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
         final match = ymdRegex.firstMatch(dateStr);
         if (match != null) {
-          year = int.parse(match.group(1)!);
-          month = int.parse(match.group(2)!);
-          day = int.parse(match.group(3)!);
+          final year = int.parse(match.group(1)!);
+          final month = int.parse(match.group(2)!);
+          final day = int.parse(match.group(3)!);
+          baseDt = DateTime(year, month, day);
         } else {
           return null;
         }
       }
 
-      final tp = _parseTimeComponent(timeStr.isNotEmpty ? timeStr : '20:00');
-      return DateTime(year, month, day, tp[0], tp[1]);
+      if (timeStr.isNotEmpty) {
+        final tp = _parseTimeComponent(timeStr);
+        return DateTime(baseDt.year, baseDt.month, baseDt.day, tp[0], tp[1]);
+      }
+
+      if (baseDt.hour == 5 && baseDt.minute == 30 && dateStr.endsWith('Z')) {
+        return DateTime(baseDt.year, baseDt.month, baseDt.day, 0, 0);
+      }
+
+      return baseDt;
     } catch (_) {
       return null;
     }
   }
 
   List<int> _parseTimeComponent(String timeStr) {
-    int hour = 20; // default 8:00 PM
+    int hour = 0; // default 12:00 AM
     int minute = 0;
     if (timeStr.isNotEmpty) {
       final cleanTime = timeStr.toUpperCase().trim();
@@ -1851,7 +1848,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
         final parts = timeOnly.split(':');
         if (parts.isNotEmpty) {
-          int h = int.tryParse(parts[0]) ?? 12;
+          int h = int.tryParse(parts[0]) ?? 0;
           int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
           if (isPm && h < 12) h += 12;
           if (!isPm && h == 12) h = 0;
@@ -1861,7 +1858,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else {
         final parts = cleanTime.split(':');
         if (parts.isNotEmpty) {
-          hour = int.tryParse(parts[0]) ?? 20;
+          hour = int.tryParse(parts[0]) ?? 0;
           minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
         }
       }
@@ -2418,13 +2415,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Ensure startTime is extracted from entries into partyMap
     for (final e in entries) {
       final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['data']?['time'];
-      if (st != null && st.toString().trim().isNotEmpty && st.toString().trim() != '12:00 AM' && st.toString().trim() != '00:00' && st.toString().trim() != '0:00') {
-        partyMap['startTime'] = st.toString().trim();
+      if (st != null && st.toString().trim().isNotEmpty) {
+        String cleanSt = st.toString().trim();
+        if (!cleanSt.toUpperCase().contains('AM') && !cleanSt.toUpperCase().contains('PM')) {
+          final parts = cleanSt.split(':');
+          if (parts.isNotEmpty) {
+            int h = int.tryParse(parts[0].trim()) ?? 0;
+            int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+            final ampm = h >= 12 ? 'PM' : 'AM';
+            final dh = h % 12 == 0 ? 12 : h % 12;
+            cleanSt = '$dh:${m.toString().padLeft(2, '0')} $ampm';
+          }
+        }
+        partyMap['startTime'] = cleanSt;
         break;
       }
-    }
-    if (partyMap['startTime'] == null || partyMap['startTime'].toString().trim().isEmpty || partyMap['startTime'] == '12:00 AM' || partyMap['startTime'] == '00:00' || partyMap['startTime'] == '0:00') {
-      partyMap['startTime'] = '08:00 PM';
     }
 
     // Determine status from entries

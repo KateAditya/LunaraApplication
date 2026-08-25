@@ -151,8 +151,10 @@ export function parseBookingDateTimeRobust(bookingDateVal: Date | string, startT
         const isAm = sTime.toUpperCase().includes('AM');
         const cleanTime = sTime.toUpperCase().replace('AM', '').replace('PM', '').trim();
         const parts = cleanTime.split(':');
-        let h = parts.length > 0 ? (parseInt(parts[0], 10) || 20) : 20;
-        const m = parts.length > 1 ? (parseInt(parts[1], 10) || 0) : 0;
+        const parsedH = parts.length > 0 ? parseInt(parts[0], 10) : NaN;
+        let h = !isNaN(parsedH) ? parsedH : 20;
+        const parsedM = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+        const m = !isNaN(parsedM) ? parsedM : 0;
         if (isPm && h < 12) h += 12;
         if (isAm && h === 12) h = 0;
         hours = h;

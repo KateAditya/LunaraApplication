@@ -424,7 +424,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         }
       }
     } else if (planDateTime.hour == 5 && planDateTime.minute == 30 && rawDate.toString().endsWith('Z')) {
-      planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, 20, 0);
+      planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, 0, 0);
     }
 
     final hostUser = _resolveHostUser();

@@ -153,18 +153,35 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
     final rawTime = b['startTime'] ?? b['time'] ?? b['bookingTime'];
     if (rawTime != null && rawTime.toString().trim().isNotEmpty && _freshStartTime == null) {
-      final tStr = rawTime.toString().trim();
-      if (tStr != '12:00 AM' && tStr != '00:00' && tStr != '0:00') {
-        _freshStartTime = tStr;
-      }
+      _freshStartTime = _normalizeTimeStr(rawTime.toString());
     }
     if (_freshStartTime == null) {
       if (_freshPartyDate != null && (_freshPartyDate!.hour != 0 || _freshPartyDate!.minute != 0)) {
-        _freshStartTime = DateFormat('hh:mm a').format(_freshPartyDate!);
-      } else {
-        _freshStartTime = '08:00 PM';
+        if (_freshPartyDate!.hour == 5 && _freshPartyDate!.minute == 30) {
+          _freshStartTime = '12:00 AM';
+        } else {
+          _freshStartTime = DateFormat('hh:mm a').format(_freshPartyDate!);
+        }
+      } else if (_freshPartyDate != null) {
+        _freshStartTime = '12:00 AM';
       }
     }
+  }
+
+  String _normalizeTimeStr(String? time) {
+    if (time == null || time.trim().isEmpty) return '12:00 AM';
+    String t = time.trim();
+    if (!t.toUpperCase().contains('AM') && !t.toUpperCase().contains('PM')) {
+      final parts = t.split(':');
+      if (parts.isNotEmpty) {
+        int h = int.tryParse(parts[0].trim()) ?? 0;
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        final ampm = h >= 12 ? 'PM' : 'AM';
+        final dh = h % 12 == 0 ? 12 : h % 12;
+        return '$dh:${m.toString().padLeft(2, '0')} $ampm';
+      }
+    }
+    return t;
   }
 
   DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
@@ -198,14 +215,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
 
     if (baseDate.hour == 5 && baseDate.minute == 30 && rawDate.toString().endsWith('Z')) {
-      return DateTime(baseDate.year, baseDate.month, baseDate.day, 20, 0);
+      return DateTime(baseDate.year, baseDate.month, baseDate.day, 0, 0);
     }
     return baseDate;
   }
 
   void _initCountdown() {
     final bookingDateStr = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-    final startTimeStr = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final startTimeStr = _freshStartTime ?? widget.booking['startTime'] ?? '12:00 AM';
     final DateTime targetDate = _parseEventDateTime(bookingDateStr, startTimeStr);
 
     void update() {
@@ -263,6 +280,17 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           final newTotalParticipants = guestsRaw != null ? int.tryParse(guestsRaw.toString()) : null;
           final newMemberCount = newTotalParticipants != null && newTotalParticipants > 1 ? newTotalParticipants - 1 : null;
 
+          final rawBookingDate = booking['bookingDate'] ?? booking['partyDate'] ?? booking['eventStartAt'];
+          DateTime? newPartyDate;
+          if (rawBookingDate != null) {
+            newPartyDate = DateTime.tryParse(rawBookingDate.toString())?.toLocal();
+          }
+          final rawBookingTime = booking['startTime'] ?? booking['bookingTime'] ?? booking['time'];
+          String? newStartTime;
+          if (rawBookingTime != null && rawBookingTime.toString().trim().isNotEmpty) {
+            newStartTime = _normalizeTimeStr(rawBookingTime.toString());
+          }
+
           final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toLowerCase();
           final bookingStatus = booking['status']?.toString().toLowerCase();
           final isFreeBooking = (newTotalAmount == null || newTotalAmount <= 0);
@@ -282,6 +310,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               newTicketCode != _canonicalTicketCode ||
               newPaymentStatus != _freshPaymentStatus ||
               newTotalAmount != _freshTotalAmount ||
+              (newPartyDate != null && newPartyDate != _freshPartyDate) ||
+              (newStartTime != null && newStartTime != _freshStartTime) ||
               (newHostUser != null && newHostUser.toString() != _freshHostUser?.toString()) ||
               (newVenue != null && newVenue.toString() != _freshVenue?.toString());
 
@@ -289,6 +319,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             setState(() {
               if (newHostUser != null) _freshHostUser = newHostUser;
               if (newVenue != null) _freshVenue = newVenue;
+              if (newPartyDate != null) _freshPartyDate = newPartyDate;
+              if (newStartTime != null) _freshStartTime = newStartTime;
               _freshTotalAmount = newTotalAmount;
               _freshPaymentStatus = newPaymentStatus;
               _canonicalTicketCode = newTicketCode;
@@ -343,8 +375,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                 _freshPartyDate = DateTime.tryParse(groupParty['partyDate'].toString())?.toLocal();
               }
               final rawStartTime = groupParty['startTime']?.toString();
-              if (rawStartTime != null && rawStartTime.trim().isNotEmpty && rawStartTime.trim() != '12:00 AM' && rawStartTime.trim() != '00:00' && rawStartTime.trim() != '0:00') {
-                _freshStartTime = rawStartTime.trim();
+              if (rawStartTime != null && rawStartTime.trim().isNotEmpty) {
+                _freshStartTime = _normalizeTimeStr(rawStartTime);
               }
               _freshPaymentStatus = groupParty['paymentStatus']?.toString();
               _freshPaymentMethod = groupParty['paymentMethod']?.toString();
@@ -402,8 +434,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             if (ticketObj['eventStartAt'] != null || ticketObj['bookingDate'] != null) {
               _freshPartyDate = DateTime.tryParse((ticketObj['eventStartAt'] ?? ticketObj['bookingDate']).toString())?.toLocal();
             }
-            if (ticketObj['startTime'] != null && ticketObj['startTime'].toString().trim().isNotEmpty && ticketObj['startTime'].toString().trim() != '12:00 AM' && ticketObj['startTime'].toString().trim() != '00:00') {
-              _freshStartTime = ticketObj['startTime'].toString().trim();
+            if (ticketObj['startTime'] != null && ticketObj['startTime'].toString().trim().isNotEmpty) {
+              _freshStartTime = _normalizeTimeStr(ticketObj['startTime'].toString());
             }
             _canonicalTicketCode = ticketObj['ticketCode']?.toString() ?? ticketObj['ticketId']?.toString();
             _paymentState = _LargePartyPaymentState.paid;
@@ -844,7 +876,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
     final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
     final rawDate = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '12:00 AM';
     final DateTime planDateTime = _parseEventDateTime(rawDate, rawTime);
     final eventDateTime = DateFormat('MMM dd, yyyy • hh:mm a').format(planDateTime);
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'LP-PASS').toString().toUpperCase();
@@ -877,7 +909,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
 
     final rawDate = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '20:00';
+    final rawTime = _freshStartTime ?? widget.booking['startTime'] ?? '12:00 AM';
     final DateTime planDateTime = _parseEventDateTime(rawDate, rawTime);
 
     final ticketId = (_canonicalTicketCode ?? widget.booking['ticketCode'] ?? widget.booking['id'] ?? 'GP-TICKET').toString().toUpperCase();

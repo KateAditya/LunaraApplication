@@ -261,7 +261,7 @@ async function getUserNotifications(
                 model: PartyPlanRequest,
                 as: 'requests',
                 required: false,
-                attributes: ['id', 'partyPlanId', 'requesterId', 'status']
+                attributes: ['id', 'planId', 'requesterId', 'status']
             }],
             attributes: ['id'],
             subQuery: false,

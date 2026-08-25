@@ -149,9 +149,9 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
             return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
           }
           // If no explicit time and the parsed time is midnight UTC (e.g. 05:30 IST from DATEONLY),
-          // fallback to standard 8 PM
+          // fallback to standard 12:00 AM (00:00)
           if (dt.hour == 5 && dt.minute == 30 && dateStr.endsWith('Z')) {
-            return DateTime(dt.year, dt.month, dt.day, 20, 0);
+            return DateTime(dt.year, dt.month, dt.day, 0, 0);
           }
           return dt;
         }
@@ -226,7 +226,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
             return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
           }
           if (dt.hour == 5 && dt.minute == 30 && widget.booking!['eventStartAt'].toString().endsWith('Z')) {
-            return DateTime(dt.year, dt.month, dt.day, 20, 0);
+            return DateTime(dt.year, dt.month, dt.day, 0, 0);
           }
           return dt;
         }
@@ -249,7 +249,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   List<int> _parseTimeStr(String timeStr) {
-    int hour = 20; // default 8 PM
+    int hour = 0; // default 12:00 AM (00:00)
     int minute = 0;
     if (timeStr.isNotEmpty) {
       final cleanTime = timeStr.toUpperCase();
@@ -268,7 +268,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       } else {
         final parts = timeStr.split(':');
         if (parts.isNotEmpty) {
-          hour = int.tryParse(parts[0]) ?? 20;
+          hour = int.tryParse(parts[0]) ?? 0;
           minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
         }
       }
