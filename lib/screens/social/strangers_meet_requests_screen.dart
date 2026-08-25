@@ -39,7 +39,9 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   }
 
   void _onProceedToPayment(StrangersMeetRequest req) {
-    if (req.eventDateTime.isBefore(DateTime.now())) {
+    if (req.status.toLowerCase() == 'expired' ||
+        req.status.toLowerCase() == 'cancelled' ||
+        req.eventDateTime.add(const Duration(hours: 4)).isBefore(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('This Stranger Meet has expired and can no longer be paid for.'),

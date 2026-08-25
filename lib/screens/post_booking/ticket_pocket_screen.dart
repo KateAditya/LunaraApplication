@@ -262,38 +262,49 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   DateTime? _extractEventStartDateTime(Map<String, dynamic> booking) {
-    if (booking['eventStartAt'] != null) {
-      final dt = DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal();
-      if (dt != null) return dt;
-    }
-    if (booking['eventDateTime'] != null) {
-      final dt = DateTime.tryParse(booking['eventDateTime'].toString())?.toLocal();
-      if (dt != null) return dt;
-    }
-    if (booking['planDateTime'] != null) {
-      final dt = DateTime.tryParse(booking['planDateTime'].toString())?.toLocal();
-      if (dt != null) return dt;
-    }
     final dateStr = booking['bookingDate']?.toString() ??
         booking['partyDate']?.toString() ??
+        booking['eventStartAt']?.toString() ??
+        booking['eventDateTime']?.toString() ??
+        booking['planDateTime']?.toString() ??
         booking['date']?.toString();
     final startTimeStr = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
-        '20:00';
+        booking['time']?.toString() ??
+        '';
 
     if (dateStr != null && dateStr.isNotEmpty) {
       try {
         final bDate = DateTime.parse(dateStr).toLocal();
-        final isPm = startTimeStr.toUpperCase().contains('PM');
-        final isAm = startTimeStr.toUpperCase().contains('AM');
-        final cleanTime = startTimeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
-        final parts = cleanTime.split(':');
-        int h = parts.isNotEmpty ? (int.tryParse(parts[0].trim()) ?? 20) : 20;
-        final m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        if (isPm && h < 12) h += 12;
-        if (isAm && h == 12) h = 0;
-        return DateTime(bDate.year, bDate.month, bDate.day, h, m);
+        if (startTimeStr.isNotEmpty) {
+          final cleanTime = startTimeStr.toUpperCase();
+          final isPm = cleanTime.contains('PM');
+          final isAm = cleanTime.contains('AM');
+          final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+          final parts = timeOnly.split(':');
+          if (parts.isNotEmpty) {
+            int h = int.tryParse(parts[0].trim()) ?? 20;
+            final m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+            if (isPm && h < 12) h += 12;
+            if (isAm && h == 12) h = 0;
+            return DateTime(bDate.year, bDate.month, bDate.day, h, m);
+          }
+        }
+        if (bDate.hour == 5 && bDate.minute == 30 && dateStr.endsWith('Z')) {
+          return DateTime(bDate.year, bDate.month, bDate.day, 20, 0);
+        }
+        return bDate;
       } catch (_) {}
+    }
+
+    if (booking['eventStartAt'] != null) {
+      return DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal();
+    }
+    if (booking['eventDateTime'] != null) {
+      return DateTime.tryParse(booking['eventDateTime'].toString())?.toLocal();
+    }
+    if (booking['planDateTime'] != null) {
+      return DateTime.tryParse(booking['planDateTime'].toString())?.toLocal();
     }
     return null;
   }
@@ -460,15 +471,28 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
+    String cleanTime = startTimeStr.trim();
+    if (cleanTime.isNotEmpty &&
+        !cleanTime.toUpperCase().contains('AM') &&
+        !cleanTime.toUpperCase().contains('PM')) {
+      final parts = cleanTime.split(':');
+      if (parts.isNotEmpty) {
+        int h = int.tryParse(parts[0].trim()) ?? 20;
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        final ampm = h >= 12 ? 'PM' : 'AM';
+        final dh = h % 12 == 0 ? 12 : h % 12;
+        cleanTime = '$dh:${m.toString().padLeft(2, '0')} $ampm';
+      }
+    }
     if (bookingDateStr.trim().isEmpty) {
-      return '• $startTimeStr';
+      return cleanTime.isNotEmpty ? '• $cleanTime' : '';
     }
     try {
       final date = DateTime.parse(bookingDateStr).toLocal();
       final formattedDate = DateFormat('MMM d, yyyy').format(date).toUpperCase();
-      return '$formattedDate • $startTimeStr';
+      return cleanTime.isNotEmpty ? '$formattedDate • $cleanTime' : formattedDate;
     } catch (_) {
-      return '$bookingDateStr • $startTimeStr';
+      return cleanTime.isNotEmpty ? '$bookingDateStr • $cleanTime' : bookingDateStr;
     }
   }
 

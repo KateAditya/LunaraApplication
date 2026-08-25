@@ -388,12 +388,44 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     final rawDate = widget.plan['planDateTime'] ??
         widget.plan['eventStartAt'] ??
         widget.plan['bookingDate'] ??
+        widget.plan['partyDate'] ??
         widget.request['planDateTime'] ??
         widget.request['eventStartAt'] ??
-        widget.request['bookingDate'];
-    final planDateTime = rawDate != null
-        ? DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now()
-        : DateTime.now();
+        widget.request['bookingDate'] ??
+        widget.request['partyDate'];
+    final rawTime = widget.plan['startTime'] ??
+        widget.plan['time'] ??
+        widget.plan['partyTime'] ??
+        widget.request['startTime'] ??
+        widget.request['time'] ??
+        widget.request['partyTime'];
+
+    DateTime planDateTime = DateTime.now();
+    if (rawDate != null) {
+      if (rawDate is DateTime) {
+        planDateTime = rawDate.toLocal();
+      } else {
+        planDateTime = DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now();
+      }
+    }
+    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
+      final cleanTime = rawTime.toString().toUpperCase().trim();
+      final isPm = cleanTime.contains('PM');
+      final isAm = cleanTime.contains('AM');
+      final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = timeOnly.split(':');
+      if (parts.isNotEmpty) {
+        int? h = int.tryParse(parts[0].trim());
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        if (h != null) {
+          if (isPm && h < 12) h += 12;
+          if (isAm && h == 12) h = 0;
+          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
+        }
+      }
+    } else if (planDateTime.hour == 5 && planDateTime.minute == 30 && rawDate.toString().endsWith('Z')) {
+      planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, 20, 0);
+    }
 
     final hostUser = _resolveHostUser();
     final hostFirstName = hostUser['firstName']?.toString() ?? '';

@@ -4,6 +4,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
+import '../../models/vip_entitlement_model.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 
 enum VIPPaymentState {
@@ -35,6 +36,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   List<dynamic> _allPackages = [];
 
+  // Add-ons state
+  List<SubscriptionAddonPackageModel> _availableAddons = [];
+  bool _isLoadingAddons = false;
+  String? _pendingAddonPackageId; // tracks which addon is being purchased via Razorpay
+
   String? get _activePackageId {
     final status = SubscriptionProvider.instance.status;
     return status.isActive ? status.packageId : null;
@@ -50,10 +56,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     return status.isActive ? status.tier : null;
   }
 
-  int get _boostsRemaining {
-    final status = SubscriptionProvider.instance.status;
-    return status.boostsRemaining;
-  }
+  int get _boostsRemaining => SubscriptionProvider.instance.boostsRemaining;
+  int get _superlikesRemaining => SubscriptionProvider.instance.superlikesRemaining;
 
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
@@ -71,7 +75,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
 
     if (!kIsWeb) {
       try {
@@ -123,6 +127,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+    // Load add-ons and entitlements in parallel (non-blocking)
+    _loadAddons();
+    SubscriptionProvider.instance.fetchEntitlementsSummary();
+  }
+
+  Future<void> _loadAddons() async {
+    if (_isLoadingAddons) return;
+    setState(() => _isLoadingAddons = true);
+    try {
+      await SubscriptionProvider.instance.fetchAvailableAddons();
+      if (mounted) {
+        setState(() {
+          _availableAddons = SubscriptionProvider.instance.availableAddons;
+          _isLoadingAddons = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading addons: $e');
+      if (mounted) setState(() => _isLoadingAddons = false);
     }
   }
 
@@ -200,8 +224,16 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           response.signature ?? 'mock_signature',
         );
       }
+    } else if (_pendingAddonPackageId != null) {
+      // Add-on Purchase via Razorpay (tab 2 or hybrid topup from any tab)
+      _confirmAddonPurchase(
+        _pendingAddonPackageId!,
+        response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.signature ?? 'mock_signature',
+      );
     } else {
-      // Boost Purchase
+      // Boost Purchase (tab 1)
       final boost = _boostOptions[_selectedBoostOption];
       _confirmBoostPurchase(
         boost['count'],
@@ -632,6 +664,77 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     }
   }
 
+  Future<void> _launchRazorpayForAddon(SubscriptionAddonPackageModel addon) async {
+    setState(() {
+      _isProcessing = true;
+      _pendingAddonPackageId = addon.id;
+    });
+    final orderData = await ApiService.createAddonRazorpayOrder(addon.id);
+    if (orderData == null) {
+      setState(() { _isProcessing = false; _pendingAddonPackageId = null; });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to create order. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    final options = {
+      'key': orderData['keyId'] ?? orderData['razorpayKeyId'] ?? 'rzp_test_key',
+      'amount': orderData['amount'] ?? (addon.price * 100).toInt(),
+      'name': 'Lunara Add-on',
+      'description': addon.name,
+      'order_id': orderData['orderId'] ?? orderData['razorpayOrderId'] ?? '',
+      'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+      'theme': {'color': '#7C3AED'},
+    };
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      setState(() { _isProcessing = false; _pendingAddonPackageId = null; });
+      debugPrint('Error opening Razorpay for addon: $e');
+    }
+  }
+
+  Future<void> _confirmAddonPurchase(
+    String addonPackageId,
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
+    setState(() => _isProcessing = true);
+    final response = await ApiService.verifyAddonRazorpayPayment(
+      addonPackageId: addonPackageId,
+      razorpayOrderId: orderId,
+      razorpayPaymentId: paymentId,
+      razorpaySignature: signature,
+    );
+    setState(() {
+      _isProcessing = false;
+      _pendingAddonPackageId = null;
+    });
+    if (response['success'] == true) {
+      await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
+      await _loadAddons();
+      if (mounted) setState(() {});
+      _showSuccessDialog(
+        'Add-on Activated! ✨',
+        response['message'] ?? 'Your add-on has been credited to your account.',
+      );
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Add-on activation still processing. Please refresh.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   void _showSuccessDialog(String title, String subtitle) {
     showDialog(
       context: context,
@@ -700,7 +803,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
@@ -735,6 +838,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             tabs: const [
               Tab(text: 'VIP PASSES'),
               Tab(text: 'PROFILE BOOST'),
+              Tab(text: 'ADD-ONS'),
               Tab(text: 'PURCHASED PLANS'),
             ],
           ),
@@ -750,6 +854,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                 children: [
                   _buildVIPPassesTab(),
                   _buildProfileBoostTab(),
+                  _buildAddonsTab(),
                   _buildPurchasedPlansTab(),
                 ],
               ),
@@ -1803,6 +1908,295 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+
+  // ── Feature icon/color/unit helpers ─────────────────────────────────────
+  IconData _addonIcon(String featureKey) {
+    switch (featureKey) {
+      case 'superlike': return Icons.star_rounded;
+      case 'boost': return Icons.bolt_rounded;
+      case 'swipe': return Icons.swipe_rounded;
+      case 'like': return Icons.favorite_rounded;
+      case 'party_plan': return Icons.celebration_rounded;
+      case 'undo': return Icons.undo_rounded;
+      default: return Icons.add_circle_outline_rounded;
+    }
+  }
+
+  Color _addonColor(String featureKey) {
+    switch (featureKey) {
+      case 'superlike': return const Color(0xFF2563EB);
+      case 'boost': return Colors.purple;
+      case 'swipe': return const Color(0xFF0891B2);
+      case 'like': return const Color(0xFFE11D48);
+      case 'party_plan': return const Color(0xFF7C3AED);
+      case 'undo': return const Color(0xFFD97706);
+      default: return const Color(0xFF6B7280);
+    }
+  }
+
+  String _addonUnit(String featureKey) {
+    switch (featureKey) {
+      case 'superlike': return 'Superlikes';
+      case 'boost': return 'Boosts';
+      case 'swipe': return 'Swipes';
+      case 'like': return 'Likes';
+      case 'party_plan': return 'Party Plans';
+      case 'undo': return 'Undos';
+      default: return 'Credits';
+    }
+  }
+
+  int _currentBalance(String featureKey) {
+    final summary = SubscriptionProvider.instance.entitlementsSummary;
+    if (summary == null) {
+      if (featureKey == 'superlike') return _superlikesRemaining;
+      if (featureKey == 'boost') return _boostsRemaining;
+      return 0;
+    }
+    switch (featureKey) {
+      case 'superlike': return summary.superlikesAvailable;
+      case 'boost': return summary.boostsAvailable;
+      default:
+        final t = summary.totals['${featureKey}Available'];
+        if (t is int) return t;
+        return int.tryParse(t?.toString() ?? '0') ?? 0;
+    }
+  }
+
+  Widget _buildAddonsTab() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return RefreshIndicator(
+      color: LunaraTheme.electricViolet,
+      onRefresh: () async {
+        await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
+        await _loadAddons();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF4F46E5), Color(0xFF7C3AED), Color(0xFFA855F7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0xFF7C3AED).withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('ADD-ON STORE', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                  const SizedBox(height: 4),
+                  const Text('Power up your experience', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      _addonBalanceBadge(Icons.star_rounded, '${_currentBalance('superlike')}', 'Superlikes', const Color(0xFF93C5FD)),
+                      _addonBalanceBadge(Icons.bolt_rounded, '${_currentBalance('boost')}', 'Boosts', Colors.amber),
+                      _addonBalanceBadge(Icons.swipe_rounded, '${_currentBalance('swipe')}', 'Swipes', const Color(0xFF67E8F9)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('AVAILABLE ADD-ONS', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                if (_isLoadingAddons) const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: LunaraTheme.electricViolet)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (_availableAddons.isEmpty && !_isLoadingAddons)
+              _buildAddonsEmptyState(isDark)
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _availableAddons.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, index) => _buildAddonCard(_availableAddons[index], isDark),
+              ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addonBalanceBadge(IconData icon, String count, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 15),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(count, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, height: 1.1)),
+              Text(label, style: const TextStyle(color: Colors.white60, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddonCard(SubscriptionAddonPackageModel addon, bool isDark) {
+    final color = _addonColor(addon.featureKey);
+    final icon = _addonIcon(addon.featureKey);
+    final unit = _addonUnit(addon.featureKey);
+    final balance = _currentBalance(addon.featureKey);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1.5),
+        boxShadow: [BoxShadow(color: color.withValues(alpha: isDark ? 0.12 : 0.05), blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52, height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [color.withValues(alpha: 0.75), color], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(child: Text(addon.name, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+                    if (addon.badge != null && addon.badge!.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                        child: Text(addon.badge!, style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(addon.description ?? '+${addon.quantity} $unit', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12), overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    Icon(Icons.account_circle_rounded, size: 11, color: color.withValues(alpha: 0.7)),
+                    const SizedBox(width: 3),
+                    Text('Balance: $balance $unit', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('₹', style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 34,
+                child: ElevatedButton(
+                  onPressed: (_isProcessing && _pendingAddonPackageId != addon.id) ? null : () => _purchaseAddon(addon),
+                  style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 18), elevation: 0),
+                  child: (_isProcessing && _pendingAddonPackageId == addon.id)
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('BUY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _purchaseAddon(SubscriptionAddonPackageModel addon) {
+    SmartCheckoutSheet.show(
+      context: context,
+      title: addon.name,
+      subtitle: '+${addon.quantity} ${_addonUnit(addon.featureKey)} · Instant credit',
+      itemPrice: addon.price,
+      onWalletPayment: () async {
+        final result = await SubscriptionProvider.instance.purchaseAddonWithWallet(addon.id);
+        if (result['success'] == true) {
+          if (mounted) {
+            setState(() { _availableAddons = SubscriptionProvider.instance.availableAddons; });
+            _showSuccessDialog('${addon.name} Added! ✨', result['message'] ?? '+${addon.quantity} ${_addonUnit(addon.featureKey)} credited.');
+          }
+          return true;
+        } else {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Wallet payment failed.'), backgroundColor: Colors.redAccent));
+          return false;
+        }
+      },
+      onDirectPayment: () async { await _launchRazorpayForAddon(addon); },
+      onHybridPayment: (shortfallAmount) async {
+        final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+        if (orderData != null) {
+          _pendingAddonPackageId = addon.id;
+          _razorpay.open({'key': orderData['keyId'] ?? 'rzp_test_key', 'amount': (shortfallAmount * 100).toInt(), 'name': 'Lunara Top-Up', 'description': 'Top up for ${addon.name}', 'order_id': orderData['orderId'] ?? orderData['id'] ?? '', 'theme': {'color': '#7C3AED'}});
+        }
+      },
+    );
+  }
+
+  Widget _buildAddonsEmptyState(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: LunaraTheme.electricViolet.withValues(alpha: 0.1), shape: BoxShape.circle),
+              child: Icon(Icons.add_shopping_cart_rounded, size: 48, color: LunaraTheme.electricViolet.withValues(alpha: 0.4)),
+            ),
+            const SizedBox(height: 16),
+            Text('No Add-ons Available', style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Add-on packages are being set up.\nCheck back soon!', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), fontSize: 13, height: 1.5)),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: _loadAddons,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(foregroundColor: LunaraTheme.electricViolet, side: BorderSide(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            ),
+          ],
+        ),
       ),
     );
   }

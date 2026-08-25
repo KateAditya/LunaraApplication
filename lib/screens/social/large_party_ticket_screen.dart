@@ -180,17 +180,12 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     }
 
     String timeStr = (rawTime ?? '').toString().trim();
-    if (timeStr.isEmpty || timeStr == '12:00 AM' || timeStr == '00:00' || timeStr == '0:00') {
-      if (baseDate.hour == 0 && baseDate.minute == 0) {
-        timeStr = '08:00 PM';
-      }
-    }
-
     if (timeStr.isNotEmpty) {
-      final isPm = timeStr.toUpperCase().contains('PM');
-      final isAm = timeStr.toUpperCase().contains('AM');
-      final cleanTime = timeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
-      final parts = cleanTime.split(':');
+      final cleanTime = timeStr.toUpperCase();
+      final isPm = cleanTime.contains('PM');
+      final isAm = cleanTime.contains('AM');
+      final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = timeOnly.split(':');
       if (parts.isNotEmpty) {
         int? h = int.tryParse(parts[0].trim());
         int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
@@ -200,7 +195,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
         }
       }
-    } else if (baseDate.hour == 0 && baseDate.minute == 0) {
+    }
+
+    if (baseDate.hour == 5 && baseDate.minute == 30 && rawDate.toString().endsWith('Z')) {
       return DateTime(baseDate.year, baseDate.month, baseDate.day, 20, 0);
     }
     return baseDate;

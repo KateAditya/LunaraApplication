@@ -108,6 +108,60 @@ function formatTimeTo12Hour(timeStr?: string): string {
     return clean;
 }
 
+export function parseBookingDateTimeRobust(bookingDateVal: Date | string, startTimeStr?: string | null): Date {
+    let year = 0, month = 0, day = 0;
+    if (bookingDateVal instanceof Date) {
+        year = bookingDateVal.getFullYear();
+        month = bookingDateVal.getMonth();
+        day = bookingDateVal.getDate();
+    } else {
+        const str = String(bookingDateVal || '').trim();
+        const dateMatch = str.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        if (dateMatch) {
+            year = parseInt(dateMatch[1], 10);
+            month = parseInt(dateMatch[2], 10) - 1;
+            day = parseInt(dateMatch[3], 10);
+        } else {
+            const dmyMatch = str.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+            if (dmyMatch) {
+                day = parseInt(dmyMatch[1], 10);
+                month = parseInt(dmyMatch[2], 10) - 1;
+                year = parseInt(dmyMatch[3], 10);
+            } else {
+                const parsed = new Date(str);
+                if (!isNaN(parsed.getTime())) {
+                    year = parsed.getFullYear();
+                    month = parsed.getMonth();
+                    day = parsed.getDate();
+                } else {
+                    const now = new Date();
+                    year = now.getFullYear();
+                    month = now.getMonth();
+                    day = now.getDate();
+                }
+            }
+        }
+    }
+
+    let hours = 20;
+    let minutes = 0;
+    if (startTimeStr && String(startTimeStr).trim().length > 0) {
+        const sTime = String(startTimeStr).trim();
+        const isPm = sTime.toUpperCase().includes('PM');
+        const isAm = sTime.toUpperCase().includes('AM');
+        const cleanTime = sTime.toUpperCase().replace('AM', '').replace('PM', '').trim();
+        const parts = cleanTime.split(':');
+        let h = parts.length > 0 ? (parseInt(parts[0], 10) || 20) : 20;
+        const m = parts.length > 1 ? (parseInt(parts[1], 10) || 0) : 0;
+        if (isPm && h < 12) h += 12;
+        if (isAm && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+    }
+
+    return new Date(year, month, day, hours, minutes, 0);
+}
+
 // Vector Icon Helpers for clean PDFKit rendering
 function drawCheckmarkIcon(doc: any, cx: number, cy: number, r: number) {
     doc.save();
@@ -657,10 +711,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         // defaults to midnight, so a 12h expiry window from there could
         // already have elapsed by the time the party actually starts in the
         // evening, showing the ticket as EXPIRED before the event even began.
-        const combinedStart = booking.startTime
-            ? new Date(`${booking.bookingDate} ${booking.startTime}`)
-            : new Date(booking.bookingDate);
-        const eventStartAt = isNaN(combinedStart.getTime()) ? new Date(booking.bookingDate) : combinedStart;
+        const eventStartAt = parseBookingDateTimeRobust(booking.bookingDate, booking.startTime);
         const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
@@ -755,13 +806,8 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         // day rather than guessing a time or expiring at a fixed offset from
         // midnight (which previously expired at noon, hours before an
         // evening party had even started).
-        const combinedStart = groupParty.startTime
-            ? new Date(`${groupParty.partyDate} ${groupParty.startTime}`)
-            : null;
-        const eventStartAt = combinedStart && !isNaN(combinedStart.getTime()) ? combinedStart : new Date(groupParty.partyDate);
-        const eventEndAt = combinedStart && !isNaN(combinedStart.getTime())
-            ? new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000)
-            : new Date(eventStartAt.getFullYear(), eventStartAt.getMonth(), eventStartAt.getDate(), 23, 59, 59);
+        const eventStartAt = parseBookingDateTimeRobust(groupParty.partyDate, groupParty.startTime);
+        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
         const verificationToken = generateHMACSignature(ticketCode, groupParty.userId, groupParty.partyDate.toString());

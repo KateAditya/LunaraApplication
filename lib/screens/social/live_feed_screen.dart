@@ -16,7 +16,6 @@ import 'large_party_ticket_screen.dart';
 import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'party_plan_ticket_screen.dart';
-import 'strangers_meet_requests_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../profile/profile_screen.dart';
@@ -1691,18 +1690,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ),
           );
-        } else if (status == 'paid' || status == 'confirmed') {
+        } else if (status == 'unpaid' || status == 'deposit_pending') {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => StrangersMeetTicketScreen(request: req),
+              builder: (_) => StrangersMeetPaymentScreen(
+                request: req,
+                onPaymentSuccess: () => _loadFeed(),
+                isJoinPayment: false,
+              ),
             ),
           );
+        } else if (item.actions != null && item.actions!.isNotEmpty) {
+          final primary = item.actions!.firstWhere((a) => a.isPrimary, orElse: () => item.actions!.first);
+          primary.onTap();
         } else {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const StrangersMeetRequestsScreen(),
+              builder: (_) => StrangersMeetTicketScreen(request: req),
             ),
           );
         }
@@ -1975,6 +1981,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['metadata']['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
+    if (item['metadata'] is Map && item['metadata']['requestId'] != null && (item['entityType']?.toString().contains('stranger') == true || item['eventType']?.toString().contains('stranger') == true)) {
+      final id = item['metadata']['requestId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['entityId'] != null && (item['entityType']?.toString().contains('stranger') == true || item['eventType']?.toString().contains('stranger') == true)) {
+      final id = item['metadata']['entityId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
     if (item['strangersMeetId'] != null) {
       final id = item['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -1983,8 +1997,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['strangersMeetRequestId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
-    if (cat.contains('stranger') || cat.contains('meet')) {
+
+    final String entityType = (item['entityType'] ?? '').toString().toLowerCase();
+    final String eventType = (item['eventType'] ?? '').toString().toLowerCase();
+    final String reqType = (item['requestType'] ?? item['type'] ?? '').toString().toLowerCase();
+    final String category = (item['category'] ?? '').toString().toLowerCase();
+    final String title = (item['title'] ?? '').toString().toLowerCase();
+    final String body = (item['body'] ?? '').toString().toLowerCase();
+
+    final bool isStranger = entityType.contains('stranger') ||
+        eventType.contains('stranger') ||
+        reqType.contains('stranger') ||
+        category.contains('stranger') ||
+        (title.contains('stranger meet') || body.contains('stranger meet') || (category == 'bookings' && entityType.contains('stranger')));
+
+    if (isStranger) {
+      if (item['entityId'] != null && item['entityId'].toString().trim().isNotEmpty) {
+        return item['entityId'].toString().trim().replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '');
+      }
       if (item['planDetails'] is Map && item['planDetails']['id'] != null) {
         return item['planDetails']['id'].toString().trim();
       }
@@ -1994,7 +2024,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (item['planId'] != null) {
         return item['planId'].toString().trim();
       }
-      final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
+      if (item['strangersMeet'] is Map && item['strangersMeet']['id'] != null) {
+        return item['strangersMeet']['id'].toString().trim();
+      }
+      if (item['request'] is Map && item['request']['id'] != null) {
+        return item['request']['id'].toString().trim();
+      }
+      if (item['joiner'] is Map && item['joiner']['strangersMeetRequestId'] != null) {
+        return item['joiner']['strangersMeetRequestId'].toString().trim();
+      }
+      final id = item['id']?.toString() ?? '';
       if (id.isNotEmpty && !id.startsWith('pp_') && !id.startsWith('gp_')) {
         return id.replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '').replaceAll('sm_host_deposit_', '').replaceAll('sm_host_approved_', '');
       }
@@ -5420,17 +5459,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           }
         }
 
-        String errText = response.message ?? 'Payment process cancelled or failed';
-        if (errText.isEmpty || errText == 'Payment Failed') {
-          if (response.code == Razorpay.PAYMENT_CANCELLED) {
-            errText = 'Payment cancelled by user';
-          } else {
-            errText = 'Payment error (code ${response.code})';
-          }
+        final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+            response.code == 2 ||
+            response.code == 0 ||
+            (response.message != null &&
+                (response.message!.toLowerCase().contains('cancel') ||
+                    response.message!.toLowerCase().contains('back') ||
+                    response.message!.toLowerCase() == 'payment error' ||
+                    response.message!.toLowerCase() == 'payment failed'));
+
+        if (isCancelled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment cancelled. You can complete your deposit payment anytime.'),
+              backgroundColor: Colors.black87,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        } else {
+          final errText = response.message != null && response.message!.isNotEmpty
+              ? response.message!
+              : 'Payment error (code ${response.code})';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment Failed: $errText'), backgroundColor: Colors.redAccent),
+          );
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Payment Failed: $errText'), backgroundColor: Colors.redAccent),
-        );
       }
     });
 

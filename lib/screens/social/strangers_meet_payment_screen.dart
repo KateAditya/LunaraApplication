@@ -67,20 +67,141 @@ class _StrangersMeetPaymentScreenState
     );
   }
 
-  void _handleRazorpayError(PaymentFailureResponse response) {
-    setState(() => _isProcessing = false);
+  void _showNotificationToast({
+    required String title,
+    String? message,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBgColor,
+    Color? borderColor,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Payment failed: ${response.message}'),
-        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: EdgeInsets.zero,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        duration: const Duration(seconds: 4),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E28),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: borderColor ?? Colors.white.withValues(alpha: 0.12),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    if (message != null && message.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        message,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white.withValues(alpha: 0.7),
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
+  void _handleRazorpayError(PaymentFailureResponse response) {
+    setState(() => _isProcessing = false);
+
+    final msg = (response.message ?? '').trim().toLowerCase();
+    final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+        response.code == 2 ||
+        response.code == 0 ||
+        msg.contains('cancel') ||
+        msg.contains('back') ||
+        msg.contains('dismiss') ||
+        msg.contains('closed') ||
+        msg == 'payment error' ||
+        msg == 'payment failed' ||
+        msg == 'undefined' ||
+        msg.isEmpty;
+
+    if (isCancelled) {
+      _showNotificationToast(
+        title: 'Payment Cancelled',
+        message: 'You cancelled the payment. You can complete it anytime.',
+        icon: Icons.info_outline_rounded,
+        iconColor: const Color(0xFFA78BFA),
+        iconBgColor: const Color(0xFFA78BFA).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFA78BFA).withValues(alpha: 0.3),
+      );
+    } else {
+      final cleanMsg = response.message != null && response.message!.isNotEmpty
+          ? response.message!
+          : 'Payment could not be processed. Please try again.';
+      _showNotificationToast(
+        title: 'Payment Unsuccessful',
+        message: cleanMsg,
+        icon: Icons.error_outline_rounded,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
+      );
+    }
+  }
+
   void _handleExternalWallet(ExternalWalletResponse response) {
     setState(() => _isProcessing = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('External Wallet: ${response.walletName}')),
+    _showNotificationToast(
+      title: 'External Wallet Selected',
+      message: 'Wallet: ${response.walletName}',
+      icon: Icons.account_balance_wallet_outlined,
+      iconColor: const Color(0xFF60A5FA),
+      iconBgColor: const Color(0xFF60A5FA).withValues(alpha: 0.18),
+      borderColor: const Color(0xFF60A5FA).withValues(alpha: 0.3),
     );
   }
 
@@ -91,12 +212,17 @@ class _StrangersMeetPaymentScreenState
       widget.request.id,
     );
     if (!mounted) return;
-    if (latestRequest == null || latestRequest.eventDateTime.isBefore(DateTime.now())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This Stranger Meet has expired and can no longer be paid for.'),
-          backgroundColor: Colors.red,
-        ),
+    if (latestRequest == null ||
+        latestRequest.status.toLowerCase() == 'expired' ||
+        latestRequest.status.toLowerCase() == 'cancelled' ||
+        latestRequest.eventDateTime.add(const Duration(hours: 4)).isBefore(DateTime.now())) {
+      _showNotificationToast(
+        title: 'Meet Has Expired',
+        message: 'This Stranger Meet has expired and can no longer be paid for.',
+        icon: Icons.timer_off_outlined,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
       );
       return;
     }
@@ -137,41 +263,54 @@ class _StrangersMeetPaymentScreenState
                 );
 
           if (confirmRes != null && confirmRes['success'] == true) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Payment Successful via Smart Wallet! 🎫'),
-                  backgroundColor: Color(0xFF10B981),
-                ),
-              );
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => StrangersMeetTicketScreen(
-                    request: widget.request,
+            widget.onPaymentSuccess();
+            if (widget.isJoinPayment) {
+              if (mounted) {
+                _showNotificationToast(
+                  title: 'Payment Confirmed',
+                  message: 'Payment Successful via Smart Wallet! 🎫',
+                  icon: Icons.check_circle_outline_rounded,
+                  iconColor: const Color(0xFF10B981),
+                  iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
+                  borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
+                );
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(
+                      request: widget.request,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
+            } else {
+              if (mounted) {
+                _promptChargesPerHead(confirmRes);
+              }
             }
             return true;
           } else {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(confirmRes?['message'] ?? 'Wallet confirmation failed'),
-                  backgroundColor: Colors.redAccent,
-                ),
+              _showNotificationToast(
+                title: 'Wallet Confirmation Failed',
+                message: confirmRes?['message'] ?? 'Wallet confirmation failed',
+                icon: Icons.error_outline_rounded,
+                iconColor: const Color(0xFFF87171),
+                iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+                borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
               );
             }
             return false;
           }
         } else {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(res?['message'] ?? 'Wallet payment failed'),
-                backgroundColor: Colors.redAccent,
-              ),
+            _showNotificationToast(
+              title: 'Wallet Payment Failed',
+              message: res?['message'] ?? 'Wallet payment failed',
+              icon: Icons.account_balance_wallet_outlined,
+              iconColor: const Color(0xFFFBBF24),
+              iconBgColor: const Color(0xFFFBBF24).withValues(alpha: 0.18),
+              borderColor: const Color(0xFFFBBF24).withValues(alpha: 0.3),
             );
           }
           return false;
@@ -214,8 +353,13 @@ class _StrangersMeetPaymentScreenState
       if (!mounted) return;
       setState(() => _isProcessing = false);
       final errorStr = e.toString().replaceAll('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
+      _showNotificationToast(
+        title: 'Payment Error',
+        message: errorStr,
+        icon: Icons.error_outline_rounded,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
       );
       return;
     }
@@ -223,11 +367,13 @@ class _StrangersMeetPaymentScreenState
     if (checkoutData == null) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to initiate payment. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
+      _showNotificationToast(
+        title: 'Payment Initiation Failed',
+        message: 'Failed to initiate payment. Please try again.',
+        icon: Icons.error_outline_rounded,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
       );
       return;
     }
@@ -296,8 +442,13 @@ class _StrangersMeetPaymentScreenState
       if (!mounted) return;
       setState(() => _isProcessing = false);
       final errorStr = e.toString().replaceAll('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorStr), backgroundColor: Colors.red),
+      _showNotificationToast(
+        title: 'Confirmation Error',
+        message: errorStr,
+        icon: Icons.error_outline_rounded,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
       );
       return;
     }
@@ -310,13 +461,13 @@ class _StrangersMeetPaymentScreenState
       widget.onPaymentSuccess();
       if (widget.isJoinPayment) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Payment confirmed! You have successfully joined the meet. 🎉',
-              ),
-              backgroundColor: Colors.green,
-            ),
+          _showNotificationToast(
+            title: 'Payment Confirmed',
+            message: 'You have successfully joined the meet. 🎉',
+            icon: Icons.check_circle_outline_rounded,
+            iconColor: const Color(0xFF10B981),
+            iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
+            borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
           );
           Navigator.pop(context);
         }
@@ -324,11 +475,13 @@ class _StrangersMeetPaymentScreenState
         _promptChargesPerHead(result);
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Payment verification failed. Please contact support.'),
-          backgroundColor: Colors.red,
-        ),
+      _showNotificationToast(
+        title: 'Verification Failed',
+        message: 'Payment verification failed. Please contact support.',
+        icon: Icons.error_outline_rounded,
+        iconColor: const Color(0xFFF87171),
+        iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+        borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
       );
     }
   }

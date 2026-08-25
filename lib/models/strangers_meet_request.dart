@@ -107,7 +107,8 @@ class StrangersMeetRequest {
   });
 
   factory StrangersMeetRequest.fromJson(Map<dynamic, dynamic> json) {
-    final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'] ?? json['bookingDate'] ?? json['eventStartAt'];
+    final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'] ?? json['bookingDate'] ?? json['partyDate'] ?? json['eventStartAt'] ?? json['date'];
+    final timeRaw = json['startTime'] ?? json['partyTime'] ?? json['time'];
     final numPersonsRaw = json['numberOfPersons'] ?? json['number_of_persons'] ?? json['numberOfGuests'];
     final chargesPerHeadRaw = json['chargesPerHead'] ?? json['charges_per_head'] ?? json['totalAmount'];
     final slotsFilledRaw = json['slotsFilled'] ?? json['slots_filled'] ?? json['joinedCount'] ?? json['joined_count'];
@@ -122,6 +123,24 @@ class StrangersMeetRequest {
       } else {
         parsedDate = DateTime.tryParse(eventDateRaw.toString())?.toLocal() ?? DateTime.now();
       }
+    }
+    if (timeRaw != null && timeRaw.toString().trim().isNotEmpty) {
+      final cleanTime = timeRaw.toString().toUpperCase().trim();
+      final isPm = cleanTime.contains('PM');
+      final isAm = cleanTime.contains('AM');
+      final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = timeOnly.split(':');
+      if (parts.isNotEmpty) {
+        int? h = int.tryParse(parts[0].trim());
+        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+        if (h != null) {
+          if (isPm && h < 12) h += 12;
+          if (isAm && h == 12) h = 0;
+          parsedDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, h, m);
+        }
+      }
+    } else if (parsedDate.hour == 5 && parsedDate.minute == 30 && eventDateRaw.toString().endsWith('Z')) {
+      parsedDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, 20, 0);
     }
 
     final int numPersons = int.tryParse(numPersonsRaw?.toString() ?? '') ?? 2;

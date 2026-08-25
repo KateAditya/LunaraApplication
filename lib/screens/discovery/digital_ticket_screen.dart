@@ -106,38 +106,21 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
   DateTime? _getEventDateTime() {
     try {
-      // 0. Check eventStartAt directly if available in booking map
-      if (widget.booking?['eventStartAt'] != null) {
-        final dt = DateTime.tryParse(widget.booking!['eventStartAt'].toString())?.toLocal();
-        if (dt != null) return dt;
-      }
+      String dateStr = (widget.date ??
+              widget.booking?['bookingDate']?.toString() ??
+              widget.booking?['partyDate']?.toString() ??
+              widget.booking?['date']?.toString() ??
+              widget.booking?['eventStartAt']?.toString() ??
+              '')
+          .trim();
+      String timeStr = (widget.time ??
+              widget.booking?['startTime']?.toString() ??
+              widget.booking?['time']?.toString() ??
+              widget.booking?['partyTime']?.toString() ??
+              '')
+          .trim();
 
-      String dateStr = (widget.date ?? widget.booking?['bookingDate']?.toString() ?? widget.booking?['partyDate']?.toString() ?? '').trim();
-      String timeStr = (widget.time ?? widget.booking?['startTime']?.toString() ?? '').trim();
-
-      if (dateStr.isEmpty && timeStr.isEmpty) return null;
-
-      // 1. If dateStr is a full ISO timestamp (contains 'T')
-      if (dateStr.contains('T')) {
-        final dt = DateTime.tryParse(dateStr)?.toLocal();
-        if (dt != null) {
-          if (timeStr.isNotEmpty) {
-            final timeParts = _parseTimeStr(timeStr);
-            return DateTime(dt.year, dt.month, dt.day, timeParts[0], timeParts[1]);
-          }
-          return dt;
-        }
-      }
-
-      // 2. Try direct parsing of combined date and time
-      if (dateStr.isNotEmpty && timeStr.isNotEmpty) {
-        var parsed = DateTime.tryParse('$dateStr $timeStr');
-        if (parsed != null) return parsed.toLocal();
-        parsed = DateTime.tryParse('${dateStr}T$timeStr');
-        if (parsed != null) return parsed.toLocal();
-      }
-
-      // 3. Handle split if contains '•' or 'at'
+      // Handle split if contains '•' or ' at '
       if (dateStr.contains('•')) {
         final parts = dateStr.split('•');
         dateStr = parts[0].trim();
@@ -152,18 +135,40 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         }
       }
 
-      // 4. Try direct parsing of dateStr
-      var parsed = DateTime.tryParse(dateStr);
-      if (parsed != null) {
-        final timeParts = _parseTimeStr(timeStr.isNotEmpty ? timeStr : '20:00');
-        return DateTime(parsed.year, parsed.month, parsed.day, timeParts[0], timeParts[1]);
+      // If explicit user-selected time exists, extract [hour, minute]
+      List<int>? explicitTime;
+      if (timeStr.isNotEmpty) {
+        explicitTime = _parseTimeStr(timeStr);
       }
 
-      final timeParts = _parseTimeStr(timeStr.isNotEmpty ? timeStr : '20:00');
-      final hour = timeParts[0];
-      final minute = timeParts[1];
+      // 1. If dateStr is an ISO timestamp (contains 'T')
+      if (dateStr.contains('T')) {
+        final dt = DateTime.tryParse(dateStr)?.toLocal();
+        if (dt != null) {
+          if (explicitTime != null) {
+            return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
+          }
+          // If no explicit time and the parsed time is midnight UTC (e.g. 05:30 IST from DATEONLY),
+          // fallback to standard 8 PM
+          if (dt.hour == 5 && dt.minute == 30 && dateStr.endsWith('Z')) {
+            return DateTime(dt.year, dt.month, dt.day, 20, 0);
+          }
+          return dt;
+        }
+      }
 
-      // 5. Try regex for YYYY-MM-DD
+      // 2. Try direct parsing of dateStr (e.g. YYYY-MM-DD)
+      final parsed = DateTime.tryParse(dateStr);
+      if (parsed != null) {
+        final hour = explicitTime != null ? explicitTime[0] : 20;
+        final minute = explicitTime != null ? explicitTime[1] : 0;
+        return DateTime(parsed.year, parsed.month, parsed.day, hour, minute);
+      }
+
+      final hour = explicitTime != null ? explicitTime[0] : 20;
+      final minute = explicitTime != null ? explicitTime[1] : 0;
+
+      // 3. Try regex for YYYY-MM-DD
       final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
       var match = ymdRegex.firstMatch(dateStr);
       if (match != null) {
@@ -173,7 +178,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // 6. Try regex for DD-MM-YYYY
+      // 4. Try regex for DD-MM-YYYY or DD/MM/YYYY
       final dmyRegex = RegExp(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})');
       match = dmyRegex.firstMatch(dateStr);
       if (match != null) {
@@ -183,7 +188,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         return DateTime(year, month, day, hour, minute);
       }
 
-      // 7. Try word-based month format (e.g., "SUN, 24 AUG 2026", "24 AUG 2026", "SUN, 24 AUG")
+      // 5. Try word-based month format (e.g., "SUN, 24 AUG 2026", "24 AUG 2026", "SUN, 24 AUG")
       final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
       final cleanDate = dateStr.toUpperCase();
       int? foundMonth;
@@ -211,6 +216,20 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         }
         day ??= DateTime.now().day;
         return DateTime(year, foundMonth, day, hour, minute);
+      }
+
+      // 6. Check eventStartAt from booking map
+      if (widget.booking?['eventStartAt'] != null) {
+        final dt = DateTime.tryParse(widget.booking!['eventStartAt'].toString())?.toLocal();
+        if (dt != null) {
+          if (explicitTime != null) {
+            return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
+          }
+          if (dt.hour == 5 && dt.minute == 30 && widget.booking!['eventStartAt'].toString().endsWith('Z')) {
+            return DateTime(dt.year, dt.month, dt.day, 20, 0);
+          }
+          return dt;
+        }
       }
     } catch (e) {
       debugPrint("Error parsing event datetime: $e");
