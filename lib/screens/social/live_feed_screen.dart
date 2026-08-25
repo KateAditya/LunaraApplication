@@ -22,6 +22,7 @@ import '../profile/profile_screen.dart';
 import '../../models/user.dart';
 import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -2039,6 +2040,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractGroupPartyId(Map<String, dynamic> item) {
+    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    if (cat.contains('party_plan') || cat == 'party_plan' || item['partyPlanId'] != null || item['booking']?['goingMode']?.toString() == 'plan' || item['goingMode']?.toString() == 'plan') {
+      return null;
+    }
     if (item['data'] is Map && item['data']['partyId'] != null) {
       final id = item['data']['partyId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -2063,11 +2068,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['groupPartyId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['partyId'] != null) {
-      final id = item['partyId'].toString().trim();
-      if (id.isNotEmpty) return id;
-    }
-    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
     final String title = (item['title'] ?? '').toString().toLowerCase();
     final String body = (item['body'] ?? '').toString().toLowerCase();
     if (cat.contains('group_party') || cat.contains('large_party') || cat == 'group_party_small' || cat == 'group_party_large' || title.contains('group party') || body.contains('group party')) {
@@ -2416,18 +2416,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['data']?['time'];
       if (st != null && st.toString().trim().isNotEmpty) {
-        String cleanSt = st.toString().trim();
-        if (!cleanSt.toUpperCase().contains('AM') && !cleanSt.toUpperCase().contains('PM')) {
-          final parts = cleanSt.split(':');
-          if (parts.isNotEmpty) {
-            int h = int.tryParse(parts[0].trim()) ?? 0;
-            int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-            final ampm = h >= 12 ? 'PM' : 'AM';
-            final dh = h % 12 == 0 ? 12 : h % 12;
-            cleanSt = '$dh:${m.toString().padLeft(2, '0')} $ampm';
-          }
-        }
-        partyMap['startTime'] = cleanSt;
+        partyMap['startTime'] = LunaraDateFormatter.normalizeTimeTo12Hour(st.toString());
         break;
       }
     }
@@ -2837,31 +2826,54 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       hostUserObj['photos'] = [{'url': hostPhoto, 'filePath': hostPhoto, 'isPrimary': true}];
     }
 
+    final dynamic selectedUsers = planMap['selectedUsers'];
+
     // 3. Find requests involving current user or host
     Map<String, dynamic>? myRequest;
     final List<Map<String, dynamic>> pendingIncomingRequests = [];
+    final List<Map<String, dynamic>> pendingOutboundInvites = [];
     Map<String, dynamic>? acceptedJoinerRequest;
 
     for (final e in entries) {
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
       final status = (e['status'] ?? '').toString().toLowerCase();
+      final bool isInvite = e['isInvite'] == true ||
+          e['type'] == 'party_plan_invitation' ||
+          e['requestType'] == 'party_plan_invitation' ||
+          e['type'] == 'party_plan_invite_sent' ||
+          e['requestType'] == 'party_plan_invite_sent' ||
+          (selectedUsers is List && selectedUsers.contains(e['requesterId']?.toString() ?? e['requester']?['id']?.toString()));
 
-      if (reqType == 'my_request' || e['requesterId']?.toString() == currentUserId) {
+      final String senderId = (e['senderId'] ?? (isInvite ? planHostId : (e['requesterId'] ?? e['requester']?['id'])) ?? '').toString();
+      final String recipientId = (e['recipientId'] ?? (isInvite ? (e['requesterId'] ?? e['requester']?['id']) : planHostId) ?? '').toString();
+
+      if (reqType == 'my_request' || e['requesterId']?.toString() == currentUserId || (isInvite && recipientId == currentUserId)) {
         myRequest = e;
       }
-      if (reqType == 'incoming_request' || (isHost && e['requester'] != null)) {
-        if (status == 'pending') {
-          pendingIncomingRequests.add(e);
-        } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
-          acceptedJoinerRequest = e;
+      if (isHost) {
+        if (isInvite) {
+          if (status == 'pending') {
+            pendingOutboundInvites.add(e);
+          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+            acceptedJoinerRequest = e;
+          }
+        } else {
+          if (status == 'pending') {
+            pendingIncomingRequests.add(e);
+          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+            acceptedJoinerRequest = e;
+          }
+        }
+      } else {
+        if (reqType == 'incoming_request' || (isInvite && recipientId == currentUserId)) {
+          if (status == 'pending') {
+            pendingIncomingRequests.add(e);
+          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+            acceptedJoinerRequest = e;
+          }
         }
       }
       if (isHost && (status == 'confirmed' || status == 'paid')) {
-        // Only the host's own view of "who got matched" may trust a bare
-        // confirmed/paid status from any entry — for a non-host viewer this
-        // must never be inferred from an entry that isn't their own request
-        // (see myRequest above), otherwise a rejected/pending/uninvolved user
-        // could see someone else's match rendered as their own.
         acceptedJoinerRequest = e;
       }
     }
@@ -2986,6 +2998,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       partnerRoleLabel = 'Guest:';
     }
 
+    Map<String, dynamic>? pendingCancellationEntry;
+    for (final e in entries) {
+      final eType = (e['type'] ?? e['eventType'] ?? '').toString();
+      final cat = (e['category'] ?? '').toString();
+      if (eType == 'party_plan_cancellation_requested' || cat == 'party_plan_cancellation_requested') {
+        pendingCancellationEntry = e;
+        break;
+      }
+    }
+
+    final bool isCancellationRequested = (lifecycleStatus == 'cancellation_requested' || pendingCancellationEntry != null) && !isCancelled;
+
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
@@ -2996,9 +3020,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (isCancelled) {
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
-      body = 'Party Plan at $venueName was cancelled by the host.';
-      statusSummary = 'Cancelled';
+      title = '❌ Party Plan Cancelled';
+      body = 'Party Plan at $venueName was cancelled. ₹99 Commitment Deposit has been credited to your Lunara Wallet.';
+      statusSummary = 'Cancelled • Deposit Credited';
       actionsList = [
+        NotificationAction(
+          label: 'View Wallet',
+          icon: Icons.account_balance_wallet_rounded,
+          isPrimary: true,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+          ),
+        ),
         NotificationAction(
           label: 'View Details',
           icon: Icons.info_outline_rounded,
@@ -3010,6 +3044,118 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ).then((_) => _loadFeed(showLoader: false)),
         ),
       ];
+    } else if (isCancellationRequested) {
+      final String requestedById = (pendingCancellationEntry?['requestedById'] ??
+          pendingCancellationEntry?['metadata']?['requestedById'] ??
+          pendingCancellationEntry?['actorUserId'] ??
+          '').toString();
+      final bool isRecipient = requestedById.isNotEmpty
+          ? requestedById != currentUserId
+          : (isHost ? false : true);
+      final String requesterName = (isHost && isRecipient)
+          ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Your partner')
+          : (hostUserObj['firstName'] ?? hostUserObj['name'] ?? 'Host');
+      final String reasonKey = (pendingCancellationEntry?['reason'] ??
+          pendingCancellationEntry?['metadata']?['reason'] ??
+          'my_plans_changed').toString();
+      final Map<String, String> reasonLabels = {
+        'my_plans_changed': 'My plans have changed',
+        'not_available': 'I\'m not available anymore',
+        'not_interested': 'Not interested anymore',
+        'found_another_plan': 'Found another plan',
+        'venue_changed': 'Venue changed',
+        'personal_reasons': 'Personal reasons',
+        'other': 'Other reasons',
+      };
+      final reasonText = reasonLabels[reasonKey] ?? reasonKey;
+      final String cancelReqId = (pendingCancellationEntry?['requestId'] ??
+          pendingCancellationEntry?['metadata']?['requestId'] ??
+          '').toString();
+
+      accent = const Color(0xFFF59E0B);
+      badge = isRecipient ? 'ACTION REQUIRED' : 'CANCELLATION PENDING';
+
+      if (isRecipient) {
+        title = '⚠️ Cancellation Requested';
+        body = '$requesterName has requested to cancel this Party Plan at $venueName.\nReason: "$reasonText"';
+        statusSummary = 'Approval Required';
+        actionsList = [
+          NotificationAction(
+            label: 'Accept Cancellation',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            color: Colors.redAccent,
+            onTap: () async {
+              if (cancelReqId.isEmpty) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+                ).then((_) => _loadFeed(showLoader: false));
+                return;
+              }
+              final res = await ApiService.respondToPartyPlanCancellationRequest(
+                planId: planId,
+                requestId: cancelReqId,
+                action: 'approve',
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposit credited to wallet!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                _loadFeed(showLoader: false);
+              }
+            },
+          ),
+          NotificationAction(
+            label: 'Keep Plan',
+            icon: Icons.shield_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () async {
+              if (cancelReqId.isEmpty) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+                ).then((_) => _loadFeed(showLoader: false));
+                return;
+              }
+              final res = await ApiService.respondToPartyPlanCancellationRequest(
+                planId: planId,
+                requestId: cancelReqId,
+                action: 'reject',
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(res['message'] ?? 'Cancellation declined. Party Plan remains active.'),
+                    backgroundColor: Colors.grey.shade800,
+                  ),
+                );
+                _loadFeed(showLoader: false);
+              }
+            },
+          ),
+        ];
+      } else {
+        title = '⏳ Cancellation Request Sent';
+        body = 'You requested to cancel this Party Plan at $venueName. Waiting for the other participant to approve.';
+        statusSummary = 'Waiting for Approval';
+        actionsList = [
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      }
     } else if (bothReached || isRefunded) {
       title = '🎉 Party Completed';
       badge = 'COMPLETED';
@@ -3251,9 +3397,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           ),
         ];
-      } else if (isPrivatePlan) {
-        final inviteCount = pendingIncomingRequests.length;
-        final firstInvitee = pendingIncomingRequests.isNotEmpty ? pendingIncomingRequests.first['requester'] : null;
+      } else if (isPrivatePlan || pendingOutboundInvites.isNotEmpty) {
+        final inviteCount = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.length : (selectedUsers is List ? selectedUsers.length : 1);
+        final firstInvitee = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.first['requester'] : null;
         final inviteeName = (firstInvitee is Map && firstInvitee['firstName'] != null)
             ? '${firstInvitee["firstName"]} ${firstInvitee["lastName"] ?? ""}'.trim()
             : 'your invited friends';

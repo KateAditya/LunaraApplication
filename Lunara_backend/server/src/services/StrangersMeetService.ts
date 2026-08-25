@@ -11,6 +11,7 @@ import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import AuditLog from '../models/AuditLog';
+import { formatTime12Hour, formatDateTimeFull } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -536,7 +537,7 @@ export class StrangersMeetService {
                 }
             } else if (isInProgress) {
                 const startedFormatted = request.startedAt
-                    ? new Date(request.startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                    ? formatTime12Hour(request.startedAt)
                     : '';
                 currentStatusText = `✓ Strangers Meet Started • ${startedFormatted}`;
                 countdown = diffEndMs > 0 ? `${endDiffHours}h ${endDiffMins}m remaining` : 'Ending time reached';
@@ -642,7 +643,7 @@ export class StrangersMeetService {
 
             const venueName = reqAny.venue?.name || 'Venue';
             const eventDateStr = request.eventDateTime
-                ? new Date(request.eventDateTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                ? formatDateTimeFull(request.eventDateTime)
                 : '';
 
             const acceptedCount = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid').length;
@@ -896,7 +897,7 @@ export class StrangersMeetService {
             entityId: meetId,
             eventType: 'strangers_meet_duration_extended',
             title: '⏱️ Meetup Duration Extended',
-            body: `Meetup expected end time updated to ${newExpectedEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`,
+            body: `Meetup expected end time updated to ${formatTime12Hour(newExpectedEnd)}.`,
             notifyAdmins: false,
             metadata: { meetId, expectedEndAt: newExpectedEnd }
         });

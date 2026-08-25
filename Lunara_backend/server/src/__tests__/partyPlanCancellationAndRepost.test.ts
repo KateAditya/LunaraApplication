@@ -5,6 +5,7 @@ import Venue, { VenueCategory } from '../models/Venue';
 import PartyPlan, { PartyPlanStatus, PartyPlanLifecycleStatus, PartyPlanVisibility, PartyPlanPaymentStatus, PartyPlanPaymentType } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import WalletTransaction, { WalletTransactionType } from '../models/WalletTransaction';
+import { generateAccessToken } from '../utils/jwt';
 
 jest.mock('razorpay', () => {
     return jest.fn().mockImplementation(() => {
@@ -32,6 +33,10 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
     let joiner: User;
     let otherUser: User;
     let venue: Venue;
+
+    let hostToken: string;
+    let joinerToken: string;
+    let otherUserToken: string;
 
     beforeAll(async () => {
         const ts = Date.now();
@@ -86,6 +91,10 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
             category: VenueCategory.CLUB,
             isActive: true,
         });
+
+        hostToken = generateAccessToken({ userId: host.id, email: host.email, role: host.role });
+        joinerToken = generateAccessToken({ userId: joiner.id, email: joiner.email, role: joiner.role });
+        otherUserToken = generateAccessToken({ userId: otherUser.id, email: otherUser.email, role: otherUser.role });
     });
 
     describe('Scenario A: Host Cancels Party Plan (Cancel & Refund)', () => {
@@ -115,6 +124,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
 
             const cancelRes = await request(app)
                 .post(`/api/mobile/party-plans/${planA.id}/cancel`)
+                .set('Authorization', `Bearer ${hostToken}`)
                 .send({ userId: host.id, reason: 'personal_reasons' });
 
             expect(cancelRes.status).toBe(200);
@@ -148,6 +158,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
 
             const cancelAgainRes = await request(app)
                 .post(`/api/mobile/party-plans/${planA.id}/cancel`)
+                .set('Authorization', `Bearer ${hostToken}`)
                 .send({ userId: host.id });
 
             expect(cancelAgainRes.status).toBe(200);
@@ -170,6 +181,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
         test('Case 3: Joiner cannot request to join a cancelled Party Plan (rejected 400 PARTY_PLAN_NOT_ACTIVE)', async () => {
             const joinRes = await request(app)
                 .post(`/api/mobile/party-plans/${planA.id}/requests`)
+                .set('Authorization', `Bearer ${joinerToken}`)
                 .send({ userId: joiner.id });
 
             expect(joinRes.status).toBe(400);
@@ -211,6 +223,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
             // Past date
             const pastRes = await request(app)
                 .post(`/api/mobile/party-plans/${planB.id}/repost`)
+                .set('Authorization', `Bearer ${hostToken}`)
                 .send({
                     userId: host.id,
                     newDateTime: new Date(Date.now() - 1000).toISOString(),
@@ -220,6 +233,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
             // Too close (5 mins)
             const tooCloseRes = await request(app)
                 .post(`/api/mobile/party-plans/${planB.id}/repost`)
+                .set('Authorization', `Bearer ${hostToken}`)
                 .send({
                     userId: host.id,
                     newDateTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -232,6 +246,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
             const newDate = new Date(Date.now() + 48 * 60 * 60 * 1000);
             const unauthRes = await request(app)
                 .post(`/api/mobile/party-plans/${planB.id}/repost`)
+                .set('Authorization', `Bearer ${otherUserToken}`)
                 .send({
                     userId: otherUser.id,
                     newDateTime: newDate.toISOString(),
@@ -243,9 +258,12 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
             const hostBefore = await User.findByPk(host.id);
             const balanceBefore = Number(hostBefore!.walletBalance);
 
-            const newSchedule = new Date(Date.now() + 72 * 60 * 60 * 1000);
+            const newSchedule = new Date();
+            newSchedule.setDate(newSchedule.getDate() + 3);
+            newSchedule.setHours(20, 0, 0, 0); // 8 PM (within 7 PM - 4 AM opening hours)
             const repostRes = await request(app)
                 .post(`/api/mobile/party-plans/${planB.id}/repost`)
+                .set('Authorization', `Bearer ${hostToken}`)
                 .send({
                     userId: host.id,
                     newDateTime: newSchedule.toISOString(),
@@ -275,6 +293,7 @@ describe('Party Plan Cancellation + Repost Flow Suite', () => {
         test('Case 7: Users can submit new join requests to the reposted plan with the updated date/time', async () => {
             const newReqRes = await request(app)
                 .post(`/api/mobile/party-plans/${planB.id}/requests`)
+                .set('Authorization', `Bearer ${joinerToken}`)
                 .send({ userId: joiner.id });
 
             expect(newReqRes.status).toBe(201);

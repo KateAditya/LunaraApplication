@@ -10,6 +10,7 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 class StrangersMeetTicketScreen extends StatefulWidget {
   final StrangersMeetRequest request;
@@ -60,7 +61,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
     _freshPaymentStatus = widget.request.paymentStatus.isNotEmpty ? widget.request.paymentStatus : 'paid';
     _freshStatus = widget.request.status.isNotEmpty ? widget.request.status : 'confirmed';
     _freshEventDateTime = widget.request.eventDateTime;
-    _freshStartTime = DateFormat('hh:mm a').format(_freshEventDateTime!);
+    _freshStartTime = _freshEventDateTime != null ? LunaraDateFormatter.formatEventTime(_freshEventDateTime) : '8:00 PM';
     _canonicalTicketCode = widget.request.ticketId;
     _freshTargetCapacity = widget.request.numberOfPersons;
     if (widget.request.venue != null) {
@@ -79,37 +80,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
   }
 
   DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
-    DateTime baseDate = DateTime.now();
-    if (rawDate != null) {
-      if (rawDate is DateTime) {
-        baseDate = rawDate.toLocal();
-      } else {
-        try {
-          baseDate = DateTime.parse(rawDate.toString()).toLocal();
-        } catch (_) {}
-      }
-    }
-
-    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
-      final tStr = rawTime.toString().trim();
-      final isPm = tStr.toUpperCase().contains('PM');
-      final isAm = tStr.toUpperCase().contains('AM');
-      final cleanTime = tStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
-      final parts = cleanTime.split(':');
-      if (parts.isNotEmpty) {
-        int? h = int.tryParse(parts[0].trim());
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        if (h != null) {
-          if (isPm && h < 12) h += 12;
-          if (isAm && h == 12) h = 0;
-          return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
-        }
-      }
-    } else if (baseDate.hour == 0 && baseDate.minute == 0) {
-      // Default to 8:00 PM evening start if date-only was parsed
-      return DateTime(baseDate.year, baseDate.month, baseDate.day, 20, 0);
-    }
-    return baseDate;
+    return LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString()) ?? DateTime.now();
   }
 
   void _initCountdown() {
@@ -590,8 +561,8 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.calendar_today_rounded,
                                 label: 'DATE',
-                                value: DateFormat('MMM dd, yyyy').format(eventDateTime),
-                                subtext: DateFormat('EEEE').format(eventDateTime),
+                                value: LunaraDateFormatter.formatEventDate(eventDateTime, pattern: 'MMM dd, yyyy'),
+                                subtext: LunaraDateFormatter.formatEventDate(eventDateTime, pattern: 'EEEE'),
                               ),
                             ),
                             Container(height: 36, width: 1, color: const Color(0xFFE2E8F0)),
@@ -600,7 +571,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.access_time_rounded,
                                 label: 'TIME',
-                                value: DateFormat('hh:mm a').format(eventDateTime),
+                                value: LunaraDateFormatter.formatEventTime(eventDateTime),
                                 subtext: 'Onwards',
                               ),
                             ),

@@ -928,6 +928,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             SmartWallet,
             SmartWalletConfig,
             WalletPromotionalCampaign,
+            AuditLog,
         ];
         for (const m of modelsToSync) {
             try {
@@ -1021,5 +1022,6 @@ export default {
     UserEngagementEvent,
     ProfileBoost,
     WalletTransaction,
+    AuditLog,
     syncModels,
 };

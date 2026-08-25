@@ -8,6 +8,7 @@ import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
 import Venue from '../models/Venue';
+import { parseEventDateTimeToUTC, formatTime12Hour } from '../utils/dateTimeUtils';
 
 export interface TimeLockConflict {
     allowed: false;
@@ -29,20 +30,7 @@ export type TimeLockValidationResult = TimeLockConflict | TimeLockSuccess;
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000; // Exact 4-hour threshold in milliseconds (14,400,000 ms)
 
 export function parseBookingDateTime(bookingDate: Date | string, startTimeStr?: string): Date {
-    const d = new Date(bookingDate);
-    if (!startTimeStr) return d;
-    const timeMatch = startTimeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
-    if (timeMatch) {
-        let hours = parseInt(timeMatch[1], 10);
-        const minutes = parseInt(timeMatch[2], 10);
-        const ampm = timeMatch[4];
-        if (ampm) {
-            if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
-            if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
-        }
-        d.setHours(hours, minutes, 0, 0);
-    }
-    return d;
+    return parseEventDateTimeToUTC(bookingDate, startTimeStr);
 }
 
 export class EventTimeLockService {
@@ -333,8 +321,8 @@ export class EventTimeLockService {
                 const nextAvailableMs = existingTimeMs + FOUR_HOURS_MS;
                 const nextAvailableDate = new Date(nextAvailableMs);
 
-                const existingDateStr = event.dateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                const nextAvailableStr = nextAvailableDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                const existingDateStr = formatTime12Hour(event.dateTime);
+                const nextAvailableStr = formatTime12Hour(nextAvailableDate);
 
                 const friendlyTypeName = event.type.replace(/_/g, ' ');
                 const message = `You already have a ${friendlyTypeName} scheduled for ${existingDateStr}. Your next event must be scheduled at least 4 hours apart (earliest available: ${nextAvailableStr}).`;

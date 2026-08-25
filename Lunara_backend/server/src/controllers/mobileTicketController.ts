@@ -23,62 +23,15 @@ import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
 import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
+import { parseEventDateTimeToUTC, formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 
 export function formatTimeTo12Hour(timeStr?: string | null): string {
-    if (!timeStr) return '12:00 AM';
-    const clean = timeStr.trim();
-    if (!clean) return '12:00 AM';
-    const isPm = clean.toUpperCase().includes('PM');
-    const isAm = clean.toUpperCase().includes('AM');
-    if (isPm || isAm) return clean;
-    const parts = clean.split(':');
-    const h = parseInt(parts[0], 10) || 0;
-    const m = parts.length > 1 ? (parseInt(parts[1], 10) || 0) : 0;
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayH = h % 12 === 0 ? 12 : h % 12;
-    return `${String(displayH).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+    if (!timeStr) return '08:00 PM';
+    return formatTime12Hour(timeStr);
 }
 
 function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: string | null): Date {
-    let year = 0, month = 0, day = 0;
-    if (dateVal instanceof Date) {
-        year = dateVal.getFullYear();
-        month = dateVal.getMonth();
-        day = dateVal.getDate();
-    } else {
-        const str = String(dateVal || '').trim();
-        const dateMatch = str.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-        if (dateMatch) {
-            year = parseInt(dateMatch[1], 10);
-            month = parseInt(dateMatch[2], 10) - 1;
-            day = parseInt(dateMatch[3], 10);
-        } else {
-            const parsed = new Date(str);
-            if (!isNaN(parsed.getTime())) {
-                year = parsed.getFullYear();
-                month = parsed.getMonth();
-                day = parsed.getDate();
-            } else {
-                const now = new Date();
-                year = now.getFullYear();
-                month = now.getMonth();
-                day = now.getDate();
-            }
-        }
-    }
-
-    const sTime = timeStr ? timeStr.trim() : '00:00';
-    const isPm = sTime.toUpperCase().includes('PM');
-    const isAm = sTime.toUpperCase().includes('AM');
-    const cleanTime = sTime.toUpperCase().replace('AM', '').replace('PM', '').trim();
-    const parts = cleanTime.split(':');
-    const parsedH = parts.length > 0 ? parseInt(parts[0], 10) : NaN;
-    let h = !isNaN(parsedH) ? parsedH : 0;
-    const parsedM = parts.length > 1 ? parseInt(parts[1], 10) : 0;
-    const m = !isNaN(parsedM) ? parsedM : 0;
-    if (isPm && h < 12) h += 12;
-    if (isAm && h === 12) h = 0;
-    return new Date(year, month, day, h, m, 0);
+    return parseEventDateTimeToUTC(dateVal || new Date(), timeStr);
 }
 
 function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | null): Date {
@@ -378,24 +331,17 @@ export class MobileTicketController {
                 const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
                 const sourceStartTime = sourceGroupParty?.startTime || sourceBooking?.startTime;
-                let startTimeStr = '12:00 AM';
+                let startTimeStr = '08:00 PM';
                 if (sourceStartTime) {
-                    startTimeStr = formatTimeTo12Hour(sourceStartTime);
+                    startTimeStr = formatTime12Hour(parseEventDateTimeToUTC(t.eventStartAt || new Date(), sourceStartTime));
                 } else if (t.eventStartAt) {
-                    const rawStr = String(t.eventStartAt);
-                    if (rawStr.endsWith('Z') && startDate.getUTCHours() === 0 && startDate.getUTCMinutes() === 0) {
-                        startTimeStr = '12:00 AM';
-                    } else if (startDate.getHours() === 5 && startDate.getMinutes() === 30 && rawStr.endsWith('Z')) {
-                        startTimeStr = '12:00 AM';
-                    } else {
-                        startTimeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                    }
+                    startTimeStr = formatTime12Hour(t.eventStartAt);
                 }
 
-                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan);
+                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan';
                 const isStrangersMeet = t.bookingType === 'strangers_meet' || Boolean(sourceStrangersMeet) || Boolean(sourceStrangersJoiner);
-                const isLargeParty = (t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty);
-                const isGroupParty = (t.bookingType === 'group_party' && !isLargeParty) || Boolean(sourceGroupParty);
+                const isLargeParty = !isPartyPlan && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
+                const isGroupParty = !isPartyPlan && ((t.bookingType === 'group_party' && !isLargeParty) || Boolean(sourceGroupParty));
                 const isEventBooking = Boolean(sourceBooking?.isUpcomingNight);
                 const isSolo = t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo';
                 const isVenueBooking = !isPartyPlan && !isStrangersMeet && !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
@@ -614,15 +560,18 @@ export class MobileTicketController {
                 const isExpired = bStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
-                const isLargeParty = Boolean(b.isLargePartyRequest);
+                const isPlanBooking = b.goingMode === 'plan';
+                const isLargeParty = !isPlanBooking && Boolean(b.isLargePartyRequest);
                 const isUpcomingNight = Boolean(b.isUpcomingNight);
                 const isSolo = b.goingMode === 'solo';
-                const isGroupParty = b.goingMode === 'party_request' && !isLargeParty;
+                const isGroupParty = !isPlanBooking && b.goingMode === 'party_request' && !isLargeParty;
                 const isEventBooking = isUpcomingNight;
-                const isVenueBooking = !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
+                const isPartyPlan = isPlanBooking;
+                const isVenueBooking = !isLargeParty && !isGroupParty && !isEventBooking && !isSolo && !isPartyPlan;
 
                 let category = 'venue_booking';
-                if (isLargeParty) category = 'large_party';
+                if (isPartyPlan) category = 'party_plan';
+                else if (isLargeParty) category = 'large_party';
                 else if (isEventBooking) category = 'event_booking';
                 else if (isGroupParty) category = 'group_party';
                 else if (isSolo) category = 'solo';
@@ -858,7 +807,7 @@ export class MobileTicketController {
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDateTime,
-                    startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: req.createdAt,
@@ -1011,7 +960,7 @@ export class MobileTicketController {
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDateTime,
-                    startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: plan.createdAt,
@@ -1098,7 +1047,7 @@ export class MobileTicketController {
                     category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: meet.eventDateTime,
-                    startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: j.createdAt,
@@ -1192,7 +1141,7 @@ export class MobileTicketController {
                     category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: sm.eventDateTime,
-                    startTime: startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: sm.createdAt,
@@ -1286,7 +1235,7 @@ export class MobileTicketController {
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDate || planAny.partyDate,
-                    startTime: plan.startTime || planAny.partyTime || startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(plan.startTime ? parseEventDateTimeToUTC(plan.planDate || planAny.partyDate, plan.startTime) : startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: plan.createdAt,
@@ -1378,7 +1327,7 @@ export class MobileTicketController {
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: plan.planDate || plan.partyDate,
-                    startTime: plan.startTime || plan.partyTime || startAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    startTime: formatTime12Hour(plan.startTime ? parseEventDateTimeToUTC(plan.planDate || plan.partyDate, plan.startTime) : startAt),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: req.createdAt,
@@ -1657,12 +1606,8 @@ export class MobileTicketController {
             const downloadUrl = pdfUrl ? `/api/mobile/tickets/share/${token}/pdf` : null;
 
             const eventStart = new Date(ticket.eventStartAt);
-            const dateStr = eventStart.toLocaleDateString('en-IN', {
-                weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
-            });
-            const timeStr = eventStart.toLocaleTimeString('en-IN', {
-                hour: '2-digit', minute: '2-digit', hour12: true
-            });
+            const dateStr = formatDateFull(eventStart, undefined, true);
+            const timeStr = formatTime12Hour(eventStart);
 
             const bookingTypeLabel: Record<string, string> = {
                 solo: 'Solo Booking',

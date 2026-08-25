@@ -23,6 +23,7 @@ import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -156,28 +157,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   }
 
   String _formatToISTString(DateTime date, TimeOfDay time) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    final h = time.hour.toString().padLeft(2, '0');
-    final min = time.minute.toString().padLeft(2, '0');
-    return '$y-$m-${d}T$h:$min:00.000+05:30';
+    return LunaraDateFormatter.formatToIsoUtc(date, time);
   }
 
   String _formatTimeOfBooking(String? timeStr) {
-    if (timeStr == null || timeStr.isEmpty) return '';
-    try {
-      final parts = timeStr.split(':');
-      if (parts.length >= 2) {
-        final hour = int.parse(parts[0]);
-        final minute = int.parse(parts[1]);
-        final ampm = hour >= 12 ? 'PM' : 'AM';
-        final formattedHour = hour % 12 == 0 ? 12 : hour % 12;
-        final formattedMinute = minute.toString().padLeft(2, '0');
-        return '$formattedHour:$formattedMinute $ampm';
-      }
-    } catch (_) {}
-    return timeStr;
+    return LunaraDateFormatter.normalizeTimeTo12Hour(timeStr);
   }
 
   Future<void> _loadCustomers() async {

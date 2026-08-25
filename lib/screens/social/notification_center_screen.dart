@@ -2768,12 +2768,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                  '🎉 Invite Accepted! Party Plan confirmed.',
+                                  '🎉 Invite Accepted! Please pay the safety deposit to confirm.',
                                 ),
                                 backgroundColor: Colors.green,
                               ),
                             );
                             _fetchNotifications();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                              ),
+                            );
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(

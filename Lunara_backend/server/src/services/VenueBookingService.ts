@@ -11,6 +11,7 @@ import { NotificationService } from './NotificationService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { parseEventDateTimeToUTC, formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -162,7 +163,7 @@ export class VenueBookingService {
             : undefined;
 
         const normalizedStart = normalizeStartTime(startTime);
-        const bookingStartDateTime = new Date(`${cleanBookingDate}T${normalizedStart}:00`);
+        const bookingStartDateTime = parseEventDateTimeToUTC(cleanBookingDate, normalizedStart);
         if (isNaN(bookingStartDateTime.getTime())) {
             throw new Error('Invalid bookingDate or startTime format');
         }
@@ -231,7 +232,7 @@ export class VenueBookingService {
                     entityType: 'Booking',
                     entityId: booking.id,
                     title: '🎉 Booking Confirmed!',
-                    body: `Your booking at ${venue.name} for ${bookingDate} at ${startTime} has been confirmed. View your digital ticket now!`,
+                    body: `Your booking at ${venue.name} for ${formatDateFull(bookingStartDateTime)} at ${formatTime12Hour(bookingStartDateTime)} has been confirmed. View your digital ticket now!`,
                     priority: 'HIGH',
                     idempotencyKey: `booking_created_${booking.id}`,
                     actionType: 'view_ticket',

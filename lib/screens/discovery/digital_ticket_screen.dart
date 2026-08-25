@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme.dart';
 import '../../models/user.dart';
@@ -10,6 +9,7 @@ import '../../widgets/action_button.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
+import '../../utils/lunara_date_formatter.dart';
 import '../home/dashboard.dart';
 
 class DigitalTicketScreen extends StatefulWidget {
@@ -106,131 +106,16 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
   DateTime? _getEventDateTime() {
     try {
-      String dateStr = (widget.date ??
-              widget.booking?['bookingDate']?.toString() ??
-              widget.booking?['partyDate']?.toString() ??
-              widget.booking?['date']?.toString() ??
-              widget.booking?['eventStartAt']?.toString() ??
-              '')
-          .trim();
-      String timeStr = (widget.time ??
-              widget.booking?['startTime']?.toString() ??
-              widget.booking?['time']?.toString() ??
-              widget.booking?['partyTime']?.toString() ??
-              '')
-          .trim();
-
-      // Handle split if contains '•' or ' at '
-      if (dateStr.contains('•')) {
-        final parts = dateStr.split('•');
-        dateStr = parts[0].trim();
-        if (parts.length > 1 && timeStr.isEmpty) {
-          timeStr = parts[1].trim();
-        }
-      } else if (dateStr.contains(' at ')) {
-        final parts = dateStr.split(' at ');
-        dateStr = parts[0].trim();
-        if (parts.length > 1 && timeStr.isEmpty) {
-          timeStr = parts[1].trim();
-        }
-      }
-
-      // If explicit user-selected time exists, extract [hour, minute]
-      List<int>? explicitTime;
-      if (timeStr.isNotEmpty) {
-        explicitTime = _parseTimeStr(timeStr);
-      }
-
-      // 1. If dateStr is an ISO timestamp (contains 'T')
-      if (dateStr.contains('T')) {
-        final dt = DateTime.tryParse(dateStr)?.toLocal();
-        if (dt != null) {
-          if (explicitTime != null) {
-            return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
-          }
-          // If no explicit time and the parsed time is midnight UTC (e.g. 05:30 IST from DATEONLY),
-          // fallback to standard 12:00 AM (00:00)
-          if (dt.hour == 5 && dt.minute == 30 && dateStr.endsWith('Z')) {
-            return DateTime(dt.year, dt.month, dt.day, 0, 0);
-          }
-          return dt;
-        }
-      }
-
-      // 2. Try direct parsing of dateStr (e.g. YYYY-MM-DD)
-      final parsed = DateTime.tryParse(dateStr);
-      if (parsed != null) {
-        final hour = explicitTime != null ? explicitTime[0] : 20;
-        final minute = explicitTime != null ? explicitTime[1] : 0;
-        return DateTime(parsed.year, parsed.month, parsed.day, hour, minute);
-      }
-
-      final hour = explicitTime != null ? explicitTime[0] : 20;
-      final minute = explicitTime != null ? explicitTime[1] : 0;
-
-      // 3. Try regex for YYYY-MM-DD
-      final ymdRegex = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})');
-      var match = ymdRegex.firstMatch(dateStr);
-      if (match != null) {
-        final year = int.parse(match.group(1)!);
-        final month = int.parse(match.group(2)!);
-        final day = int.parse(match.group(3)!);
-        return DateTime(year, month, day, hour, minute);
-      }
-
-      // 4. Try regex for DD-MM-YYYY or DD/MM/YYYY
-      final dmyRegex = RegExp(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})');
-      match = dmyRegex.firstMatch(dateStr);
-      if (match != null) {
-        final day = int.parse(match.group(1)!);
-        final month = int.parse(match.group(2)!);
-        final year = int.parse(match.group(3)!);
-        return DateTime(year, month, day, hour, minute);
-      }
-
-      // 5. Try word-based month format (e.g., "SUN, 24 AUG 2026", "24 AUG 2026", "SUN, 24 AUG")
-      final monthsList = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-      final cleanDate = dateStr.toUpperCase();
-      int? foundMonth;
-      for (int i = 0; i < monthsList.length; i++) {
-        if (cleanDate.contains(monthsList[i])) {
-          foundMonth = i + 1;
-          break;
-        }
-      }
-
-      if (foundMonth != null) {
-        final yearRegex = RegExp(r'\b(20\d{2})\b');
-        final yearMatch = yearRegex.firstMatch(dateStr);
-        final year = yearMatch != null ? int.parse(yearMatch.group(1)!) : DateTime.now().year;
-
-        final dayRegex = RegExp(r'\b(\d{1,2})\b');
-        final dayMatches = dayRegex.allMatches(cleanDate);
-        int? day;
-        for (final m in dayMatches) {
-          final val = int.parse(m.group(1)!);
-          if (val != year % 100 && val != (year ~/ 100) && val <= 31) {
-            day = val;
-            break;
-          }
-        }
-        day ??= DateTime.now().day;
-        return DateTime(year, foundMonth, day, hour, minute);
-      }
-
-      // 6. Check eventStartAt from booking map
-      if (widget.booking?['eventStartAt'] != null) {
-        final dt = DateTime.tryParse(widget.booking!['eventStartAt'].toString())?.toLocal();
-        if (dt != null) {
-          if (explicitTime != null) {
-            return DateTime(dt.year, dt.month, dt.day, explicitTime[0], explicitTime[1]);
-          }
-          if (dt.hour == 5 && dt.minute == 30 && widget.booking!['eventStartAt'].toString().endsWith('Z')) {
-            return DateTime(dt.year, dt.month, dt.day, 0, 0);
-          }
-          return dt;
-        }
-      }
+      final rawDate = widget.date ??
+          widget.booking?['bookingDate'] ??
+          widget.booking?['partyDate'] ??
+          widget.booking?['date'] ??
+          widget.booking?['eventStartAt'];
+      final rawTime = widget.time ??
+          widget.booking?['startTime'] ??
+          widget.booking?['time'] ??
+          widget.booking?['partyTime'];
+      return LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
     } catch (e) {
       debugPrint("Error parsing event datetime: $e");
     }
@@ -246,34 +131,6 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
       return DateTime.now().isAfter(expirationTime);
     }
     return false;
-  }
-
-  List<int> _parseTimeStr(String timeStr) {
-    int hour = 0; // default 12:00 AM (00:00)
-    int minute = 0;
-    if (timeStr.isNotEmpty) {
-      final cleanTime = timeStr.toUpperCase();
-      if (cleanTime.contains('AM') || cleanTime.contains('PM')) {
-        final isPm = cleanTime.contains('PM');
-        final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
-        final parts = timeOnly.split(':');
-        if (parts.isNotEmpty) {
-          int h = int.tryParse(parts[0]) ?? 12;
-          int m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-          if (isPm && h < 12) h += 12;
-          if (!isPm && h == 12) h = 0;
-          hour = h;
-          minute = m;
-        }
-      } else {
-        final parts = timeStr.split(':');
-        if (parts.isNotEmpty) {
-          hour = int.tryParse(parts[0]) ?? 0;
-          minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-        }
-      }
-    }
-    return [hour, minute];
   }
 
   void _startCountdown() {
@@ -750,38 +607,12 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
 
     // Date & Time formatting
     final eventDt = _getEventDateTime();
-    String displayDate;
-    String displayTime;
-
-    if (eventDt != null) {
-      displayDate = DateFormat('EEE, d MMM yyyy').format(eventDt).toUpperCase();
-      displayTime = DateFormat('hh:mm a').format(eventDt);
-    } else {
-      displayDate = (widget.date ?? widget.booking?['bookingDate']?.toString() ?? 'SAT, OCT 24').trim();
-      displayTime = (widget.time ?? widget.booking?['startTime']?.toString() ?? '10:30 PM').trim();
-
-      if (displayDate.contains('•')) {
-        final parts = displayDate.split('•');
-        displayDate = parts[0].trim();
-        displayTime = parts.length > 1 ? parts[1].trim() : displayTime;
-      }
-      final dt = DateTime.tryParse(displayDate);
-      if (dt != null) {
-        displayDate = DateFormat('EEE, d MMM yyyy').format(dt.toLocal()).toUpperCase();
-      }
-
-      if (!displayTime.toUpperCase().contains('AM') && !displayTime.toUpperCase().contains('PM')) {
-        final parts = displayTime.split(':');
-        if (parts.isNotEmpty) {
-          int h = int.tryParse(parts[0].trim()) ?? 20;
-          int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-          final period = h >= 12 ? 'PM' : 'AM';
-          if (h > 12) h -= 12;
-          if (h == 0) h = 12;
-          displayTime = '$h:${m.toString().padLeft(2, '0')} $period';
-        }
-      }
-    }
+    final String displayDate = eventDt != null
+        ? LunaraDateFormatter.formatEventDate(eventDt, pattern: 'EEE, d MMM yyyy').toUpperCase()
+        : (widget.date ?? widget.booking?['bookingDate']?.toString() ?? 'SAT, OCT 24').trim();
+    final String displayTime = eventDt != null
+        ? LunaraDateFormatter.formatEventTime(eventDt)
+        : LunaraDateFormatter.normalizeTimeTo12Hour(widget.time ?? widget.booking?['startTime']?.toString());
     final String displayDateTime = '$displayDate • $displayTime';
 
     // Table / Package display

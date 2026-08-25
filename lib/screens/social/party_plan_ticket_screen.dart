@@ -8,6 +8,7 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 class PartyPlanTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic> request;
@@ -62,9 +63,11 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         widget.request['planDateTime'] ??
         widget.request['eventStartAt'] ??
         widget.request['bookingDate'];
-    final planDateTime = rawDate != null
-        ? DateTime.tryParse(rawDate.toString())?.toLocal()
-        : null;
+    final rawTime = widget.plan['startTime'] ??
+        widget.plan['time'] ??
+        widget.request['startTime'] ??
+        widget.request['time'];
+    final planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
     if (planDateTime == null) return;
 
     void update() {
@@ -400,32 +403,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         widget.request['time'] ??
         widget.request['partyTime'];
 
-    DateTime planDateTime = DateTime.now();
-    if (rawDate != null) {
-      if (rawDate is DateTime) {
-        planDateTime = rawDate.toLocal();
-      } else {
-        planDateTime = DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now();
-      }
-    }
-    if (rawTime != null && rawTime.toString().trim().isNotEmpty) {
-      final cleanTime = rawTime.toString().toUpperCase().trim();
-      final isPm = cleanTime.contains('PM');
-      final isAm = cleanTime.contains('AM');
-      final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
-      final parts = timeOnly.split(':');
-      if (parts.isNotEmpty) {
-        int? h = int.tryParse(parts[0].trim());
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        if (h != null) {
-          if (isPm && h < 12) h += 12;
-          if (isAm && h == 12) h = 0;
-          planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, h, m);
-        }
-      }
-    } else if (planDateTime.hour == 5 && planDateTime.minute == 30 && rawDate.toString().endsWith('Z')) {
-      planDateTime = DateTime(planDateTime.year, planDateTime.month, planDateTime.day, 0, 0);
-    }
+    final DateTime planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString()) ?? DateTime.now();
 
     final hostUser = _resolveHostUser();
     final hostFirstName = hostUser['firstName']?.toString() ?? '';
@@ -668,8 +646,8 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.calendar_today_rounded,
                                 label: 'DATE',
-                                value: DateFormat('MMM dd, yyyy').format(planDateTime),
-                                subtext: DateFormat('EEEE').format(planDateTime),
+                                value: LunaraDateFormatter.formatEventDate(planDateTime, pattern: 'MMM dd, yyyy'),
+                                subtext: LunaraDateFormatter.formatEventDate(planDateTime, pattern: 'EEEE'),
                               ),
                             ),
                             Container(height: 36, width: 1, color: const Color(0xFFE2E8F0)),
@@ -678,7 +656,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.access_time_rounded,
                                 label: 'TIME',
-                                value: DateFormat('hh:mm a').format(planDateTime),
+                                value: LunaraDateFormatter.formatEventTime(planDateTime),
                                 subtext: 'Onwards',
                               ),
                             ),

@@ -739,7 +739,13 @@ class ApiService {
         bookingParties.addAll(
           raw
               .whereType<Map>()
-              .where((b) => b['goingMode']?.toString() == 'party_request')
+              .where((b) {
+                final gm = b['goingMode']?.toString();
+                if (gm != 'party_request' || gm == 'plan') return false;
+                final spec = b['specialRequests']?.toString() ?? '';
+                if (spec.contains('"joinerId"') || spec.contains('"planId"')) return false;
+                return true;
+              })
               .map((b) => Map<String, dynamic>.from(b)),
         );
       }

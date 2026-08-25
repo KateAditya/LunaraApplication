@@ -15,6 +15,7 @@ import StrangersMeetJoiner, { StrangersMeetJoinerPaymentStatus } from '../models
 import { Op } from 'sequelize';
 import GroupParty from '../models/GroupParty';
 import Ticket, { TicketStatus, StorageCleanupStatus } from '../models/Ticket';
+import { parseEventDateTimeToUTC, formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 
 export interface TicketPDFOptions {
     bookingType: 'solo' | 'party_plan' | 'group_party_small' | 'group_party_large' | 'strangers_meet';
@@ -89,7 +90,7 @@ async function resolveImage(imgUrl: string | null | undefined): Promise<Buffer |
     return null;
 }
 
-function formatTimeTo12Hour(timeStr?: string): string {
+export function formatTimeTo12Hour(timeStr?: string): string {
     if (!timeStr) return '08:00 PM';
     const clean = timeStr.trim();
     if (clean.toUpperCase().includes('AM') || clean.toUpperCase().includes('PM')) {
@@ -109,59 +110,7 @@ function formatTimeTo12Hour(timeStr?: string): string {
 }
 
 export function parseBookingDateTimeRobust(bookingDateVal: Date | string, startTimeStr?: string | null): Date {
-    let year = 0, month = 0, day = 0;
-    if (bookingDateVal instanceof Date) {
-        year = bookingDateVal.getFullYear();
-        month = bookingDateVal.getMonth();
-        day = bookingDateVal.getDate();
-    } else {
-        const str = String(bookingDateVal || '').trim();
-        const dateMatch = str.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-        if (dateMatch) {
-            year = parseInt(dateMatch[1], 10);
-            month = parseInt(dateMatch[2], 10) - 1;
-            day = parseInt(dateMatch[3], 10);
-        } else {
-            const dmyMatch = str.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-            if (dmyMatch) {
-                day = parseInt(dmyMatch[1], 10);
-                month = parseInt(dmyMatch[2], 10) - 1;
-                year = parseInt(dmyMatch[3], 10);
-            } else {
-                const parsed = new Date(str);
-                if (!isNaN(parsed.getTime())) {
-                    year = parsed.getFullYear();
-                    month = parsed.getMonth();
-                    day = parsed.getDate();
-                } else {
-                    const now = new Date();
-                    year = now.getFullYear();
-                    month = now.getMonth();
-                    day = now.getDate();
-                }
-            }
-        }
-    }
-
-    let hours = 20;
-    let minutes = 0;
-    if (startTimeStr && String(startTimeStr).trim().length > 0) {
-        const sTime = String(startTimeStr).trim();
-        const isPm = sTime.toUpperCase().includes('PM');
-        const isAm = sTime.toUpperCase().includes('AM');
-        const cleanTime = sTime.toUpperCase().replace('AM', '').replace('PM', '').trim();
-        const parts = cleanTime.split(':');
-        const parsedH = parts.length > 0 ? parseInt(parts[0], 10) : NaN;
-        let h = !isNaN(parsedH) ? parsedH : 20;
-        const parsedM = parts.length > 1 ? parseInt(parts[1], 10) : 0;
-        const m = !isNaN(parsedM) ? parsedM : 0;
-        if (isPm && h < 12) h += 12;
-        if (isAm && h === 12) h = 0;
-        hours = h;
-        minutes = m;
-    }
-
-    return new Date(year, month, day, hours, minutes, 0);
+    return parseEventDateTimeToUTC(bookingDateVal, startTimeStr);
 }
 
 // Vector Icon Helpers for clean PDFKit rendering
@@ -404,8 +353,8 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
 
         const evDate = options.eventDate instanceof Date ? options.eventDate : new Date(options.eventDate);
         const validEvDate = isNaN(evDate.getTime()) ? new Date() : evDate;
-        const dateFormatted = validEvDate.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
-        const dayFormatted = validEvDate.toLocaleDateString('en-US', { weekday: 'long' });
+        const dateFormatted = formatDateFull(validEvDate, undefined, false);
+        const dayFormatted = formatDateFull(validEvDate, undefined, true).split(',')[0] || 'Day';
 
         // Col 1: DATE
         drawCalendarIcon(doc, 52, metricY + 22, 16);
@@ -419,7 +368,7 @@ export async function generateTicketPDF(options: TicketPDFOptions): Promise<stri
         // Col 2: TIME
         drawClockIcon(doc, 190, metricY + 22, 9);
         doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Bold').text('TIME', 145, metricY + 36, { width: 90, align: 'center' });
-        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(formatTimeTo12Hour(options.startTime), 140, metricY + 48, { width: 100, align: 'center' });
+        doc.fillColor('#0F172A').fontSize(10.5).font('Helvetica-Bold').text(formatTime12Hour(options.startTime ? parseBookingDateTimeRobust(options.eventDate, options.startTime) : validEvDate), 140, metricY + 48, { width: 100, align: 'center' });
         doc.fillColor('#64748B').fontSize(8.5).font('Helvetica').text('Onwards', 140, metricY + 63, { width: 100, align: 'center' });
 
         // Divider 2
@@ -680,7 +629,23 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         let partnerUsername: string | null = null;
         let partnerProfileUrl: string | null = null;
 
-        if (booking.goingMode === 'party_request' && booking.specialRequests) {
+        if (booking.goingMode === GoingMode.PLAN || (booking.goingMode as string) === 'plan') {
+            bookingType = 'party_plan';
+            if (booking.specialRequests) {
+                try {
+                    const meta = typeof booking.specialRequests === 'string' ? JSON.parse(booking.specialRequests) : booking.specialRequests;
+                    if (meta.joinerId) {
+                        const partner = await User.findByPk(meta.joinerId);
+                        if (partner) {
+                            partnerName = `${partner.firstName} ${partner.lastName}`.trim();
+                            partnerUsername = `@${(partner.firstName || 'partner').toLowerCase()}_${(partner.lastName || '').toLowerCase()}`.replace(/_+$/, '');
+                            const partnerPhoto = await UserPhoto.findOne({ where: { userId: meta.joinerId, isPrimary: true } });
+                            partnerProfileUrl = partner.profileImageUrl || partnerPhoto?.filePath || null;
+                        }
+                    }
+                } catch (_) {}
+            }
+        } else if (booking.goingMode === 'party_request' && booking.specialRequests) {
             try {
                 const meta = JSON.parse(booking.specialRequests);
                 if (meta.joinerId) {
@@ -937,7 +902,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
             venueImageUrl: venueCoverPath || null,
             numberOfGuests: dynamicParticipantsCount,
             eventDate: request.eventDateTime,
-            startTime: request.eventDateTime ? new Date(request.eventDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '08:00 PM',
+            startTime: formatTime12Hour(request.eventDateTime),
             paymentAmount: Number(request.paymentAmount || 0),
             paymentStatus: request.paymentStatus,
         });
@@ -1003,7 +968,11 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
         const venueCoverPath = plan?.venueId ? await getVenueCoverImageFromDb(plan.venueId) : null;
 
         const booking = await Booking.findOne({
-            where: { goingMode: GoingMode.PARTY_REQUEST, userId: plan?.userId, venueId: plan?.venueId },
+            where: {
+                goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                userId: plan?.userId,
+                venueId: plan?.venueId
+            },
             order: [['createdAt', 'DESC']],
         });
 
@@ -1031,7 +1000,7 @@ export async function generateTicketForPartyPlanHelper(requestId: string): Promi
             venueImageUrl: venueCoverPath || null,
             numberOfGuests: 2,
             eventDate: plan?.planDateTime || new Date(),
-            startTime: plan?.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '09:00 PM',
+            startTime: formatTime12Hour(plan?.planDateTime),
             paymentAmount: Number(plan?.depositAmount || 99),
             paymentStatus: 'PAID',
         });

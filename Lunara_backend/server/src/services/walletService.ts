@@ -529,14 +529,18 @@ export class WalletService {
                 { transaction: t }
             );
 
-            await AuditLog.create(
-                {
-                    userId,
-                    action: 'Refund Processed to Wallet',
-                    metadata: { amount, reason, referenceId, partyPlanId, bookingId },
-                },
-                { transaction: t }
-            );
+            try {
+                await AuditLog.create(
+                    {
+                        userId,
+                        action: 'Refund Processed to Wallet',
+                        metadata: { amount, reason, referenceId, partyPlanId, bookingId },
+                    },
+                    { transaction: t }
+                );
+            } catch (auditErr: any) {
+                logger.warn('Audit log write failed in creditRefund: ' + auditErr?.message);
+            }
 
             // Real-time socket event & in-app notification
             setImmediate(async () => {

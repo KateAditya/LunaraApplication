@@ -511,7 +511,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             : () async {
                                 Navigator.pop(ctx);
                                 final otherText = selectedReason == 'other' ? otherController.text.trim() : null;
-                                if (_isHostPlan(widget.plan)) {
+                                final bool isHost = _isHostPlan(widget.plan);
+                                final String planLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
+                                final bool isPlanConfirmed = isHost
+                                    ? (widget.plan['hasConfirmedBooking'] == true ||
+                                        planLife == 'match_confirmed' ||
+                                        planLife == 'chat_enabled' ||
+                                        planLife == 'plan_completed')
+                                    : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+                                if (isHost && !isPlanConfirmed) {
                                   _showHostCancellationChoiceDialog(selectedReason, otherText);
                                 } else {
                                   await _submitCancellationRequest(selectedReason, otherText);
@@ -1033,8 +1041,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     }
 
-    // Default: Show subtle red outline "Cancel Party Plan" button — HOST ONLY
-    if (!_isHostPlan(widget.plan)) return const SizedBox.shrink();
+    // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
+    final bool isHost = _isHostPlan(widget.plan);
+    final String pLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
+    final bool isConfirmed = isHost
+        ? (widget.plan['hasConfirmedBooking'] == true ||
+            pLife == 'match_confirmed' ||
+            pLife == 'chat_enabled' ||
+            pLife == 'plan_completed')
+        : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+
+    if (!isHost && !isConfirmed) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.only(top: 16),
@@ -1469,13 +1486,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       setState(() => _isAcceptingInvite = false);
 
       if (res != null && res['success'] == true) {
+        setState(() {
+          _requestStatus = 'payment_pending';
+          _alreadyRequested = true;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Invite Accepted! Party Plan confirmed.'),
+            content: Text('🎉 Invite Accepted! Please pay the safety deposit within 30 minutes.'),
             backgroundColor: Colors.green,
           ),
         );
+        _refreshPlanDetails();
         _checkRequestStatus();
+        _openDepositPaymentSheet();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

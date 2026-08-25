@@ -769,7 +769,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             myBookings.forEach((b: any) => {
                 const isPaid = (b.paymentStatus || '').toLowerCase() === 'paid';
                 if (!isPaid && b.status !== 'cancelled' && b.status !== 'rejected') {
-                    const isLargeParty = b.isLargePartyRequest || b.goingMode === 'party_request' || (b.numberOfGuests || 0) > 20;
+                    const isPlanBooking = b.goingMode === 'plan';
+                    const isLargeParty = !isPlanBooking && (b.isLargePartyRequest || b.goingMode === 'party_request' || (b.numberOfGuests || 0) > 20);
                     const dueAmt = Number(b.adminPaymentAmount) || Number(b.totalAmount) || Number(b.depositAmount) || 0;
 
                     if (isLargeParty) {
@@ -794,8 +795,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         bookingId: b.id,
                         type: 'pending_payment',
                         requestType: 'booking_payment',
-                        category: 'booking',
-                        paymentCategory: b.isLargePartyRequest ? 'large_party' : (b.goingMode === 'party_request' ? 'group_party' : 'booking'),
+                        category: isPlanBooking ? 'party_plan' : 'booking',
+                        paymentCategory: b.isLargePartyRequest ? 'large_party' : (b.goingMode === 'party_request' ? 'group_party' : (isPlanBooking ? 'party_plan' : 'booking')),
                         status: 'payment_pending',
                         paymentStatus: b.paymentStatus || 'pending',
                         amountDue: dueAmt,
@@ -1053,35 +1054,38 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ...formattedMyPartyReqs,
 
                 ...pendingPaymentItems,
-                ...myBookings.map((b: any) => ({
-                    id: b.id,
-                    type: 'my_request',
-                    requestType: b.isLargePartyRequest ? 'large_party_request' : (b.goingMode === 'party_request' ? 'group_booking' : 'booking'),
-                    status: b.status || 'pending',
-                    paymentStatus: b.paymentStatus || 'pending',
-                    createdAt: b.createdAt,
-                    booking: {
+                ...myBookings.map((b: any) => {
+                    const isPlanBooking = b.goingMode === 'plan';
+                    return {
                         id: b.id,
-                        bookingId: b.id,
-                        venue: b.venue,
-                        venueName: b.venue?.name,
-                        venueAddress: b.venue?.addressLine1 ?? b.venue?.city ?? '',
+                        type: 'my_request',
+                        requestType: b.isLargePartyRequest ? 'large_party_request' : (b.goingMode === 'party_request' ? 'group_booking' : (isPlanBooking ? 'party_plan' : 'booking')),
                         status: b.status || 'pending',
                         paymentStatus: b.paymentStatus || 'pending',
-                        numberOfGuests: b.numberOfGuests,
-                        partySubject: b.partySubject || (b.goingMode === 'party_request' ? 'Group Party' : 'Table Booking'),
-                        bookingDate: b.bookingDate,
-                        startTime: b.startTime,
-                        totalAmount: b.totalAmount,
-                        depositAmount: b.depositAmount,
-                        approvedAmount: b.totalAmount,
-                        charges: b.totalAmount,
                         createdAt: b.createdAt,
-                        mobileNumber: b.mobileNumber,
-                        goingMode: b.goingMode,
-                        isLargePartyRequest: b.isLargePartyRequest,
-                    }
-                })),
+                        booking: {
+                            id: b.id,
+                            bookingId: b.id,
+                            venue: b.venue,
+                            venueName: b.venue?.name,
+                            venueAddress: b.venue?.addressLine1 ?? b.venue?.city ?? '',
+                            status: b.status || 'pending',
+                            paymentStatus: b.paymentStatus || 'pending',
+                            numberOfGuests: b.numberOfGuests,
+                            partySubject: b.partySubject || (b.goingMode === 'party_request' ? 'Group Party' : (isPlanBooking ? 'Party Plan' : 'Table Booking')),
+                            bookingDate: b.bookingDate,
+                            startTime: b.startTime,
+                            totalAmount: b.totalAmount,
+                            depositAmount: b.depositAmount,
+                            approvedAmount: b.totalAmount,
+                            charges: b.totalAmount,
+                            createdAt: b.createdAt,
+                            mobileNumber: b.mobileNumber,
+                            goingMode: b.goingMode,
+                            isLargePartyRequest: b.isLargePartyRequest,
+                        }
+                    };
+                }),
                 ...myHostPartyPlans.map((p: any) => ({
                     id: p.id,
                     type: 'my_request',

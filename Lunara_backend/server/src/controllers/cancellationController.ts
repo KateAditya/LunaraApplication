@@ -1,15 +1,14 @@
 import { Request, Response } from 'express';
 import { Op, Transaction } from 'sequelize';
 import sequelize from '../config/database';
-import PartyPlan, { PartyPlanStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
-import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
+import PartyPlan, { PartyPlanStatus, PartyPlanLifecycleStatus, PartyPlanPaymentStatus } from '../models/PartyPlan';
+import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import PartyPlanCancellationRequest, { CancellationRequestStatus, CancellationReason } from '../models/PartyPlanCancellationRequest';
-import Booking, { BookingStatus, GoingMode } from '../models/Booking';
+import Booking, { BookingStatus, PaymentStatus as BookingPaymentStatus, GoingMode } from '../models/Booking';
 import Ticket, { TicketStatus } from '../models/Ticket';
-import Payment, { PaymentMethod } from '../models/Payment';
+import Payment, { PaymentStatus, PaymentMethod } from '../models/Payment';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
-import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
 import { WalletService } from '../services/walletService';
 import ReliabilityHistory from '../models/ReliabilityHistory';
 import Conversation from '../models/Conversation';
@@ -68,11 +67,18 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 {
                     model: PartyPlanRequest,
                     as: 'requests',
-                    where: { status: PartyPlanRequestStatus.ACCEPTED },
+                    where: {
+                        status: {
+                            [Op.in]: [
+                                PartyPlanRequestStatus.ACCEPTED,
+                                PartyPlanRequestStatus.PAYMENT_PENDING,
+                            ]
+                        }
+                    },
                     required: false,
-                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName'] }],
+                    include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
                 },
-                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName'] },
+                { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
             ],
         });
 
@@ -80,7 +86,7 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             return res.status(404).json({ success: false, message: 'Party Plan not found' });
         }
 
-        if (plan.status === PartyPlanStatus.CANCELLED) {
+        if (plan.status === PartyPlanStatus.CANCELLED || plan.lifecycleStatus === PartyPlanLifecycleStatus.CANCELLED) {
             return res.status(400).json({ success: false, message: 'Party Plan is already cancelled' });
         }
 
@@ -112,7 +118,13 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             });
         }
 
-        const acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
+        let acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
+        if (!acceptedRequest && plan.matchedRequestId) {
+            acceptedRequest = await PartyPlanRequest.findByPk(plan.matchedRequestId, {
+                include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
+            });
+        }
+
         if (!acceptedRequest) {
             if (plan.userId !== userId) {
                 return res.status(403).json({ success: false, message: 'Only the host can cancel a plan with no accepted participants.' });
@@ -192,11 +204,12 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
         // Find associated Booking
         const booking = await Booking.findOne({
             where: {
-                goingMode: GoingMode.PARTY_REQUEST,
+                goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
                 userId: plan.userId,
                 venueId: plan.venueId,
-                bookingDate: plan.planDateTime,
+                status: { [Op.ne]: BookingStatus.CANCELLED },
             },
+            order: [['createdAt', 'DESC']],
         });
 
         const cancellationRequest = await PartyPlanCancellationRequest.create({
@@ -426,8 +439,11 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
         // CASE B: APPROVE CANCELLATION REQUEST (ATOMIC TRANSACTION)
         // =========================================================================
         return await sequelize.transaction(async (t: Transaction) => {
-            const acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
-            const joinerId = acceptedRequest ? acceptedRequest.requesterId : cancellationRequest.recipientUserId;
+            let acceptedRequest = plan.requests && plan.requests.length > 0 ? plan.requests[0] : null;
+            if (!acceptedRequest && plan.matchedRequestId) {
+                acceptedRequest = await PartyPlanRequest.findByPk(plan.matchedRequestId, { transaction: t });
+            }
+            const joinerId = acceptedRequest ? acceptedRequest.requesterId : (cancellationRequest.requestedById === plan.userId ? cancellationRequest.recipientUserId : cancellationRequest.requestedById);
 
             // Re-read plan inside transaction with row lock to prevent race conditions
             const lockedPlan = await PartyPlan.findByPk(planId, {
@@ -456,17 +472,44 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             }
 
             // 1. Lock and Update Booking
-            const booking = await Booking.findOne({
-                where: {
-                    goingMode: GoingMode.PARTY_REQUEST,
-                    userId: lockedPlan.userId,
-                    venueId: lockedPlan.venueId,
-                    bookingDate: lockedPlan.planDateTime,
-                },
-                transaction: t,
-            });
+            let booking: Booking | null = null;
+            if (cancellationRequest.bookingId) {
+                booking = await Booking.findByPk(cancellationRequest.bookingId, { transaction: t });
+            }
+            if (!booking) {
+                booking = await Booking.findOne({
+                    where: {
+                        goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                        userId: lockedPlan.userId,
+                        venueId: lockedPlan.venueId,
+                        status: { [Op.ne]: BookingStatus.CANCELLED },
+                    },
+                    order: [['createdAt', 'DESC']],
+                    transaction: t,
+                });
+            }
             if (booking) {
-                await booking.update({ status: BookingStatus.CANCELLED }, { transaction: t });
+                await booking.update({
+                    status: BookingStatus.CANCELLED,
+                    paymentStatus: BookingPaymentStatus.REFUNDED,
+                }, { transaction: t });
+
+                // Update all related Payment records to refunded
+                const payments = await Payment.findAll({
+                    where: {
+                        bookingId: booking.id,
+                        status: PaymentStatus.SUCCESSFUL,
+                    },
+                    transaction: t,
+                });
+
+                for (const payment of payments) {
+                    await payment.update({
+                        status: PaymentStatus.REFUNDED,
+                        refundAmount: payment.amount,
+                        refundedAt: new Date(),
+                    }, { transaction: t });
+                }
             }
 
             // 2. Update PartyPlan — status, lifecycleStatus, isLive (all must be updated atomically)
@@ -474,12 +517,16 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 status: PartyPlanStatus.CANCELLED,
                 lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
                 isLive: false,
-                paymentStatus: 'Cancelled',
+                paymentStatus: 'Refunded',
+                hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED,
             }, { transaction: t });
 
             // 3. Update accepted request
             if (acceptedRequest) {
-                await acceptedRequest.update({ status: PartyPlanRequestStatus.CANCELLED }, { transaction: t });
+                await acceptedRequest.update({
+                    status: PartyPlanRequestStatus.CANCELLED,
+                    joinerPaymentStatus: PartyPlanJoinerPaymentStatus.REFUNDED,
+                }, { transaction: t });
             }
 
             // 4. Cancel Tickets & Invalidate QR
@@ -515,89 +562,37 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             const hostCreditRef  = `PARTY_PLAN_CANCEL_CREDIT_HOST_${lockedPlan.id}`;
             const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${lockedPlan.id}_${joinerId}`;
 
-            // --- Host wallet credit ---
-            const existingHostCredit = await WalletTransaction.findOne({
-                where: { reference: hostCreditRef },
-                transaction: t,
-            });
             let hostWalletTxId: string | null = null;
-            if (!existingHostCredit) {
-                // getOrCreateWallet (rather than a plain findOne) so a host who
-                // paid their deposit via Razorpay and never opened the Wallet
-                // screen — and so never had a SmartWallet row provisioned —
-                // still actually receives their refund instead of it being
-                // silently skipped.
-                const hostWallet = await WalletService.getOrCreateWallet(lockedPlan.userId, t);
-                const hOld = Number(hostWallet.balance || 0);
-                const hNew = hOld + hostDeposit;
-                await hostWallet.update({
-                    balance: hNew,
-                    lifetimeRefunds: Number(hostWallet.lifetimeRefunds || 0) + hostDeposit,
-                }, { transaction: t });
-                const hostTx = await WalletTransaction.logTransaction({
-                    walletId: hostWallet.id,
+            let joinerWalletTxId: string | null = null;
+
+            try {
+                const hostRefund = await WalletService.creditRefund({
                     userId: lockedPlan.userId,
-                    partyPlanId: lockedPlan.id,
                     amount: hostDeposit,
-                    openingBalance: hOld,
-                    closingBalance: hNew,
-                    transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
-                    status: WalletTransactionStatus.SUCCESS,
-                    reference: hostCreditRef,
-                    source: 'party_plan_cancellation',
-                    metadata: {
-                        cancellationId: cancellationRequest.id,
-                        role: 'host',
-                        reason: cancellationRequest.reason,
-                        creditType: 'commitment_deposit',
-                    },
-                }, t);
-                hostWalletTxId = hostTx.id;
-                // Keep User.walletBalance in sync
-                await User.update({ walletBalance: hNew }, { where: { id: lockedPlan.userId }, transaction: t });
-            } else {
-                hostWalletTxId = existingHostCredit.id;
-                logger.info(`[CancellationApprove] Host wallet credit already exists (idempotent): ${hostCreditRef}`);
+                    referenceId: hostCreditRef,
+                    reason: `Party Plan Cancelled by mutual agreement (Reason: ${cancellationRequest.reason})`,
+                    partyPlanId: lockedPlan.id,
+                    bookingId: booking?.id,
+                    transaction: t,
+                });
+                hostWalletTxId = hostRefund?.txn?.id || null;
+            } catch (hostErr: any) {
+                logger.error('[CancellationApprove] Host creditRefund error:', hostErr);
             }
 
-            // --- Joiner wallet credit ---
-            const existingJoinerCredit = await WalletTransaction.findOne({
-                where: { reference: joinerCreditRef },
-                transaction: t,
-            });
-            let joinerWalletTxId: string | null = null;
-            if (!existingJoinerCredit) {
-                // Same getOrCreateWallet reasoning as the host credit above.
-                const joinerWallet = await WalletService.getOrCreateWallet(joinerId, t);
-                const jOld = Number(joinerWallet.balance || 0);
-                const jNew = jOld + joinerDeposit;
-                await joinerWallet.update({
-                    balance: jNew,
-                    lifetimeRefunds: Number(joinerWallet.lifetimeRefunds || 0) + joinerDeposit,
-                }, { transaction: t });
-                const joinerTx = await WalletTransaction.logTransaction({
-                    walletId: joinerWallet.id,
+            try {
+                const joinerRefund = await WalletService.creditRefund({
                     userId: joinerId,
-                    partyPlanId: lockedPlan.id,
                     amount: joinerDeposit,
-                    openingBalance: jOld,
-                    closingBalance: jNew,
-                    transactionType: WalletTransactionType.DEPOSIT_UNLOCK,
-                    status: WalletTransactionStatus.SUCCESS,
-                    reference: joinerCreditRef,
-                    source: 'party_plan_cancellation',
-                    metadata: {
-                        cancellationId: cancellationRequest.id,
-                        role: 'joiner',
-                        reason: cancellationRequest.reason,
-                        creditType: 'commitment_deposit',
-                    },
-                }, t);
-                joinerWalletTxId = joinerTx.id;
-                await User.update({ walletBalance: jNew }, { where: { id: joinerId }, transaction: t });
-            } else {
-                joinerWalletTxId = existingJoinerCredit.id;
-                logger.info(`[CancellationApprove] Joiner wallet credit already exists (idempotent): ${joinerCreditRef}`);
+                    referenceId: joinerCreditRef,
+                    reason: `Party Plan Cancelled by mutual agreement (Reason: ${cancellationRequest.reason})`,
+                    partyPlanId: lockedPlan.id,
+                    bookingId: booking?.id,
+                    transaction: t,
+                });
+                joinerWalletTxId = joinerRefund?.txn?.id || null;
+            } catch (joinerErr: any) {
+                logger.error('[CancellationApprove] Joiner creditRefund error:', joinerErr);
             }
 
             // 7. Update Chat Subscription to EXPIRED (read-only for 24h)

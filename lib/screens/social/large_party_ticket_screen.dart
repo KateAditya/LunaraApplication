@@ -14,6 +14,7 @@ import '../../widgets/lunara_ticket_widget.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 enum _LargePartyPaymentState { loading, paid, awaitingPayment, expired }
 
@@ -169,55 +170,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   String _normalizeTimeStr(String? time) {
-    if (time == null || time.trim().isEmpty) return '12:00 AM';
-    String t = time.trim();
-    if (!t.toUpperCase().contains('AM') && !t.toUpperCase().contains('PM')) {
-      final parts = t.split(':');
-      if (parts.isNotEmpty) {
-        int h = int.tryParse(parts[0].trim()) ?? 0;
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        final ampm = h >= 12 ? 'PM' : 'AM';
-        final dh = h % 12 == 0 ? 12 : h % 12;
-        return '$dh:${m.toString().padLeft(2, '0')} $ampm';
-      }
-    }
-    return t;
+    return LunaraDateFormatter.normalizeTimeTo12Hour(time);
   }
 
   DateTime _parseEventDateTime(dynamic rawDate, dynamic rawTime) {
-    DateTime baseDate = DateTime.now();
-    if (rawDate != null) {
-      if (rawDate is DateTime) {
-        baseDate = rawDate.toLocal();
-      } else {
-        try {
-          baseDate = DateTime.parse(rawDate.toString()).toLocal();
-        } catch (_) {}
-      }
-    }
-
-    String timeStr = (rawTime ?? '').toString().trim();
-    if (timeStr.isNotEmpty) {
-      final cleanTime = timeStr.toUpperCase();
-      final isPm = cleanTime.contains('PM');
-      final isAm = cleanTime.contains('AM');
-      final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
-      final parts = timeOnly.split(':');
-      if (parts.isNotEmpty) {
-        int? h = int.tryParse(parts[0].trim());
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        if (h != null) {
-          if (isPm && h < 12) h += 12;
-          if (isAm && h == 12) h = 0;
-          return DateTime(baseDate.year, baseDate.month, baseDate.day, h, m);
-        }
-      }
-    }
-
-    if (baseDate.hour == 5 && baseDate.minute == 30 && rawDate.toString().endsWith('Z')) {
-      return DateTime(baseDate.year, baseDate.month, baseDate.day, 0, 0);
-    }
-    return baseDate;
+    return LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString()) ?? DateTime.now();
   }
 
   void _initCountdown() {
@@ -1136,8 +1093,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.calendar_today_rounded,
                                 label: 'DATE',
-                                value: DateFormat('MMM dd, yyyy').format(planDateTime),
-                                subtext: DateFormat('EEEE').format(planDateTime),
+                                value: LunaraDateFormatter.formatEventDate(planDateTime, pattern: 'MMM dd, yyyy'),
+                                subtext: LunaraDateFormatter.formatEventDate(planDateTime, pattern: 'EEEE'),
                               ),
                             ),
                             Container(height: 36, width: 1, color: const Color(0xFFE2E8F0)),
@@ -1146,7 +1103,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.access_time_rounded,
                                 label: 'TIME',
-                                value: DateFormat('hh:mm a').format(planDateTime),
+                                value: LunaraDateFormatter.formatEventTime(planDateTime),
                                 subtext: 'Onwards',
                               ),
                             ),

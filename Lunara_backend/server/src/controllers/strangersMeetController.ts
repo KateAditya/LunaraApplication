@@ -19,6 +19,7 @@ import { StrangersMeetService } from '../services/StrangersMeetService';
 import { EventTimeLockService } from '../services/EventTimeLockService';
 import { TimeLockError } from '../utils/bookingLimitValidator';
 import sequelize from '../config/database';
+import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 
 
@@ -2209,8 +2210,7 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
             }
         }
 
-        const rawEventDate = new Date(request.eventDateTime);
-        const startTimeStr = rawEventDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const startTimeStr = formatTime12Hour(request.eventDateTime);
         const totalAmountNum = Number(request.paymentAmount || request.chargesPerHead || 0);
 
         res.json({

@@ -27,6 +27,7 @@ import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
 import { EventTimeLockService } from '../services/EventTimeLockService';
+import { formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
@@ -248,7 +249,7 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             status: BookingStatus.CONFIRMED,
             paymentStatus: BookingPaymentStatus.PAID,
             isGroupBooking: false,
-            goingMode: GoingMode.PARTY_REQUEST,
+            goingMode: GoingMode.PLAN,
             ticketCode,
             specialRequests: ticketMetadata,
         }, { transaction });
@@ -2136,7 +2137,12 @@ export const getPartyPlanRequests = async (req: Request, res: Response): Promise
 
         const data = requests.map(r => {
             const reqData = r.toJSON() as any;
-            reqData.isInvite = !!(plan.selectedUsers && plan.selectedUsers.includes(r.requesterId));
+            const isInvite = !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(r.requesterId));
+            reqData.isInvite = isInvite;
+            reqData.senderId = isInvite ? plan.userId : r.requesterId;
+            reqData.recipientId = isInvite ? r.requesterId : plan.userId;
+            reqData.hostId = plan.userId;
+            reqData.targetUserId = r.requesterId;
             if (reqData.requester) {
                 let photoUrl = reqData.requester.profileImageUrl ?? null;
                 if (reqData.requester.photos && reqData.requester.photos.length > 0) {
@@ -2219,6 +2225,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             PartyPlanLifecycleStatus.POSTED,
             PartyPlanLifecycleStatus.REQUEST_RECEIVED,
             PartyPlanLifecycleStatus.HOST_REVIEWING,
+            PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED,
         ];
         if (!acceptableStates.includes(plan.lifecycleStatus)) {
             await transaction.rollback();
@@ -3422,16 +3429,44 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             }
         } else {
             // SPLIT PAY
-            const timeout = new Date();
-            timeout.setMinutes(timeout.getMinutes() + 30);
+            const timeout = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+            const joinerOptions = {
+                amount: Math.round((Number(plan.depositAmount) || 99) * 100),
+                currency: 'INR',
+                receipt: `ppreq_${Date.now()}`
+            };
+            let joinerOrder: any = { id: request.joinerRazorpayOrderId || `order_mock_${Date.now()}`, amount: joinerOptions.amount, currency: joinerOptions.currency };
+            if (!request.joinerRazorpayOrderId && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
+                try {
+                    const resOrder = await razorpay.orders.create(joinerOptions);
+                    if (resOrder) joinerOrder = resOrder;
+                } catch (err: any) {
+                    logger.warn('Razorpay joiner order failed for invite acceptance, using mock: ' + err.message);
+                }
+            }
 
             await request.update({
                 status: PartyPlanRequestStatus.PAYMENT_PENDING,
                 paymentTimeoutAt: timeout,
+                joinerRazorpayOrderId: joinerOrder.id,
+                joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
             }, { transaction });
 
+            // Mark other PENDING requests as WAITING (they can be re-activated if this fails)
+            await markRequestsAsWaiting(plan, request.id, transaction);
+
+            const newLifecycle = hostPaid
+                ? PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED
+                : PartyPlanLifecycleStatus.PAYMENT_PENDING;
+
             await plan.update({
+                lifecycleStatus: newLifecycle,
                 isLive: false, // reserved
+                paymentStatus: hostPaid ? 'Awaiting Participant Payment' : 'Awaiting Host Payment',
+                matchedRequestId: request.id,
+                acceptedAt: new Date(),
+                paymentDeadlineAt: timeout,
             }, { transaction });
 
             await transaction.commit();
@@ -3441,19 +3476,19 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 const joiner = await User.findByPk(request.requesterId);
                 if (host && joiner) {
                     const { io } = require('../server');
-                    const venueName = (plan as any)?.venue?.name || 'Club';
-                    const joinerName = `${joiner.firstName} ${joiner.lastName}`;
+                    const venueName = (plan as any)?.venue?.name || 'the venue';
+                    const joinerName = `${joiner.firstName} ${joiner.lastName}`.trim();
 
                     io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
                         requestId: request.id,
                         planId: plan.id,
                         hostAlreadyPaid: hostPaid,
                         hostRazorpayOrderId: plan.hostRazorpayOrderId,
-                        hostAmount: Math.round(plan.depositAmount * 100),
+                        hostAmount: Math.round((Number(plan.depositAmount) || 99) * 100),
                         hostCurrency: 'INR',
-                        joinerRazorpayOrderId: request.joinerRazorpayOrderId,
-                        joinerAmount: Math.round(plan.depositAmount * 100),
-                        joinerCurrency: 'INR',
+                        joinerRazorpayOrderId: joinerOrder.id,
+                        joinerAmount: joinerOrder.amount,
+                        joinerCurrency: joinerOrder.currency,
                     });
 
                     io.emit('party_plan_deleted', { planId: plan.id });
@@ -3475,7 +3510,17 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
             }
 
-            res.json({ success: true, message: 'Invite accepted! You have 30 minutes to pay the deposit.', data: request });
+            res.json({
+                success: true,
+                message: 'Invite accepted! You have 30 minutes to pay the deposit.',
+                data: {
+                    request,
+                    joinerRazorpayOrderId: joinerOrder.id,
+                    joinerAmount: joinerOrder.amount,
+                    joinerCurrency: joinerOrder.currency,
+                    paymentDeadlineAt: timeout.toISOString(),
+                }
+            });
         }
     } catch (err: any) {
         await transaction.rollback();
@@ -3524,7 +3569,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
 
     // Dispatch 🔓 Schedule Unlocked notification for Host
     try {
-        const timeStr = plan.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled Time';
+        const timeStr = plan.planDateTime ? formatTime12Hour(plan.planDateTime) : 'Scheduled Time';
         await NotificationService.sendScheduleUnlockedNotification({
             recipientUserId: plan.userId,
             eventTitle: 'Party Plan',
@@ -3582,7 +3627,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
 
         // Dispatch 🔓 Schedule Unlocked notification for Joiner
         try {
-            const timeStr = plan.planDateTime ? new Date(plan.planDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled Time';
+            const timeStr = plan.planDateTime ? formatTime12Hour(plan.planDateTime) : 'Scheduled Time';
             await NotificationService.sendScheduleUnlockedNotification({
                 recipientUserId: req.requesterId,
                 eventTitle: 'Party Plan',
@@ -3640,10 +3685,10 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
         });
     }
 
-    // 4. Find associated Booking (goingMode = GoingMode.PARTY_REQUEST, matching host userId, venueId, planDateTime)
+    // 4. Find associated Booking (goingMode = PLAN or PARTY_REQUEST, matching host userId, venueId, planDateTime)
     const booking = await Booking.findOne({
         where: {
-            goingMode: GoingMode.PARTY_REQUEST,
+            goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
             userId: plan.userId,
             venueId: plan.venueId,
             bookingDate: plan.planDateTime,
@@ -3704,6 +3749,21 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
         if (plan.status === PartyPlanStatus.CANCELLED) {
             await transaction.rollback();
             res.json({ success: true, message: 'Party plan is already cancelled' });
+            return;
+        }
+
+        // If the plan is CONFIRMED with a partner, direct unilateral cancellation is forbidden.
+        if (
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.MATCH_CONFIRMED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.CHAT_ENABLED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.CANCELLATION_REQUESTED
+        ) {
+            await transaction.rollback();
+            res.status(400).json({
+                success: false,
+                isConfirmed: true,
+                message: 'This Party Plan is confirmed with a participant. Direct cancellation is not allowed. Please initiate a mutual cancellation request.',
+            });
             return;
         }
 
@@ -4404,9 +4464,16 @@ export const getJoinerRequests = async (req: Request, res: Response): Promise<vo
 
         const formatted = requests.map(reqItem => {
             const plan = (reqItem as any).plan;
+            const isInvite = !!(plan && plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(reqItem.requesterId));
+            const hostId = plan?.userId;
             return {
                 id: reqItem.id,
                 planId: reqItem.planId,
+                isInvite,
+                senderId: isInvite ? hostId : reqItem.requesterId,
+                recipientId: isInvite ? reqItem.requesterId : hostId,
+                hostId,
+                targetUserId: reqItem.requesterId,
                 status: reqItem.status,
                 joinerPaymentStatus: reqItem.joinerPaymentStatus,
                 joinerRazorpayOrderId: reqItem.joinerRazorpayOrderId,
@@ -4414,6 +4481,10 @@ export const getJoinerRequests = async (req: Request, res: Response): Promise<vo
                 createdAt: reqItem.createdAt,
                 plan: plan ? {
                     id: plan.id,
+                    userId: plan.userId,
+                    visibility: plan.visibility,
+                    selectedUsers: plan.selectedUsers,
+                    paymentType: plan.paymentType,
                     message: plan.message,
                     planDateTime: plan.planDateTime,
                     hostPaymentStatus: plan.hostPaymentStatus,
@@ -5234,8 +5305,8 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
         let planTitle = plan.message || 'Party Night Out';
         const venueArea = p.venue?.area || 'Pune';
         const distance = '1.2 km';
-        const dateStr = plan.planDateTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        const timeStr = plan.planDateTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = formatDateFull(plan.planDateTime, undefined, false);
+        const timeStr = formatTime12Hour(plan.planDateTime);
 
         const timeline: any[] = [];
         const status = plan.lifecycleStatus;
@@ -5683,8 +5754,8 @@ export async function getPlanSummary(req: Request, res: Response): Promise<Respo
                 planTitle: plan.message || 'Party Night Out',
                 venueName: p.venue?.name || 'Venue',
                 venueArea: p.venue?.area || 'Pune',
-                eventDate: plan.planDateTime ? plan.planDateTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '',
-                eventTime: plan.planDateTime ? plan.planDateTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '',
+                eventDate: plan.planDateTime ? formatDateFull(plan.planDateTime, undefined, false) : '',
+                eventTime: plan.planDateTime ? formatTime12Hour(plan.planDateTime) : '',
                 host: host ? { id: host.id, name: `${host.firstName} ${host.lastName}`.trim(), photo: host.profileImageUrl } : null,
                 guest: guest ? { id: guest.id, name: `${guest.firstName} ${guest.lastName}`.trim(), photo: guest.profileImageUrl } : null,
                 completionStatus,

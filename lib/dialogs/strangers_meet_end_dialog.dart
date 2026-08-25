@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '../services/api_service.dart';
+import '../utils/lunara_date_formatter.dart';
 
 class StrangersMeetEndDialog extends StatefulWidget {
   final String meetId;
@@ -85,25 +85,30 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
     );
 
     if (pickedTime != null) {
-      final pickedDateTime = DateTime(
+      DateTime pickedDateTime = DateTime(
         baseTime.year,
         baseTime.month,
         baseTime.day,
         pickedTime.hour,
         pickedTime.minute,
       );
+      if (pickedDateTime.isBefore(baseTime)) {
+        pickedDateTime = pickedDateTime.add(const Duration(days: 1));
+      }
       if (pickedDateTime.isAfter(now)) {
         setState(() {
           _customEndDateTime = pickedDateTime;
           _selectedExtensionHours = -1.0;
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Extension time must be in the future'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Extension time must be in the future'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     }
   }
@@ -181,7 +186,7 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
       if (_selectedExtensionHours == -1.0 && _customEndDateTime != null) {
         await ApiService.extendStrangersMeetDuration(
           widget.meetId,
-          customEndDateTime: _customEndDateTime!.toIso8601String(),
+          customEndDateTime: _customEndDateTime!.toUtc().toIso8601String(),
         );
       } else {
         await ApiService.extendStrangersMeetDuration(
@@ -504,7 +509,7 @@ class _StrangersMeetEndDialogState extends State<StrangersMeetEndDialog> {
                         const SizedBox(width: 6),
                         Text(
                           _customEndDateTime != null
-                              ? 'CUSTOM (${DateFormat('hh:mm a').format(_customEndDateTime!)})'
+                              ? 'CUSTOM (${LunaraDateFormatter.formatEventTime(_customEndDateTime!)})'
                               : 'CUSTOM TIME',
                           style: GoogleFonts.poppins(
                             color: _selectedExtensionHours == -1.0

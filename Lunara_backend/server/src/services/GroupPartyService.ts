@@ -181,7 +181,7 @@ export class GroupPartyService {
             const groupParty = await PlanEligibilityService.runAtomicCheckAndCreate(
                 userId,
                 'group_party',
-                new Date(partyDate),
+                partyDateTime,
                 async (transaction: Transaction) => {
                     return await GroupParty.create({
                         userId,
@@ -233,7 +233,7 @@ export class GroupPartyService {
             const booking = await PlanEligibilityService.runAtomicCheckAndCreate(
                 userId,
                 'large_group_party',
-                new Date(partyDate),
+                partyDateTime,
                 async (transaction: Transaction) => {
                     return await Booking.create({
                         bookingNumber,

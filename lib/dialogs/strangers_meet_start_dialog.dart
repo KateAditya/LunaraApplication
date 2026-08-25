@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
+import '../utils/lunara_date_formatter.dart';
 
 class StrangersMeetStartDialog extends StatefulWidget {
   final String meetId;
@@ -82,13 +83,16 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
     );
 
     if (pickedTime != null) {
-      final pickedDateTime = DateTime(
+      DateTime pickedDateTime = DateTime(
         initialDate.year,
         initialDate.month,
         initialDate.day,
         pickedTime.hour,
         pickedTime.minute,
       );
+      if (pickedDateTime.isBefore(initialDate)) {
+        pickedDateTime = pickedDateTime.add(const Duration(days: 1));
+      }
       if (pickedDateTime.isAfter(now)) {
         setState(() {
           _customEndDateTime = pickedDateTime;
@@ -115,7 +119,7 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
       if (_selectedDuration == -1.0 && _customEndDateTime != null) {
         await ApiService.confirmStrangersMeetStarted(
           widget.meetId,
-          customEndDateTime: _customEndDateTime!.toIso8601String(),
+          customEndDateTime: _customEndDateTime!.toUtc().toIso8601String(),
         );
       } else {
         await ApiService.confirmStrangersMeetStarted(
@@ -506,7 +510,7 @@ class _StrangersMeetStartDialogState extends State<StrangersMeetStartDialog> {
                         const SizedBox(width: 6),
                         Text(
                           _customEndDateTime != null
-                              ? 'CUSTOM (${DateFormat('hh:mm a').format(_customEndDateTime!)})'
+                              ? 'CUSTOM (${LunaraDateFormatter.formatEventTime(_customEndDateTime!)})'
                               : 'CUSTOM TIME',
                           style: GoogleFonts.poppins(
                             color: _selectedDuration == -1.0

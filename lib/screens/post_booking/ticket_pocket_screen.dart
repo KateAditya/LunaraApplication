@@ -7,6 +7,7 @@ import '../social/large_party_ticket_screen.dart';
 import '../social/party_plan_ticket_screen.dart';
 import '../social/strangers_meet_ticket_screen.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 enum TicketFilterCategory {
   all('all', 'ALL', Icons.all_inclusive_rounded),
@@ -270,43 +271,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['date']?.toString();
     final startTimeStr = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
-        booking['time']?.toString() ??
-        '';
-
-    if (dateStr != null && dateStr.isNotEmpty) {
-      try {
-        final bDate = DateTime.parse(dateStr).toLocal();
-        if (startTimeStr.isNotEmpty) {
-          final cleanTime = startTimeStr.toUpperCase();
-          final isPm = cleanTime.contains('PM');
-          final isAm = cleanTime.contains('AM');
-          final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
-          final parts = timeOnly.split(':');
-          if (parts.isNotEmpty) {
-            int h = int.tryParse(parts[0].trim()) ?? 0;
-            final m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-            if (isPm && h < 12) h += 12;
-            if (isAm && h == 12) h = 0;
-            return DateTime(bDate.year, bDate.month, bDate.day, h, m);
-          }
-        }
-        if (bDate.hour == 5 && bDate.minute == 30 && dateStr.endsWith('Z')) {
-          return DateTime(bDate.year, bDate.month, bDate.day, 0, 0);
-        }
-        return bDate;
-      } catch (_) {}
-    }
-
-    if (booking['eventStartAt'] != null) {
-      return DateTime.tryParse(booking['eventStartAt'].toString())?.toLocal();
-    }
-    if (booking['eventDateTime'] != null) {
-      return DateTime.tryParse(booking['eventDateTime'].toString())?.toLocal();
-    }
-    if (booking['planDateTime'] != null) {
-      return DateTime.tryParse(booking['planDateTime'].toString())?.toLocal();
-    }
-    return null;
+        booking['time']?.toString();
+    return LunaraDateFormatter.parseToLocal(dateStr, explicitTime: startTimeStr);
   }
 
   DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
@@ -471,36 +437,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
-    String cleanTime = startTimeStr.trim();
-    if (cleanTime.isNotEmpty &&
-        !cleanTime.toUpperCase().contains('AM') &&
-        !cleanTime.toUpperCase().contains('PM')) {
-      final parts = cleanTime.split(':');
-      if (parts.isNotEmpty) {
-        int h = int.tryParse(parts[0].trim()) ?? 0;
-        int m = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
-        final ampm = h >= 12 ? 'PM' : 'AM';
-        final dh = h % 12 == 0 ? 12 : h % 12;
-        cleanTime = '$dh:${m.toString().padLeft(2, '0')} $ampm';
-      }
-    }
-    if (bookingDateStr.trim().isEmpty) {
-      return cleanTime.isNotEmpty ? '• $cleanTime' : '';
-    }
-    try {
-      final date = DateTime.parse(bookingDateStr).toLocal();
-      if (cleanTime.isEmpty) {
-        if (date.hour == 5 && date.minute == 30 && bookingDateStr.endsWith('Z')) {
-          cleanTime = '12:00 AM';
-        } else if (date.hour != 0 || date.minute != 0) {
-          cleanTime = DateFormat('hh:mm a').format(date);
-        }
-      }
-      final formattedDate = DateFormat('MMM d, yyyy').format(date).toUpperCase();
-      return cleanTime.isNotEmpty ? '$formattedDate • $cleanTime' : formattedDate;
-    } catch (_) {
+    final dt = LunaraDateFormatter.parseToLocal(bookingDateStr, explicitTime: startTimeStr);
+    if (dt == null) {
+      final cleanTime = LunaraDateFormatter.normalizeTimeTo12Hour(startTimeStr);
       return cleanTime.isNotEmpty ? '$bookingDateStr • $cleanTime' : bookingDateStr;
     }
+    final formattedDate = LunaraDateFormatter.formatEventDate(dt, pattern: 'MMM d, yyyy').toUpperCase();
+    final formattedTime = LunaraDateFormatter.formatEventTime(dt, explicitTime: startTimeStr);
+    return '$formattedDate • $formattedTime';
   }
 
   String _formatTablePackage(String? tablePackage) {
