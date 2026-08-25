@@ -20,6 +20,7 @@ import { getChatSettings } from './chatSubscriptionController';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatus } from '../models/Booking';
+import Ticket, { TicketStatus } from '../models/Ticket';
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
 import { NotificationService } from '../services/NotificationService';
@@ -4080,64 +4081,96 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             ],
         });
 
-        let request = await PartyPlanRequest.findByPk(cleanId, {
-            include: [
-                {
-                    model: PartyPlan,
-                    as: 'plan',
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+        let request: PartyPlanRequest | null = null;
+        let plan: PartyPlan | null = null;
+
+        if (isUuid) {
+            request = await PartyPlanRequest.findByPk(cleanId, {
+                include: [
+                    {
+                        model: PartyPlan,
+                        as: 'plan',
+                        include: [
+                            userInclude('creator'),
+                            venueInclude,
+                        ] as any,
+                    },
+                    userInclude('requester'),
+                ],
+            });
+
+            if (request) {
+                plan = (request as any).plan as PartyPlan;
+            } else {
+                plan = await PartyPlan.findByPk(cleanId, {
                     include: [
                         userInclude('creator'),
                         venueInclude,
                     ] as any,
-                },
-                userInclude('requester'),
-            ],
-        });
+                });
+            }
+        }
 
-        let plan: PartyPlan | null = null;
+        if (!plan) {
+            try {
+                const TicketModel = (await import('../models/Ticket')).default;
+                const ticketWhere: any[] = [{ ticketId: cleanId }];
+                if (isUuid) {
+                    ticketWhere.push({ id: cleanId }, { bookingId: cleanId });
+                }
+                const ticket = await TicketModel.findOne({
+                    where: { [Op.or]: ticketWhere },
+                });
+                if (ticket && ticket.bookingId) {
+                    const BookingModel = (await import('../models/Booking')).default;
+                    const bookingRec = await BookingModel.findByPk(ticket.bookingId);
+                    if (bookingRec && bookingRec.specialRequests) {
+                        try {
+                            const meta = typeof bookingRec.specialRequests === 'string' ? JSON.parse(bookingRec.specialRequests) : bookingRec.specialRequests;
+                            if (meta.planId) {
+                                plan = await PartyPlan.findByPk(meta.planId, {
+                                    include: [userInclude('creator'), venueInclude] as any,
+                                });
+                            }
+                            if (meta.requestId) {
+                                request = await PartyPlanRequest.findByPk(meta.requestId, {
+                                    include: [userInclude('requester')],
+                                });
+                            }
+                        } catch (_) {}
+                    }
+                }
+            } catch (_) {}
+        }
 
-        if (request) {
-            plan = (request as any).plan as PartyPlan;
-        } else {
-            // cleanId might be a PartyPlan ID
-            plan = await PartyPlan.findByPk(cleanId, {
-                include: [
-                    userInclude('creator'),
-                    venueInclude,
-                ] as any,
-            });
-
-            if (!plan) {
-                try {
-                    const TicketModel = (await import('../models/Ticket')).default;
-                    const ticket = await TicketModel.findByPk(cleanId);
-                    if (ticket && ticket.bookingId) {
-                        request = await PartyPlanRequest.findByPk(ticket.bookingId, {
-                            include: [
-                                {
-                                    model: PartyPlan,
-                                    as: 'plan',
-                                    include: [
-                                        userInclude('creator'),
-                                        venueInclude,
-                                    ] as any,
-                                },
-                                userInclude('requester'),
-                            ],
-                        });
-                        if (request) {
-                            plan = (request as any).plan as PartyPlan;
-                        } else {
-                            plan = await PartyPlan.findByPk(ticket.bookingId, {
-                                include: [
-                                    userInclude('creator'),
-                                    venueInclude,
-                                ] as any,
+        if (!plan) {
+            try {
+                const BookingModel = (await import('../models/Booking')).default;
+                const bookingWhere: any[] = [{ ticketCode: cleanId }];
+                if (isUuid) {
+                    bookingWhere.push({ id: cleanId });
+                }
+                const bookingRec = await BookingModel.findOne({
+                    where: { [Op.or]: bookingWhere },
+                });
+                if (bookingRec && bookingRec.specialRequests) {
+                    try {
+                        const meta = typeof bookingRec.specialRequests === 'string' ? JSON.parse(bookingRec.specialRequests) : bookingRec.specialRequests;
+                        if (meta.planId) {
+                            plan = await PartyPlan.findByPk(meta.planId, {
+                                include: [userInclude('creator'), venueInclude] as any,
                             });
                         }
-                    }
-                } catch (_) {}
-            }
+                        if (meta.requestId) {
+                            request = await PartyPlanRequest.findByPk(meta.requestId, {
+                                include: [userInclude('requester')],
+                            });
+                        }
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
 
             if (plan && !request) {
                 if ((plan as any).matchedRequestId) {
@@ -4167,7 +4200,6 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     });
                 }
             }
-        }
 
         if (!plan) {
             res.status(404).json({ success: false, message: 'Party plan or request not found' });
@@ -4180,9 +4212,15 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
-        const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || plan.paymentType === 'self_pay';
-        const isPlanConfirmed = plan.lifecycleStatus === 'match_confirmed' || plan.lifecycleStatus === 'chat_enabled' || plan.lifecycleStatus === 'event_upcoming';
+        const isCancelled = (plan.status || '').toLowerCase() === 'cancelled' ||
+            (plan.lifecycleStatus || '').toLowerCase() === 'cancelled' ||
+            (request?.status || '').toLowerCase() === 'cancelled' ||
+            (plan.hostPaymentStatus || '').toLowerCase() === 'refunded' ||
+            (request?.joinerPaymentStatus || '').toLowerCase() === 'refunded';
+
+        const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
+        const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || (request?.joinerPaymentStatus || '').toLowerCase() === 'refunded' || plan.paymentType === 'self_pay';
+        const isPlanConfirmed = plan.lifecycleStatus === 'match_confirmed' || plan.lifecycleStatus === 'chat_enabled' || plan.lifecycleStatus === 'event_upcoming' || isCancelled;
         if (!hostPaid && !joinerPaid && !isPlanConfirmed) {
             res.status(403).json({ success: false, message: 'Ticket is unavailable until payments are verified.' });
             return;
@@ -4241,13 +4279,12 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
         // Fetch the booking record to retrieve the ticketCode and ticketUrl
         let booking = await Booking.findOne({
             where: {
-                goingMode: GoingMode.PARTY_REQUEST,
-                userId: plan.userId,
+                goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
                 venueId: plan.venueId,
                 specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
             },
             order: [['createdAt', 'DESC']],
-            attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
+            attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests', 'status', 'paymentStatus'],
         });
 
         if (!booking) {
@@ -4255,18 +4292,47 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             const bookingDate = dateObj.toISOString().split('T')[0];
             booking = await Booking.findOne({
                 where: {
-                    goingMode: GoingMode.PARTY_REQUEST,
+                    goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
                     userId: plan.userId,
                     venueId: plan.venueId,
                     bookingDate: bookingDate as any,
                 },
                 order: [['createdAt', 'DESC']],
-                attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests'],
+                attributes: ['id', 'ticketCode', 'ticketUrl', 'specialRequests', 'status', 'paymentStatus'],
             });
         }
 
-        let ticketUrl = (booking as any)?.ticketUrl ?? null;
-        let ticketCode = booking?.ticketCode ?? null;
+        // Also fetch the authoritative Ticket model record
+        let ticketRec = null;
+        if (booking) {
+            ticketRec = await Ticket.findOne({
+                where: { bookingId: booking.id },
+                order: [['createdAt', 'DESC']],
+            });
+        }
+        if (!ticketRec && booking?.ticketCode) {
+            ticketRec = await Ticket.findOne({
+                where: { ticketId: booking.ticketCode },
+                order: [['createdAt', 'DESC']],
+            });
+        }
+        if (!ticketRec) {
+            ticketRec = await Ticket.findOne({
+                where: {
+                    bookingType: 'party_plan',
+                    [Op.or]: [
+                        { userId: plan.userId },
+                        ...(request ? [{ userId: request.requesterId }] : []),
+                    ],
+                    venueId: plan.venueId,
+                },
+                order: [['createdAt', 'DESC']],
+            });
+        }
+
+        let ticketUrl = ticketRec?.pdfUrl ?? (booking as any)?.ticketUrl ?? null;
+        let ticketCode = ticketRec?.ticketId ?? booking?.ticketCode ?? null;
+        let ticketQr = ticketRec?.qrToken ?? ticketCode;
 
         if (booking && !ticketUrl) {
             try {
@@ -4276,6 +4342,13 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                 logger.warn(`On-the-fly ticket PDF generation failed for booking ${booking.id}: ${ticketGenErr.message}`);
             }
         }
+
+        const isCancelledTicket = isCancelled ||
+            (plan.status || '').toLowerCase() === 'cancelled' ||
+            (plan.lifecycleStatus || '').toLowerCase() === 'cancelled' ||
+            ticketRec?.ticketStatus === TicketStatus.CANCELLED;
+
+        const effectiveStatus = isCancelledTicket ? 'CANCELLED' : (ticketRec?.ticketStatus || (isPlanConfirmed ? 'ACTIVE' : plan.status));
 
         res.json({
             success: true,
@@ -4309,8 +4382,13 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     venue: buildVenueData(plan as any),
                 },
                 ticketCode: ticketCode,
-                bookingId: booking?.id ?? null,
+                ticketId: ticketCode,
+                bookingId: booking?.id ?? ticketRec?.bookingId ?? null,
                 ticketUrl: ticketUrl,
+                pdfUrl: ticketUrl,
+                qrToken: ticketQr,
+                status: effectiveStatus,
+                expiresAt: ticketRec?.expiresAt || plan.planDateTime,
             },
         });
     } catch (err: any) {

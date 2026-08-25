@@ -2040,10 +2040,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractGroupPartyId(Map<String, dynamic> item) {
-    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
+    final String paymentCategory = (item['paymentCategory'] ?? '').toString().toLowerCase();
+    final String title = (item['title'] ?? '').toString().toLowerCase();
+    final String body = (item['body'] ?? '').toString().toLowerCase();
+
+    // Skip party plans
     if (cat.contains('party_plan') || cat == 'party_plan' || item['partyPlanId'] != null || item['booking']?['goingMode']?.toString() == 'plan' || item['goingMode']?.toString() == 'plan') {
       return null;
     }
+
+    final bool isLargeOrGroup = cat.contains('group_party') ||
+        cat.contains('large_party') ||
+        cat.contains('large_party_approved') ||
+        cat.contains('large_party_rejected') ||
+        cat.contains('large_party_payment_link') ||
+        cat == 'group_party_small' ||
+        cat == 'group_party_large' ||
+        paymentCategory.contains('large_party') ||
+        paymentCategory.contains('group_party') ||
+        item['isLargePartyRequest'] == true ||
+        item['isLargeParty'] == true ||
+        item['isLargeBooking'] == true ||
+        item['goingMode'] == 'party_request' ||
+        item['payActionPayload']?['isLargeParty'] == true ||
+        item['payActionPayload']?['goingMode'] == 'party_request' ||
+        item['booking']?['isLargePartyRequest'] == true ||
+        item['booking']?['goingMode'] == 'party_request' ||
+        title.contains('large party') ||
+        title.contains('group party') ||
+        body.contains('large party') ||
+        body.contains('group party');
+
     if (item['data'] is Map && item['data']['partyId'] != null) {
       final id = item['data']['partyId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -2052,9 +2080,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['data']['groupPartyId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['data'] is Map && item['data']['bookingId'] != null && (item['data']['type']?.toString().contains('group_party') == true || item['data']['type']?.toString().contains('large_party') == true)) {
+    if (item['data'] is Map && item['data']['bookingId'] != null) {
       final id = item['data']['bookingId'].toString().trim();
-      if (id.isNotEmpty) return id;
+      if (id.isNotEmpty && (isLargeOrGroup || item['data']['type']?.toString().contains('group_party') == true || item['data']['type']?.toString().contains('large_party') == true)) {
+        return id;
+      }
     }
     if (item['metadata'] is Map && item['metadata']['groupPartyId'] != null) {
       final id = item['metadata']['groupPartyId'].toString().trim();
@@ -2064,18 +2094,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['metadata']['partyId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
+    if (item['metadata'] is Map && item['metadata']['bookingId'] != null) {
+      final id = item['metadata']['bookingId'].toString().trim();
+      if (id.isNotEmpty && isLargeOrGroup) return id;
+    }
     if (item['groupPartyId'] != null) {
       final id = item['groupPartyId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    final String title = (item['title'] ?? '').toString().toLowerCase();
-    final String body = (item['body'] ?? '').toString().toLowerCase();
-    if (cat.contains('group_party') || cat.contains('large_party') || cat == 'group_party_small' || cat == 'group_party_large' || title.contains('group party') || body.contains('group party')) {
+    if (item['partyId'] != null) {
+      final id = item['partyId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['bookingId'] != null && isLargeOrGroup) {
+      final id = item['bookingId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['payActionPayload'] is Map && item['payActionPayload']['bookingId'] != null && isLargeOrGroup) {
+      final id = item['payActionPayload']['bookingId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+
+    if (isLargeOrGroup) {
       final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
       if (id.isNotEmpty) {
         final cleanId = id
             .replaceAll('group_party_timeline_', '')
             .replaceAll('group_party_', '')
+            .replaceAll('large_party_timeline_', '')
+            .replaceAll('large_party_', '')
+            .replaceAll('pending_bk_', '')
+            .replaceAll('pending_', '')
+            .replaceAll('solo_booking_', '')
+            .replaceAll('bk_', '')
             .replaceAll('gp_', '')
             .replaceAll('_confirmed', '')
             .replaceAll('_approved', '')

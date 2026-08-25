@@ -407,7 +407,7 @@ router.get(
     '/requests/:reqId/ticket',
     [
         authenticate,
-        param('reqId').isUUID().withMessage('reqId must be a valid UUID'),
+        param('reqId').notEmpty().withMessage('reqId is required'),
         validate,
     ],
     getPartyPlanTicket
@@ -422,6 +422,18 @@ router.get(
     [authenticate],
     getPartyPlanTicket
 );
+
+// Cancellation Endpoints
+import {
+    createCancellationRequest,
+    getCancellationRequest,
+    respondToCancellationRequest,
+} from '../controllers/cancellationController';
+
+router.post('/:id/cancellation-request', authenticate, createCancellationRequest);
+router.get('/:id/cancellation-request', authenticate, getCancellationRequest);
+router.post('/:id/cancellation-request/respond', authenticate, respondToCancellationRequest);
+router.post('/:id/cancellation-response', authenticate, respondToCancellationRequest);
 
 // Safety Check Endpoints
 import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobileSafetyCheckController';

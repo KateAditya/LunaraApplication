@@ -106,6 +106,23 @@ router.patch(
 );
 
 /**
+ * POST /api/mobile/chat/conversations/:id/messages/batch-delete
+ * Batch delete multiple messages (WhatsApp style multi-select delete).
+ * Body: { userId, messageIds: string[], deleteForEveryone?: boolean }
+ */
+router.post(
+    '/conversations/:id/messages/batch-delete',
+    [
+        authenticate,
+        param('id').isUUID(),
+        body('userId').notEmpty().withMessage('userId is required'),
+        body('messageIds').isArray({ min: 1 }).withMessage('messageIds must be a non-empty array'),
+        validate,
+    ],
+    ctrl.batchDeleteMessages
+);
+
+/**
  * DELETE /api/mobile/chat/conversations/:id/messages/:msgId
  * Soft-delete a message (only the sender can delete).
  * Body: { userId }

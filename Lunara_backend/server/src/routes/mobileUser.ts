@@ -10,6 +10,7 @@ import { authenticate, optionalAuth } from '../middleware/auth';
 import { NotificationActionController } from '../controllers/NotificationActionController';
 import * as reliabilityCtrl from '../controllers/reliabilityController';
 import { batchEnrichPartyPlanNotificationCards } from '../controllers/partyPlanController';
+import { setPrimaryPhoto, deletePhoto } from '../controllers/profileController';
 
 const router = Router();
 
@@ -44,12 +45,11 @@ const profileSetupValidation = [
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/mobile/user/photos
- * 
- * Public/Testing — userId must be provided in body.
- * Upload multiple photos (multipart/form-data) under the field "photos".
+ * Photo management routes
  */
 router.post('/photos', authenticate, uploadTempPhotos.array('photos', 6), mobileUserController.uploadPhotos);
+router.put('/photos/:id/primary', authenticate, setPrimaryPhoto);
+router.delete('/photos/:id', authenticate, deletePhoto);
 
 /**
  * PUT /api/mobile/user/profile-setup
@@ -697,14 +697,17 @@ async function getUserNotifications(
         const titleLower = (n.title || '').toLowerCase();
         const bodyLower = (n.body || '').toLowerCase();
         const typeLower = (n.type || n.eventType || '').toLowerCase();
-        const isGp = typeLower.startsWith('group_party') || n.entityType === 'group_party' || n.entityType === 'GroupParty' || titleLower.includes('group party') || bodyLower.includes('group party');
+        const isLp = typeLower.startsWith('large_party') || typeLower.includes('large_party') || titleLower.includes('large party') || bodyLower.includes('large party');
+        const isGp = typeLower.startsWith('group_party') || n.entityType === 'group_party' || n.entityType === 'GroupParty' || titleLower.includes('group party') || bodyLower.includes('group party') || isLp;
 
         const groupPartyId = data.partyId?.toString() || data.groupPartyId?.toString() ||
             (n.entityType === 'group_party' || n.entityType === 'GroupParty' ? n.entityId?.toString() : null) ||
             (n.id?.startsWith('group_party_') ? n.id.replace(/^group_party_(?:timeline_)?([^_]+).*/, '$1') : null) ||
-            (isGp ? (data.bookingId?.toString() || n.entityId?.toString()) : null);
+            (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (isGp ? (data.bookingId?.toString() || n.entityId?.toString() || (n.metadata ? n.metadata.bookingId?.toString() : null)) : null);
 
         const bookingId = data.bookingId?.toString() ||
+            (n.metadata ? n.metadata.bookingId?.toString() : null) ||
             (n.entityType === 'booking' || n.entityType === 'Booking' ? n.entityId?.toString() : null) ||
             (n.id?.startsWith('solo_booking_') ? n.id.replace(/^solo_booking_([^_]+).*/, '$1') : null) ||
             (n.id?.startsWith('large_party_') ? n.id.replace(/^large_party_(?:timeline_)?([^_]+).*/, '$1') : null);

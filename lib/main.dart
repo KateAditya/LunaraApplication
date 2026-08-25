@@ -4,7 +4,10 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme.dart';
 import 'core/theme_manager.dart';
-import 'screens/splash/splash_screen.dart';
+import 'screens/onboarding/permissions_screen.dart';
+import 'screens/onboarding/welcome_carousel.dart';
+import 'screens/home/dashboard.dart';
+import 'services/onboarding_service.dart';
 import 'services/notification_navigator.dart';
 import 'services/push_notification_service.dart';
 import 'services/biometric_service.dart';
@@ -22,11 +25,42 @@ void main() async {
   // Register the background message handler (must be top-level function)
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  runApp(const LunaraApp());
+  // Fast initialization without showing splash screen
+  await ApiService.initAuthToken();
+  if (ApiService.currentUserId != null) {
+    PushNotificationService.initialize();
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  final hasSeenPermissions =
+      prefs.getBool('has_seen_permissions_screen') ?? false;
+
+  Widget initialScreen;
+  if (!hasSeenPermissions) {
+    initialScreen = const PermissionsScreen();
+  } else {
+    final savedOnboarding = await OnboardingService.getSavedProgress();
+    if (savedOnboarding != null) {
+      final step = savedOnboarding['step'] as String;
+      final data = savedOnboarding['data'] as Map<String, dynamic>;
+      initialScreen = OnboardingService.getResumeScreen(step, data);
+    } else if (ApiService.isLoggedIn || ApiService.currentUserId != null) {
+      ApiService.fetchProfile().catchError((e) {
+        debugPrint('Error fetching profile in background: $e');
+        return null;
+      });
+      initialScreen = const Dashboard();
+    } else {
+      initialScreen = const WelcomeCarousel();
+    }
+  }
+
+  runApp(LunaraApp(initialScreen: initialScreen));
 }
 
 class LunaraApp extends StatelessWidget {
-  const LunaraApp({super.key});
+  final Widget initialScreen;
+  const LunaraApp({super.key, required this.initialScreen});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +74,7 @@ class LunaraApp extends StatelessWidget {
           darkTheme: LunaraTheme.darkTheme,
           themeMode: themeManager.themeMode,
           navigatorKey: NotificationNavigator.navigatorKey,
-          home: const SplashScreen(),
+          home: initialScreen,
           builder: (context, child) {
             return SubscriptionScope(
               child: AppLockWrapper(child: child ?? const SizedBox.shrink()),
@@ -268,7 +302,7 @@ class _AppLockWrapperState extends State<AppLockWrapper> with WidgetsBindingObse
                         final nav = NotificationNavigator.navigator;
                         if (nav != null) {
                           nav.pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (context) => const SplashScreen()),
+                            MaterialPageRoute(builder: (context) => const WelcomeCarousel()),
                             (route) => false,
                           );
                         }

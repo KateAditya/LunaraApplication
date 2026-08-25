@@ -17,6 +17,7 @@ import { errorHandler } from './middleware/errorHandler';
 import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
 import Conversation from './models/Conversation';
+import SocialConnection, { ConnectionStatus } from './models/SocialConnection';
 import { Op } from 'sequelize';
 
 // Load environment variables
@@ -340,20 +341,46 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('typing_started', (data: { conversationId: string; recipientId: string; senderId?: string }) => {
+    socket.on('typing_started', async (data: { conversationId: string; recipientId: string; senderId?: string }) => {
         if (data?.recipientId) {
+            const senderId = data.senderId || (socket as any).userId;
+            if (senderId) {
+                try {
+                    const isBlocked = await SocialConnection.findOne({
+                        where: {
+                            requesterId: data.recipientId,
+                            receiverId: senderId,
+                            status: ConnectionStatus.BLOCKED,
+                        },
+                    });
+                    if (isBlocked) return;
+                } catch (_) {}
+            }
             io.to(`user_${data.recipientId}`).emit('typing_started', {
                 conversationId: data.conversationId,
-                senderId: data.senderId || (socket as any).userId,
+                senderId,
             });
         }
     });
 
-    socket.on('typing_stopped', (data: { conversationId: string; recipientId: string; senderId?: string }) => {
+    socket.on('typing_stopped', async (data: { conversationId: string; recipientId: string; senderId?: string }) => {
         if (data?.recipientId) {
+            const senderId = data.senderId || (socket as any).userId;
+            if (senderId) {
+                try {
+                    const isBlocked = await SocialConnection.findOne({
+                        where: {
+                            requesterId: data.recipientId,
+                            receiverId: senderId,
+                            status: ConnectionStatus.BLOCKED,
+                        },
+                    });
+                    if (isBlocked) return;
+                } catch (_) {}
+            }
             io.to(`user_${data.recipientId}`).emit('typing_stopped', {
                 conversationId: data.conversationId,
-                senderId: data.senderId || (socket as any).userId,
+                senderId,
             });
         }
     });

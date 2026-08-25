@@ -84,11 +84,15 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Fetch fresh profile photos + ticketCode from backend ───────────────────
   Future<void> _fetchTicketData() async {
-    final rawId = widget.request['id']?.toString() ??
-        widget.request['reqId']?.toString() ??
-        widget.plan['matchedRequestId']?.toString() ??
+    final rawId = widget.request['ticketCode']?.toString() ??
+        widget.plan['ticketCode']?.toString() ??
+        widget.request['ticketId']?.toString() ??
+        widget.plan['ticketId']?.toString() ??
         widget.request['bookingId']?.toString() ??
         widget.plan['bookingId']?.toString() ??
+        widget.plan['matchedRequestId']?.toString() ??
+        widget.request['id']?.toString() ??
+        widget.request['reqId']?.toString() ??
         widget.request['planId']?.toString() ??
         widget.plan['planId']?.toString() ??
         widget.plan['id']?.toString();
@@ -125,7 +129,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
             _freshJoinerUser = Map<String, dynamic>.from(joinerObj);
           }
 
-          _canonicalTicketCode = data['ticketCode']?.toString();
+          _canonicalTicketCode = data['ticketCode']?.toString() ?? data['ticketId']?.toString();
         });
       }
     } catch (e) {
@@ -447,6 +451,9 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         widget.request['ticketCode']?.toString() ??
         widget.plan['ticketCode']?.toString() ??
         widget.request['ticketId']?.toString() ??
+        widget.plan['ticketId']?.toString() ??
+        widget.request['bookingId']?.toString() ??
+        widget.plan['bookingId']?.toString() ??
         widget.request['id']?.toString() ??
         'LUN-PARTY-PLAN').toUpperCase();
     final headlineText = "Let's party at $venueName!";

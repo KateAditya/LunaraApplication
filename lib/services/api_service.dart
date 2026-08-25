@@ -2769,6 +2769,32 @@ class ApiService {
     return false;
   }
 
+  /// POST /api/mobile/chat/conversations/:id/messages/batch-delete
+  static Future<bool> deleteMessagesBatch({
+    required String conversationId,
+    required List<String> messageIds,
+    required String userId,
+    bool deleteForEveryone = true,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/chat/conversations/$conversationId/messages/batch-delete',
+        body: {
+          'userId': userId,
+          'messageIds': messageIds,
+          'deleteForEveryone': deleteForEveryone,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('deleteMessagesBatch error: $e');
+    }
+    return false;
+  }
+
   /// DELETE /api/mobile/chat/conversations/:id/messages (or POST .../clear)
   static Future<bool> clearChat(
     String conversationId,

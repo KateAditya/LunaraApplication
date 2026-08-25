@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import Conversation, { ConversationStatus } from '../models/Conversation';
 import Message, { MessageType, MessageStatus, InvitationStatus } from '../models/Message';
+import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import User from '../models/User';
 import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
@@ -564,12 +565,39 @@ export const sendMessage = async (req: Request, res: Response) => {
         }
 
         const recipientId = conv.getOtherParticipant(senderId);
+
+        // Check if sender has blocked recipient
+        const isSenderBlockingRecipient = await SocialConnection.findOne({
+            where: {
+                requesterId: senderId,
+                receiverId: recipientId,
+                status: ConnectionStatus.BLOCKED,
+            },
+        });
+        if (isSenderBlockingRecipient) {
+            return res.status(403).json({
+                success: false,
+                message: 'You have blocked this user. Unblock them to send messages.',
+            });
+        }
+
+        // Check if recipient has blocked sender (silent drop / message isolation for recipient)
+        const isRecipientBlockingSender = await SocialConnection.findOne({
+            where: {
+                requesterId: recipientId,
+                receiverId: senderId,
+                status: ConnectionStatus.BLOCKED,
+            },
+        });
+
         let isRecipientOnline = false;
-        try {
-            const { io } = require('../server');
-            const recipientRoom = io.sockets.adapter.rooms.get(`user_${recipientId}`);
-            isRecipientOnline = !!(recipientRoom && recipientRoom.size > 0);
-        } catch (err) {}
+        if (!isRecipientBlockingSender) {
+            try {
+                const { io } = require('../server');
+                const recipientRoom = io.sockets.adapter.rooms.get(`user_${recipientId}`);
+                isRecipientOnline = !!(recipientRoom && recipientRoom.size > 0);
+            } catch (err) {}
+        }
 
         const msgPayload = {
             conversationId: id,
@@ -588,6 +616,7 @@ export const sendMessage = async (req: Request, res: Response) => {
             invitationTime,
             invitationStatus: type === MessageType.INVITATION ? InvitationStatus.PENDING : undefined,
             status: isRecipientOnline ? MessageStatus.DELIVERED : MessageStatus.SENT,
+            deletedForUsers: isRecipientBlockingSender ? [recipientId] : [],
         };
 
         let message: Message;
@@ -602,13 +631,13 @@ export const sendMessage = async (req: Request, res: Response) => {
         // Build preview text
         const preview = message.getPreview();
 
-        // Increment unread for the OTHER participant safely
+        // Increment unread for the OTHER participant safely (only if recipient has not blocked sender)
         const isOne = (conv.participantOne && senderId && conv.participantOne.toLowerCase() === senderId.toLowerCase());
         const currentUnreadOne = Number(conv.unreadOne || 0);
         const currentUnreadTwo = Number(conv.unreadTwo || 0);
-        const unreadUpdate = isOne
-            ? { unreadTwo: currentUnreadTwo + 1 }
-            : { unreadOne: currentUnreadOne + 1 };
+        const unreadUpdate = isRecipientBlockingSender
+            ? {}
+            : (isOne ? { unreadTwo: currentUnreadTwo + 1 } : { unreadOne: currentUnreadOne + 1 });
 
         await (conv as any).update({
             lastMessageId:      message.id,
@@ -621,80 +650,87 @@ export const sendMessage = async (req: Request, res: Response) => {
 
         const formattedMsg = formatMessage(message as any);
 
-        // Calculate recipient unread chat count quickly
-        let recipientChatCount = 0;
-        try {
-            const recipientConvs = await Conversation.findAll({
-                where: {
-                    [Op.or]: [
-                        { participantOne: recipientId },
-                        { participantTwo: recipientId }
-                    ],
-                    status: { [Op.ne]: ConversationStatus.BLOCKED }
-                },
-                attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
-            });
-            for (const c of recipientConvs) {
-                const isP1 = (c.participantOne || '').toLowerCase() === recipientId.toLowerCase();
-                const isP2 = (c.participantTwo || '').toLowerCase() === recipientId.toLowerCase();
-                if (isP1 && (c as any).deletedByOne) continue;
-                if (isP2 && (c as any).deletedByTwo) continue;
-                recipientChatCount += Number(c.getUnreadFor ? c.getUnreadFor(recipientId) : (isP1 ? ((c as any).unreadOne || 0) : ((c as any).unreadTwo || 0)));
-            }
-        } catch (_) {}
+        // Emit new_message and notifications to recipient ONLY if recipient hasn't blocked sender
+        if (!isRecipientBlockingSender) {
+            // Calculate recipient unread chat count quickly
+            let recipientChatCount = 0;
+            try {
+                const recipientConvs = await Conversation.findAll({
+                    where: {
+                        [Op.or]: [
+                            { participantOne: recipientId },
+                            { participantTwo: recipientId }
+                        ],
+                        status: { [Op.ne]: ConversationStatus.BLOCKED }
+                    },
+                    attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
+                });
+                for (const c of recipientConvs) {
+                    const isP1 = (c.participantOne || '').toLowerCase() === recipientId.toLowerCase();
+                    const isP2 = (c.participantTwo || '').toLowerCase() === recipientId.toLowerCase();
+                    if (isP1 && (c as any).deletedByOne) continue;
+                    if (isP2 && (c as any).deletedByTwo) continue;
+                    recipientChatCount += Number(c.getUnreadFor ? c.getUnreadFor(recipientId) : (isP1 ? ((c as any).unreadOne || 0) : ((c as any).unreadTwo || 0)));
+                }
+            } catch (_) {}
 
-        // Emit new_message and chat_badge_updated to recipient AND sender rooms
+            try {
+                const { io } = require('../server');
+                io.to(`user_${recipientId}`).emit('new_message', formattedMsg);
+                io.to(`user_${recipientId}`).emit('chat_badge_updated', {
+                    conversationId: id,
+                    chatCount: recipientChatCount,
+                    unreadCount: conv.getUnreadFor ? conv.getUnreadFor(recipientId) : (isOne ? currentUnreadTwo + 1 : currentUnreadOne + 1)
+                });
+            } catch (err) {
+                logger.error('Failed to emit new_message socket event to recipient:', err);
+            }
+
+            // ── Push notification (for offline recipients) ───────────────────────
+            if (!isRecipientOnline) {
+                try {
+                    const recipient = await User.findByPk(recipientId, { attributes: ['id', 'firstName', 'lastName', 'fcmToken'] });
+                    const senderUser = await User.findByPk(senderId, { attributes: ['id', 'firstName', 'lastName'] });
+                    const fcmToken = (recipient as any)?.fcmToken;
+                    if (fcmToken) {
+                        const senderName = senderUser
+                            ? `${senderUser.firstName} ${senderUser.lastName}`.trim()
+                            : 'Someone';
+                        const notifBody = type === MessageType.IMAGE
+                            ? '📷 Sent you a photo'
+                            : type === MessageType.STICKER
+                            ? '🎨 Sent you a sticker'
+                            : type === MessageType.VOICE
+                            ? '🎙️ Sent you a voice message'
+                            : type === MessageType.INVITATION
+                            ? '🗓️ Sent you an invitation'
+                            : (content ?? 'New message');
+
+                        await sendPushNotification(fcmToken, {
+                            title: senderName,
+                            body: notifBody,
+                            data: {
+                                type: 'new_message',
+                                conversationId: id,
+                                senderId,
+                            },
+                        });
+                    }
+                } catch (err: any) {
+                    logger.warn('Failed to send chat push notification:', err.message);
+                }
+            }
+        }
+
+        // Always emit to sender room
         try {
             const { io } = require('../server');
-            io.to(`user_${recipientId}`).emit('new_message', formattedMsg);
-            io.to(`user_${recipientId}`).emit('chat_badge_updated', {
-                conversationId: id,
-                chatCount: recipientChatCount,
-                unreadCount: conv.getUnreadFor ? conv.getUnreadFor(recipientId) : (isOne ? currentUnreadTwo + 1 : currentUnreadOne + 1)
-            });
             io.to(`user_${senderId}`).emit('new_message', formattedMsg);
-            if (isRecipientOnline) {
+            if (isRecipientOnline && !isRecipientBlockingSender) {
                 io.to(`user_${senderId}`).emit('messages_delivered', { conversationId: id });
             }
         } catch (err) {
-            logger.error('Failed to emit new_message socket event:', err);
-        }
-
-
-
-        // ── Push notification (for offline recipients) ───────────────────────
-        if (!isRecipientOnline) {
-            try {
-                const recipient = await User.findByPk(recipientId, { attributes: ['id', 'firstName', 'lastName', 'fcmToken'] });
-                const senderUser = await User.findByPk(senderId, { attributes: ['id', 'firstName', 'lastName'] });
-                const fcmToken = (recipient as any)?.fcmToken;
-                if (fcmToken) {
-                    const senderName = senderUser
-                        ? `${senderUser.firstName} ${senderUser.lastName}`.trim()
-                        : 'Someone';
-                    const notifBody = type === MessageType.IMAGE
-                        ? '📷 Sent you a photo'
-                        : type === MessageType.STICKER
-                        ? '🎨 Sent you a sticker'
-                        : type === MessageType.VOICE
-                        ? '🎙️ Sent you a voice message'
-                        : type === MessageType.INVITATION
-                        ? '🗓️ Sent you an invitation'
-                        : (content ?? 'New message');
-
-                    await sendPushNotification(fcmToken, {
-                        title: senderName,
-                        body: notifBody,
-                        data: {
-                            type: 'new_message',
-                            conversationId: id,
-                            senderId,
-                        },
-                    });
-                }
-            } catch (err: any) {
-                logger.warn('Failed to send chat push notification:', err.message);
-            }
+            logger.error('Failed to emit new_message socket event to sender:', err);
         }
 
         return res.status(201).json({
@@ -1014,6 +1050,169 @@ export const deleteMessage = async (req: Request, res: Response) => {
     }
 };
 
+// ─── POST /conversations/:id/messages/batch-delete — Batch delete messages ───
+export const batchDeleteMessages = async (req: Request, res: Response) => {
+    try {
+        await ensureConversationColumns();
+        const { id } = req.params;
+        const { userId, messageIds, deleteForEveryone = false } = req.body;
+
+        if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
+        if (!Array.isArray(messageIds) || messageIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'messageIds array is required and must not be empty' });
+        }
+
+        const conv = await Conversation.findByPk(id);
+        if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
+
+        const uId = userId.toLowerCase();
+        const p1 = (conv.participantOne || '').toLowerCase();
+        const p2 = (conv.participantTwo || '').toLowerCase();
+        if (p1 !== uId && p2 !== uId) {
+            return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
+        const otherUserId = conv.getOtherParticipant(userId);
+
+        // Find all conversation rows between these two participants
+        const allConvs = await Conversation.findAll({
+            where: {
+                [Op.or]: [
+                    { participantOne: conv.participantOne, participantTwo: conv.participantTwo },
+                    { participantOne: conv.participantTwo, participantTwo: conv.participantOne },
+                ],
+            },
+        });
+        const allConvIds = allConvs.map(c => c.id);
+
+        const targetMessages = await Message.findAll({
+            where: {
+                id: { [Op.in]: messageIds },
+                conversationId: { [Op.in]: allConvIds },
+            },
+        });
+
+        if (targetMessages.length === 0) {
+            return res.status(404).json({ success: false, message: 'No matching messages found' });
+        }
+
+        if (deleteForEveryone === true) {
+            // Delete for everyone — verify all selected messages were sent by the requesting user
+            const unauthorized = targetMessages.some(m => m.senderId.toLowerCase() !== uId);
+            if (unauthorized) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only delete your own messages for everyone',
+                });
+            }
+
+            const validIds = targetMessages.map(m => m.id);
+            await (Message as any).update(
+                { deletedAt: new Date(), content: null, mediaUrl: null },
+                { where: { id: { [Op.in]: validIds } } }
+            );
+
+            // Recalculate latest message across conversations
+            const remainingMessages = await Message.findAll({
+                where: {
+                    conversationId: { [Op.in]: allConvIds },
+                    deletedAt: null as any,
+                },
+                order: [['createdAt', 'DESC']],
+                limit: 10,
+            });
+
+            const latestMsg = remainingMessages.length > 0 ? remainingMessages[0] : null;
+            const newPreview = latestMsg ? latestMsg.getPreview() : '';
+            const newLastMsgAt = latestMsg ? latestMsg.createdAt : null;
+            const newLastMsgId = latestMsg ? latestMsg.id : null;
+
+            for (const c of allConvs) {
+                await (c as any).update({
+                    lastMessageId: newLastMsgId,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                });
+            }
+
+            // Real-time socket broadcast to both participants
+            try {
+                const { io } = require('../server');
+                const deletePayload = {
+                    conversationId: id,
+                    messageIds: validIds,
+                    deleteForEveryone: true,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                    hasRemainingMessages: !!latestMsg,
+                };
+                io.to(`user_${userId}`).emit('messages_batch_deleted', deletePayload);
+                if (otherUserId) {
+                    io.to(`user_${otherUserId}`).emit('messages_batch_deleted', deletePayload);
+                }
+            } catch (err) {
+                logger.error('Failed to emit messages_batch_deleted socket event:', err);
+            }
+
+            return res.json({
+                success: true,
+                message: `${validIds.length} messages deleted for everyone successfully`,
+                data: {
+                    messageIds: validIds,
+                    conversationId: id,
+                    deleteForEveryone: true,
+                    lastMessagePreview: newPreview,
+                    lastMessageAt: newLastMsgAt,
+                },
+            });
+        } else {
+            // Delete for me — hide messages only for the requesting user
+            const validIds: string[] = [];
+            for (const m of targetMessages) {
+                let deletedForUsers: string[] = [];
+                const rawDfu = (m as any).deletedForUsers;
+                if (Array.isArray(rawDfu)) {
+                    deletedForUsers = [...rawDfu];
+                } else if (typeof rawDfu === 'string') {
+                    try { deletedForUsers = JSON.parse(rawDfu); } catch (_) {}
+                }
+                if (!deletedForUsers.map(x => String(x).toLowerCase()).includes(uId)) {
+                    deletedForUsers.push(userId);
+                    await (m as any).update({ deletedForUsers });
+                }
+                validIds.push(m.id);
+            }
+
+            // Real-time socket broadcast ONLY to requesting user
+            try {
+                const { io } = require('../server');
+                const deletePayload = {
+                    conversationId: id,
+                    messageIds: validIds,
+                    deleteForEveryone: false,
+                    targetUserId: userId,
+                };
+                io.to(`user_${userId}`).emit('messages_batch_deleted', deletePayload);
+            } catch (err) {
+                logger.error('Failed to emit messages_batch_deleted socket event:', err);
+            }
+
+            return res.json({
+                success: true,
+                message: `${validIds.length} messages deleted for you successfully`,
+                data: {
+                    messageIds: validIds,
+                    conversationId: id,
+                    deleteForEveryone: false,
+                },
+            });
+        }
+    } catch (err: any) {
+        logger.error('batchDeleteMessages error:', err);
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 // ─── DELETE /conversations/:id/messages — Clear all messages in conversation ──
 export const clearChat = async (req: Request, res: Response) => {
     try {
@@ -1321,6 +1520,7 @@ export default {
     getIcebreakers,
     markConversationRead,
     deleteMessage,
+    batchDeleteMessages,
     clearChat,
     deleteConversation,
     searchMessages,

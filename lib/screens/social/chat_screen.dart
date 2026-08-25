@@ -1833,6 +1833,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     final deleteForEveryone = (choice == 'for_everyone');
     final idsToDelete = Set<String>.from(_selectedMessageIds);
+    final validBackendIds =
+        idsToDelete.where((id) => !id.startsWith('temp_')).toList();
+    final backedUpMessages = List<Map<String, dynamic>>.from(_messages);
 
     setState(() {
       _messages.removeWhere(
@@ -1851,14 +1854,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     _recalculateLatestMessageAndNotify();
 
-    for (final msgId in idsToDelete) {
-      if (!msgId.startsWith('temp_')) {
-        await ApiService.deleteMessage(
-          conversationId: _conversationId!,
-          messageId: msgId,
-          userId: _currentUserId!,
-          deleteForEveryone: deleteForEveryone,
+    if (validBackendIds.isNotEmpty) {
+      final success = await ApiService.deleteMessagesBatch(
+        conversationId: _conversationId!,
+        messageIds: validBackendIds,
+        userId: _currentUserId!,
+        deleteForEveryone: deleteForEveryone,
+      );
+
+      if (!success && mounted) {
+        setState(() {
+          _messages.clear();
+          _messages.addAll(backedUpMessages);
+          _sortMessages();
+        });
+        _recalculateLatestMessageAndNotify();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete messages. Please try again.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
         );
+        return;
       }
     }
 
@@ -1867,8 +1884,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         SnackBar(
           content: Text(
             deleteForEveryone
-                ? '$count messages deleted for everyone'
-                : '$count messages deleted for you',
+                ? '$count ${count == 1 ? "message" : "messages"} deleted for everyone'
+                : '$count ${count == 1 ? "message" : "messages"} deleted for you',
           ),
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
@@ -2191,6 +2208,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     if (_selectedMessageIds.isNotEmpty) {
+      final bool singleSelected = _selectedMessageIds.length == 1;
+      Map<String, dynamic>? singleMsg;
+      if (singleSelected) {
+        final singleId = _selectedMessageIds.first;
+        singleMsg = _messages.firstWhere(
+          (m) =>
+              _safeString(m['id']) == singleId ||
+              _safeString(m['clientMessageId']) == singleId,
+          orElse: () => {},
+        );
+      }
+      final singleText = singleMsg != null
+          ? _safeString(singleMsg['text'] ?? singleMsg['content'])
+          : '';
+      final bool canCopy =
+          singleText.isNotEmpty && singleText != '[Message deleted]';
+
       return AppBar(
         backgroundColor: const Color(0xFF7C3AED),
         leading: IconButton(
@@ -2210,8 +2244,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
         ),
         actions: [
+          if (singleSelected && canCopy)
+            IconButton(
+              icon: const Icon(Icons.copy_rounded, color: Colors.white),
+              tooltip: 'Copy message',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: singleText));
+                setState(() {
+                  _selectedMessageIds.clear();
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Message copied to clipboard'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
+            tooltip: 'Delete selected',
             onPressed: _deleteSelectedMessages,
           ),
         ],
@@ -2702,10 +2755,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     void handleLongPress() {
-      if (selectionMode && canSelect) {
-        handleTap();
-      } else if (canSelect) {
-        _showMessageActionSheet(msg);
+      if (canSelect) {
+        HapticFeedback.selectionClick();
+        setState(() {
+          if (isSelected) {
+            _selectedMessageIds.remove(msgId);
+          } else {
+            _selectedMessageIds.add(msgId);
+          }
+        });
       }
     }
 
@@ -2941,14 +2999,47 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final canSelect = !isDeleted && msgId.isNotEmpty && !msgId.startsWith('temp_');
     final msgStatus = _safeString(msg['status'], 'sent');
     final timeStr = _formatMessageTime(msg['createdAt']?.toString());
+    final bool isSelected = _selectedMessageIds.contains(msgId);
+    final bool selectionMode = _selectedMessageIds.isNotEmpty;
+
+    void handleTap() {
+      if (selectionMode && canSelect) {
+        setState(() {
+          if (isSelected) {
+            _selectedMessageIds.remove(msgId);
+          } else {
+            _selectedMessageIds.add(msgId);
+          }
+        });
+      }
+    }
+
+    void handleLongPress() {
+      if (canSelect) {
+        HapticFeedback.selectionClick();
+        setState(() {
+          if (isSelected) {
+            _selectedMessageIds.remove(msgId);
+          } else {
+            _selectedMessageIds.add(msgId);
+          }
+        });
+      }
+    }
 
     return GestureDetector(
-      onLongPress: canSelect ? () => _showMessageActionSheet(msg) : null,
-      child: Align(
-        alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          width: 260,
+      onTap: handleTap,
+      onLongPress: handleLongPress,
+      child: Container(
+        color: isSelected
+            ? const Color(0xFF7C3AED).withValues(alpha: 0.15)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Align(
+          alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            width: 260,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -3071,8 +3162,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _inviteButton(String label, bool isPrimary, VoidCallback onTap) {
     return GestureDetector(

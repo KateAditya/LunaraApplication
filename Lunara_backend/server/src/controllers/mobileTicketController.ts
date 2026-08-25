@@ -18,6 +18,7 @@ import {
     Ad,
 } from '../models';
 import { TicketStatus } from '../models/Ticket';
+import { GoingMode } from '../models/Booking';
 import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
@@ -212,7 +213,6 @@ export class MobileTicketController {
                             attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'status', 'paymentStatus', 'paymentAmount', 'ticketId', 'ticketUrl', 'expectedEndAt', 'createdAt'],
                             include: [venueInclude, userInclude],
                         },
-                        userInclude,
                     ],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
@@ -250,7 +250,12 @@ export class MobileTicketController {
                             attributes: ['id', 'userId', 'planDate', 'startTime', 'tablePackage', 'paymentOption', 'totalAmount', 'maxJoiners', 'currentJoiners', 'status', 'bookingId', 'venueId', 'createdAt'],
                             include: [venueInclude, { model: User, as: 'host', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
                         },
-                        userInclude,
+                        {
+                            model: User,
+                            as: 'requester',
+                            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                            required: false,
+                        },
                     ],
                     order: [['createdAt', 'DESC']],
                 }).catch(err => {
@@ -265,23 +270,35 @@ export class MobileTicketController {
 
             // 1. Process explicit Ticket table records
             const bookingIds = tickets.map((t: any) => t.bookingId).filter(Boolean);
-            const [sourceBookings, sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = bookingIds.length === 0
-                ? [[], [], [], [], []]
+            const sourceBookings = bookingIds.length === 0 ? [] : await Booking.findAll({
+                where: { id: { [Op.in]: bookingIds } },
+                attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'specialRequests', 'createdAt'],
+                include: [
+                    venueInclude,
+                    userInclude,
+                    {
+                        model: Ad,
+                        as: 'partyEvent',
+                        attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
+                        required: false,
+                    },
+                ],
+            });
+
+            const partyPlanIdsFromBookings: string[] = [];
+            for (const b of sourceBookings) {
+                if (b.specialRequests) {
+                    try {
+                        const meta = typeof b.specialRequests === 'string' ? JSON.parse(b.specialRequests) : b.specialRequests;
+                        if (meta.planId) partyPlanIdsFromBookings.push(meta.planId);
+                    } catch (_) {}
+                }
+            }
+            const allPartyPlanIds = [...new Set([...bookingIds, ...partyPlanIdsFromBookings])];
+
+            const [sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = bookingIds.length === 0
+                ? [[], [], [], []]
                 : await Promise.all([
-                    Booking.findAll({
-                        where: { id: { [Op.in]: bookingIds } },
-                        attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'createdAt'],
-                        include: [
-                            venueInclude,
-                            userInclude,
-                            {
-                                model: Ad,
-                                as: 'partyEvent',
-                                attributes: ['id', 'title', 'imagePath', 'aboutEvent', 'eventDate', 'entryPrice'],
-                                required: false,
-                            },
-                        ],
-                    }),
                     GroupParty.findAll({
                         where: { id: { [Op.in]: bookingIds } },
                         attributes: ['id', 'partyDate', 'startTime', 'status', 'paymentStatus', 'totalAmount', 'numberOfFriends', 'foodPreference', 'drinkPreference', 'mobileNumber', 'venueId', 'ticketUrl', 'ticketCode', 'createdAt'],
@@ -302,11 +319,10 @@ export class MobileTicketController {
                                 attributes: ['id', 'userId', 'venueId', 'subject', 'tagline', 'eventDateTime', 'numberOfPersons', 'chargesPerHead', 'paymentAmount', 'status', 'ticketId', 'ticketUrl'],
                                 include: [venueInclude, userInclude],
                             },
-                            userInclude,
                         ],
                     }),
                     PartyPlan.findAll({
-                        where: { id: { [Op.in]: bookingIds } },
+                        where: { id: { [Op.in]: allPartyPlanIds } },
                         attributes: ['id', 'userId', 'venueId', 'planDateTime', 'depositAmount', 'status', 'lifecycleStatus', 'hostPaymentStatus', 'matchedRequestId', 'createdAt'],
                         include: [venueInclude, userInclude],
                     }),
@@ -325,7 +341,13 @@ export class MobileTicketController {
                 const sourceGroupParty = groupPartyById.get(t.bookingId);
                 const sourceStrangersMeet = strangersMeetById.get(t.bookingId);
                 const sourceStrangersJoiner = strangersJoinerById.get(t.bookingId);
-                const sourcePartyPlan = partyPlanById.get(t.bookingId);
+                let sourcePartyPlan = partyPlanById.get(t.bookingId);
+                if (!sourcePartyPlan && sourceBooking?.specialRequests) {
+                    try {
+                        const meta = typeof sourceBooking.specialRequests === 'string' ? JSON.parse(sourceBooking.specialRequests) : sourceBooking.specialRequests;
+                        if (meta.planId) sourcePartyPlan = partyPlanById.get(meta.planId);
+                    } catch (_) {}
+                }
 
                 const startDate = t.eventStartAt ? new Date(t.eventStartAt) : new Date();
                 const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
@@ -749,30 +771,71 @@ export class MobileTicketController {
                 const plan = reqAny.plan;
                 if (!plan) continue;
 
-                // STRICT RULE: No ticket before BOTH host and joiner payments are verified!
-                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
-                const joinerPaid = (req.joinerPaymentStatus || '').toLowerCase() === 'paid' || plan.paymentType === 'self_pay';
-                const isBothPaidMatch = hostPaid && joinerPaid && (
+                // STRICT RULE: No ticket before BOTH host and joiner payments are verified, unless cancelled!
+                const sStatus = (req.status || '').toLowerCase();
+                const pLife = (plan.lifecycleStatus || '').toLowerCase();
+                const isCancelledReq = sStatus === 'cancelled' || sStatus === 'rejected' || pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || (req.joinerPaymentStatus || '').toLowerCase() === 'refunded' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
+
+                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
+                const joinerPaid = (req.joinerPaymentStatus || '').toLowerCase() === 'paid' || (req.joinerPaymentStatus || '').toLowerCase() === 'refunded' || plan.paymentType === 'self_pay';
+                const isBothPaidMatch = (hostPaid && joinerPaid && (
                     plan.lifecycleStatus === 'match_confirmed' ||
                     plan.lifecycleStatus === 'chat_enabled' ||
                     plan.lifecycleStatus === 'event_upcoming' ||
                     plan.matchedRequestId === req.id
-                );
+                )) || isCancelledReq;
+
                 if (!isBothPaidMatch) {
                     continue;
                 }
 
-                if (seenBookingIds.has(req.id) || seenBookingIds.has(plan.id) || (reqAny.ticketCode && seenTicketIds.has(reqAny.ticketCode))) continue;
+                // Look up authoritative Booking and Ticket for this Party Plan
+                let authBooking = await Booking.findOne({
+                    where: {
+                        goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                        venueId: plan.venueId,
+                        specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+                if (!authBooking) {
+                    const dateObj = new Date(plan.planDateTime);
+                    const bDate = dateObj.toISOString().split('T')[0];
+                    authBooking = await Booking.findOne({
+                        where: {
+                            goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                            userId: plan.userId,
+                            venueId: plan.venueId,
+                            bookingDate: bDate as any,
+                        },
+                        order: [['createdAt', 'DESC']],
+                    });
+                }
+
+                let authTicket: Ticket | null = null;
+                if (authBooking) {
+                    authTicket = await Ticket.findOne({
+                        where: { [Op.or]: [{ bookingId: authBooking.id }, { ticketId: authBooking.ticketCode }] },
+                        order: [['createdAt', 'DESC']],
+                    });
+                }
+
+                const bookingIdVal = authBooking?.id || plan.id;
+                const ticketCode = authTicket?.ticketId || authBooking?.ticketCode || reqAny.ticketCode || `PP-${plan.id.substring(0, 6).toUpperCase()}`;
+
+                if (seenBookingIds.has(req.id) || seenBookingIds.has(plan.id) || seenBookingIds.has(bookingIdVal) || seenTicketIds.has(ticketCode)) continue;
                 seenBookingIds.add(req.id);
-                if (reqAny.ticketCode) seenTicketIds.add(reqAny.ticketCode);
+                seenBookingIds.add(plan.id);
+                seenBookingIds.add(bookingIdVal);
+                seenTicketIds.add(ticketCode);
 
                 const startAt = parseEventStartDateTime(plan.planDateTime, null);
-                const expAt = getActualExpiration(startAt);
-                const sStatus = (req.status || '').toLowerCase();
-                const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected';
-                const isCompleted = plan.lifecycleStatus === 'plan_completed';
-                const isExpired = sStatus === 'expired' || isCompleted || expAt < now;
-                const ticketCode = reqAny.ticketCode || `LUN-${startAt.getFullYear()}-PP-${req.id.substring(0, 6).toUpperCase()}`;
+                const expAt = authTicket?.expiresAt ? new Date(authTicket.expiresAt) : getActualExpiration(startAt);
+                const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected' || pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
+                const isCompleted = pLife === 'plan_completed' || authTicket?.ticketStatus === TicketStatus.USED;
+                const isExpired = sStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED;
+                const ticketPdfUrl = authTicket?.pdfUrl || authBooking?.ticketUrl || reqAny.ticketUrl || null;
+                const ticketQrToken = authTicket?.qrToken || ticketCode;
 
                 const reqUser = reqAny.requester ? {
                     id: reqAny.requester.id,
@@ -799,10 +862,10 @@ export class MobileTicketController {
                 } : null;
 
                 formattedTickets.push({
-                    id: req.id,
+                    id: bookingIdVal,
                     ticketId: ticketCode,
                     ticketCode,
-                    bookingId: plan.id,
+                    bookingId: bookingIdVal,
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
@@ -813,9 +876,9 @@ export class MobileTicketController {
                     issuedAt: req.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (reqAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (reqAny.ticketUrl || null),
+                    pdfUrl: isExpired ? null : ticketPdfUrl,
+                    qrToken: isExpired ? null : ticketQrToken,
+                    ticketUrl: isExpired ? null : ticketPdfUrl,
                     totalAmount: Number(plan.depositAmount || 99),
                     isFree: false,
                     numberOfGuests: 2,
@@ -860,29 +923,69 @@ export class MobileTicketController {
             for (const plan of partyPlanHostPlans) {
                 const planAny = plan as any;
 
-                // STRICT RULE: No ticket for Host until host deposit is paid AND a partner match is confirmed!
-                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid';
+                // STRICT RULE: No ticket for Host until host deposit is paid AND a partner match is confirmed, unless cancelled!
+                const pLife = (plan.lifecycleStatus || '').toLowerCase();
+                const isCancelledPlan = pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
+
+                const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
                 const isMatchConfirmed = (
                     plan.lifecycleStatus === 'match_confirmed' ||
                     plan.lifecycleStatus === 'chat_enabled' ||
                     plan.lifecycleStatus === 'event_upcoming' ||
-                    Boolean(plan.matchedRequestId)
+                    Boolean(plan.matchedRequestId) ||
+                    isCancelledPlan
                 );
                 if (!hostPaid || !isMatchConfirmed) {
                     continue;
                 }
 
-                if (seenBookingIds.has(plan.id) || (planAny.ticketCode && seenTicketIds.has(planAny.ticketCode))) continue;
+                // Look up authoritative Booking and Ticket for this Party Plan
+                let authBooking = await Booking.findOne({
+                    where: {
+                        goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                        venueId: plan.venueId,
+                        specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+                if (!authBooking) {
+                    const dateObj = new Date(plan.planDateTime);
+                    const bDate = dateObj.toISOString().split('T')[0];
+                    authBooking = await Booking.findOne({
+                        where: {
+                            goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                            userId: plan.userId,
+                            venueId: plan.venueId,
+                            bookingDate: bDate as any,
+                        },
+                        order: [['createdAt', 'DESC']],
+                    });
+                }
+
+                let authTicket: Ticket | null = null;
+                if (authBooking) {
+                    authTicket = await Ticket.findOne({
+                        where: { [Op.or]: [{ bookingId: authBooking.id }, { ticketId: authBooking.ticketCode }] },
+                        order: [['createdAt', 'DESC']],
+                    });
+                }
+
+                const bookingIdVal = authBooking?.id || plan.id;
+                const ticketCode = authTicket?.ticketId || authBooking?.ticketCode || planAny.ticketCode || `PP-${plan.id.substring(0, 6).toUpperCase()}`;
+
+                if (seenBookingIds.has(plan.id) || seenBookingIds.has(bookingIdVal) || seenTicketIds.has(ticketCode)) continue;
                 seenBookingIds.add(plan.id);
-                if (planAny.ticketCode) seenTicketIds.add(planAny.ticketCode);
+                seenBookingIds.add(bookingIdVal);
+                seenTicketIds.add(ticketCode);
 
                 const startAt = parseEventStartDateTime(plan.planDateTime, null);
-                const expAt = getActualExpiration(startAt);
+                const expAt = authTicket?.expiresAt ? new Date(authTicket.expiresAt) : getActualExpiration(startAt);
                 const pStatus = (plan.status || '').toLowerCase();
-                const isCancelled = pStatus === 'cancelled';
-                const isCompleted = plan.lifecycleStatus === 'plan_completed';
-                const isExpired = pStatus === 'expired' || isCompleted || expAt < now;
-                const ticketCode = planAny.ticketCode || `LUN-${startAt.getFullYear()}-PP-${plan.id.substring(0, 6).toUpperCase()}`;
+                const isCancelled = pStatus === 'cancelled' || pLife === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
+                const isCompleted = pLife === 'plan_completed' || authTicket?.ticketStatus === TicketStatus.USED;
+                const isExpired = pStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED;
+                const ticketPdfUrl = authTicket?.pdfUrl || authBooking?.ticketUrl || planAny.ticketUrl || null;
+                const ticketQrToken = authTicket?.qrToken || ticketCode;
 
                 const planUser = planAny.user ? {
                     id: planAny.user.id,
@@ -952,10 +1055,10 @@ export class MobileTicketController {
                 }
 
                 formattedTickets.push({
-                    id: plan.id,
+                    id: bookingIdVal,
                     ticketId: ticketCode,
                     ticketCode,
-                    bookingId: plan.id,
+                    bookingId: bookingIdVal,
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
@@ -966,9 +1069,9 @@ export class MobileTicketController {
                     issuedAt: plan.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (planAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (planAny.ticketUrl || null),
+                    pdfUrl: isExpired ? null : ticketPdfUrl,
+                    qrToken: isExpired ? null : ticketQrToken,
+                    ticketUrl: isExpired ? null : ticketPdfUrl,
                     totalAmount: Number(plan.depositAmount || 99),
                     isFree: false,
                     numberOfGuests: 2,
@@ -1407,9 +1510,15 @@ export class MobileTicketController {
         try {
             const { id } = req.params;
             const userId = req.user?.id || (req.query.userId as string);
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-            const ticket = await Ticket.findOne({
-                where: { [Op.or]: [{ id }, { ticketId: id }] },
+            const ticketWhere: any[] = [{ ticketId: id }];
+            if (isUuid) {
+                ticketWhere.push({ id }, { bookingId: id });
+            }
+
+            let ticket = await Ticket.findOne({
+                where: { [Op.or]: ticketWhere },
                 include: [
                     {
                         model: Venue,
@@ -1428,10 +1537,57 @@ export class MobileTicketController {
             });
 
             if (!ticket) {
+                // Try finding by Booking ticketCode or id
+                const bookingWhere: any[] = [{ ticketCode: id }];
+                if (isUuid) {
+                    bookingWhere.push({ id });
+                }
+                const booking = await Booking.findOne({
+                    where: { [Op.or]: bookingWhere },
+                });
+                if (booking) {
+                    ticket = await Ticket.findOne({
+                        where: { [Op.or]: [{ bookingId: booking.id }, { ticketId: booking.ticketCode }] },
+                        include: [
+                            {
+                                model: Venue,
+                                as: 'venue',
+                                include: [
+                                    {
+                                        model: VenueImage,
+                                        as: 'images',
+                                        attributes: ['id', 'filePath', 'imageType', 'isPrimary'],
+                                        required: false,
+                                    },
+                                ],
+                            },
+                            { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
+                        ],
+                    });
+                }
+            }
+
+            if (!ticket) {
                 return res.status(404).json({ success: false, message: 'Ticket not found' });
             }
 
-            if (userId && ticket.userId !== userId) {
+            let isAuthorized = !userId || ticket.userId === userId;
+            if (!isAuthorized && userId) {
+                if (ticket.bookingId) {
+                    const booking = await Booking.findByPk(ticket.bookingId);
+                    if (booking) {
+                        if (booking.userId === userId) isAuthorized = true;
+                        if (booking.specialRequests) {
+                            try {
+                                const meta = typeof booking.specialRequests === 'string' ? JSON.parse(booking.specialRequests) : booking.specialRequests;
+                                if (meta.joinerId === userId || meta.hostId === userId) isAuthorized = true;
+                            } catch (_) {}
+                        }
+                    }
+                }
+            }
+
+            if (!isAuthorized) {
                 return res.status(403).json({ success: false, message: 'Unauthorized ticket access' });
             }
 

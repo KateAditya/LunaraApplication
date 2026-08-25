@@ -138,7 +138,7 @@ export const changePassword = async (req: Request, res: Response): Promise<Respo
 
 export const deletePhoto = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.user?.id;
+        const userId = req.user?.id || (req.body && req.body.userId);
         const { id } = req.params;
 
         if (!userId) {
@@ -171,13 +171,17 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
             if (nextPhoto) {
                 nextPhoto.isPrimary = true;
                 await nextPhoto.save();
-                await User.update(
-                    { profileImageUrl: '/' + nextPhoto.filePath.replace(/\\/g, '/') },
+                const rawPath = nextPhoto.filePath.replace(/\\/g, '/');
+                const newProfileUrl = rawPath.startsWith('http') || rawPath.startsWith('/')
+                    ? rawPath
+                    : '/' + rawPath;
+                await (User as any).update(
+                    { profileImageUrl: newProfileUrl },
                     { where: { id: userId } }
                 );
             } else {
-                await User.update(
-                    { profileImageUrl: null as any },
+                await (User as any).update(
+                    { profileImageUrl: null },
                     { where: { id: userId } }
                 );
             }
@@ -195,7 +199,7 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
 
 export const setPrimaryPhoto = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const userId = req.user?.id;
+        const userId = req.user?.id || (req.body && req.body.userId);
         const { id } = req.params;
 
         if (!userId) {
@@ -207,16 +211,45 @@ export const setPrimaryPhoto = async (req: Request, res: Response): Promise<Resp
             return res.status(404).json({ success: false, message: 'Photo not found' });
         }
 
-        await UserPhoto.setAsPrimary(id, userId);
+        // Set all photos of user to non-primary
+        await UserPhoto.update(
+            { isPrimary: false },
+            { where: { userId } }
+        );
 
-        await User.update(
-            { profileImageUrl: '/' + photo.filePath.replace(/\\/g, '/') },
+        // Mark this photo as primary
+        photo.isPrimary = true;
+        await photo.save();
+
+        const rawPath = photo.filePath.replace(/\\/g, '/');
+        const newProfileUrl = rawPath.startsWith('http') || rawPath.startsWith('/')
+            ? rawPath
+            : '/' + rawPath;
+
+        await (User as any).update(
+            { profileImageUrl: newProfileUrl },
             { where: { id: userId } }
         );
+
+        try {
+            const { RealtimeEventBroker } = require('../services/RealtimeEventBroker');
+            RealtimeEventBroker.emitToUser(userId, 'profile_photo_updated', 'user', userId, {
+                userId,
+                profileImageUrl: newProfileUrl,
+            });
+            RealtimeEventBroker.emitToLiveFeed('profile_photo_updated', 'user', userId, {
+                userId,
+                profileImageUrl: newProfileUrl,
+            });
+        } catch (_) {}
 
         return res.status(200).json({
             success: true,
             message: 'Primary photo updated successfully',
+            data: {
+                photoId: id,
+                profileImageUrl: newProfileUrl,
+            }
         });
     } catch (error: any) {
         logger.error('[Profile] Error setting primary photo:', error);
