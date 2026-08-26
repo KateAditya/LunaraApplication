@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
-import 'payment_confirmation_screen.dart';
+import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/top_notification_banner.dart';
 import 'digital_ticket_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
@@ -1940,169 +1943,725 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   return;
                                 }
 
-                                String chargesStr = totalPrice.toStringAsFixed(
-                                  0,
-                                );
-                                Navigator.pop(bottomSheetCtx); // close popup
-
-                                // Create booking in database
-                                String? createdBookingId;
-                                final bookingRes = await ApiService.createBooking(
-                                  venueId: widget.venue['id']?.toString() ?? '',
-                                  bookingDate:
-                                      '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
-                                  startTime: _selectedTime ?? '22:00',
-                                  tablePackage: 'Confirmation Charges',
-                                  goingMode: isSolo ? 'solo' : 'party_request',
-                                  numberOfGuests: isSolo ? 1 : guests,
-                                  isUpcomingNight: widget.isUpcomingNight,
-                                  partySubject: isLargeParty
-                                      ? _partySubjectController.text.trim()
-                                      : null,
-                                  partyRequirement: isLargeParty
-                                      ? _partyRequirementController.text.trim()
-                                      : null,
-                                  partyDescription: isLargeParty
-                                      ? _partyDescriptionController.text.trim()
-                                      : null,
-                                  mobileNumber: isLargeParty
-                                      ? _partyMobileController.text.trim()
-                                      : null,
-                                  optionalMobileNumber: isLargeParty
-                                      ? _partyOptMobileController.text.trim()
-                                      : null,
-                                );
-                                if (bookingRes != null &&
-                                    bookingRes['success'] == true) {
-                                  final data = bookingRes['data'];
-                                  if (data != null) {
-                                    createdBookingId =
-                                        (data['id'] ?? data['bookingId'])
-                                            ?.toString();
-                                  }
-                                  createdBookingId ??= bookingRes['bookingId']
-                                      ?.toString();
-                                } else if (bookingRes != null &&
-                                    (bookingRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
-                                        bookingRes['conflictingEventType'] != null ||
-                                        bookingRes['message']?.toString().contains('4 hours') == true)) {
-                                  if (!outerContext.mounted) return;
-                                  final payload = Map<String, dynamic>.from(bookingRes);
-                                  if (!payload.containsKey('conflictingEventTitle')) {
-                                    payload['conflictingEventTitle'] = widget.venue['name']?.toString() ?? 'Venue';
-                                  }
-                                  TimeLockBlockedDialog.show(outerContext, errorData: payload);
-                                  return;
-                                } else if (bookingRes != null &&
-                                    const [
-                                      'PLAN_TIME_LOCKED',
-                                      'PLAN_DAILY_LIMIT_REACHED',
-                                      'PLAN_ACTIVE_LIMIT_REACHED',
-                                      'PLAN_WEEKLY_LIMIT_REACHED',
-                                    ].contains(bookingRes['code'])) {
-                                  if (!outerContext.mounted) return;
-                                  TimeLockModal.show(
-                                    context: outerContext,
-                                    reasonCode: bookingRes['code'].toString(),
-                                    message:
-                                        bookingRes['message'] ??
-                                        'Please wait before booking again.',
-                                    remainingSeconds:
-                                        bookingRes['lock']?['remainingSeconds'] ??
-                                        60,
-                                    existingPlanId:
-                                        bookingRes['lock']?['existingPlanId']
-                                            ?.toString(),
-                                    existingPlanType:
-                                        bookingRes['lock']?['existingPlanType']
-                                            ?.toString(),
-                                  );
-                                  return;
-                                } else {
-                                  if (!outerContext.mounted) return;
-                                  final errMsg =
-                                      bookingRes?['message']?.toString() ??
-                                      'Failed to create booking.';
-                                  ScaffoldMessenger.of(
-                                    outerContext,
-                                  ).showSnackBar(
-                                    SnackBar(content: Text(errMsg)),
-                                  );
-                                  return;
-                                }
-
-                                if (!outerContext.mounted) return;
-
-                                // Free booking direct digital ticket redirection
                                 if (isFreeBooking) {
-                                  Navigator.push(
-                                    outerContext,
-                                    MaterialPageRoute(
-                                      builder: (_) => DigitalTicketScreen(
-                                        venue: widget.venue,
-                                        date:
-                                            '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                        package: isSolo ? 'Solo Entry' : 'Free Entry Ticket',
-                                        time: _formatTimeOfBooking(
-                                          _selectedTime,
-                                        ),
-                                        table: isSolo ? 'Solo Entry' : 'Standard Table',
-                                        guests: isSolo
-                                            ? '1'
-                                            : '$guests',
-                                        totalPrice: 'FREE (₹0)',
-                                        ticketId:
-                                            createdBookingId ?? 'FREE_TICKET',
-                                        user: ApiService.cachedCurrentUser,
-                                        booking: {
-                                          'id': createdBookingId,
-                                          'venue': widget.venue,
-                                          'venueId': widget.venue['id'],
-                                          'isSolo': isSolo,
-                                          'goingMode': isSolo ? 'solo' : 'party_request',
-                                          'bookingType': isSolo ? 'solo' : 'venue_booking',
-                                          'category': isSolo ? 'solo' : 'venue_booking',
-                                          'totalAmount': 0,
-                                          'paymentStatus': 'paid',
-                                          'status': 'CONFIRMED',
-                                          'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
-                                          'numberOfGuests': isSolo ? 1 : guests,
-                                          'bookingDate': _selectedDate.toIso8601String(),
-                                          'startTime': _formatTimeOfBooking(_selectedTime),
-                                          'user': ApiService.cachedCurrentUser,
-                                        },
+                                  Navigator.pop(bottomSheetCtx); // close popup
+                                  showDialog(
+                                    context: outerContext,
+                                    barrierDismissible: false,
+                                    builder: (ctx) => const Center(
+                                      child: CircularProgressIndicator(
+                                        color: LunaraTheme.electricViolet,
                                       ),
                                     ),
                                   );
-                                  return;
+
+                                  final bookingRes = await ApiService.createBooking(
+                                    venueId: widget.venue['id']?.toString() ?? '',
+                                    bookingDate:
+                                        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                                    startTime: _selectedTime ?? '22:00',
+                                    tablePackage: isSolo ? 'Solo Entry' : 'Confirmation Charges',
+                                    goingMode: isSolo ? 'solo' : 'party_request',
+                                    numberOfGuests: isSolo ? 1 : guests,
+                                    isUpcomingNight: widget.isUpcomingNight,
+                                  );
+
+                                  if (outerContext.mounted) {
+                                    Navigator.of(outerContext, rootNavigator: true).pop(); // close loader
+                                  }
+
+                                  if (bookingRes != null && bookingRes['success'] == true) {
+                                    final data = bookingRes['data'];
+                                    final createdBookingId = (data != null
+                                        ? (data['id'] ?? data['bookingId'])
+                                        : bookingRes['bookingId'])?.toString() ?? 'FREE_TICKET';
+
+                                    TopNotificationBanner.show(
+                                      title: 'Booking Confirmed! 🎉',
+                                      body: 'Your complimentary booking at ${widget.venue['name'] ?? 'Venue'} is confirmed!',
+                                      data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                    );
+
+                                    if (outerContext.mounted) {
+                                      Navigator.push(
+                                        outerContext,
+                                        MaterialPageRoute(
+                                          builder: (_) => DigitalTicketScreen(
+                                            venue: widget.venue,
+                                            date:
+                                                '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                            package: isSolo ? 'Solo Entry' : 'Free Entry Ticket',
+                                            time: _formatTimeOfBooking(
+                                              _selectedTime,
+                                            ),
+                                            table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                            guests: isSolo ? '1' : '$guests',
+                                            totalPrice: 'FREE (₹0)',
+                                            ticketId: createdBookingId,
+                                            user: ApiService.cachedCurrentUser,
+                                            booking: {
+                                              'id': createdBookingId,
+                                              'bookingId': createdBookingId,
+                                              'venue': widget.venue,
+                                              'venueId': widget.venue['id'],
+                                              'isSolo': isSolo,
+                                              'goingMode': isSolo ? 'solo' : 'party_request',
+                                              'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                              'category': isSolo ? 'solo' : 'venue_booking',
+                                              'totalAmount': 0,
+                                              'paymentStatus': 'paid',
+                                              'status': 'CONFIRMED',
+                                              'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                              'numberOfGuests': isSolo ? 1 : guests,
+                                              'bookingDate': _selectedDate.toIso8601String(),
+                                              'startTime': _formatTimeOfBooking(_selectedTime),
+                                              'user': ApiService.cachedCurrentUser,
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  } else if (bookingRes != null &&
+                                      (bookingRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                                          bookingRes['conflictingEventType'] != null ||
+                                          bookingRes['message']?.toString().contains('4 hours') == true)) {
+                                    if (!outerContext.mounted) return;
+                                    final payload = Map<String, dynamic>.from(bookingRes);
+                                    if (!payload.containsKey('conflictingEventTitle')) {
+                                      payload['conflictingEventTitle'] = widget.venue['name']?.toString() ?? 'Venue';
+                                    }
+                                    TimeLockBlockedDialog.show(outerContext, errorData: payload);
+                                    return;
+                                  } else if (bookingRes != null &&
+                                      const [
+                                        'PLAN_TIME_LOCKED',
+                                        'PLAN_DAILY_LIMIT_REACHED',
+                                        'PLAN_ACTIVE_LIMIT_REACHED',
+                                        'PLAN_WEEKLY_LIMIT_REACHED',
+                                      ].contains(bookingRes['code'])) {
+                                    if (!outerContext.mounted) return;
+                                    TimeLockModal.show(
+                                      context: outerContext,
+                                      reasonCode: bookingRes['code'].toString(),
+                                      message:
+                                          bookingRes['message'] ??
+                                          'Please wait before booking again.',
+                                      remainingSeconds:
+                                          bookingRes['lock']?['remainingSeconds'] ??
+                                          60,
+                                      existingPlanId:
+                                          bookingRes['lock']?['existingPlanId']
+                                              ?.toString(),
+                                      existingPlanType:
+                                          bookingRes['lock']?['existingPlanType']
+                                              ?.toString(),
+                                    );
+                                    return;
+                                  } else {
+                                    if (!outerContext.mounted) return;
+                                    final errMsg =
+                                        bookingRes?['message']?.toString() ??
+                                        'Failed to create booking.';
+                                    ScaffoldMessenger.of(
+                                      outerContext,
+                                    ).showSnackBar(
+                                      SnackBar(content: Text(errMsg), backgroundColor: Colors.redAccent),
+                                    );
+                                    return;
+                                  }
                                 }
 
-                                Navigator.push(
-                                  outerContext,
-                                  MaterialPageRoute(
-                                    builder: (_) => PaymentConfirmationScreen(
+                                Navigator.pop(bottomSheetCtx); // close popup
+
+                                String? createdBookingId;
+                                final bookingDateStr =
+                                    '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+                                final formattedTime = _formatTimeOfBooking(_selectedTime);
+
+                                SmartCheckoutSheet.show(
+                                  context: outerContext,
+                                  title: widget.venue['name']?.toString() ?? 'Venue',
+                                  subtitle: isSolo
+                                      ? 'Solo Table Booking'
+                                      : 'Table Booking ($guests Guests)',
+                                  itemPrice: totalPrice,
+                                  onWalletPayment: () async {
+                                    final bookingRes = await ApiService.createBooking(
+                                      venueId: widget.venue['id']?.toString() ?? '',
+                                      bookingDate: bookingDateStr,
+                                      startTime: _selectedTime ?? '22:00',
+                                      tablePackage: isSolo ? 'Solo Entry' : 'Confirmation Charges',
+                                      goingMode: isSolo ? 'solo' : 'party_request',
+                                      numberOfGuests: isSolo ? 1 : guests,
+                                      isUpcomingNight: widget.isUpcomingNight,
+                                    );
+
+                                    if (bookingRes == null || bookingRes['success'] != true) {
+                                      if (outerContext.mounted) {
+                                        final isTimeLock = (bookingRes != null &&
+                                                (bookingRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                                                    bookingRes['conflictingEventType'] != null)) ||
+                                            (bookingRes?['message']?.toString().contains('4 hours') == true);
+                                        if (isTimeLock) {
+                                          final payload = Map<String, dynamic>.from(bookingRes ?? {});
+                                          if (!payload.containsKey('conflictingEventTitle')) {
+                                            payload['conflictingEventTitle'] = widget.venue['name']?.toString() ?? 'Venue';
+                                          }
+                                          TimeLockBlockedDialog.show(outerContext, errorData: payload);
+                                        } else {
+                                          ScaffoldMessenger.of(outerContext).showSnackBar(
+                                            SnackBar(
+                                              content: Text(bookingRes?['message'] ?? 'Failed to initiate booking'),
+                                              backgroundColor: Colors.redAccent,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                      return false;
+                                    }
+
+                                    createdBookingId = (bookingRes['data'] is Map)
+                                        ? (bookingRes['data']['id']?.toString() ?? bookingRes['data']['bookingId']?.toString() ?? '')
+                                        : (bookingRes['bookingId']?.toString() ?? '');
+
+                                    if (createdBookingId == null || createdBookingId!.isEmpty) {
+                                      return false;
+                                    }
+
+                                    final walletRes = await ApiService.payWithWallet(
+                                      amount: totalPrice,
                                       bookingId: createdBookingId,
-                                      venue: widget.venue,
-                                      date:
-                                          '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                      package: isSolo ? 'Solo Entry' : 'Confirmation Charges',
-                                      time: _formatTimeOfBooking(_selectedTime),
-                                      table: isSolo ? 'Solo Entry' : 'Standard Table',
-                                      guests: isSolo
-                                          ? '1 Guest'
-                                          : '$guests Guests',
-                                      totalPrice: '₹$chargesStr',
-                                      showSplitBill: false,
-                                      razorpayOrderId:
-                                          bookingRes['razorpayOrderId']
-                                              ?.toString(),
-                                      razorpayKeyId: bookingRes['razorpayKeyId']
-                                          ?.toString(),
-                                      razorpayAmount:
-                                          (bookingRes['amount'] as num?)
-                                              ?.toInt(),
-                                    ),
-                                  ),
+                                      paymentType: 'booking_payment',
+                                    );
+
+                                    if (walletRes != null && walletRes['success'] == true) {
+                                      final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
+                                      final payNowRes = await ApiService.payNowBooking(
+                                        createdBookingId!,
+                                        paymentMethod: 'WALLET',
+                                        transactionId: transactionId,
+                                      );
+
+                                      if (payNowRes != null && payNowRes['success'] == true) {
+                                        TopNotificationBanner.show(
+                                          title: 'Booking Confirmed! 🎉',
+                                          body: 'Your payment was verified successfully. Digital ticket generated!',
+                                          data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                        );
+                                        if (outerContext.mounted) {
+                                          Navigator.push(
+                                            outerContext,
+                                            MaterialPageRoute(
+                                              builder: (_) => DigitalTicketScreen(
+                                                venue: widget.venue,
+                                                date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                time: formattedTime,
+                                                table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                guests: isSolo ? '1' : '$guests',
+                                                totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                ticketId: createdBookingId,
+                                                user: ApiService.cachedCurrentUser,
+                                                booking: {
+                                                  'id': createdBookingId,
+                                                  'bookingId': createdBookingId,
+                                                  'venue': widget.venue,
+                                                  'venueId': widget.venue['id'],
+                                                  'isSolo': isSolo,
+                                                  'goingMode': isSolo ? 'solo' : 'party_request',
+                                                  'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                  'category': isSolo ? 'solo' : 'venue_booking',
+                                                  'totalAmount': totalPrice,
+                                                  'paymentStatus': 'paid',
+                                                  'paymentMethod': 'Lunara Wallet',
+                                                  'status': 'CONFIRMED',
+                                                  'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  'numberOfGuests': isSolo ? 1 : guests,
+                                                  'bookingDate': _selectedDate.toIso8601String(),
+                                                  'startTime': formattedTime,
+                                                  'user': ApiService.cachedCurrentUser,
+                                                },
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return true;
+                                      }
+                                    }
+
+                                    if (outerContext.mounted) {
+                                      ScaffoldMessenger.of(outerContext).showSnackBar(
+                                        SnackBar(
+                                          content: Text(walletRes?['message'] ?? 'Wallet payment failed'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                    return false;
+                                  },
+                                  onDirectPayment: () async {
+                                    final bookingRes = await ApiService.createBooking(
+                                      venueId: widget.venue['id']?.toString() ?? '',
+                                      bookingDate: bookingDateStr,
+                                      startTime: _selectedTime ?? '22:00',
+                                      tablePackage: isSolo ? 'Solo Entry' : 'Confirmation Charges',
+                                      goingMode: isSolo ? 'solo' : 'party_request',
+                                      numberOfGuests: isSolo ? 1 : guests,
+                                      isUpcomingNight: widget.isUpcomingNight,
+                                    );
+
+                                    if (bookingRes == null || bookingRes['success'] != true) {
+                                      if (outerContext.mounted) {
+                                        final isTimeLock = (bookingRes != null &&
+                                                (bookingRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                                                    bookingRes['conflictingEventType'] != null)) ||
+                                            (bookingRes?['message']?.toString().contains('4 hours') == true);
+                                        if (isTimeLock) {
+                                          final payload = Map<String, dynamic>.from(bookingRes ?? {});
+                                          if (!payload.containsKey('conflictingEventTitle')) {
+                                            payload['conflictingEventTitle'] = widget.venue['name']?.toString() ?? 'Venue';
+                                          }
+                                          TimeLockBlockedDialog.show(outerContext, errorData: payload);
+                                        } else {
+                                          ScaffoldMessenger.of(outerContext).showSnackBar(
+                                            SnackBar(
+                                              content: Text(bookingRes?['message'] ?? 'Failed to initiate booking'),
+                                              backgroundColor: Colors.redAccent,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                      return false;
+                                    }
+
+                                    final orderId = bookingRes['razorpayOrderId']?.toString() ?? '';
+                                    final amountInPaise = (bookingRes['amount'] is int && (bookingRes['amount'] as int) > 0)
+                                        ? bookingRes['amount'] as int
+                                        : (totalPrice * 100).round();
+                                    final keyId = bookingRes['razorpayKeyId']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
+                                    createdBookingId = (bookingRes['data'] is Map)
+                                        ? (bookingRes['data']['id']?.toString() ?? bookingRes['data']['bookingId']?.toString() ?? '')
+                                        : (bookingRes['bookingId']?.toString() ?? '');
+
+                                    if (kIsWeb) {
+                                      final payNowRes = await ApiService.payNowBooking(
+                                        createdBookingId!,
+                                        paymentMethod: 'UPI',
+                                        razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_direct',
+                                        razorpayPaymentId: 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
+                                        razorpaySignature: 'mock_signature',
+                                      );
+                                      if (payNowRes != null && payNowRes['success'] == true) {
+                                        TopNotificationBanner.show(
+                                          title: 'Booking Confirmed! 🎉',
+                                          body: 'Your payment was verified successfully. Digital ticket generated!',
+                                          data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                        );
+                                        if (outerContext.mounted) {
+                                          Navigator.push(
+                                            outerContext,
+                                            MaterialPageRoute(
+                                              builder: (_) => DigitalTicketScreen(
+                                                venue: widget.venue,
+                                                date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                time: formattedTime,
+                                                table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                guests: isSolo ? '1' : '$guests',
+                                                totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                ticketId: createdBookingId,
+                                                user: ApiService.cachedCurrentUser,
+                                                booking: {
+                                                  'id': createdBookingId,
+                                                  'bookingId': createdBookingId,
+                                                  'venue': widget.venue,
+                                                  'venueId': widget.venue['id'],
+                                                  'isSolo': isSolo,
+                                                  'goingMode': isSolo ? 'solo' : 'party_request',
+                                                  'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                  'category': isSolo ? 'solo' : 'venue_booking',
+                                                  'totalAmount': totalPrice,
+                                                  'paymentStatus': 'paid',
+                                                  'paymentMethod': 'UPI / Net Banking',
+                                                  'status': 'CONFIRMED',
+                                                  'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  'numberOfGuests': isSolo ? 1 : guests,
+                                                  'bookingDate': _selectedDate.toIso8601String(),
+                                                  'startTime': formattedTime,
+                                                  'user': ApiService.cachedCurrentUser,
+                                                },
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return true;
+                                      }
+                                      return false;
+                                    }
+
+                                    final rzp = Razorpay();
+                                    rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+                                      try { rzp.clear(); } catch (_) {}
+
+                                      if (outerContext.mounted) {
+                                        showDialog(
+                                          context: outerContext,
+                                          barrierDismissible: false,
+                                          builder: (ctx) => const Center(
+                                            child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                                          ),
+                                        );
+                                      }
+
+                                      try {
+                                        final payNowRes = await ApiService.payNowBooking(
+                                          createdBookingId!,
+                                          paymentMethod: 'CARD',
+                                          razorpayOrderId: response.orderId ?? orderId,
+                                          razorpayPaymentId: response.paymentId ?? 'mock_payment',
+                                          razorpaySignature: response.signature ?? 'mock_signature',
+                                        );
+
+                                        if (outerContext.mounted) {
+                                          Navigator.of(outerContext, rootNavigator: true).pop();
+                                        }
+
+                                        if (payNowRes != null && payNowRes['success'] == true) {
+                                          TopNotificationBanner.show(
+                                            title: 'Booking Confirmed! 🎉',
+                                            body: 'Your payment was verified successfully. Digital ticket generated!',
+                                            data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                          );
+                                          if (outerContext.mounted) {
+                                            Navigator.push(
+                                              outerContext,
+                                              MaterialPageRoute(
+                                                builder: (_) => DigitalTicketScreen(
+                                                  venue: widget.venue,
+                                                  date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                  package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  time: formattedTime,
+                                                  table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  guests: isSolo ? '1' : '$guests',
+                                                  totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                  ticketId: createdBookingId,
+                                                  user: ApiService.cachedCurrentUser,
+                                                  booking: {
+                                                    'id': createdBookingId,
+                                                    'bookingId': createdBookingId,
+                                                    'venue': widget.venue,
+                                                    'venueId': widget.venue['id'],
+                                                    'isSolo': isSolo,
+                                                    'goingMode': isSolo ? 'solo' : 'party_request',
+                                                    'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                    'category': isSolo ? 'solo' : 'venue_booking',
+                                                    'totalAmount': totalPrice,
+                                                    'paymentStatus': 'paid',
+                                                    'paymentMethod': 'UPI / Net Banking',
+                                                    'status': 'CONFIRMED',
+                                                    'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                    'numberOfGuests': isSolo ? 1 : guests,
+                                                    'bookingDate': _selectedDate.toIso8601String(),
+                                                    'startTime': formattedTime,
+                                                    'user': ApiService.cachedCurrentUser,
+                                                  },
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          if (outerContext.mounted) {
+                                            ScaffoldMessenger.of(outerContext).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Payment verification failed. Booking could not be confirmed.'),
+                                                backgroundColor: Colors.redAccent,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      } catch (e) {
+                                        debugPrint('payNowBooking error: $e');
+                                        if (outerContext.mounted) {
+                                          Navigator.of(outerContext, rootNavigator: true).pop();
+                                        }
+                                      }
+                                    });
+
+                                    rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+                                      try { rzp.clear(); } catch (_) {}
+                                      if (outerContext.mounted) {
+                                        ScaffoldMessenger.of(outerContext).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Payment cancelled or failed: ${response.message ?? 'Unknown error'}'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      }
+                                    });
+
+                                    rzp.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+                                      try { rzp.clear(); } catch (_) {}
+                                    });
+
+                                    final user = ApiService.cachedCurrentUser;
+                                    final options = {
+                                      'key': keyId,
+                                      'amount': amountInPaise,
+                                      'name': widget.venue['name']?.toString() ?? 'Lunara Booking',
+                                      'order_id': orderId,
+                                      'description': isSolo
+                                          ? 'Solo Table Booking'
+                                          : 'Table Booking ($guests Guests)',
+                                      'prefill': {
+                                        'contact': user?.phone ?? '',
+                                        'email': user?.email ?? '',
+                                      },
+                                      'theme': {'color': '#7B2CBF'},
+                                    };
+
+                                    rzp.open(options);
+                                    return true;
+                                  },
+                                  onHybridPayment: (shortfallAmount) async {
+                                    final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+                                    if (orderData == null) {
+                                      if (outerContext.mounted) {
+                                        ScaffoldMessenger.of(outerContext).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Failed to initiate wallet recharge. Please try again.'),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      }
+                                      return false;
+                                    }
+
+                                    final String rzpOrderId = orderData['orderId'] ?? orderData['id'] ?? '';
+                                    final rzpKey = orderData['keyId']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
+
+                                    if (kIsWeb) {
+                                      final recharged = await ApiService.verifyWalletRecharge(
+                                        amount: shortfallAmount,
+                                        razorpayOrderId: rzpOrderId.isNotEmpty ? rzpOrderId : 'order_mock_recharge',
+                                        razorpayPaymentId: 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+                                        razorpaySignature: 'mock_sig',
+                                      );
+                                      if (recharged) {
+                                        final bookingRes = await ApiService.createBooking(
+                                          venueId: widget.venue['id']?.toString() ?? '',
+                                          bookingDate: bookingDateStr,
+                                          startTime: _selectedTime ?? '22:00',
+                                          tablePackage: isSolo ? 'Solo Entry' : 'Confirmation Charges',
+                                          goingMode: isSolo ? 'solo' : 'party_request',
+                                          numberOfGuests: isSolo ? 1 : guests,
+                                          isUpcomingNight: widget.isUpcomingNight,
+                                        );
+                                        createdBookingId = (bookingRes != null && bookingRes['data'] is Map)
+                                            ? (bookingRes['data']['id']?.toString() ?? bookingRes['data']['bookingId']?.toString() ?? '')
+                                            : (bookingRes?['bookingId']?.toString() ?? '');
+
+                                        if (createdBookingId == null || createdBookingId!.isEmpty) {
+                                          return false;
+                                        }
+
+                                        final walletRes = await ApiService.payWithWallet(
+                                          amount: totalPrice,
+                                          bookingId: createdBookingId,
+                                          paymentType: 'booking_payment',
+                                        );
+                                        if (walletRes != null && walletRes['success'] == true) {
+                                          final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
+                                          final payNowRes = await ApiService.payNowBooking(
+                                            createdBookingId!,
+                                            paymentMethod: 'WALLET',
+                                            transactionId: transactionId,
+                                          );
+                                          if (payNowRes != null && payNowRes['success'] == true) {
+                                            TopNotificationBanner.show(
+                                              title: 'Booking Confirmed! 🎉',
+                                              body: 'Your payment was verified successfully. Digital ticket generated!',
+                                              data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                            );
+                                            if (outerContext.mounted) {
+                                              Navigator.push(
+                                                outerContext,
+                                                MaterialPageRoute(
+                                                  builder: (_) => DigitalTicketScreen(
+                                                    venue: widget.venue,
+                                                    date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                    package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                    time: formattedTime,
+                                                    table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                    guests: isSolo ? '1' : '$guests',
+                                                    totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                    ticketId: createdBookingId,
+                                                    user: ApiService.cachedCurrentUser,
+                                                    booking: {
+                                                      'id': createdBookingId,
+                                                      'bookingId': createdBookingId,
+                                                      'venue': widget.venue,
+                                                      'venueId': widget.venue['id'],
+                                                      'isSolo': isSolo,
+                                                      'goingMode': isSolo ? 'solo' : 'party_request',
+                                                      'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                      'category': isSolo ? 'solo' : 'venue_booking',
+                                                      'totalAmount': totalPrice,
+                                                      'paymentStatus': 'paid',
+                                                      'paymentMethod': 'Lunara Wallet',
+                                                      'status': 'CONFIRMED',
+                                                      'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                      'numberOfGuests': isSolo ? 1 : guests,
+                                                      'bookingDate': _selectedDate.toIso8601String(),
+                                                      'startTime': formattedTime,
+                                                      'user': ApiService.cachedCurrentUser,
+                                                    },
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                            return true;
+                                          }
+                                        }
+                                      }
+                                      return false;
+                                    }
+
+                                    final rzp = Razorpay();
+                                    rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+                                      try { rzp.clear(); } catch (_) {}
+
+                                      if (outerContext.mounted) {
+                                        showDialog(
+                                          context: outerContext,
+                                          barrierDismissible: false,
+                                          builder: (ctx) => const Center(
+                                            child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+                                          ),
+                                        );
+                                      }
+
+                                      try {
+                                        final recharged = await ApiService.verifyWalletRecharge(
+                                          amount: shortfallAmount,
+                                          razorpayOrderId: response.orderId ?? rzpOrderId,
+                                          razorpayPaymentId: response.paymentId ?? 'mock_pay',
+                                          razorpaySignature: response.signature ?? 'mock_sig',
+                                        );
+
+                                        if (recharged) {
+                                          final bookingRes = await ApiService.createBooking(
+                                            venueId: widget.venue['id']?.toString() ?? '',
+                                            bookingDate: bookingDateStr,
+                                            startTime: _selectedTime ?? '22:00',
+                                            tablePackage: isSolo ? 'Solo Entry' : 'Confirmation Charges',
+                                            goingMode: isSolo ? 'solo' : 'party_request',
+                                            numberOfGuests: isSolo ? 1 : guests,
+                                            isUpcomingNight: widget.isUpcomingNight,
+                                          );
+                                          createdBookingId = (bookingRes != null && bookingRes['data'] is Map)
+                                              ? (bookingRes['data']['id']?.toString() ?? bookingRes['data']['bookingId']?.toString() ?? '')
+                                              : (bookingRes?['bookingId']?.toString() ?? '');
+
+                                          if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                            final walletRes = await ApiService.payWithWallet(
+                                              amount: totalPrice,
+                                              bookingId: createdBookingId,
+                                              paymentType: 'booking_payment',
+                                            );
+
+                                            if (walletRes != null && walletRes['success'] == true) {
+                                              final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
+                                              final payNowRes = await ApiService.payNowBooking(
+                                                createdBookingId!,
+                                                paymentMethod: 'WALLET',
+                                                transactionId: transactionId,
+                                              );
+
+                                              if (outerContext.mounted) {
+                                                Navigator.of(outerContext, rootNavigator: true).pop();
+                                              }
+
+                                              if (payNowRes != null && payNowRes['success'] == true) {
+                                                TopNotificationBanner.show(
+                                                  title: 'Booking Confirmed! 🎉',
+                                                  body: 'Your payment was verified successfully. Digital ticket generated!',
+                                                  data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                                );
+                                                if (outerContext.mounted) {
+                                                  Navigator.push(
+                                                    outerContext,
+                                                    MaterialPageRoute(
+                                                      builder: (_) => DigitalTicketScreen(
+                                                        venue: widget.venue,
+                                                        date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                        package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                        time: formattedTime,
+                                                        table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                        guests: isSolo ? '1' : '$guests',
+                                                        totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                        ticketId: createdBookingId,
+                                                        user: ApiService.cachedCurrentUser,
+                                                        booking: {
+                                                          'id': createdBookingId,
+                                                          'bookingId': createdBookingId,
+                                                          'venue': widget.venue,
+                                                          'venueId': widget.venue['id'],
+                                                          'isSolo': isSolo,
+                                                          'goingMode': isSolo ? 'solo' : 'party_request',
+                                                          'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                          'category': isSolo ? 'solo' : 'venue_booking',
+                                                          'totalAmount': totalPrice,
+                                                          'paymentStatus': 'paid',
+                                                          'paymentMethod': 'Lunara Wallet',
+                                                          'status': 'CONFIRMED',
+                                                          'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                          'numberOfGuests': isSolo ? 1 : guests,
+                                                          'bookingDate': _selectedDate.toIso8601String(),
+                                                          'startTime': formattedTime,
+                                                          'user': ApiService.cachedCurrentUser,
+                                                        },
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                                return;
+                                              }
+                                            }
+                                          }
+                                        }
+                                        if (outerContext.mounted) {
+                                          Navigator.of(outerContext, rootNavigator: true).pop();
+                                        }
+                                      } catch (e) {
+                                        debugPrint('Hybrid payment error: $e');
+                                        if (outerContext.mounted) {
+                                          Navigator.of(outerContext, rootNavigator: true).pop();
+                                        }
+                                      }
+                                    });
+
+                                    rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+                                      try { rzp.clear(); } catch (_) {}
+                                    });
+
+                                    final user = ApiService.cachedCurrentUser;
+                                    final rechargeOptions = {
+                                      'key': rzpKey,
+                                      'amount': (shortfallAmount * 100).toInt(),
+                                      'name': 'Lunara Wallet Top-up',
+                                      'order_id': rzpOrderId,
+                                      'description': 'Recharge for Booking at ${widget.venue['name'] ?? 'Venue'}',
+                                      'prefill': {
+                                        'contact': user?.phone ?? '',
+                                        'email': user?.email ?? '',
+                                      },
+                                      'theme': {'color': '#7B2CBF'},
+                                    };
+
+                                    rzp.open(rechargeOptions);
+                                    return true;
+                                  },
                                 );
                               },
                             ),

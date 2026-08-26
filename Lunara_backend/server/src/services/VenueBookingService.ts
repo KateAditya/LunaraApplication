@@ -56,20 +56,27 @@ export class VenueBookingService {
 
         let totalAmount = 0;
         let pkg: BookingTablePackage | null = null;
-        const isStandardOrGroup = packageName === 'Standard Booking' || packageName === 'Group Party Booking' || packageName === 'Confirmation Charges' || packageName === 'Free Booking' || packageName === 'Free Entry Ticket' || !packageName || packageName === 'none';
 
-        if (isStandardOrGroup) {
+        const validEnumPackages = [
+            TablePackageName.SILVER.toLowerCase(),
+            TablePackageName.GOLD.toLowerCase(),
+            TablePackageName.PLATINUM.toLowerCase(),
+        ];
+        const cleanPkgName = (packageName || '').toLowerCase().trim();
+        const isPackageEnum = validEnumPackages.includes(cleanPkgName);
+
+        if (!isPackageEnum) {
             const rawCharge = Number(venue.tableBookingCharges);
             const basePrice = (!isNaN(rawCharge) && rawCharge >= 0) ? rawCharge : 0;
             const subtotal = basePrice * numberOfGuests;
             const discountPercent = Number(venue.discountPercentage || 0);
             const discountAmount = (subtotal * discountPercent) / 100;
             totalAmount = Math.max(0, subtotal - discountAmount);
-        } else if (packageName && packageName !== 'none') {
-            pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
+        } else {
+            pkg = await BookingTablePackage.findOne({ where: { venueId, name: cleanPkgName as TablePackageName, isActive: true } });
             if (!pkg) {
                 await BookingTablePackage.bulkCreate(DEFAULT_PACKAGES.map(p => ({ ...p, venueId })));
-                pkg = await BookingTablePackage.findOne({ where: { venueId, name: packageName, isActive: true } });
+                pkg = await BookingTablePackage.findOne({ where: { venueId, name: cleanPkgName as TablePackageName, isActive: true } });
             }
             if (pkg) {
                 totalAmount = Number(pkg.price);
