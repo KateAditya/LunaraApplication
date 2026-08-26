@@ -1055,7 +1055,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
 
                 ...pendingPaymentItems,
                 ...myBookings
-                    .filter((b: any) => b.goingMode !== 'plan' && b.partySubject !== 'Party Plan')
+                    .filter((b: any) => (b.isLargePartyRequest || b.goingMode === 'party_request') && b.goingMode !== 'plan' && b.partySubject !== 'Party Plan' && b.goingMode !== 'solo' && !b.isSolo)
                     .map((b: any) => {
                     return {
                         id: b.id,

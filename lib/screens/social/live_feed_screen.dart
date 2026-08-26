@@ -872,14 +872,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _initiatePendingBookingPayment(Map<String, dynamic> payPayload) async {
     final type = (payPayload['type'] ?? '').toString();
-    final bookingId = (payPayload['bookingId'] ?? payPayload['id'] ?? '').toString();
+    final rawBookingId = (payPayload['bookingId'] ?? payPayload['id'] ?? '').toString();
+    final cleanBookingId = ApiService.cleanBookingId(rawBookingId);
     final planId = (payPayload['planId'] ?? '').toString();
     final groupPartyId = (payPayload['groupPartyId'] ?? '').toString();
     final venueName = payPayload['venueName'] ?? payPayload['venue']?['name'] ?? 'Venue';
     final rawAmount = payPayload['amount'] ?? payPayload['amountDue'] ?? payPayload['totalAmount'] ?? payPayload['depositAmount'] ?? 1999.0;
     final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
 
-    if (type == 'group_party' || groupPartyId.isNotEmpty || (payPayload['isLargeParty'] == true)) {
+    if (type == 'group_party' || groupPartyId.isNotEmpty || (payPayload['isLargeParty'] == true) || payPayload['goingMode'] == 'party_request') {
       await _initiateLargePartyPayment(payPayload);
       return;
     }
@@ -896,7 +897,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return;
     }
 
-    if (bookingId.isEmpty) return;
+    if (cleanBookingId.isEmpty) return;
 
     SmartCheckoutSheet.show(
       context: context,
@@ -906,13 +907,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       onWalletPayment: () async {
         final res = await ApiService.payWithWallet(
           amount: amount,
-          bookingId: bookingId,
+          bookingId: cleanBookingId,
           paymentType: 'booking',
         );
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
           final confirmRes = await ApiService.payNowBooking(
-            bookingId,
+            cleanBookingId,
             paymentMethod: 'wallet',
             transactionId: transactionId,
           );
@@ -942,10 +943,96 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return false;
       },
       onDirectPayment: () async {
+        await _launchRazorpayForPendingBooking(
+          bookingId: cleanBookingId,
+          venueName: venueName,
+          amount: amount,
+          mobileNumber: payPayload['mobileNumber']?.toString(),
+        );
+      },
+      onHybridPayment: (shortfall) async {
+        final walletAmount = amount - shortfall;
+        if (walletAmount > 0) {
+          final wRes = await ApiService.payWithWallet(
+            amount: walletAmount,
+            bookingId: cleanBookingId,
+            paymentType: 'booking',
+          );
+          if (wRes == null || wRes['success'] != true) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(wRes?['message'] ?? 'Wallet deduction failed'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+            return;
+          }
+        }
+        await _launchRazorpayForPendingBooking(
+          bookingId: cleanBookingId,
+          venueName: venueName,
+          amount: shortfall > 0 ? shortfall : amount,
+          mobileNumber: payPayload['mobileNumber']?.toString(),
+          isHybrid: true,
+        );
+      },
+    );
+  }
+
+  Future<void> _launchRazorpayForPendingBooking({
+    required String bookingId,
+    required String venueName,
+    required double amount,
+    String? mobileNumber,
+    bool isHybrid = false,
+  }) async {
+    final result = await ApiService.initiateLargePartyPayment(bookingId);
+    if (result == null || result['success'] != true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    final orderData = result['order'] ?? result['data'] ?? result;
+    final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
+    final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
+    final num amountInPaise = orderData['amount'] ?? ((amount * 100).toInt());
+
+    // On Web or desktop: require explicit confirmation dialog (cancel aborts cleanly without confirming)
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.linux) {
+      final bool? shouldConfirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1035),
+          title: const Text('Direct Payment Gateway', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Text('Confirm payment of ₹${amount.toInt()} for booking at $venueName?', style: const TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
+              child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldConfirm == true) {
         final confirmRes = await ApiService.payNowBooking(
           bookingId,
-          paymentMethod: 'razorpay',
-          razorpayOrderId: 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+          paymentMethod: isHybrid ? 'hybrid' : 'razorpay',
+          razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
           razorpayPaymentId: 'mock_pay_${DateTime.now().millisecondsSinceEpoch}',
           razorpaySignature: 'mock_signature',
         );
@@ -962,29 +1049,99 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           );
         }
-      },
-      onHybridPayment: (shortfall) async {
-        await ApiService.payWithWallet(
-          amount: amount - shortfall,
-          bookingId: bookingId,
-          paymentType: 'booking',
-        );
-        final confirmRes = await ApiService.payNowBooking(
-          bookingId,
-          paymentMethod: 'hybrid',
-          razorpayOrderId: 'order_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-          razorpayPaymentId: 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-          razorpaySignature: 'mock_signature',
-        );
-        if (confirmRes != null && mounted) {
-          _loadFeed(showLoader: false);
-          TopNotificationBanner.show(
-            title: 'Booking Confirmed! 🎉',
-            body: 'Your booking is confirmed with hybrid payment.',
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment cancelled.'),
+              backgroundColor: Colors.black87,
+            ),
           );
         }
+      }
+      return;
+    }
+
+    // On mobile devices (Android / iOS): Open real Razorpay payment gateway
+    final rzp = Razorpay();
+
+    rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      try { rzp.clear(); } catch (_) {}
+
+      final confirmRes = await ApiService.payNowBooking(
+        bookingId,
+        paymentMethod: isHybrid ? 'hybrid' : 'razorpay',
+        razorpayOrderId: response.orderId ?? orderId,
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpaySignature: response.signature ?? '',
+      );
+
+      if (confirmRes != null && mounted) {
+        _loadFeed(showLoader: false);
+        TopNotificationBanner.show(
+          title: 'Booking Confirmed! 🎉',
+          body: 'Your payment at $venueName was verified successfully. Digital ticket ready!',
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Booking Payment Successful! Ticket confirmed.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
+
+    rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+      try { rzp.clear(); } catch (_) {}
+      final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+          response.code == 2 ||
+          (response.message != null &&
+              (response.message!.toLowerCase().contains('cancel') ||
+                  response.message!.toLowerCase().contains('back')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isCancelled
+                  ? 'Payment cancelled. You can complete your booking payment anytime.'
+                  : 'Payment failed: ${response.message ?? "Please try again"}',
+            ),
+            backgroundColor: isCancelled ? Colors.black87 : Colors.redAccent,
+          ),
+        );
+      }
+    });
+
+    rzp.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      try { rzp.clear(); } catch (_) {}
+    });
+
+    final options = {
+      'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_T1rwVokR7tFger',
+      'order_id': orderId,
+      'amount': amountInPaise,
+      'name': 'Lunara – Booking',
+      'description': 'Booking at $venueName',
+      'prefill': {
+        'contact': mobileNumber ?? '9999999999',
+        'email': ApiService.cachedCurrentUser?.email ?? 'user@lunara.app',
       },
-    );
+      'theme': {'color': '#7C3AED'},
+    };
+
+    try {
+      rzp.open(options);
+    } catch (e) {
+      debugPrint('Razorpay open error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open payment gateway: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleAcceptPartyPlan(String reqId) async {
@@ -2261,6 +2418,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    final Set<String> processedBookingIds = {};
+
     // 4. Build Exactly ONE Authoritative Smart Card per Group Party
     for (final entry in groupPartyGroups.entries) {
       final partyId = entry.key;
@@ -2268,6 +2427,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final smartCard = _buildAuthoritativeGroupPartyCard(partyId, partyEntries, currentUserId);
       if (smartCard != null) {
         items.add(smartCard);
+        processedBookingIds.add(partyId);
+        final cleanId = ApiService.cleanBookingId(partyId);
+        if (cleanId.isNotEmpty) processedBookingIds.add(cleanId);
+        for (final e in partyEntries) {
+          final bId = e['bookingId']?.toString() ?? e['id']?.toString() ?? e['data']?['bookingId']?.toString();
+          if (bId != null && bId.isNotEmpty) {
+            processedBookingIds.add(bId);
+            processedBookingIds.add(ApiService.cleanBookingId(bId));
+          }
+        }
       }
     }
 
@@ -2285,12 +2454,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         continue;
       }
 
+      final notifBookingId = ApiService.cleanBookingId(
+        (n['data']?['bookingId'] ?? n['bookingId'] ?? n['entityId'] ?? n['id'] ?? '').toString()
+      );
+      if (notifBookingId.isNotEmpty && processedBookingIds.contains(notifBookingId)) {
+        continue; // Authoritative card already rendered for this booking!
+      }
+      if (notifBookingId.isNotEmpty && (cat.contains('booking') || n['id']?.toString().startsWith('venue_booking_') == true)) {
+        processedBookingIds.add(notifBookingId);
+      }
+
       final id = n['id']?.toString() ?? '';
       final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
       final body = n['body']?.toString() ?? '';
       final isRead = n['read'] == true ||
           n['isRead'] == true ||
+          (n['is_read'] == true) ||
+          (n['isSeen'] == true) ||
+          (n['seen'] == true) ||
           _localReadNotificationIds.contains(id) ||
           ApiService.localReadRequestIds.contains(id);
       final createdAt = _parseDateTime(n['createdAt']);
@@ -2423,6 +2605,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         continue;
       }
 
+      final fiBookingId = ApiService.cleanBookingId(
+        (fi['bookingId'] ??
+         fi['booking']?['id'] ??
+         fi['booking']?['bookingId'] ??
+         fi['payActionPayload']?['bookingId'] ??
+         fi['groupPartyId'] ??
+         fi['id'] ?? '').toString()
+      );
+      if (fiBookingId.isNotEmpty && processedBookingIds.contains(fiBookingId)) {
+        continue; // Authoritative card already rendered! Keep ONLY ONE card!
+      }
+
       final id = fi['id']?.toString() ?? '';
       final isPendingPayment = fi['hasPendingPayment'] == true ||
           fi['type'] == 'pending_payment' ||
@@ -2430,11 +2624,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           fi['paymentStatus'] == 'pending' ||
           fi['status'] == 'payment_pending';
 
+      // Completely skip solo and confirmed table bookings that do not require payment.
+      final bool isSoloOrTable = goingMode == 'solo' ||
+          goingMode == 'table_booking' ||
+          cat == 'booking' ||
+          cat == 'venue_booking' ||
+          partySubject.contains('table booking') ||
+          partySubject.contains('solo') ||
+          fi['booking'] != null;
+
+      if (isSoloOrTable && !isPendingPayment) {
+        continue;
+      }
+
+      if (fiBookingId.isNotEmpty) {
+        processedBookingIds.add(fiBookingId);
+      }
+
+      final dynamic rawAmt = fi['amountDue'] ?? fi['totalAmount'] ?? fi['depositAmount'] ?? 0;
+      final int displayAmt = (rawAmt is num) ? rawAmt.round() : (int.tryParse(rawAmt.toString().split('.').first) ?? 0);
       final title = fi['title']?.toString() ??
-          (isPendingPayment ? '💳 Complete Booking Payment' : (fi['partySubject'] ?? 'Table Booking'));
+          (isPendingPayment ? 'Payment Required 💳' : (fi['partySubject'] ?? 'Table Booking'));
       final body = fi['body']?.toString() ??
           (isPendingPayment
-              ? 'Your reservation at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'} is waiting for payment (₹${fi['amountDue'] ?? fi['totalAmount'] ?? fi['depositAmount'] ?? 0}). Tap to pay now!'
+              ? 'Action Required: Complete payment of ₹$displayAmt to confirm your reservation at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'}.'
               : 'Booking at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'}');
       final isRead = false; // Action required is active!
       final createdAt = _parseDateTime(fi['createdAt']);
@@ -2443,7 +2656,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       Color accentColor = isPendingPayment ? const Color(0xFFF59E0B) : const Color(0xFF7C3AED);
       IconData icon = isPendingPayment ? Icons.payment_rounded : Icons.confirmation_number_rounded;
       String? badge = isPendingPayment ? 'ACTION REQUIRED' : 'BOOKING';
-      String? actionText = isPendingPayment ? 'Complete Payment' : null;
+      String? actionText = isPendingPayment ? 'Pay Now' : null;
       VoidCallback? actionTap;
 
       if (isPendingPayment) {
