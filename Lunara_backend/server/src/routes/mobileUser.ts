@@ -697,6 +697,14 @@ async function getUserNotifications(
         const titleLower = (n.title || '').toLowerCase();
         const bodyLower = (n.body || '').toLowerCase();
         const typeLower = (n.type || n.eventType || '').toLowerCase();
+        const isSm = typeLower.startsWith('strangers_meet') || typeLower.includes('stranger_meet') || typeLower.includes('stranger') || n.entityType === 'strangers_meet' || n.entityType === 'StrangerMeet' || n.entityType === 'strangers_meet_request' || titleLower.includes('stranger meet') || bodyLower.includes('stranger meet');
+
+        const strangerMeetId = data.strangersMeetId?.toString() || data.meetId?.toString() || data.planId?.toString() || (data.planDetails ? data.planDetails.id?.toString() : null) || (data.strangersMeet ? data.strangersMeet.id?.toString() : null) ||
+            (n.metadata ? (n.metadata.strangersMeetId?.toString() || n.metadata.meetId?.toString() || n.metadata.planId?.toString()) : null) ||
+            (n.entityType === 'strangers_meet' || n.entityType === 'StrangerMeet' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('strangers_meet_') ? n.id.replace(/^strangers_meet_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (isSm ? (data.requestId?.toString() || n.entityId?.toString() || (n.metadata ? n.metadata.requestId?.toString() : null)) : null);
+
         const isLp = typeLower.startsWith('large_party') || typeLower.includes('large_party') || titleLower.includes('large party') || bodyLower.includes('large party');
         const isGp = typeLower.startsWith('group_party') || n.entityType === 'group_party' || n.entityType === 'GroupParty' || titleLower.includes('group party') || bodyLower.includes('group party') || isLp;
 
@@ -718,10 +726,10 @@ async function getUserNotifications(
             (n.metadata ? (n.metadata.partyPlanId || n.metadata.planId) : null);
 
         let key: string | null = null;
-        if (groupPartyId) key = `gp_${groupPartyId}`;
-        else if (bookingId) key = `bk_${bookingId}`;
+        if (strangerMeetId) key = `sm_${strangerMeetId}`;
+        else if (groupPartyId) key = `gp_${groupPartyId}`;
         else if (partyPlanId) key = `pp_${partyPlanId}`;
-        else if (data.type?.startsWith('strangers_meet') && data.requestId) key = `sm_${data.requestId}`;
+        else if (bookingId) key = `bk_${bookingId}`;
 
         if (key) {
             if (!entityKeys.has(key)) {

@@ -362,19 +362,19 @@ export class MobileTicketController {
 
                 const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan';
                 const isStrangersMeet = t.bookingType === 'strangers_meet' || Boolean(sourceStrangersMeet) || Boolean(sourceStrangersJoiner);
-                const isLargeParty = !isPartyPlan && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
-                const isGroupParty = !isPartyPlan && ((t.bookingType === 'group_party' && !isLargeParty) || Boolean(sourceGroupParty));
+                const isSolo = !isPartyPlan && !isStrangersMeet && (t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo');
+                const isLargeParty = !isPartyPlan && !isStrangersMeet && !isSolo && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
+                const isGroupParty = !isPartyPlan && !isStrangersMeet && !isSolo && !isLargeParty && ((t.bookingType === 'group_party') || Boolean(sourceGroupParty));
                 const isEventBooking = Boolean(sourceBooking?.isUpcomingNight);
-                const isSolo = t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo';
                 const isVenueBooking = !isPartyPlan && !isStrangersMeet && !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
 
                 let category = 'venue_booking';
                 if (isPartyPlan) category = 'party_plan';
                 else if (isStrangersMeet) category = 'strangers_meet';
+                else if (isSolo) category = 'solo';
                 else if (isLargeParty) category = 'large_party';
                 else if (isGroupParty) category = 'group_party';
                 else if (isEventBooking) category = 'event_booking';
-                else if (isSolo) category = 'solo';
                 else category = 'venue_booking';
 
                 const rawUser = (t as any).user;
@@ -565,7 +565,7 @@ export class MobileTicketController {
                 const totalAmt = Number(b.totalAmount || 0);
                 const isFreeBooking = totalAmt <= 0;
                 const bStatusStr = (b.status as string || '').toLowerCase();
-                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || bStatusStr === 'confirmed' || bStatusStr === 'completed' || (isFreeBooking && bStatusStr !== 'cancelled');
+                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || (isFreeBooking && (bStatusStr === 'confirmed' || bStatusStr === 'completed'));
                 if (!isPaidBooking) {
                     continue;
                 }
@@ -583,20 +583,20 @@ export class MobileTicketController {
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
                 const isPlanBooking = b.goingMode === 'plan';
-                const isLargeParty = !isPlanBooking && Boolean(b.isLargePartyRequest);
                 const isUpcomingNight = Boolean(b.isUpcomingNight);
-                const isSolo = b.goingMode === 'solo';
-                const isGroupParty = !isPlanBooking && b.goingMode === 'party_request' && !isLargeParty;
+                const isSolo = !isPlanBooking && b.goingMode === 'solo';
+                const isLargeParty = !isPlanBooking && !isSolo && Boolean(b.isLargePartyRequest);
+                const isGroupParty = !isPlanBooking && !isSolo && !isLargeParty && b.goingMode === 'party_request';
                 const isEventBooking = isUpcomingNight;
                 const isPartyPlan = isPlanBooking;
                 const isVenueBooking = !isLargeParty && !isGroupParty && !isEventBooking && !isSolo && !isPartyPlan;
 
                 let category = 'venue_booking';
                 if (isPartyPlan) category = 'party_plan';
+                else if (isSolo) category = 'solo';
                 else if (isLargeParty) category = 'large_party';
                 else if (isEventBooking) category = 'event_booking';
                 else if (isGroupParty) category = 'group_party';
-                else if (isSolo) category = 'solo';
                 else category = 'venue_booking';
 
                 const bUser = bAny.user ? {

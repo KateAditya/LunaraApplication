@@ -878,7 +878,12 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     // If total is 14: Host = 1, Members = 13, Total = 14
     final rawGuestsCount = _freshTotalParticipants ?? widget.booking['totalParticipants'] ?? widget.booking['numberOfFriends'] ?? widget.booking['numberOfGuests'] ?? widget.booking['numberOfPersons'] ?? 5;
     final int totalParticipants = rawGuestsCount is int ? rawGuestsCount : (int.tryParse(rawGuestsCount.toString()) ?? 5);
-    final int memberCount = _freshMemberCount ?? (totalParticipants > 1 ? totalParticipants - 1 : 1);
+    final bool isSoloBooking = totalParticipants <= 1 ||
+        widget.booking['goingMode'] == 'solo' ||
+        widget.booking['isSolo'] == true ||
+        widget.booking['bookingType'] == 'solo' ||
+        widget.booking['category'] == 'solo';
+    final int memberCount = _freshMemberCount ?? (totalParticipants > 1 ? totalParticipants - 1 : 0);
 
     final bookingCreatedDate = widget.booking['createdAt'] != null
         ? DateTime.tryParse(widget.booking['createdAt'].toString())?.toLocal() ?? planDateTime
@@ -1113,8 +1118,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.groups_rounded,
                                 label: 'PARTICIPANTS',
-                                value: '$totalParticipants Members',
-                                subtext: '1 Host + $memberCount Friends',
+                                value: isSoloBooking ? '1 Guest' : '$totalParticipants Members',
+                                subtext: isSoloBooking ? 'Solo Booking' : '1 Host + $memberCount Friends',
                               ),
                             ),
                           ],
@@ -1230,7 +1235,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
-                                    '$totalParticipants Participants',
+                                    isSoloBooking ? '1 Guest (Solo)' : '$totalParticipants Participants',
                                     style: const TextStyle(
                                       color: darkTextColor,
                                       fontWeight: FontWeight.bold,
@@ -1241,7 +1246,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                                     textAlign: TextAlign.center,
                                   ),
                                   Text(
-                                    '1 Host + $memberCount Members',
+                                    isSoloBooking ? 'Solo Booking' : '1 Host + $memberCount Members',
                                     style: const TextStyle(
                                       color: grayTextColor,
                                       fontSize: 10.5,

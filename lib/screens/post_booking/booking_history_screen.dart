@@ -743,13 +743,14 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         final eventDateStr = eventDt != null ? _formatEventDate(eventDt) : 'Event Date';
         final timeStr = _formatBookingTime(startTime);
 
-        final isStrangersMeet = booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet';
-        final isPartyPlan = booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan';
-        final isGroupParty = booking['isGroupParty'] == true || booking['bookingType'] == 'group_party';
-        final bool isEventTicketH = booking['isUpcomingNight'] == true ||
+        final isSolo = booking['isSolo'] == true || booking['goingMode'] == 'solo' || booking['category'] == 'solo' || booking['bookingType'] == 'solo';
+        final isStrangersMeet = !isSolo && (booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet');
+        final isPartyPlan = !isSolo && (booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan');
+        final isGroupParty = !isSolo && (booking['isGroupParty'] == true || booking['bookingType'] == 'group_party');
+        final bool isEventTicketH = !isSolo && (booking['isUpcomingNight'] == true ||
             booking['isEventBooking'] == true ||
             booking['bookingType'] == 'upcoming_night' ||
-            booking['bookingType'] == 'event_booking';
+            booking['bookingType'] == 'event_booking');
 
         final eventTitle = booking['subject']?.toString().trim().isNotEmpty == true
             ? booking['subject'].toString()

@@ -1930,13 +1930,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['data']['partyPlanId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
+    if (item['data'] is Map && item['data']['planId'] != null) {
+      final id = item['data']['planId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
     if (item['metadata'] is Map && item['metadata']['partyPlanId'] != null) {
       final id = item['metadata']['partyPlanId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['planId'] != null) {
+      final id = item['metadata']['planId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
     if (item['partyPlanId'] != null) {
       final id = item['partyPlanId'].toString().trim();
       if (id.isNotEmpty) return id;
+    }
+    if (item['partyEventId'] != null) {
+      final id = item['partyEventId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['booking'] is Map) {
+      final b = item['booking'] as Map<String, dynamic>;
+      if (b['partyPlanId'] != null) return b['partyPlanId'].toString().trim();
+      if (b['partyEventId'] != null) return b['partyEventId'].toString().trim();
+      if (b['goingMode']?.toString().toLowerCase() == 'plan' || b['partySubject']?.toString().toLowerCase() == 'party plan') {
+        final id = b['partyEventId']?.toString() ?? b['partyPlanId']?.toString() ?? b['id']?.toString() ?? '';
+        if (id.isNotEmpty) return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '');
+      }
     }
     if (item['plan'] is Map && item['plan']['id'] != null) {
       final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
@@ -1957,6 +1978,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     final String type = (item['type'] ?? item['eventType'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
+    final String goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? '').toString().toLowerCase();
+    final String partySubject = (item['partySubject'] ?? item['booking']?['partySubject'] ?? '').toString().toLowerCase();
+
+    if (goingMode == 'plan' || partySubject == 'party plan') {
+      final id = item['partyEventId']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? item['id']?.toString() ?? '';
+      if (id.isNotEmpty) return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '');
+    }
+
     if (type == 'party_plan' || type == 'party_plan_timeline' || type.contains('party_plan')) {
       final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
       if (id.isNotEmpty && !id.startsWith('sm_') && !id.startsWith('gp_')) {
@@ -1971,28 +2000,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['data']['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['data'] is Map && item['data']['requestId'] != null && (item['data']['type']?.toString().contains('strangers_meet') == true || item['data']['type']?.toString().contains('sm_') == true)) {
-      final id = item['data']['requestId'].toString().trim();
+    if (item['data'] is Map && item['data']['meetId'] != null) {
+      final id = item['data']['meetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
     if (item['metadata'] is Map && item['metadata']['strangersMeetId'] != null) {
       final id = item['metadata']['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['metadata'] is Map && item['metadata']['requestId'] != null && (item['entityType']?.toString().contains('stranger') == true || item['eventType']?.toString().contains('stranger') == true)) {
-      final id = item['metadata']['requestId'].toString().trim();
-      if (id.isNotEmpty) return id;
-    }
-    if (item['metadata'] is Map && item['metadata']['entityId'] != null && (item['entityType']?.toString().contains('stranger') == true || item['eventType']?.toString().contains('stranger') == true)) {
-      final id = item['metadata']['entityId'].toString().trim();
+    if (item['metadata'] is Map && item['metadata']['meetId'] != null) {
+      final id = item['metadata']['meetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
     if (item['strangersMeetId'] != null) {
       final id = item['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['strangersMeetRequestId'] != null) {
-      final id = item['strangersMeetRequestId'].toString().trim();
+    if (item['meetId'] != null) {
+      final id = item['meetId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['planDetails'] is Map && item['planDetails']['id'] != null) {
+      final id = item['planDetails']['id'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['planDetails'] is Map && item['data']['planDetails']['id'] != null) {
+      final id = item['data']['planDetails']['id'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['strangersMeet'] is Map && item['strangersMeet']['id'] != null) {
+      final id = item['strangersMeet']['id'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['strangersMeet'] is Map && item['data']['strangersMeet']['id'] != null) {
+      final id = item['data']['strangersMeet']['id'].toString().trim();
       if (id.isNotEmpty) return id;
     }
 
@@ -2010,20 +2051,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         (title.contains('stranger meet') || body.contains('stranger meet') || (category == 'bookings' && entityType.contains('stranger')));
 
     if (isStranger) {
-      if (item['entityId'] != null && item['entityId'].toString().trim().isNotEmpty) {
-        return item['entityId'].toString().trim().replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '');
-      }
-      if (item['planDetails'] is Map && item['planDetails']['id'] != null) {
-        return item['planDetails']['id'].toString().trim();
-      }
       if (item['plan'] is Map && item['plan']['id'] != null) {
         return item['plan']['id'].toString().trim();
       }
       if (item['planId'] != null) {
         return item['planId'].toString().trim();
       }
-      if (item['strangersMeet'] is Map && item['strangersMeet']['id'] != null) {
-        return item['strangersMeet']['id'].toString().trim();
+      if (item['data'] is Map && item['data']['planId'] != null) {
+        return item['data']['planId'].toString().trim();
+      }
+      if (item['metadata'] is Map && item['metadata']['planId'] != null) {
+        return item['metadata']['planId'].toString().trim();
+      }
+      if (item['entityId'] != null && item['entityId'].toString().trim().isNotEmpty) {
+        return item['entityId'].toString().trim().replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '');
+      }
+      if (item['data'] is Map && item['data']['requestId'] != null) {
+        final id = item['data']['requestId'].toString().trim();
+        if (id.isNotEmpty) return id;
+      }
+      if (item['metadata'] is Map && item['metadata']['requestId'] != null) {
+        final id = item['metadata']['requestId'].toString().trim();
+        if (id.isNotEmpty) return id;
+      }
+      if (item['strangersMeetRequestId'] != null) {
+        return item['strangersMeetRequestId'].toString().trim();
       }
       if (item['request'] is Map && item['request']['id'] != null) {
         return item['request']['id'].toString().trim();
@@ -2221,6 +2273,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // 5. Process General Push Notifications (Table Plans, System, Wallet, Promo)
     for (final n in nonPartyNotifications) {
+      final String goingMode = (n['goingMode'] ?? n['booking']?['goingMode'] ?? n['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+      final String partySubject = (n['partySubject'] ?? n['booking']?['partySubject'] ?? n['metadata']?['partySubject'] ?? '').toString().toLowerCase();
+      final String cat = (n['requestType'] ?? n['type'] ?? n['category'] ?? n['entityType'] ?? n['eventType'] ?? '').toString().toLowerCase();
+      final String titleLower = (n['title'] ?? '').toString().toLowerCase();
+      final String bodyLower = (n['body'] ?? '').toString().toLowerCase();
+
+      // Skip party plan & stranger meet confirmation/reminders — consolidated into their dedicated cards
+      if (goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
+          goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
+        continue;
+      }
+
       final id = n['id']?.toString() ?? '';
       final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
@@ -2347,6 +2411,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // 6. Process Non-Party Feed Items (Pending Bookings, Table Plan Join Requests, System Action Items)
     for (final fi in nonPartyFeedItems) {
+      final String goingMode = (fi['goingMode'] ?? fi['booking']?['goingMode'] ?? '').toString().toLowerCase();
+      final String partySubject = (fi['partySubject'] ?? fi['booking']?['partySubject'] ?? '').toString().toLowerCase();
+      final String cat = (fi['requestType'] ?? fi['type'] ?? fi['category'] ?? fi['entityType'] ?? '').toString().toLowerCase();
+      final String titleLower = (fi['title'] ?? '').toString().toLowerCase();
+      final String bodyLower = (fi['body'] ?? '').toString().toLowerCase();
+
+      // Skip party plans & stranger meets — they are already rendered in their authoritative smart card
+      if (goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') ||
+          goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
+        continue;
+      }
+
       final id = fi['id']?.toString() ?? '';
       final isPendingPayment = fi['hasPendingPayment'] == true ||
           fi['type'] == 'pending_payment' ||
@@ -2877,7 +2953,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       hostUserObj['photos'] = [{'url': hostPhoto, 'filePath': hostPhoto, 'isPrimary': true}];
     }
 
-    final dynamic selectedUsers = planMap['selectedUsers'];
+    final List<String> selectedUserIdsList = [];
+    final rawSel = planMap['selectedUsers'] ?? planMap['selectedUserIds'];
+    if (rawSel is List) {
+      for (final u in rawSel) {
+        if (u != null && u.toString().trim().isNotEmpty) {
+          selectedUserIdsList.add(u.toString().trim());
+        }
+      }
+    }
+    for (final e in entries) {
+      final sUsers = e['selectedUsers'] ?? e['selectedUserIds'] ?? e['data']?['selectedUsers'] ?? e['metadata']?['selectedUsers'];
+      if (sUsers is List) {
+        for (final u in sUsers) {
+          if (u != null && u.toString().trim().isNotEmpty && !selectedUserIdsList.contains(u.toString().trim())) {
+            selectedUserIdsList.add(u.toString().trim());
+          }
+        }
+      }
+    }
 
     // 3. Find requests involving current user or host
     Map<String, dynamic>? myRequest;
@@ -2888,17 +2982,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
       final status = (e['status'] ?? '').toString().toLowerCase();
+      final String requesterId = (e['requesterId'] ?? e['requester']?['id'] ?? e['userId'] ?? e['actorUserId'] ?? '').toString();
+      final String recipientId = (e['recipientId'] ?? e['targetUserId'] ?? e['metadata']?['recipientId'] ?? e['metadata']?['targetUserId'] ?? '').toString();
+
       final bool isInvite = e['isInvite'] == true ||
           e['type'] == 'party_plan_invitation' ||
           e['requestType'] == 'party_plan_invitation' ||
+          e['eventType'] == 'party_plan_invitation' ||
           e['type'] == 'party_plan_invite_sent' ||
           e['requestType'] == 'party_plan_invite_sent' ||
-          (selectedUsers is List && selectedUsers.contains(e['requesterId']?.toString() ?? e['requester']?['id']?.toString()));
+          (selectedUserIdsList.isNotEmpty && (selectedUserIdsList.contains(requesterId) || selectedUserIdsList.contains(recipientId)));
 
-      final String senderId = (e['senderId'] ?? (isInvite ? planHostId : (e['requesterId'] ?? e['requester']?['id'])) ?? '').toString();
-      final String recipientId = (e['recipientId'] ?? (isInvite ? (e['requesterId'] ?? e['requester']?['id']) : planHostId) ?? '').toString();
-
-      if (reqType == 'my_request' || e['requesterId']?.toString() == currentUserId || (isInvite && recipientId == currentUserId)) {
+      if (reqType == 'my_request' || requesterId == currentUserId || (isInvite && recipientId == currentUserId)) {
         myRequest = e;
       }
       if (isHost) {
@@ -3309,8 +3404,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (isHost) {
       userRoleLabel = '👑 Your Party Plan';
       final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
-      final selectedUsers = planMap['selectedUsers'];
-      final bool isPrivatePlan = planVis == 'PRIVATE' || (selectedUsers is List && selectedUsers.isNotEmpty);
+      final bool isPrivatePlan = planVis == 'PRIVATE';
+      final bool isBothPlan = planVis == 'BOTH';
 
       if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
         final double depositAmt = (planMap['depositAmount'] ?? 99.0) is num ? (planMap['depositAmount'] ?? 99.0).toDouble() : 99.0;
@@ -3416,13 +3511,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
         final reqId = acceptedJoinerRequest['id']?.toString() ?? '';
 
-        final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
-        final selectedUsers = planMap['selectedUsers'];
-        final bool isPrivatePlan = planVis == 'PRIVATE' || (selectedUsers is List && selectedUsers.isNotEmpty);
+        final bool isPrivateMatched = isPrivatePlan || (selectedUserIdsList.contains(joiner['id']?.toString() ?? acceptedJoinerRequest['requesterId']?.toString()));
 
-        title = isPrivatePlan ? '⏳ Invite Accepted — Awaiting Deposit' : '⏳ Approved — Awaiting Payment';
+        title = isPrivateMatched ? '⏳ Invite Accepted — Awaiting Deposit' : '⏳ Approved — Awaiting Payment';
         badge = 'AWAITING PAYMENT';
-        body = isPrivatePlan
+        body = isPrivateMatched
             ? '$joinerName accepted your private invite. Waiting for safety deposit payment to unlock chat.'
             : 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
         partnerUser = joiner.isNotEmpty ? joiner : null;
@@ -3448,8 +3541,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           ),
         ];
-      } else if (isPrivatePlan || pendingOutboundInvites.isNotEmpty) {
-        final inviteCount = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.length : (selectedUsers is List ? selectedUsers.length : 1);
+      } else if (isPrivatePlan || (pendingOutboundInvites.isNotEmpty && pendingIncomingRequests.isEmpty)) {
+        final inviteCount = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.length : (selectedUserIdsList.isNotEmpty ? selectedUserIdsList.length : 1);
         final firstInvitee = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.first['requester'] : null;
         final inviteeName = (firstInvitee is Map && firstInvitee['firstName'] != null)
             ? '${firstInvitee["firstName"]} ${firstInvitee["lastName"] ?? ""}'.trim()
@@ -3486,12 +3579,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
-        if (pendingIncomingRequests.length == 1) {
-          final firstReq = pendingIncomingRequests.first;
-          final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
-          final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
-          final reqId = firstReq['id']?.toString() ?? '';
+        final firstReq = pendingIncomingRequests.first;
+        final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
+        final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
 
+        if (pendingIncomingRequests.length == 1) {
           title = '📥 New Party Plan Request';
           badge = 'NEW REQUEST';
           body = '$reqUserName requested to join your Party Plan at $venueName.';
@@ -3500,21 +3592,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           partnerUser = reqUser.isNotEmpty ? reqUser : null;
           partnerRoleLabel = 'Request from:';
-          statusSummary = 'Approval Required';
+          statusSummary = isBothPlan ? 'Public Request Received' : 'Request Received';
 
           actionsList = [
             NotificationAction(
-              label: 'Approve',
-              icon: Icons.check_circle_rounded,
+              label: 'View Request',
+              icon: Icons.open_in_new_rounded,
               isPrimary: true,
-              onTap: () => _handleAcceptPartyPlan(reqId),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              ).then((_) => _loadFeed(showLoader: false)),
             ),
             NotificationAction(
-              label: 'Reject',
-              icon: Icons.cancel_rounded,
+              label: 'Review Requests',
+              icon: Icons.people_alt_rounded,
               isPrimary: false,
               color: Colors.grey[200],
-              onTap: () => _handleRejectPartyPlan(reqId),
+              onTap: () => _showReviewPartyPlanRequestsModal(planMap, pendingIncomingRequests),
             ),
           ];
         } else {
@@ -3528,6 +3623,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               icon: Icons.people_alt_rounded,
               isPrimary: true,
               onTap: () => _showReviewPartyPlanRequestsModal(planMap, pendingIncomingRequests),
+            ),
+            NotificationAction(
+              label: 'View Plan',
+              icon: Icons.open_in_new_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              ).then((_) => _loadFeed(showLoader: false)),
             ),
           ];
         }
@@ -3892,11 +3997,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
       final status = (e['status'] ?? '').toString().toLowerCase();
       final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '').toString().toLowerCase();
+      final String eRequesterId = (e['requesterId'] ?? e['requester']?['id'] ?? e['userId'] ?? e['actorUserId'] ?? e['data']?['userId'] ?? '').toString();
+      final String title = (e['title'] ?? '').toString().toLowerCase();
 
-      if (reqType == 'my_request' || reqType == 'stranger_meet_join' || e['userId']?.toString() == currentUserId) {
-        myRequest = e;
+      if (reqType == 'my_request' || reqType == 'stranger_meet_join' || eRequesterId == currentUserId || (e['isMyRequest'] == true) || reqType.contains('request_sent') || title.contains('request sent')) {
+        if (!isHost || eRequesterId == currentUserId) {
+          myRequest = e;
+        }
       }
-      if (reqType == 'incoming_request' || (isHost && e['requester'] != null)) {
+      if (reqType == 'incoming_request' || (isHost && e['requester'] != null && eRequesterId != currentUserId)) {
         if (status == 'pending') {
           pendingIncomingRequests.add(e);
         } else if (status == 'paid' || pStatus == 'paid') {

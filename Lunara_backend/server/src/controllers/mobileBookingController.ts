@@ -324,6 +324,8 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             });
         }
 
+        const isFreeOrPaid = Number(booking.totalAmount || 0) <= 0 || booking.paymentStatus === PaymentStatus.PAID;
+
         res.status(201).json({
             success: true,
             data: booking,
@@ -331,7 +333,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
             amount: razorpayOrder ? razorpayOrder.amount : 0,
             currency: razorpayOrder ? razorpayOrder.currency : 'INR',
-            ticket: buildTicket(booking, venueDetails, booking.ticketCode || '')
+            ticket: isFreeOrPaid ? buildTicket(booking, venueDetails, booking.ticketCode || '') : null
         });
     } catch (err: any) {
         logger.error('createBooking error:', err);
@@ -848,7 +850,10 @@ export const getTicket = async (req: Request, res: Response) => {
         }
 
         const ticketCode = (booking as any).ticketCode;
-        if (!ticketCode) {
+        const totalAmountNum = Number(booking.totalAmount || 0);
+        const isFree = totalAmountNum <= 0;
+        const isPaid = isFree || (booking.paymentStatus as string) === 'paid' || (booking.isLargePartyRequest && (booking as any).adminApprovalStatus === 'payment_done');
+        if (!isPaid || !ticketCode) {
             return res.status(400).json({ success: false, message: 'Ticket not yet generated. Complete payment first.' });
         }
 

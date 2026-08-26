@@ -59,8 +59,8 @@ void main() async {
 }
 
 class LunaraApp extends StatelessWidget {
-  final Widget initialScreen;
-  const LunaraApp({super.key, required this.initialScreen});
+  final Widget? initialScreen;
+  const LunaraApp({super.key, this.initialScreen});
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +74,7 @@ class LunaraApp extends StatelessWidget {
           darkTheme: LunaraTheme.darkTheme,
           themeMode: themeManager.themeMode,
           navigatorKey: NotificationNavigator.navigatorKey,
-          home: initialScreen,
+          home: initialScreen ?? const WelcomeCarousel(),
           builder: (context, child) {
             return SubscriptionScope(
               child: AppLockWrapper(child: child ?? const SizedBox.shrink()),

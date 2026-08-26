@@ -887,17 +887,120 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
   // ─────────────────────────────────────────────────────────
 
   Widget _buildDateSelection() {
-    final List<DateTime> openDates = [];
-    DateTime checkDate = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-    );
-    while (openDates.length < 7) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+
+    final List<DateTime> dynamicDates = [];
+    DateTime checkDate = today;
+    while (dynamicDates.length < 6) {
       if (_isVenueOpenOnDate(checkDate)) {
-        openDates.add(checkDate);
+        dynamicDates.add(checkDate);
       }
       checkDate = checkDate.add(const Duration(days: 1));
+    }
+
+    Widget buildDateChip(String label, DateTime dateVal, bool isSelected) {
+      return GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedDate = dateVal;
+            _updateDateControllerText();
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? LunaraTheme.electricViolet
+                  : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                DateFormat('MMM d').format(dateVal),
+                style: TextStyle(
+                  color: isSelected ? Colors.white70 : Colors.black54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget buildCustomChip(bool isSelected) {
+      return GestureDetector(
+        onTap: _handleCustomDateSelection,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? LunaraTheme.electricViolet
+                  : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today_rounded,
+                    size: 12,
+                    color: isSelected ? Colors.white : Colors.black87,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Custom',
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                !dynamicDates.any(
+                      (d) =>
+                          d.year == _selectedDate.year &&
+                          d.month == _selectedDate.month &&
+                          d.day == _selectedDate.day,
+                    )
+                    ? DateFormat('MMM d').format(_selectedDate)
+                    : 'Choose Date',
+                style: TextStyle(
+                  color: isSelected ? Colors.white70 : Colors.black54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return Column(
@@ -913,114 +1016,44 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          height: 90,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: 7,
-            itemBuilder: (context, index) {
-              final date = openDates[index];
-              final isSelected =
-                  _selectedDate.day == date.day &&
-                  _selectedDate.month == date.month;
-              final isOpen = _isVenueOpenOnDate(date);
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              ...dynamicDates.map((dateVal) {
+                String label = '';
+                if (dateVal.year == today.year &&
+                    dateVal.month == today.month &&
+                    dateVal.day == today.day) {
+                  label = 'Today';
+                } else if (dateVal.year == tomorrow.year &&
+                    dateVal.month == tomorrow.month &&
+                    dateVal.day == tomorrow.day) {
+                  label = 'Tomorrow';
+                } else {
+                  label = DateFormat('E').format(dateVal);
+                }
 
-              return GestureDetector(
-                onTap: () {
-                  if (!isOpen) {
-                    final venueObj = Venue.fromJson(
-                      Map<String, dynamic>.from(widget.venue),
-                    );
-                    VenueTimingErrorDialog.show(
-                      context,
-                      venueName: venueObj.name,
-                      daysOpen: venueObj.daysOpen,
-                      openingTime: venueObj.openingTime,
-                      closingTime: venueObj.closingTime,
-                      closedDates: venueObj.closedDates,
-                    );
-                    return;
-                  }
-                  setState(() {
-                    _selectedDate = date;
-                    _selectedTime =
-                        null; // reset selected time to force new validation
-                  });
-                },
-                child: Container(
-                  width: 66,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: !isOpen
-                        ? Colors.grey[200]?.withValues(alpha: 0.5)
-                        : isSelected
-                        ? LunaraTheme.electricViolet
-                        : Colors.grey[100],
-                    borderRadius: BorderRadius.circular(16),
-                    border: !isOpen
-                        ? Border.all(color: Colors.grey[300]!, width: 1)
-                        : null,
-                    boxShadow: isSelected && isOpen
-                        ? [
-                            BoxShadow(
-                              color: LunaraTheme.electricViolet.withValues(
-                                alpha: 0.3,
-                              ),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Opacity(
-                    opacity: isOpen ? 1.0 : 0.4,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          [
-                            'MON',
-                            'TUE',
-                            'WED',
-                            'THU',
-                            'FRI',
-                            'SAT',
-                            'SUN',
-                          ][date.weekday - 1],
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            color: isSelected
-                                ? Colors.white70
-                                : Colors.grey[500],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          date.day.toString(),
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: isSelected ? Colors.white : Colors.black,
-                          ),
-                        ),
-                        if (!isOpen) ...[
-                          const SizedBox(height: 2),
-                          const Text(
-                            'CLOSED',
-                            style: TextStyle(
-                              fontSize: 7,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.redAccent,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+                final isSelected =
+                    _selectedDate.year == dateVal.year &&
+                    _selectedDate.month == dateVal.month &&
+                    _selectedDate.day == dateVal.day;
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: buildDateChip(label, dateVal, isSelected),
+                );
+              }),
+              buildCustomChip(
+                !dynamicDates.any(
+                  (d) =>
+                      d.year == _selectedDate.year &&
+                      d.month == _selectedDate.month &&
+                      d.day == _selectedDate.day,
                 ),
-              );
-            },
+              ),
+            ],
           ),
         ),
       ],

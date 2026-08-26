@@ -1054,12 +1054,13 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 ...formattedMyPartyReqs,
 
                 ...pendingPaymentItems,
-                ...myBookings.map((b: any) => {
-                    const isPlanBooking = b.goingMode === 'plan';
+                ...myBookings
+                    .filter((b: any) => b.goingMode !== 'plan' && b.partySubject !== 'Party Plan')
+                    .map((b: any) => {
                     return {
                         id: b.id,
                         type: 'my_request',
-                        requestType: b.isLargePartyRequest ? 'large_party_request' : (b.goingMode === 'party_request' ? 'group_booking' : (isPlanBooking ? 'party_plan' : 'booking')),
+                        requestType: b.isLargePartyRequest ? 'large_party_request' : (b.goingMode === 'party_request' ? 'group_booking' : 'booking'),
                         status: b.status || 'pending',
                         paymentStatus: b.paymentStatus || 'pending',
                         createdAt: b.createdAt,
@@ -1072,7 +1073,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                             status: b.status || 'pending',
                             paymentStatus: b.paymentStatus || 'pending',
                             numberOfGuests: b.numberOfGuests,
-                            partySubject: b.partySubject || (b.goingMode === 'party_request' ? 'Group Party' : (isPlanBooking ? 'Party Plan' : 'Table Booking')),
+                            partySubject: b.partySubject || (b.goingMode === 'party_request' ? 'Group Party' : 'Table Booking'),
                             bookingDate: b.bookingDate,
                             startTime: b.startTime,
                             totalAmount: b.totalAmount,

@@ -625,7 +625,11 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                   child: ElevatedButton(
                     onPressed: () {
                       final bookingType = (ticket['bookingType'] ?? '').toString().toLowerCase();
-                      if (bookingType == 'group_party' || bookingType == 'group_party_small') {
+                      final isSolo = ticket['isSolo'] == true ||
+                          ticket['category'] == 'solo' ||
+                          bookingType == 'solo' ||
+                          ticket['goingMode'] == 'solo';
+                      if (!isSolo && (bookingType == 'group_party' || bookingType == 'group_party_small')) {
                         // Navigate to dedicated group party ticket screen
                         Navigator.push(
                           context,
