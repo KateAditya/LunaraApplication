@@ -4223,6 +4223,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isExpired = true;
     }
     final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();
+    final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
     if (meetStatus == 'completed' || meetStatus == 'expired' || meetStatus == 'cancelled') {
       if (meetStatus == 'expired') isExpired = true;
     }
@@ -4581,11 +4582,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
         ),
       ];
-
     } else if (isHost) {
       userRoleLabel = '👑 Your Stranger Meet';
-      final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
-      final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();
 
       if (meetStatus == 'pending' || meetStatus == 'request_sent' || meetStatus == 'pending_approval') {
         title = '🤝 Request Sent';
@@ -4886,12 +4884,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         statusSummary = 'Declined';
         actionsList = null;
       } else {
+        final double charges = (meetMap['chargesPerHead'] is num
+            ? (meetMap['chargesPerHead'] as num).toDouble()
+            : (double.tryParse((meetMap['chargesPerHead'] ?? '0').toString()) ?? 0.0));
+        final feeLabel = charges > 0 ? ' (₹${charges.toStringAsFixed(0)})' : '';
+
         title = '🤝 Stranger Meet at $venueName';
         badge = 'STRANGER MEET';
         body = formattedDateTime.isNotEmpty
             ? '$hostName is hosting • $formattedDateTime'
             : '$hostName is hosting a Stranger Meet at $venueName.';
-        actionsList = null;
+
+        if (hostPayStatus == 'paid' || meetStatus == 'confirmed' || meetStatus == 'live') {
+          actionsList = [
+            NotificationAction(
+              label: 'Request to Join$feeLabel',
+              icon: Icons.person_add_rounded,
+              isPrimary: true,
+              onTap: () {
+                try {
+                  final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetMap);
+                  postMap['type'] = 'strangers_meet';
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostDetailScreen(post: postMap),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error navigating to SM detail from live card: $e');
+                }
+              },
+            ),
+          ];
+        } else {
+          statusSummary = 'Waiting for Host Deposit';
+          actionsList = null;
+        }
       }
     }
 

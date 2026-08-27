@@ -147,7 +147,7 @@ function formatRequest(r: StrangersMeetRequest) {
         eventDateTime: r.eventDateTime,
         numberOfPersons: r.numberOfPersons,
         chargesPerHead: Number(r.chargesPerHead || 0),
-        slotsFilled: joinedCount,
+        slotsFilled: paymentCount,
         status: r.status,
         paymentAmount: r.paymentAmount ?? null,
         paymentStatus: r.paymentStatus,
@@ -894,31 +894,40 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
 export const approveRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { paymentAmount, chargesPerHead, adminNotes } = req.body;
+        const cleanId = (id || '').replace(/^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_)/, '').trim();
+        const rawBody = req.body || {};
+        const paymentAmount = rawBody.paymentAmount ?? rawBody.depositAmount ?? rawBody.hostDepositAmount ?? rawBody.amount ?? rawBody.payment_amount;
+        const chargesPerHead = rawBody.chargesPerHead ?? rawBody.charges_per_head ?? rawBody.charges;
+        const adminNotes = rawBody.adminNotes ?? rawBody.admin_notes ?? rawBody.notes;
 
-        const request = await StrangersMeetRequest.findByPk(id);
+        let request = await StrangersMeetRequest.findByPk(cleanId);
+        if (!request && cleanId !== id) {
+            request = await StrangersMeetRequest.findByPk(id);
+        }
         if (!request) {
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
 
-        if (request.status !== StrangersMeetStatus.PENDING) {
-            res.status(400).json({ success: false, message: `Cannot approve a request with status: ${request.status}` });
-            return;
-        }
-
-        const hostDepositAmount = paymentAmount !== undefined && paymentAmount !== null ? Number(paymentAmount) : 99.0;
+        const hostDepositAmount = paymentAmount !== undefined && paymentAmount !== null && paymentAmount !== ''
+            ? Number(paymentAmount)
+            : (request.paymentAmount ?? 99.0);
+            
         // Auto-calculate platform charge per seat from total deposit / number of seats
         const platformChargePerSeat = hostDepositAmount > 0 && request.numberOfPersons > 0
             ? parseFloat((hostDepositAmount / request.numberOfPersons).toFixed(2))
             : 0;
 
+        const updatedStatus = request.status === StrangersMeetStatus.PENDING ? StrangersMeetStatus.APPROVED : request.status;
+
         await request.update({
-            status: StrangersMeetStatus.APPROVED,
+            status: updatedStatus,
             paymentAmount: hostDepositAmount,
             platformChargePerSeat,
-            chargesPerHead: chargesPerHead !== undefined && chargesPerHead !== null ? Number(chargesPerHead) : request.chargesPerHead,
-            adminNotes: adminNotes?.trim() || null,
+            chargesPerHead: chargesPerHead !== undefined && chargesPerHead !== null && chargesPerHead !== ''
+                ? Number(chargesPerHead)
+                : request.chargesPerHead,
+            adminNotes: typeof adminNotes === 'string' ? adminNotes.trim() : request.adminNotes,
         });
 
         // Send push notification to host
@@ -1682,11 +1691,14 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 remainingSlots = Math.max(0, request.numberOfPersons - newAcceptedCount);
                 isFull = newAcceptedCount >= request.numberOfPersons;
 
-                if (isFull) {
-                    await request.update({ slotsFilled: request.numberOfPersons }, { transaction });
-                } else {
-                    await request.update({ slotsFilled: newAcceptedCount }, { transaction });
-                }
+                const currentPaidCount = await StrangersMeetJoiner.count({
+                    where: {
+                        strangersMeetRequestId: request.id,
+                        paymentStatus: StrangersMeetJoinerPaymentStatus.PAID,
+                    },
+                    transaction,
+                });
+                await request.update({ slotsFilled: currentPaidCount }, { transaction });
 
                 await transaction.commit();
             } catch (err) {

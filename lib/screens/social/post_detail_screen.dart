@@ -608,13 +608,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final String tagline = req.tagline;
     final double charges = req.chargesPerHead;
     final int slotsFilled = req.slotsFilled;
-    final int maxPersons = req.numberOfPersons;
-    final String venueName = req.venue?['name'] ?? 'Unknown Venue';
+    int maxPersons = req.numberOfPersons;
+    if (maxPersons <= 0 || maxPersons == 2) {
+      final rawMax = widget.post['numberOfPersons'] ??
+          widget.post['number_of_persons'] ??
+          widget.post['totalSeats'] ??
+          widget.post['maxPersons'] ??
+          widget.post['seats'] ??
+          widget.post['maxSeats'] ??
+          widget.post['numberOfGuests'] ??
+          (widget.post['plan'] is Map ? widget.post['plan']['numberOfPersons'] ?? widget.post['plan']['totalSeats'] ?? widget.post['plan']['maxPersons'] : null);
+      if (rawMax != null) {
+        maxPersons = int.tryParse(rawMax.toString()) ?? maxPersons;
+      }
+    }
+    final String venueName = req.venue?['name'] ?? widget.post['venue']?['name'] ?? 'Unknown Venue';
 
-    final hostUserMap = req.user ?? {};
-    final String hostFirstName = hostUserMap['firstName'] ?? 'Lunara';
-    final String hostLastName = hostUserMap['lastName'] ?? 'User';
-    final String? hostPhoto = hostUserMap['photoUrl'];
+    final cachedUser = ApiService.cachedCurrentUser;
+    Map<String, dynamic> hostUserMap = req.user != null && req.user!.isNotEmpty
+        ? Map<String, dynamic>.from(req.user!)
+        : (widget.post['user'] is Map
+            ? Map<String, dynamic>.from(widget.post['user'])
+            : (widget.post['creator'] is Map
+                ? Map<String, dynamic>.from(widget.post['creator'])
+                : (widget.post['host'] is Map
+                    ? Map<String, dynamic>.from(widget.post['host'])
+                    : {})));
 
     final String currentUserId = ApiService.currentUserId ?? '';
     final bool isMyPost =
@@ -626,6 +645,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         (widget.post['creator'] != null && widget.post['creator']['id']?.toString() == currentUserId) ||
         (widget.post['user'] != null && widget.post['user']['id']?.toString() == currentUserId) ||
         (widget.post['plan'] is Map && widget.post['plan']['userId']?.toString() == currentUserId);
+
+    if (isMyPost && cachedUser != null && (hostUserMap['firstName'] == null || hostUserMap['firstName'].toString().isEmpty || hostUserMap['firstName'] == 'Lunara')) {
+      hostUserMap['firstName'] = cachedUser.firstName;
+      hostUserMap['lastName'] = cachedUser.lastName;
+      hostUserMap['photoUrl'] = hostUserMap['photoUrl'] ?? cachedUser.profilePhoto;
+      hostUserMap['profileImageUrl'] = hostUserMap['profileImageUrl'] ?? cachedUser.profilePhoto;
+    }
+
+    final String hostFirstName = (hostUserMap['firstName'] ?? hostUserMap['first_name'] ?? (isMyPost && cachedUser != null ? cachedUser.firstName : 'Lunara')).toString();
+    final String hostLastName = (hostUserMap['lastName'] ?? hostUserMap['last_name'] ?? (isMyPost && cachedUser != null ? cachedUser.lastName : 'User')).toString();
+    final String? hostPhoto = hostUserMap['photoUrl'] ??
+        hostUserMap['profileImageUrl'] ??
+        hostUserMap['profilePhotoUrl'] ??
+        hostUserMap['photo'] ??
+        (isMyPost && cachedUser != null ? cachedUser.profilePhoto : null);
 
     Map<String, dynamic>? myJoinerInfo;
     if (req.joiners != null) {
@@ -956,14 +990,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             backgroundColor: LunaraTheme.electricViolet
                                 .withValues(alpha: 0.1),
                             backgroundImage:
-                                hostPhoto != null && hostPhoto.isNotEmpty
+                                hostPhoto != null && hostPhoto.trim().isNotEmpty
                                 ? NetworkImage(
                                     hostPhoto.startsWith('http')
                                         ? hostPhoto
-                                        : '${ApiService.baseUrl}$hostPhoto',
+                                        : (hostPhoto.startsWith('/')
+                                            ? '${ApiService.baseUrl}$hostPhoto'
+                                            : '${ApiService.baseUrl}/$hostPhoto'),
                                   )
                                 : null,
-                            child: hostPhoto == null || hostPhoto.isEmpty
+                            child: hostPhoto == null || hostPhoto.trim().isEmpty
                                 ? const Icon(
                                     Icons.person,
                                     color: LunaraTheme.electricViolet,

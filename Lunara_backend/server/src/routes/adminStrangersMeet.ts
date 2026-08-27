@@ -67,14 +67,23 @@ router.get(
 router.patch(
     '/:id/approve',
     [
-        param('id').isUUID().withMessage('id must be a valid UUID'),
-        body('paymentAmount')
-            .optional()
-            .isFloat({ gt: 0 }).withMessage('paymentAmount must be greater than 0'),
-        body('chargesPerHead')
-            .optional()
-            .isFloat({ min: 0 }).withMessage('chargesPerHead must be 0 or greater'),
-        body('adminNotes').optional().isString(),
+        param('id').notEmpty().withMessage('id is required'),
+        validate,
+    ],
+    approveRequest
+);
+router.post(
+    '/:id/approve',
+    [
+        param('id').notEmpty().withMessage('id is required'),
+        validate,
+    ],
+    approveRequest
+);
+router.put(
+    '/:id/approve',
+    [
+        param('id').notEmpty().withMessage('id is required'),
         validate,
     ],
     approveRequest

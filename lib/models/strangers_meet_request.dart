@@ -109,7 +109,18 @@ class StrangersMeetRequest {
   factory StrangersMeetRequest.fromJson(Map<dynamic, dynamic> json) {
     final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'] ?? json['bookingDate'] ?? json['partyDate'] ?? json['eventStartAt'] ?? json['date'];
     final timeRaw = json['startTime'] ?? json['partyTime'] ?? json['time'];
-    final numPersonsRaw = json['numberOfPersons'] ?? json['number_of_persons'] ?? json['numberOfGuests'];
+    final numPersonsRaw = json['numberOfPersons'] ??
+        json['number_of_persons'] ??
+        json['totalSeats'] ??
+        json['maxPersons'] ??
+        json['seats'] ??
+        json['maxSeats'] ??
+        json['numberOfSeats'] ??
+        json['numberOfGuests'] ??
+        json['persons'] ??
+        (json['plan'] is Map ? json['plan']['numberOfPersons'] ?? json['plan']['number_of_persons'] ?? json['plan']['maxPersons'] ?? json['plan']['totalSeats'] : null) ??
+        (json['request'] is Map ? json['request']['numberOfPersons'] ?? json['request']['number_of_persons'] ?? json['request']['totalSeats'] : null) ??
+        (json['data'] is Map ? json['data']['numberOfPersons'] ?? json['data']['totalSeats'] : null);
     final chargesPerHeadRaw = json['chargesPerHead'] ??
         json['charges_per_head'] ??
         json['hostChargesPerHead'] ??
@@ -120,7 +131,7 @@ class StrangersMeetRequest {
         (json['request'] is Map ? json['request']['chargesPerHead'] ?? json['request']['charges_per_head'] : null) ??
         (json['metadata'] is Map ? json['metadata']['chargesPerHead'] ?? json['metadata']['charges_per_head'] : null) ??
         (json['data'] is Map ? json['data']['chargesPerHead'] ?? json['data']['charges_per_head'] : null);
-    final slotsFilledRaw = json['slotsFilled'] ?? json['slots_filled'] ?? json['joinedCount'] ?? json['joined_count'];
+    final slotsFilledRaw = json['paymentCount'] ?? json['payment_count'] ?? json['slotsFilled'] ?? json['slots_filled'] ?? json['joinedCount'] ?? json['joined_count'];
     final paymentAmountRaw = json['paymentAmount'] ??
         json['payment_amount'] ??
         json['adminPaymentAmount'] ??
@@ -176,7 +187,15 @@ class StrangersMeetRequest {
 
     final userMap = json['user'] is Map 
         ? Map<String, dynamic>.from(json['user']) 
-        : (json['host'] is Map ? Map<String, dynamic>.from(json['host']) : null);
+        : (json['host'] is Map
+            ? Map<String, dynamic>.from(json['host'])
+            : (json['creator'] is Map
+                ? Map<String, dynamic>.from(json['creator'])
+                : (json['plan'] is Map && json['plan']['user'] is Map
+                    ? Map<String, dynamic>.from(json['plan']['user'])
+                    : (json['firstName'] != null || json['first_name'] != null
+                        ? Map<String, dynamic>.from(json)
+                        : null))));
     final venueMap = json['venue'] is Map ? Map<String, dynamic>.from(json['venue']) : null;
 
     return StrangersMeetRequest(
