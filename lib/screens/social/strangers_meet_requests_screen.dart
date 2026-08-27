@@ -39,8 +39,18 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   }
 
   void _onProceedToPayment(StrangersMeetRequest req) {
-    if (req.status.toLowerCase() == 'expired' ||
-        req.status.toLowerCase() == 'cancelled' ||
+    final st = req.status.toLowerCase();
+    if (st == 'pending' || st == 'request_sent' || st == 'pending_approval') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your request is pending host approval. Payment will be enabled once approved.'),
+          backgroundColor: LunaraTheme.electricViolet,
+        ),
+      );
+      return;
+    }
+    if (st == 'expired' ||
+        st == 'cancelled' ||
         req.eventDateTime.add(const Duration(hours: 4)).isBefore(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

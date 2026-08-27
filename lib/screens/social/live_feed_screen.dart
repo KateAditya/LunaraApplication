@@ -1837,7 +1837,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
       try {
         final req = StrangersMeetRequest.fromJson(item.rawData['plan'] ?? item.rawData);
-        if (status == 'accepted' || status == 'payment_pending') {
+        final reqStatus = (req.status.isNotEmpty ? req.status : status).toLowerCase();
+        final payStatus = req.paymentStatus.toLowerCase();
+
+        if (reqStatus == 'pending' || reqStatus == 'request_sent' || reqStatus == 'pending_approval' || status.toLowerCase() == 'pending') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Your Stranger Meet request is waiting for admin approval. Payment will be enabled once approved.'),
+                backgroundColor: LunaraTheme.electricViolet,
+              ),
+            );
+          }
+          return;
+        }
+
+        if (reqStatus == 'accepted' || reqStatus == 'approved' || reqStatus == 'payment_pending' || status.toLowerCase() == 'accepted') {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -1848,7 +1863,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ),
           );
-        } else if (status == 'unpaid' || status == 'deposit_pending') {
+        } else if (reqStatus == 'unpaid' || reqStatus == 'deposit_pending' || status.toLowerCase() == 'unpaid') {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -1859,16 +1874,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ),
           );
-        } else if (item.actions != null && item.actions!.isNotEmpty) {
-          final primary = item.actions!.firstWhere((a) => a.isPrimary, orElse: () => item.actions!.first);
-          primary.onTap();
-        } else {
+        } else if (payStatus == 'paid' || reqStatus == 'paid' || reqStatus == 'confirmed') {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => StrangersMeetTicketScreen(request: req),
             ),
           );
+        } else if (item.actions != null && item.actions!.isNotEmpty) {
+          final primary = item.actions!.firstWhere((a) => a.isPrimary, orElse: () => item.actions!.first);
+          primary.onTap();
         }
       } catch (e) {
         debugPrint('Error parsing strangers meet on tap: $e');
@@ -4614,16 +4629,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (isHost) {
       userRoleLabel = '👑 Your Stranger Meet';
       final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
-      if (hostPayStatus == 'unpaid' || hostPayStatus == 'pending') {
+      final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();
+
+      if (meetStatus == 'pending' || meetStatus == 'request_sent' || meetStatus == 'pending_approval') {
+        title = '🤝 Request Sent';
+        badge = 'REQUEST SENT';
+        accent = const Color(0xFF8B5CF6);
+        body = 'Request sent to Admin for Stranger Meet at $venueName. Waiting for admin approval.';
+        statusSummary = 'Waiting for Admin Approval';
+        actionsList = null;
+      } else if (meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending' || (hostPayStatus == 'unpaid' && meetStatus != 'pending')) {
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        final double deposit = (meetMap['paymentAmount'] ?? 99.0) is num ? (meetMap['paymentAmount'] ?? 99.0).toDouble() : 99.0;
-        body = 'Pay deposit of ₹${deposit.toStringAsFixed(0)} to make your Stranger Meet live at $venueName!';
+        final rawDep = meetMap['paymentAmount'] ?? meetMap['payment_amount'];
+        final double deposit = rawDep is num
+            ? rawDep.toDouble()
+            : (double.tryParse((rawDep ?? '0').toString()) ?? 0.0);
+        final feeLabel = deposit > 0 ? '₹${deposit.toStringAsFixed(0)}' : '';
+        body = deposit > 0
+            ? 'Admin approved your Stranger Meet! Pay deposit of $feeLabel to make your Stranger Meet live at $venueName!'
+            : 'Admin approved your Stranger Meet at $venueName!';
         statusSummary = 'Deposit Pending';
         actionsList = [
           NotificationAction(
-            label: 'Pay Deposit',
+            label: deposit > 0 ? 'Pay Deposit $feeLabel' : 'Pay Deposit',
             icon: Icons.payment_rounded,
             isPrimary: true,
             onTap: () {

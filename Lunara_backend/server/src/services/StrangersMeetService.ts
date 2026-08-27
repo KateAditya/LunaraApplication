@@ -683,6 +683,8 @@ export class StrangersMeetService {
                 })),
                 totalSlots: request.numberOfPersons,
                 chargesPerHead: request.chargesPerHead,
+                paymentAmount: request.paymentAmount,
+                platformChargePerSeat: request.platformChargePerSeat,
                 currentStatusText,
                 timeline,
                 countdown,

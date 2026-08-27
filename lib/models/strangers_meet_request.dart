@@ -110,9 +110,26 @@ class StrangersMeetRequest {
     final eventDateRaw = json['eventDateTime'] ?? json['event_date_time'] ?? json['bookingDate'] ?? json['partyDate'] ?? json['eventStartAt'] ?? json['date'];
     final timeRaw = json['startTime'] ?? json['partyTime'] ?? json['time'];
     final numPersonsRaw = json['numberOfPersons'] ?? json['number_of_persons'] ?? json['numberOfGuests'];
-    final chargesPerHeadRaw = json['chargesPerHead'] ?? json['charges_per_head'] ?? json['totalAmount'];
+    final chargesPerHeadRaw = json['chargesPerHead'] ??
+        json['charges_per_head'] ??
+        json['hostChargesPerHead'] ??
+        json['charges'] ??
+        json['entryFee'] ??
+        json['fee'] ??
+        (json['plan'] is Map ? json['plan']['chargesPerHead'] ?? json['plan']['charges_per_head'] : null) ??
+        (json['request'] is Map ? json['request']['chargesPerHead'] ?? json['request']['charges_per_head'] : null) ??
+        (json['metadata'] is Map ? json['metadata']['chargesPerHead'] ?? json['metadata']['charges_per_head'] : null) ??
+        (json['data'] is Map ? json['data']['chargesPerHead'] ?? json['data']['charges_per_head'] : null);
     final slotsFilledRaw = json['slotsFilled'] ?? json['slots_filled'] ?? json['joinedCount'] ?? json['joined_count'];
-    final paymentAmountRaw = json['paymentAmount'] ?? json['payment_amount'] ?? json['totalAmount'];
+    final paymentAmountRaw = json['paymentAmount'] ??
+        json['payment_amount'] ??
+        json['amount'] ??
+        json['totalAmount'] ??
+        json['depositAmount'] ??
+        (json['plan'] is Map ? json['plan']['paymentAmount'] ?? json['plan']['payment_amount'] : null) ??
+        (json['request'] is Map ? json['request']['paymentAmount'] ?? json['request']['payment_amount'] : null) ??
+        (json['metadata'] is Map ? json['metadata']['paymentAmount'] ?? json['metadata']['payment_amount'] : null) ??
+        (json['data'] is Map ? json['data']['paymentAmount'] ?? json['data']['payment_amount'] : null);
     final paymentStatusRaw = json['paymentStatus'] ?? json['payment_status'];
     final platformChargeRaw = json['platformChargePerSeat'] ?? json['platform_charge_per_seat'];
 
@@ -169,9 +186,9 @@ class StrangersMeetRequest {
       numberOfPersons: numPersons,
       chargesPerHead: charges,
       slotsFilled: int.tryParse(slotsFilledRaw?.toString() ?? '') ?? 0,
-      status: (json['status'] ?? 'confirmed').toString(),
+      status: (json['status'] ?? 'pending').toString(),
       paymentAmount: payAmount,
-      paymentStatus: (paymentStatusRaw ?? (charges <= 0 ? 'paid' : 'paid')).toString(),
+      paymentStatus: (paymentStatusRaw ?? 'unpaid').toString(),
       adminNotes: json['adminNotes']?.toString() ?? json['admin_notes']?.toString(),
       ticketId: json['ticketId']?.toString() ?? json['ticket_id']?.toString() ?? json['ticketCode']?.toString(),
       ticketUrl: json['ticketUrl']?.toString() ?? json['ticket_url']?.toString(),

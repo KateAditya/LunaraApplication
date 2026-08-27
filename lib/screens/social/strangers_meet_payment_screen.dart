@@ -32,9 +32,13 @@ class _StrangersMeetPaymentScreenState
   late Razorpay _razorpay;
   String? _lastOrderId;
 
+  StrangersMeetRequest? _freshRequest;
+
   @override
   void initState() {
     super.initState();
+    _freshRequest = widget.request;
+    _loadFreshRequest();
     if (!kIsWeb) {
       try {
         _razorpay = Razorpay();
@@ -44,6 +48,19 @@ class _StrangersMeetPaymentScreenState
       } catch (e) {
         debugPrint('Razorpay init error: $e');
       }
+    }
+  }
+
+  Future<void> _loadFreshRequest() async {
+    try {
+      final req = await ApiService.fetchStrangersMeetRequestById(widget.request.id);
+      if (mounted && req != null) {
+        setState(() {
+          _freshRequest = req;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading fresh StrangersMeetRequest in payment screen: $e');
     }
   }
 
@@ -938,10 +955,16 @@ class _StrangersMeetPaymentScreenState
 
   @override
   Widget build(BuildContext context) {
-    final req = widget.request;
-    final amount = widget.isJoinPayment
-        ? req.chargesPerHead
-        : (req.paymentAmount ?? 0);
+    final req = _freshRequest ?? widget.request;
+    final double amount = widget.isJoinPayment
+        ? (req.chargesPerHead > 0
+            ? req.chargesPerHead
+            : (req.paymentAmount != null && req.paymentAmount! > 0
+                ? req.paymentAmount!
+                : 0.0))
+        : (req.paymentAmount != null && req.paymentAmount! > 0
+            ? req.paymentAmount!
+            : (req.chargesPerHead > 0 ? req.chargesPerHead : 0.0));
 
     return Scaffold(
       backgroundColor: Colors.white,

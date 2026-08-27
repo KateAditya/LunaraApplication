@@ -1208,15 +1208,19 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['venueName']?.toString() ??
         'LUNARA VENUE';
     final imageUrl = _getVenueImageUrl(venue);
-    final bookingDate = booking['bookingDate']?.toString() ??
-        booking['partyDate']?.toString() ??
+    final innerPlan = booking['plan'] is Map ? booking['plan'] : (booking['rawRequest'] is Map ? booking['rawRequest'] : null);
+    final bookingDate = booking['planDateTime']?.toString() ??
+        innerPlan?['planDateTime']?.toString() ??
         booking['eventStartAt']?.toString() ??
         booking['eventDateTime']?.toString() ??
-        booking['planDateTime']?.toString() ??
+        booking['partyDate']?.toString() ??
+        booking['bookingDate']?.toString() ??
         '';
     final startTime = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
         booking['time']?.toString() ??
+        innerPlan?['startTime']?.toString() ??
+        innerPlan?['time']?.toString() ??
         '';
     final dateStr = _formatBookingDateTime(bookingDate, startTime);
 
@@ -1308,8 +1312,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
             // Enrich plan
             if (rawPlan['venue'] == null && venue != null) rawPlan['venue'] = venue;
-            if (rawPlan['planDateTime'] == null && booking['bookingDate'] != null) {
-              rawPlan['planDateTime'] = booking['bookingDate'];
+            if (rawPlan['planDateTime'] == null && (booking['planDateTime'] != null || booking['eventStartAt'] != null || booking['bookingDate'] != null)) {
+              rawPlan['planDateTime'] = booking['planDateTime'] ?? booking['eventStartAt'] ?? booking['bookingDate'];
             }
             if (rawPlan['eventStartAt'] == null && booking['eventStartAt'] != null) {
               rawPlan['eventStartAt'] = booking['eventStartAt'];
@@ -1344,8 +1348,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
             // Enrich request
             if (rawReq['venue'] == null && venue != null) rawReq['venue'] = venue;
-            if (rawReq['planDateTime'] == null && booking['bookingDate'] != null) {
-              rawReq['planDateTime'] = booking['bookingDate'];
+            if (rawReq['planDateTime'] == null && (booking['planDateTime'] != null || booking['eventStartAt'] != null || booking['bookingDate'] != null)) {
+              rawReq['planDateTime'] = booking['planDateTime'] ?? booking['eventStartAt'] ?? booking['bookingDate'];
             }
             if (rawReq['eventStartAt'] == null && booking['eventStartAt'] != null) {
               rawReq['eventStartAt'] = booking['eventStartAt'];

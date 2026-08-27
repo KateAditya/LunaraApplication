@@ -144,18 +144,30 @@ export function createDateInTimezone(year: number, month: number, day: number, h
 export function parseEventDateTimeToUTC(dateInput: Date | string, startTimeStr?: string | null, timezone: string = DEFAULT_TIMEZONE): Date {
     if (!dateInput) return new Date();
 
-    // If input is already an ISO string with explicit time and NO separate startTime is passed
-    if (typeof dateInput === 'string' && dateInput.includes('T') && (!startTimeStr || !startTimeStr.trim())) {
-        const parsed = new Date(dateInput);
-        if (!isNaN(parsed.getTime())) {
-            return parsed;
+    // If explicit startTimeStr is provided, combine date with that time
+    if (startTimeStr && startTimeStr.trim()) {
+        const [year, month, day] = extractDateParts(dateInput, timezone);
+        const [hours, minutes] = parseTimeParts(startTimeStr);
+        return createDateInTimezone(year, month, day, hours, minutes, 0, timezone);
+    }
+
+    // If no explicit startTimeStr is provided, preserve time if already present
+    if (dateInput instanceof Date) {
+        if (!isNaN(dateInput.getTime())) {
+            return dateInput;
+        }
+    } else if (typeof dateInput === 'string' && dateInput.trim()) {
+        const str = dateInput.trim();
+        if (str.includes('T')) {
+            const parsed = new Date(str);
+            if (!isNaN(parsed.getTime())) {
+                return parsed;
+            }
         }
     }
 
     const [year, month, day] = extractDateParts(dateInput, timezone);
-    const [hours, minutes] = parseTimeParts(startTimeStr);
-
-    return createDateInTimezone(year, month, day, hours, minutes, 0, timezone);
+    return createDateInTimezone(year, month, day, 0, 0, 0, timezone);
 }
 
 /**
