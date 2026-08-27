@@ -473,7 +473,11 @@ export const getUserStrangersMeetsByUserId = async (req: Request, res: Response)
 export const getRequestById = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const request = await StrangersMeetRequest.findByPk(id, { include: buildIncludes() });
+        const cleanId = (id || '').replace(/^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_)/, '').trim();
+        let request = await StrangersMeetRequest.findByPk(cleanId, { include: buildIncludes() });
+        if (!request && cleanId !== id) {
+            request = await StrangersMeetRequest.findByPk(id, { include: buildIncludes() });
+        }
         if (!request) { res.status(404).json({ success: false, message: 'Request not found' }); return; }
         res.json({ success: true, data: formatRequest(request) });
     } catch (err: any) {

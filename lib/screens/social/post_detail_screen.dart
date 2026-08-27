@@ -9,6 +9,8 @@ import '../../services/api_service.dart';
 import '../discovery/venue_detail_screen.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../widgets/lunara_network_image.dart';
+import 'strangers_meet_payment_screen.dart';
+import 'strangers_meet_ticket_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -195,71 +197,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Future<void> _initiateJoinFlow() async {
-    final req = _meetRequest;
-    if (req == null) return;
-    setState(() => _isProcessing = true);
-
-    // Call checkout / initiate endpoint on backend
-    final checkoutData = await ApiService.initiateStrangersMeetJoinPayment(
-      req.id,
-    );
-
-    if (checkoutData == null) {
-      if (!mounted) return;
-      setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to initiate join payment. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final double charges = req.chargesPerHead;
-
-    if (charges > 0) {
-      final String orderId = checkoutData['razorpayOrderId'];
-      _lastOrderId = orderId;
-      final String razorpayKeyId =
-          checkoutData['razorpayKeyId'] ?? 'rzp_test_123';
-      final int amount = checkoutData['amount'];
-
-      var options = {
-        'key': razorpayKeyId,
-        'amount': amount,
-        'name': 'Lunara',
-        'description': 'Join Strangers Meet - ${_meetRequest!.subject}',
-        'order_id': orderId,
-        'prefill': {'contact': '8888888888', 'email': 'test@razorpay.com'},
-      };
-
-      bool razorpayOpened = false;
-      try {
-        _razorpay.open(options);
-        razorpayOpened = true;
-      } catch (e) {
-        debugPrint(
-          'Error opening Razorpay, falling back to simulated payment: $e',
-        );
-      }
-
-      if (!razorpayOpened) {
-        // Fallback simulated payment
-        Future.delayed(const Duration(seconds: 2), () {
-          _confirmJoinPayment(orderId, 'mock_payment', 'mock_signature');
-        });
-      }
-    } else {
-      // Free join flow
-      final String orderId =
-          checkoutData['razorpayOrderId'] ??
-          'free_order_${DateTime.now().millisecondsSinceEpoch}';
-      _confirmJoinPayment(orderId, 'free', 'free');
-    }
-  }
-
   Future<void> _confirmJoinPayment(
     String orderId,
     String paymentId,
@@ -285,8 +222,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      // Reload details to update slotsFilled and joiners list
-      _loadStrangersMeetDetails();
+      _loadStrangersMeetDetails(showFullScreenLoader: false);
     } else {
       messenger.showSnackBar(
         const SnackBar(
@@ -296,6 +232,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
   }
+
 
   Future<void> _sendJoinRequest() async {
     if (_meetRequest == null) return;
@@ -681,10 +618,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final String currentUserId = ApiService.currentUserId ?? '';
     final bool isMyPost =
-        (req.userId != null && req.userId == currentUserId) ||
+        (req.userId != null && req.userId.toString() == currentUserId) ||
         (hostUserMap['id'] != null && hostUserMap['id']?.toString() == currentUserId) ||
         (widget.post['userId'] != null && widget.post['userId']?.toString() == currentUserId) ||
-        (widget.post['user_id'] != null && widget.post['user_id']?.toString() == currentUserId);
+        (widget.post['user_id'] != null && widget.post['user_id']?.toString() == currentUserId) ||
+        (widget.post['creatorId'] != null && widget.post['creatorId']?.toString() == currentUserId) ||
+        (widget.post['creator'] != null && widget.post['creator']['id']?.toString() == currentUserId) ||
+        (widget.post['user'] != null && widget.post['user']['id']?.toString() == currentUserId) ||
+        (widget.post['plan'] is Map && widget.post['plan']['userId']?.toString() == currentUserId);
 
     Map<String, dynamic>? myJoinerInfo;
     if (req.joiners != null) {
@@ -1472,12 +1413,105 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
 
+    final req = _meetRequest;
+    final String reqStatus = (req?.status.isNotEmpty == true ? req!.status : status).toLowerCase();
+    final String payStatus = (req?.paymentStatus.isNotEmpty == true ? req!.paymentStatus : widget.post['paymentStatus'] ?? '').toString().toLowerCase();
+
+    final double depositAmount = req?.paymentAmount ??
+        (widget.post['paymentAmount'] is num
+            ? (widget.post['paymentAmount'] as num).toDouble()
+            : (double.tryParse((widget.post['paymentAmount'] ?? '99').toString()) ?? 99.0));
+
     final now = DateTime.now();
     final bool hasEnded = now.isAfter(eventDateTime);
 
     if (isMyPost) {
-      if (hasEnded) {
-        if (status == 'completed') {
+      // ───────────────────────────────────────────────────────────────────────
+      // HOST VIEW (Current user is the creator of this Stranger Meet)
+      // ───────────────────────────────────────────────────────────────────────
+      if (reqStatus == 'pending' || reqStatus == 'request_sent' || reqStatus == 'pending_approval') {
+        return Container(
+          width: double.infinity,
+          height: 60,
+          decoration: BoxDecoration(
+            color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+          ),
+          child: const Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.hourglass_top_rounded, color: Color(0xFF8B5CF6)),
+                SizedBox(width: 8),
+                Text(
+                  'WAITING FOR ADMIN APPROVAL',
+                  style: TextStyle(
+                    fontFamily: 'AllroundGothic',
+                    color: Color(0xFF8B5CF6),
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else if (reqStatus == 'approved' || reqStatus == 'accepted' || reqStatus == 'payment_pending' || (payStatus != 'paid' && reqStatus != 'confirmed' && reqStatus != 'completed' && reqStatus != 'live')) {
+        // Admin approved! Host must pay deposit to publish meet
+        final feeLabel = depositAmount > 0 ? ' ₹${depositAmount.toStringAsFixed(0)}' : '';
+        return Container(
+          width: double.infinity,
+          height: 60,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8B5CF6).withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ElevatedButton.icon(
+            onPressed: () {
+              if (req != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetPaymentScreen(
+                      request: req,
+                      onPaymentSuccess: () => _loadStrangersMeetDetails(showFullScreenLoader: false),
+                      isJoinPayment: false,
+                    ),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            icon: const Icon(Icons.payment_rounded, color: Colors.white),
+            label: Text(
+              'PAY DEPOSIT$feeLabel',
+              style: const TextStyle(
+                fontFamily: 'AllroundGothic',
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      } else if (hasEnded) {
+        if (reqStatus == 'completed') {
           return Container(
             width: double.infinity,
             height: 60,
@@ -1543,7 +1577,58 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           );
         }
       } else {
-        // Event in future
+        // Host Deposit Paid & Event Live / Upcoming for Host
+        return Container(
+          width: double.infinity,
+          height: 60,
+          decoration: BoxDecoration(
+            gradient: LunaraTheme.purpleGradient,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ElevatedButton.icon(
+            onPressed: () {
+              if (req != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            icon: const Icon(Icons.confirmation_number_rounded, color: Colors.white),
+            label: const Text(
+              'VIEW TICKET',
+              style: TextStyle(
+                fontFamily: 'AllroundGothic',
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      }
+    } else {
+      // ───────────────────────────────────────────────────────────────────────
+      // JOINER / VISITOR VIEW
+      // ───────────────────────────────────────────────────────────────────────
+      if (payStatus != 'paid' && reqStatus != 'confirmed' && reqStatus != 'live') {
+        // Host has not paid deposit or admin has not approved yet
         return Container(
           width: double.infinity,
           height: 60,
@@ -1553,7 +1638,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           child: const Center(
             child: Text(
-              'WAITING FOR MEET TIME TO END',
+              'WAITING FOR HOST DEPOSIT',
               style: TextStyle(
                 fontFamily: 'AllroundGothic',
                 color: Colors.grey,
@@ -1564,9 +1649,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         );
       }
-    } else {
-      // Not host
-      if (status == 'completed' || hasEnded) {
+
+      if (reqStatus == 'completed' || hasEnded) {
         return Container(
           width: double.infinity,
           height: 60,
@@ -1589,68 +1673,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
 
       if (myJoinerInfo != null) {
-        final jStatus = myJoinerInfo['status']?.toString();
-        final payStatus = myJoinerInfo['paymentStatus']?.toString();
+        final jStatus = (myJoinerInfo['status'] ?? '').toString().toLowerCase();
+        final jPayStatus = (myJoinerInfo['paymentStatus'] ?? '').toString().toLowerCase();
 
-        if (jStatus == 'paid' || payStatus == 'paid') {
+        if (jStatus == 'paid' || jPayStatus == 'paid') {
           return Container(
             width: double.infinity,
             height: 60,
             decoration: BoxDecoration(
               color: Colors.green.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.green),
             ),
-            child: const Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle_outline_rounded, color: Colors.green),
-                  SizedBox(width: 8),
-                  Text(
-                    'JOINED',
-                    style: TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      color: Colors.green,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  if (req != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StrangersMeetTicketScreen(request: req),
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                ),
+                icon: const Icon(Icons.confirmation_number_rounded, color: Colors.green),
+                label: const Text(
+                  'VIEW TICKET',
+                  style: TextStyle(
+                    fontFamily: 'AllroundGothic',
+                    color: Colors.green,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
+                ),
               ),
             ),
           );
-        } else if (jStatus == 'pending') {
-          return Container(
-            width: double.infinity,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey[300]!),
-            ),
-            child: const Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.hourglass_empty_rounded, color: Colors.grey),
-                  SizedBox(width: 8),
-                  Text(
-                    'REQUEST PENDING APPROVAL',
-                    style: TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      color: Colors.grey,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        } else if (jStatus == 'accepted') {
-          final payText = charges > 0
-              ? 'PAY TO JOIN (₹${charges.toStringAsFixed(0)})'
-              : 'CONFIRM JOIN (FREE)';
+        } else if (jStatus == 'accepted' || jPayStatus == 'pending') {
+          final feeLabel = charges > 0 ? ' ₹${charges.toStringAsFixed(0)}' : '';
           return Container(
             width: double.infinity,
             height: 60,
@@ -1659,14 +1724,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFFb952eb).withValues(alpha: 0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+                  color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
-            child: ElevatedButton(
-              onPressed: _initiateJoinFlow,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                if (req != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetPaymentScreen(
+                        request: req,
+                        onPaymentSuccess: () => _loadStrangersMeetDetails(showFullScreenLoader: false),
+                        isJoinPayment: true,
+                      ),
+                    ),
+                  );
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,
@@ -1674,70 +1752,58 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.payment_rounded, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Text(
-                    payText,
-                    style: const TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ],
+              icon: const Icon(Icons.payment_rounded, color: Colors.white),
+              label: Text(
+                'PAY ENTRY FEE$feeLabel',
+                style: const TextStyle(
+                  fontFamily: 'AllroundGothic',
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           );
-        } else if (jStatus == 'rejected') {
+        } else if (jStatus == 'pending') {
           return Container(
             width: double.infinity,
             height: 60,
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.05),
+              color: Colors.orange.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.red[200]!),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
             ),
             child: const Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.cancel_outlined, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text(
-                    'REQUEST REJECTED BY HOST',
-                    style: TextStyle(
-                      fontFamily: 'AllroundGothic',
-                      color: Colors.red,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              child: Text(
+                'JOIN REQUEST PENDING APPROVAL',
+                style: TextStyle(
+                  fontFamily: 'AllroundGothic',
+                  color: Colors.orange,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           );
         }
       }
 
-      if (slotsFilled >= maxPersons) {
+      // Not requested to join yet
+      final bool isFull = slotsFilled >= maxPersons;
+      if (isFull) {
         return Container(
           width: double.infinity,
           height: 60,
           decoration: BoxDecoration(
-            color: Colors.red.withValues(alpha: 0.1),
+            color: Colors.grey[200],
             borderRadius: BorderRadius.circular(20),
           ),
           child: const Center(
             child: Text(
-              'SLOTS FULL',
+              'MEET FULL',
               style: TextStyle(
                 fontFamily: 'AllroundGothic',
-                color: Colors.red,
+                color: Colors.grey,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -1746,7 +1812,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
 
-      // If user hasn't requested to join at all
+      final feeLabel = charges > 0 ? ' (₹${charges.toStringAsFixed(0)})' : '';
       return Container(
         width: double.infinity,
         height: 60,
@@ -1761,7 +1827,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ],
         ),
-        child: ElevatedButton(
+        child: ElevatedButton.icon(
           onPressed: _sendJoinRequest,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
@@ -1770,22 +1836,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
           ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
-              SizedBox(width: 12),
-              Text(
-                'REQUEST TO JOIN',
-                style: TextStyle(
-                  fontFamily: 'AllroundGothic',
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-            ],
+          icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+          label: Text(
+            'REQUEST TO JOIN$feeLabel',
+            style: const TextStyle(
+              fontFamily: 'AllroundGothic',
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       );
@@ -2305,7 +2364,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // Determine Event Title
     final String rawVenueName = widget.venue?['name'] ?? post['venue']?['name'] ?? '';
-    final String rawSubject =
+    String rawSubject =
         (post['subject'] ??
                 post['title'] ??
                 post['message'] ??
@@ -2313,6 +2372,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 'STRANGERS MEET')
             .toString()
             .trim();
+    if (rawSubject.toUpperCase().contains('DEPOSIT PENDING') || rawSubject.toUpperCase().contains('ACTION REQUIRED')) {
+      rawSubject = post['tagline'] ?? post['plan']?['subject'] ?? 'STRANGERS MEET';
+    }
     String displayTitle = rawSubject.isNotEmpty
         ? rawSubject.toUpperCase()
         : 'STRANGERS MEET';
