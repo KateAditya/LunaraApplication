@@ -2190,6 +2190,10 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       }
                                     }
 
+                                    if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                      await ApiService.cancelPendingBooking(createdBookingId!);
+                                      createdBookingId = null;
+                                    }
                                     if (outerContext.mounted) {
                                       ScaffoldMessenger.of(outerContext).showSnackBar(
                                         SnackBar(
@@ -2371,25 +2375,37 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                             );
                                           }
                                         } else {
-                                          if (outerContext.mounted) {
-                                            ScaffoldMessenger.of(outerContext).showSnackBar(
-                                              const SnackBar(
-                                                content: Text('Payment verification failed. Booking could not be confirmed.'),
-                                                backgroundColor: Colors.redAccent,
-                                              ),
-                                            );
-                                          }
+                                           if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                             await ApiService.cancelPendingBooking(createdBookingId!);
+                                             createdBookingId = null;
+                                           }
+                                           if (outerContext.mounted) {
+                                             ScaffoldMessenger.of(outerContext).showSnackBar(
+                                               const SnackBar(
+                                                 content: Text('Payment verification failed. Booking could not be confirmed.'),
+                                                 backgroundColor: Colors.redAccent,
+                                               ),
+                                             );
+                                           }
                                         }
                                       } catch (e) {
                                         debugPrint('payNowBooking error: $e');
+                                        if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                          await ApiService.cancelPendingBooking(createdBookingId!);
+                                          createdBookingId = null;
+                                        }
                                         if (outerContext.mounted) {
                                           Navigator.of(outerContext, rootNavigator: true).pop();
                                         }
                                       }
                                     });
 
-                                    rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+                                    rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) async {
                                       try { rzp.clear(); } catch (_) {}
+                                      if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                        await ApiService.cancelPendingBooking(createdBookingId!);
+                                        createdBookingId = null;
+                                      }
                                       if (outerContext.mounted) {
                                         ScaffoldMessenger.of(outerContext).showSnackBar(
                                           SnackBar(

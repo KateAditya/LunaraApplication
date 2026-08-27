@@ -89,7 +89,16 @@ router.post(
  */
 router.get('/', optionalAuth, ctrl.listMyBookings);
 
+/**
+ * POST /api/mobile/bookings/cancel-pending
+ * DELETE /api/mobile/bookings/:id/cancel
+ * Cancel an uncompleted/pending booking attempt immediately.
+ */
+router.post('/cancel-pending', authenticate, ctrl.cancelPendingBooking);
+router.delete('/:id/cancel', authenticate, ctrl.cancelPendingBooking);
+
 // ─── Payment actions ──────────────────────────────────────────────────────────
+
 // NOTE: All specific /:id/sub-routes MUST be declared before GET /:id
 // to prevent Express matching /:id first and treating the sub-path as the id.
 

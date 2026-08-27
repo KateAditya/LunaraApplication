@@ -1432,6 +1432,22 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               bookingMap['bookingId'] = booking['bookingId'];
             }
 
+            final cachedUser = ApiService.cachedCurrentUser;
+            if (cachedUser != null) {
+              final userMap = bookingMap['user'] is Map ? Map<String, dynamic>.from(bookingMap['user']) : <String, dynamic>{};
+              final hostMap = bookingMap['host'] is Map ? Map<String, dynamic>.from(bookingMap['host']) : <String, dynamic>{};
+              if ((userMap['profilePhotoUrl'] ?? userMap['profilePhoto']) == null && cachedUser.profilePhoto != null) {
+                userMap['profilePhotoUrl'] = cachedUser.profilePhoto;
+                userMap['profilePhoto'] = cachedUser.profilePhoto;
+                bookingMap['user'] = userMap;
+              }
+              if ((hostMap['profilePhotoUrl'] ?? hostMap['profilePhoto']) == null && cachedUser.profilePhoto != null) {
+                hostMap['profilePhotoUrl'] = cachedUser.profilePhoto;
+                hostMap['profilePhoto'] = cachedUser.profilePhoto;
+                bookingMap['host'] = hostMap;
+              }
+            }
+
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -1525,6 +1541,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           }
           if (bookingMap['totalAmount'] == null && amountPaid > 0) {
             bookingMap['totalAmount'] = amountPaid;
+          }
+
+          final cachedUser = ApiService.cachedCurrentUser;
+          if (cachedUser != null) {
+            final userMap = bookingMap['user'] is Map ? Map<String, dynamic>.from(bookingMap['user']) : <String, dynamic>{};
+            final photo = userMap['profilePhotoUrl'] ?? userMap['profilePhoto'] ?? userMap['profileImageUrl'];
+            if ((photo == null || photo.toString().trim().isEmpty) && cachedUser.profilePhoto != null) {
+              userMap['profilePhotoUrl'] = cachedUser.profilePhoto;
+              userMap['profilePhoto'] = cachedUser.profilePhoto;
+              userMap['profileImageUrl'] = cachedUser.profilePhoto;
+              bookingMap['user'] = userMap;
+            }
           }
 
           Navigator.push(

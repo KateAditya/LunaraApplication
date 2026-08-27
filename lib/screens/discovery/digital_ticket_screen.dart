@@ -213,30 +213,88 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   User? _resolveBookerUser() {
-    if (widget.user is User) return widget.user as User;
-    if (widget.user is Map) {
+    User? resolvedUser;
+    if (widget.user is User) {
+      resolvedUser = widget.user as User;
+    } else if (widget.user is Map) {
       try {
         final map = Map<String, dynamic>.from(widget.user as Map);
-        return User.fromJson(map);
+        resolvedUser = User.fromJson(map);
       } catch (_) {}
     }
 
-    final bUser = widget.booking?['user'] ??
-        widget.booking?['host'] ??
-        widget.booking?['booker'] ??
-        widget.booking?['creator'];
-    if (bUser is User) return bUser;
-    if (bUser is Map) {
-      try {
-        final map = Map<String, dynamic>.from(bUser);
-        return User.fromJson(map);
-      } catch (_) {}
+    if (resolvedUser == null) {
+      final bUser = widget.booking?['user'] ??
+          widget.booking?['host'] ??
+          widget.booking?['booker'] ??
+          widget.booking?['creator'];
+      if (bUser is User) {
+        resolvedUser = bUser;
+      } else if (bUser is Map) {
+        try {
+          final map = Map<String, dynamic>.from(bUser);
+          resolvedUser = User.fromJson(map);
+        } catch (_) {}
+      }
     }
 
-    // Prefer the immediately-available cached user over the async-loaded one
-    // so the very first frame already has complete user data.
-    if (ApiService.cachedCurrentUser != null) return ApiService.cachedCurrentUser;
-    if (_loadedBookerUser != null) return _loadedBookerUser;
+    final cached = ApiService.cachedCurrentUser;
+    final loaded = _loadedBookerUser;
+    final fallbackPhoto = (cached?.profilePhoto ?? loaded?.profilePhoto ?? '').trim();
+
+    if (resolvedUser != null) {
+      final currentPhoto = (resolvedUser.profilePhoto ?? '').trim();
+      if (currentPhoto.isEmpty && fallbackPhoto.isNotEmpty) {
+        return User(
+          id: resolvedUser.id,
+          firstName: resolvedUser.firstName.isNotEmpty ? resolvedUser.firstName : (cached?.firstName ?? 'Guest'),
+          lastName: resolvedUser.lastName.isNotEmpty ? resolvedUser.lastName : (cached?.lastName ?? ''),
+          email: resolvedUser.email.isNotEmpty ? resolvedUser.email : (cached?.email ?? ''),
+          phone: resolvedUser.phone.isNotEmpty ? resolvedUser.phone : (cached?.phone ?? ''),
+          profilePhoto: fallbackPhoto,
+          bio: resolvedUser.bio,
+          city: resolvedUser.city,
+          gender: resolvedUser.gender,
+          photos: resolvedUser.photos,
+          photoDetails: resolvedUser.photoDetails,
+          age: resolvedUser.age,
+          displayName: resolvedUser.displayName,
+          occupation: resolvedUser.occupation,
+          company: resolvedUser.company,
+          education: resolvedUser.education,
+          lookingFor: resolvedUser.lookingFor,
+          interests: resolvedUser.interests,
+          nightlifePreference: resolvedUser.nightlifePreference,
+          musicPreference: resolvedUser.musicPreference,
+          smokingPreference: resolvedUser.smokingPreference,
+          drinkPreference: resolvedUser.drinkPreference,
+          budgetRange: resolvedUser.budgetRange,
+          minBudget: resolvedUser.minBudget,
+          maxBudget: resolvedUser.maxBudget,
+          preferredGenders: resolvedUser.preferredGenders,
+          minAgePreference: resolvedUser.minAgePreference,
+          maxAgePreference: resolvedUser.maxAgePreference,
+          matchDistanceKm: resolvedUser.matchDistanceKm,
+          invisibleMode: resolvedUser.invisibleMode,
+          showMeInMatching: resolvedUser.showMeInMatching,
+          bookingAlertsEnabled: resolvedUser.bookingAlertsEnabled,
+          dateOfBirth: resolvedUser.dateOfBirth,
+          isVerified: resolvedUser.isVerified,
+          superLikesCount: resolvedUser.superLikesCount,
+          plansCount: resolvedUser.plansCount,
+          subscriptionTier: resolvedUser.subscriptionTier,
+          bookingsCount: resolvedUser.bookingsCount,
+          matchesCount: resolvedUser.matchesCount,
+          pointsCount: resolvedUser.pointsCount,
+          isLiked: resolvedUser.isLiked,
+          isSuperLiked: resolvedUser.isSuperLiked,
+        );
+      }
+      return resolvedUser;
+    }
+
+    if (cached != null) return cached;
+    if (loaded != null) return loaded;
 
     return null;
   }

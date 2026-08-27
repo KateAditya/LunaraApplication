@@ -2840,8 +2840,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               alignment: Alignment.centerRight,
                               child: Text(
                                 selectedPaymentType == 'self_pay'
-                                    ? 'Host pays Commitment Deposit: ₹198 (Refundable)'
-                                    : 'Split Commitment Deposit: ₹99 per head (Refundable)',
+                                    ? 'Host will pay whole party expense'
+                                    : 'The amount will be split of the total expense',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
@@ -3645,9 +3645,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               ? 'PROCEEDING...'
                               : (selectedUserIds.length > 20
                                     ? 'SUBMIT STRANGERS MEET'
-                                    : (selectedPaymentType == 'self_pay'
-                                          ? 'POST PARTY PLAN (PAY ₹198)'
-                                          : 'POST PARTY PLAN (PAY ₹99)')),
+                                    : 'POST PARTY PLAN (PAY ₹99)'),
                           onTap: isPosting
                               ? () {}
                               : () async {

@@ -482,4 +482,30 @@ export class VenueBookingService {
             return null;
         }
     }
+
+    /**
+     * Cancel an uncompleted/pending booking payment attempt and release any time locks immediately.
+     */
+    public static async cancelPendingBooking(bookingId: string, userId: string): Promise<boolean> {
+        try {
+            const booking = await Booking.findOne({
+                where: {
+                    id: bookingId,
+                    userId,
+                    status: BookingStatus.PENDING,
+                },
+            });
+            if (booking) {
+                await booking.update({ status: BookingStatus.CANCELLED });
+                await PlanEligibilityService.releaseLock(booking.id);
+                logger.info(`[VenueBookingService] Cancelled pending Booking ${bookingId} and released lock for user ${userId}`);
+                return true;
+            }
+            return false;
+        } catch (err) {
+            logger.error(`[VenueBookingService] Error cancelling pending Booking ${bookingId}:`, err);
+            return false;
+        }
+    }
 }
+

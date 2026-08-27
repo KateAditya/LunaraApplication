@@ -196,10 +196,13 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     }
   }
 
-  void _handlePaymentError(PaymentFailureResponse response) {
+  void _handlePaymentError(PaymentFailureResponse response) async {
     if (_isProcessingDialogOpen && mounted) {
       _isProcessingDialogOpen = false;
       Navigator.pop(context); // Close the processing dialog
+    }
+    if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+      await ApiService.cancelPendingBooking(widget.bookingId!);
     }
     if (widget.onPaymentCancelled != null) {
       widget.onPaymentCancelled!();
@@ -229,9 +232,14 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop && widget.onPaymentCancelled != null) {
-          widget.onPaymentCancelled!();
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) {
+          if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+            await ApiService.cancelPendingBooking(widget.bookingId!);
+          }
+          if (widget.onPaymentCancelled != null) {
+            widget.onPaymentCancelled!();
+          }
         }
       },
       child: Scaffold(
@@ -270,11 +278,14 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () {
+            onPressed: () async {
+              if (widget.bookingId != null && widget.bookingId!.isNotEmpty) {
+                await ApiService.cancelPendingBooking(widget.bookingId!);
+              }
               if (widget.onPaymentCancelled != null) {
                 widget.onPaymentCancelled!();
               }
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
           ),
           const Expanded(

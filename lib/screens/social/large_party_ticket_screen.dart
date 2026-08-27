@@ -797,19 +797,34 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Map<String, dynamic> _resolveHostUser() {
+    Map<String, dynamic> hostMap = {};
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
-      return _freshHostUser!;
+      hostMap = Map<String, dynamic>.from(_freshHostUser!);
+    } else if (widget.booking['host'] is Map && (widget.booking['host'] as Map).isNotEmpty) {
+      hostMap = Map<String, dynamic>.from(widget.booking['host']);
+    } else if (widget.booking['user'] is Map && (widget.booking['user'] as Map).isNotEmpty) {
+      hostMap = Map<String, dynamic>.from(widget.booking['user']);
+    } else if (widget.booking['customer'] is Map && (widget.booking['customer'] as Map).isNotEmpty) {
+      hostMap = Map<String, dynamic>.from(widget.booking['customer']);
     }
-    if (widget.booking['host'] is Map && (widget.booking['host'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.booking['host']);
-    }
-    if (widget.booking['user'] is Map && (widget.booking['user'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.booking['user']);
-    }
-    if (widget.booking['customer'] is Map && (widget.booking['customer'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.booking['customer']);
-    }
+
     final cached = ApiService.cachedCurrentUser;
+    final cachedPhoto = cached?.profilePhoto;
+
+    if (hostMap.isNotEmpty) {
+      final existingPhoto = (hostMap['profilePhotoUrl'] ?? hostMap['profileImageUrl'] ?? hostMap['profilePhoto'] ?? hostMap['photo'])?.toString();
+      if ((existingPhoto == null || existingPhoto.trim().isEmpty) && cachedPhoto != null && cachedPhoto.isNotEmpty) {
+        hostMap['profilePhotoUrl'] = cachedPhoto;
+        hostMap['profileImageUrl'] = cachedPhoto;
+        hostMap['profilePhoto'] = cachedPhoto;
+      }
+      if ((hostMap['firstName'] == null || hostMap['firstName'].toString().trim().isEmpty) && cached != null) {
+        hostMap['firstName'] = cached.firstName;
+        hostMap['lastName'] = cached.lastName;
+      }
+      return hostMap;
+    }
+
     if (cached != null) {
       return {
         'id': cached.id,

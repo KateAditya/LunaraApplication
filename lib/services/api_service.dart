@@ -4231,6 +4231,23 @@ class ApiService {
     return false;
   }
 
+  static Future<bool> cancelPendingBooking(String bookingId) async {
+    try {
+      final response = await post(
+        '/api/mobile/bookings/cancel-pending',
+        body: {'bookingId': bookingId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('cancelPendingBooking error: $e');
+    }
+    return false;
+  }
+
+
   // â”€â”€ Subscription API Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<dynamic>> fetchSubscriptionPackages() async {

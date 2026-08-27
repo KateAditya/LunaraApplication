@@ -1779,6 +1779,25 @@ export const verifyLargePartyPayment = async (req: Request, res: Response) => {
     }
 };
 
+export const cancelPendingBooking = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const bookingId = id || req.body.bookingId || req.body.id;
+        const userId = (req as any).user?.id || req.body?.userId;
+
+        if (!bookingId) {
+            res.status(400).json({ success: false, message: 'Booking ID is required' });
+            return;
+        }
+
+        const success = await VenueBookingService.cancelPendingBooking(bookingId, userId);
+        res.json({ success, message: success ? 'Pending booking cancelled successfully' : 'No pending booking found to cancel' });
+    } catch (err: any) {
+        logger.error('cancelPendingBooking error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
 export default {
     getTablePackages,
     getTimeSlots,
@@ -1794,4 +1813,6 @@ export default {
     getBookingDetail,
     initiateLargePartyPayment,
     verifyLargePartyPayment,
+    cancelPendingBooking,
 };
+
