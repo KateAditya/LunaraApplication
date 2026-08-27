@@ -116,7 +116,7 @@ export class EventTimeLockService {
                 where: {
                     requesterId: userId,
                     [Op.or]: [
-                        { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.WAITING] } },
+                        { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.WAITING, PartyPlanRequestStatus.PENDING] } },
                         { joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID },
                     ],
                 },

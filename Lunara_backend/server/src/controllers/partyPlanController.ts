@@ -2001,6 +2001,13 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
+        const bookingConflictMsg = await checkExistingBookingForDate(callerUserId, plan.planDateTime, 'party_plan');
+        if (bookingConflictMsg) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: bookingConflictMsg });
+            return;
+        }
+
         const newReq = await PartyPlanRequest.create({
             planId: id,
             requesterId: callerUserId,

@@ -62,6 +62,85 @@ async function ensureConversationColumns() {
     }
 }
 
+async function isPartyPlanCancelledForConversation(conv: any, userId: string, otherUserId: string): Promise<boolean> {
+    try {
+        const uId = userId.toLowerCase();
+        const oId = otherUserId.toLowerCase();
+
+        const PartyPlanModel = (await import('../models/PartyPlan')).default;
+        const PartyPlanRequestModel = (await import('../models/PartyPlanRequest')).default;
+
+        // 1. If explicit contextId is provided
+        if ((conv.contextType === 'party_plan' || conv.contextType === 'party') && conv.contextId) {
+            const plan = await PartyPlanModel.findByPk(conv.contextId);
+            if (plan && (plan.status === 'cancelled' || plan.lifecycleStatus === 'cancelled')) {
+                return true;
+            }
+            const activeReq = await PartyPlanRequestModel.findOne({
+                where: {
+                    planId: conv.contextId,
+                    requesterId: { [Op.in]: [userId, otherUserId] },
+                    status: { [Op.in]: ['accepted', 'payment_pending', 'confirmed', 'paid'] }
+                }
+            });
+            if (!activeReq) {
+                const cancelledReq = await PartyPlanRequestModel.findOne({
+                    where: {
+                        planId: conv.contextId,
+                        requesterId: { [Op.in]: [userId, otherUserId] },
+                        status: { [Op.in]: ['cancelled', 'declined', 'rejected', 'withdrawn'] }
+                    }
+                });
+                if (cancelledReq) return true;
+            }
+        }
+
+        // 2. Check if all Party Plan connections between uId and oId are cancelled
+        const userPartyReqs = await PartyPlanRequestModel.findAll({
+            where: {
+                requesterId: { [Op.in]: [userId, otherUserId] }
+            },
+            include: [{ model: PartyPlanModel, as: 'partyPlan' }]
+        });
+
+        const relevantPartyReqs = userPartyReqs.filter((r: any) => {
+            const plan = r.partyPlan;
+            if (!plan) return false;
+            const isMatch = (plan.userId.toLowerCase() === uId && r.requesterId.toLowerCase() === oId) ||
+                            (plan.userId.toLowerCase() === oId && r.requesterId.toLowerCase() === uId);
+            return isMatch;
+        });
+
+        if (relevantPartyReqs.length > 0) {
+            const hasActiveMatch = relevantPartyReqs.some((r: any) => {
+                const plan = r.partyPlan;
+                const isPlanActive = plan && plan.status !== 'cancelled' && plan.lifecycleStatus !== 'cancelled';
+                const isReqActive = r.status === 'accepted' || r.status === 'payment_pending' || r.status === 'confirmed' || r.status === 'paid';
+                return isPlanActive && isReqActive;
+            });
+            if (!hasActiveMatch) {
+                // Verify if they have another non-party active match (NightPartnerMatch)
+                const { UserMatch } = require('../models');
+                const activeMatch = await UserMatch.findOne({
+                    where: {
+                        [Op.or]: [
+                            { userOneId: userId, userTwoId: otherUserId },
+                            { userOneId: otherUserId, userTwoId: userId }
+                        ],
+                        status: 'matched'
+                    }
+                });
+                if (!activeMatch) {
+                    return true; // Remove cancelled Party Plan profile from chat list!
+                }
+            }
+        }
+    } catch (err: any) {
+        logger.warn('isPartyPlanCancelledForConversation error:', err.message);
+    }
+    return false;
+}
+
 // ─── GET /conversations — Chat list ──────────────────────────────────────────
 export const getConversations = async (req: Request, res: Response) => {
     try {
@@ -128,6 +207,10 @@ export const getConversations = async (req: Request, res: Response) => {
                 }
             }
 
+            if (await isPartyPlanCancelledForConversation(conv, userId, otherUserId)) {
+                continue; // Skip cancelled Party Plan profile from chat list
+            }
+
             const key = otherUserId.toLowerCase();
             const unread = conv.getUnreadFor ? conv.getUnreadFor(userId) : (isP1 ? (conv.unreadOne || 0) : (conv.unreadTwo || 0));
             aggregatedUnreadMap.set(key, (aggregatedUnreadMap.get(key) || 0) + Number(unread || 0));
@@ -144,8 +227,7 @@ export const getConversations = async (req: Request, res: Response) => {
             }
         }
 
-        const list = [];
-        for (const conv of mapByOtherUser.values()) {
+        const list = await Promise.all(Array.from(mapByOtherUser.values()).map(async (conv) => {
             const otherUserId = conv.getOtherParticipant(userId);
             const otherUser = (otherUserId && conv.participantOne && otherUserId.toLowerCase() === conv.participantOne.toLowerCase())
                 ? (conv as any).userOne
@@ -156,28 +238,53 @@ export const getConversations = async (req: Request, res: Response) => {
             const clearedTime = isP1
                 ? (conv.clearedAtOne ? new Date(conv.clearedAtOne).getTime() : 0)
                 : (conv.clearedAtTwo ? new Date(conv.clearedAtTwo).getTime() : 0);
-            const lastMsgTime = conv.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
-            const isClearedForUser = clearedTime > 0 && lastMsgTime <= clearedTime;
 
-            const key = otherUserId.toLowerCase();
-            const totalUnreadForUser = isClearedForUser ? 0 : (aggregatedUnreadMap.get(key) ?? (conv.getUnreadFor ? conv.getUnreadFor(userId) : 0));
+            // Fetch candidate messages to find the latest valid non-deleted, non-blocked message for THIS user
+            const candidateMessages = await Message.findAll({
+                where: {
+                    conversationId: conv.id,
+                    deletedAt: null as any,
+                    ...(clearedTime > 0 ? { createdAt: { [Op.gt]: new Date(clearedTime) } } : {})
+                },
+                order: [['createdAt', 'DESC']],
+                limit: 25,
+            });
 
-            const rawPreview = conv.lastMessagePreview?.toString().trim();
-            const preview = isClearedForUser ? 'Tap to chat' : ((rawPreview && rawPreview.length > 0) ? rawPreview : 'Tap to chat');
-            const lastMsgAt = isClearedForUser ? null : conv.lastMessageAt;
+            const userValidMessages = candidateMessages.filter(m => {
+                const dfu = (m as any).deletedForUsers;
+                if (!dfu) return true;
+                if (Array.isArray(dfu)) {
+                    return !dfu.map((x: any) => String(x).toLowerCase()).includes(uId);
+                }
+                if (typeof dfu === 'string') {
+                    try {
+                        const parsed = JSON.parse(dfu);
+                        return Array.isArray(parsed) ? !parsed.map((x: any) => String(x).toLowerCase()).includes(uId) : true;
+                    } catch (_) { return true; }
+                }
+                return true;
+            });
 
-            list.push({
+            const latestValidMsg = userValidMessages.length > 0 ? userValidMessages[0] : null;
+
+            const preview = latestValidMsg ? latestValidMsg.getPreview() : 'Tap to chat';
+            const lastMsgAt = latestValidMsg ? latestValidMsg.createdAt : null;
+
+            const key = (otherUserId || '').toLowerCase();
+            const unreadCount = latestValidMsg ? (aggregatedUnreadMap.get(key) ?? (conv.getUnreadFor ? conv.getUnreadFor(userId) : 0)) : 0;
+
+            return {
                 conversationId:      conv.id,
                 id:                  conv.id,
                 otherUser:           formatUserBrief(otherUser),
                 lastMessagePreview:  preview,
                 lastMessageAt:       lastMsgAt,
-                unreadCount:         totalUnreadForUser,
+                unreadCount,
                 status:              conv.status,
                 contextType:         conv.contextType,
                 contextId:           conv.contextId,
-            });
-        }
+            };
+        }));
 
         return res.json({ success: true, count: list.length, data: list });
     } catch (err: any) {
