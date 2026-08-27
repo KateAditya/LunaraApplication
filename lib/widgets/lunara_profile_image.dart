@@ -86,12 +86,19 @@ class LunaraProfileImage extends StatelessWidget {
   }
 
   String get _effectiveTier {
-    if (overrideTier != null) return overrideTier!.toUpperCase();
+    if (overrideTier != null && overrideTier!.isNotEmpty) return overrideTier!.toUpperCase();
     final resolved = _resolvedUser;
-    if (resolved != null) return resolved.subscriptionTier.toUpperCase();
+    if (resolved != null && resolved.subscriptionTier.trim().isNotEmpty && resolved.subscriptionTier.toUpperCase() != 'FREE') {
+      return resolved.subscriptionTier.toUpperCase();
+    }
     if (userData != null) {
-      final t = userData!['subscriptionTier']?.toString().toUpperCase();
-      if (t != null && t.isNotEmpty) return t;
+      final t = (userData!['subscriptionTier'] ??
+                 userData!['tier'] ??
+                 userData!['packageTier'] ??
+                 userData!['planTier'] ??
+                 userData!['user']?['subscriptionTier'] ??
+                 userData!['user']?['tier'])?.toString().toUpperCase();
+      if (t != null && t.isNotEmpty && t != 'FREE' && t != 'NULL' && t != 'UNDEFINED') return t;
     }
     return 'FREE';
   }
@@ -99,12 +106,15 @@ class LunaraProfileImage extends StatelessWidget {
   Gradient _tierGradient(String tier) {
     switch (tier) {
       case 'ELITE':
+      case 'GOLD':
+      case 'VIP':
         return const LinearGradient(
           colors: [Color(0xFFFFD700), Color(0xFFFFB703), Color(0xFFFFD700), Color(0xFFFFC107)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
       case 'PRO':
+      case 'PLATINUM':
         return const LinearGradient(
           colors: [Color(0xFFE100FF), Color(0xFF7F00FF), Color(0xFFE100FF)],
           begin: Alignment.topLeft,
@@ -153,13 +163,14 @@ class LunaraProfileImage extends StatelessWidget {
             ),
     );
 
+    final String tier = _effectiveTier;
+    final bool shouldDrawRing = showGradientBorder || tier != 'FREE';
 
-    if (showGradientBorder) {
-      final String tier = _effectiveTier;
+    if (shouldDrawRing) {
       final Gradient gradient = _tierGradient(tier);
 
       // Double-width ring for PRO and ELITE tiers for extra prominence
-      final double ringWidth = (tier == 'PRO' || tier == 'ELITE') ? (borderWidth + 1.0) : borderWidth;
+      final double ringWidth = (tier == 'PRO' || tier == 'ELITE' || tier == 'GOLD' || tier == 'VIP') ? (borderWidth + 1.0) : borderWidth;
 
       avatar = Stack(
         children: [

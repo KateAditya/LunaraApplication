@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'party_plan_detail_screen.dart';
+import 'post_detail_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../models/strangers_meet_request.dart';
@@ -1819,14 +1820,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final pendingReqs = item.rawData['pendingIncomingRequests'];
 
     if (category.contains('stranger') || category.contains('meet')) {
-      // Any pending incoming join request(s) — including exactly one — must
-      // open the review modal so the host can actually accept/reject it.
-      // Previously this only triggered for >1 requests; a single pending
-      // request fell through to the status-based branch below, which reads
-      // the MEET's own admin-approval status (e.g. 'approved', since the
-      // meet is already live) rather than the joiner's request status —
-      // landing the host on the unrelated Pending/Approved meet-moderation
-      // screen with no way to review the new request at all.
       if (pendingReqs is List && pendingReqs.isNotEmpty) {
         final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
         _showReviewStrangersMeetRequestsModal(
@@ -1836,58 +1829,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return;
       }
       try {
-        final req = StrangersMeetRequest.fromJson(item.rawData['plan'] ?? item.rawData);
-        final reqStatus = (req.status.isNotEmpty ? req.status : status).toLowerCase();
-        final payStatus = req.paymentStatus.toLowerCase();
+        final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+        final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetData);
+        postMap['type'] = 'strangers_meet';
+        postMap['id'] = postMap['id'] ?? item.rawData['id'];
 
-        if (reqStatus == 'pending' || reqStatus == 'request_sent' || reqStatus == 'pending_approval' || status.toLowerCase() == 'pending') {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Your Stranger Meet request is waiting for admin approval. Payment will be enabled once approved.'),
-                backgroundColor: LunaraTheme.electricViolet,
-              ),
-            );
-          }
-          return;
-        }
-
-        if (reqStatus == 'accepted' || reqStatus == 'approved' || reqStatus == 'payment_pending' || status.toLowerCase() == 'accepted') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StrangersMeetPaymentScreen(
-                request: req,
-                onPaymentSuccess: () => _loadFeed(),
-                isJoinPayment: true,
-              ),
-            ),
-          );
-        } else if (reqStatus == 'unpaid' || reqStatus == 'deposit_pending' || status.toLowerCase() == 'unpaid') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StrangersMeetPaymentScreen(
-                request: req,
-                onPaymentSuccess: () => _loadFeed(),
-                isJoinPayment: false,
-              ),
-            ),
-          );
-        } else if (payStatus == 'paid' || reqStatus == 'paid' || reqStatus == 'confirmed') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StrangersMeetTicketScreen(request: req),
-            ),
-          );
-        } else if (item.actions != null && item.actions!.isNotEmpty) {
-          final primary = item.actions!.firstWhere((a) => a.isPrimary, orElse: () => item.actions!.first);
-          primary.onTap();
-        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PostDetailScreen(post: postMap),
+          ),
+        );
       } catch (e) {
-        debugPrint('Error parsing strangers meet on tap: $e');
+        debugPrint('Error opening Strangers Meet detail screen: $e');
       }
+      return;
     } else if (category.contains('booking') || category.contains('group')) {
       final rawDataMap = Map<String, dynamic>.from(item.rawData);
       final bookingData = Map<String, dynamic>.from(rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap);
@@ -4638,11 +4594,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = 'Request sent to Admin for Stranger Meet at $venueName. Waiting for admin approval.';
         statusSummary = 'Waiting for Admin Approval';
         actionsList = null;
-      } else if (meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending' || (hostPayStatus == 'unpaid' && meetStatus != 'pending')) {
+      } else if (meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending' || (hostPayStatus == 'unpaid' && meetStatus != 'pending' && meetStatus != 'request_sent' && meetStatus != 'pending_approval')) {
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        final rawDep = meetMap['paymentAmount'] ?? meetMap['payment_amount'];
+        final rawDep = meetMap['paymentAmount'] ??
+            meetMap['payment_amount'] ??
+            meetMap['adminPaymentAmount'] ??
+            meetMap['admin_payment_amount'] ??
+            meetMap['totalAmount'] ??
+            meetMap['depositAmount'] ??
+            myRequest?['paymentAmount'] ??
+            myRequest?['payment_amount'];
         final double deposit = rawDep is num
             ? rawDep.toDouble()
             : (double.tryParse((rawDep ?? '0').toString()) ?? 0.0);

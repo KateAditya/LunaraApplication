@@ -1117,6 +1117,9 @@ export class MobileTicketController {
                 const jAny = j as any;
                 const meet = jAny.strangersMeetRequest;
                 if (!meet) continue;
+                const jPayStatus = (j.paymentStatus || '').toLowerCase();
+                const isJPaid = jPayStatus === 'paid' || jPayStatus === 'completed' || jPayStatus === 'settled';
+                if (!isJPaid) continue; // Joiner must pay entry fee before ticket is generated/shown
                 if (seenBookingIds.has(j.id) || seenBookingIds.has(meet.id) || (jAny.ticketCode && seenTicketIds.has(jAny.ticketCode))) continue;
                 seenBookingIds.add(j.id);
                 if (jAny.ticketCode) seenTicketIds.add(jAny.ticketCode);
@@ -1211,6 +1214,9 @@ export class MobileTicketController {
             // 7. Synthesize from StrangersMeetRequest (Host)
             for (const sm of strangersHostMeets) {
                 const smAny = sm as any;
+                const smPayStatus = (sm.paymentStatus || '').toLowerCase();
+                const isSmPaid = smPayStatus === 'paid' || smPayStatus === 'completed' || smPayStatus === 'settled';
+                if (!isSmPaid) continue; // Host must pay deposit before ticket is generated/shown
                 if (seenBookingIds.has(sm.id) || (smAny.ticketCode && seenTicketIds.has(smAny.ticketCode))) continue;
                 seenBookingIds.add(sm.id);
                 if (smAny.ticketCode) seenTicketIds.add(smAny.ticketCode);

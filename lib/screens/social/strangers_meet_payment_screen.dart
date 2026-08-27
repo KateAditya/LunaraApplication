@@ -964,7 +964,7 @@ class _StrangersMeetPaymentScreenState
                 : 0.0))
         : (req.paymentAmount != null && req.paymentAmount! > 0
             ? req.paymentAmount!
-            : (req.chargesPerHead > 0 ? req.chargesPerHead : 0.0));
+            : (req.chargesPerHead > 0 ? req.chargesPerHead : 99.0));
 
     return Scaffold(
       backgroundColor: Colors.white,

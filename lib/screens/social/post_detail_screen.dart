@@ -137,21 +137,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         widget.post['requestId'] ??
         widget.post['entityId'] ??
         widget.post['strangersMeetRequestId'] ??
+        widget.post['strangersMeetId'] ??
         widget.post['meetId'];
 
-    if (rawId == null || rawId.toString().trim().isEmpty) {
-      if (mounted) {
-        setState(() {
-          _meetRequest = null;
-          _isLoading = false;
-        });
-      }
-      return;
+    StrangersMeetRequest? req;
+    if (rawId != null && rawId.toString().trim().isNotEmpty) {
+      String cleanId = rawId.toString().trim();
+      cleanId = cleanId.replaceAll(RegExp(r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_)'), '');
+      req = await ApiService.fetchStrangersMeetRequestById(cleanId);
     }
 
-    final req = await ApiService.fetchStrangersMeetRequestById(
-      rawId.toString(),
-    );
+    if (req == null) {
+      try {
+        final Map<String, dynamic> postData = Map<String, dynamic>.from(widget.post);
+        if (postData['plan'] is Map) {
+          postData.addAll(Map<String, dynamic>.from(postData['plan']));
+        }
+        req = StrangersMeetRequest.fromJson(postData);
+      } catch (e) {
+        debugPrint('Error fallback parsing StrangersMeetRequest: $e');
+      }
+    }
+
     if (mounted) {
       setState(() {
         _meetRequest = req;

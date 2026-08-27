@@ -441,6 +441,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   ];
   int _selectedDistance = 10;
 
+  late Set<String> _initialInterests;
+  late Set<String> _initialLookingFor;
+  late Set<String> _initialMusic;
+  String? _initialSmoking;
+  late Set<String> _initialDrink;
+  late Set<String> _initialPrefGenders;
+  late int _initialDistance;
+  late bool _initialInvisibleMode;
+  late bool _initialBookingAlerts;
+
   @override
   void initState() {
     super.initState();
@@ -510,6 +520,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     _selectedDistance = u.matchDistanceKm ?? 10;
+
+    // Store initial copies for unsaved changes comparison
+    _initialInterests = Set.from(_selectedInterests);
+    _initialLookingFor = Set.from(_selectedLookingFor);
+    _initialMusic = Set.from(_selectedMusic);
+    _initialSmoking = _selectedSmoking;
+    _initialDrink = Set.from(_selectedDrink);
+    _initialPrefGenders = Set.from(_selectedPrefGenders);
+    _initialDistance = _selectedDistance;
+    _initialInvisibleMode = _invisibleMode;
+    _initialBookingAlerts = _bookingAlerts;
   }
 
   @override
@@ -1067,13 +1088,143 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  bool _hasUnsavedChanges() {
+    final u = widget.user;
+    if (_firstNameController.text.trim() != u.firstName) return true;
+    if (_lastNameController.text.trim() != u.lastName) return true;
+    if (_phoneController.text.trim() != u.phone) return true;
+    if (_dobController.text.trim() != (u.dateOfBirth ?? '')) return true;
+    if (_genderController.text.trim() != (u.gender ?? '')) return true;
+    if (_cityController.text.trim() != (u.city ?? '')) return true;
+    if (_bioController.text.trim() != (u.bio ?? '')) return true;
+    if (_occupationController.text.trim() != (u.occupation ?? '')) return true;
+    if (_educationController.text.trim() != (u.education ?? '')) return true;
+    if (_minBudgetController.text.trim() != (u.minBudget?.toString() ?? '')) return true;
+    if (_maxBudgetController.text.trim() != (u.maxBudget?.toString() ?? '')) return true;
+    if (_minAgeController.text.trim() != (u.minAgePreference?.toString() ?? '')) return true;
+    if (_maxAgeController.text.trim() != (u.maxAgePreference?.toString() ?? '')) return true;
+
+    if (_invisibleMode != _initialInvisibleMode) return true;
+    if (_bookingAlerts != _initialBookingAlerts) return true;
+    if (_selectedDistance != _initialDistance) return true;
+    if (_selectedSmoking != _initialSmoking) return true;
+
+    if (!_setEquals(_selectedInterests, _initialInterests)) return true;
+    if (!_setEquals(_selectedLookingFor, _initialLookingFor)) return true;
+    if (!_setEquals(_selectedMusic, _initialMusic)) return true;
+    if (!_setEquals(_selectedDrink, _initialDrink)) return true;
+    if (!_setEquals(_selectedPrefGenders, _initialPrefGenders)) return true;
+
+    return false;
+  }
+
+  bool _setEquals<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    return a.containsAll(b);
+  }
+
+  Future<int?> _showUnsavedChangesDialog() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: LunaraTheme.electricViolet, size: 28),
+            const SizedBox(width: 10),
+            Text(
+              'Unsaved Changes',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'You have unsaved changes. Do you want to save them before leaving?',
+          style: TextStyle(
+            fontSize: 14,
+            color: isDark ? Colors.white70 : Colors.black87,
+            height: 1.4,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 0), // Cancel
+            child: Text(
+              'CANCEL',
+              style: TextStyle(
+                color: isDark ? Colors.white54 : Colors.black54,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 1), // Discard
+            child: const Text(
+              'DISCARD',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 2), // Save
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text(
+              'SAVE',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleBackPress() async {
+    if (_hasUnsavedChanges()) {
+      final choice = await _showUnsavedChangesDialog();
+      if (choice == 2) {
+        await _saveProfile();
+      } else if (choice == 1) {
+        if (mounted) Navigator.pop(context, false);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('EDIT PROFILE', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2)),
-        centerTitle: true,
-      ),
+    return PopScope(
+      canPop: !_hasUnsavedChanges(),
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBackPress();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('EDIT PROFILE', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2)),
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: _handleBackPress,
+          ),
+        ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
         : Form(
@@ -1273,6 +1424,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
             ),
           ),
+      ),
     );
   }
 }

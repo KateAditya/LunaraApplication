@@ -1467,7 +1467,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         LunaraProfileImage(
                           user: _currentUser,
                           radius: 18,
-                          showGradientBorder: false,
+                          showGradientBorder: true,
                         ),
                       ],
                     ),
@@ -3038,6 +3038,15 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         .toInt();
                 final bool isBoosted = user['isBoosted'] == true || boosts > 0;
 
+                final planColor = LunaraTheme.getPlanBadgeColor(user);
+                final bool hasPlan = planColor != null;
+                final Color cardBorderColor = isBoosted
+                    ? Colors.amber.withValues(alpha: 0.8)
+                    : (hasPlan
+                        ? planColor.withValues(alpha: 0.7)
+                        : const Color(0xFF7F00FF).withValues(alpha: 0.12));
+                final double cardBorderWidth = (isBoosted || hasPlan) ? 1.8 : 1.2;
+
                 return GestureDetector(
                   onTap: () {
                     User? resolvedUser;
@@ -3072,18 +3081,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       gradient: LunaraTheme.cardGradient,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isBoosted
-                            ? Colors.amber.withValues(alpha: 0.6)
-                            : const Color(0xFF7F00FF).withValues(alpha: 0.08),
-                        width: isBoosted ? 1.8 : 1.2,
+                        color: cardBorderColor,
+                        width: cardBorderWidth,
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: isBoosted
-                              ? Colors.amber.withValues(alpha: 0.15)
-                              : const Color(0xFF7F00FF).withValues(alpha: 0.06),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
+                              ? Colors.amber.withValues(alpha: 0.18)
+                              : (hasPlan
+                                  ? planColor.withValues(alpha: 0.15)
+                                  : const Color(0xFF7F00FF).withValues(alpha: 0.06)),
+                          blurRadius: (isBoosted || hasPlan) ? 12 : 16,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -3095,7 +3104,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             LunaraProfileImage(
                               userData: user,
                               radius: 20,
-                              showGradientBorder: isBoosted,
+                              showGradientBorder: true,
                               isInteractive: false,
                             ),
                             const SizedBox(width: 8),

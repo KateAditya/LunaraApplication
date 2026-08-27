@@ -123,13 +123,15 @@ class StrangersMeetRequest {
     final slotsFilledRaw = json['slotsFilled'] ?? json['slots_filled'] ?? json['joinedCount'] ?? json['joined_count'];
     final paymentAmountRaw = json['paymentAmount'] ??
         json['payment_amount'] ??
+        json['adminPaymentAmount'] ??
+        json['admin_payment_amount'] ??
         json['amount'] ??
         json['totalAmount'] ??
         json['depositAmount'] ??
-        (json['plan'] is Map ? json['plan']['paymentAmount'] ?? json['plan']['payment_amount'] : null) ??
-        (json['request'] is Map ? json['request']['paymentAmount'] ?? json['request']['payment_amount'] : null) ??
-        (json['metadata'] is Map ? json['metadata']['paymentAmount'] ?? json['metadata']['payment_amount'] : null) ??
-        (json['data'] is Map ? json['data']['paymentAmount'] ?? json['data']['payment_amount'] : null);
+        (json['plan'] is Map ? json['plan']['paymentAmount'] ?? json['plan']['payment_amount'] ?? json['plan']['adminPaymentAmount'] : null) ??
+        (json['request'] is Map ? json['request']['paymentAmount'] ?? json['request']['payment_amount'] ?? json['request']['adminPaymentAmount'] : null) ??
+        (json['metadata'] is Map ? json['metadata']['paymentAmount'] ?? json['metadata']['payment_amount'] ?? json['metadata']['adminPaymentAmount'] : null) ??
+        (json['data'] is Map ? json['data']['paymentAmount'] ?? json['data']['payment_amount'] ?? json['data']['adminPaymentAmount'] : null);
     final paymentStatusRaw = json['paymentStatus'] ?? json['payment_status'];
     final platformChargeRaw = json['platformChargePerSeat'] ?? json['platform_charge_per_seat'];
 
