@@ -43,6 +43,13 @@ class RealtimeSyncManager with WidgetsBindingObserver {
   final ValueNotifier<Map<String, dynamic>?> liveFeedNotifier = ValueNotifier(null);
   final ValueNotifier<int> globalSyncTick = ValueNotifier(0);
 
+  /// Trigger an immediate local UI refresh & broadcast to all active screens
+  void triggerLocalUpdate(String eventType, [dynamic payload]) {
+    handleIncomingEvent(eventType, payload ?? {'timestamp': DateTime.now().toIso8601String()});
+    globalSyncTick.value++;
+    ApiService.planPostedNotifier.value++;
+  }
+
   // ── Initialization & Socket Binding ────────────────────────────────────────
   void init() {
     if (_isInitialized) return;
@@ -151,7 +158,7 @@ class RealtimeSyncManager with WidgetsBindingObserver {
     };
 
     // 1. Party Plan & Recent Posts
-    if (eventType.startsWith('party_plan_') || entity == 'party_plan') {
+    if (eventType.startsWith('party_plan_') || eventType.startsWith('post_') || entity == 'party_plan' || entity == 'post') {
       partyPlanNotifier.value = eventEnvelope;
       recentPostsNotifier.value = eventEnvelope;
       liveFeedNotifier.value = eventEnvelope;
@@ -170,8 +177,8 @@ class RealtimeSyncManager with WidgetsBindingObserver {
       liveFeedNotifier.value = eventEnvelope;
     }
 
-    // 4. Venues
-    if (eventType.startsWith('venue_') || entity == 'venue') {
+    // 4. Venues, Upcoming Nights & Events
+    if (eventType.startsWith('venue_') || eventType.startsWith('event_') || eventType.startsWith('ad_') || entity == 'venue' || entity == 'event' || entity == 'ad') {
       venueNotifier.value = eventEnvelope;
     }
 
@@ -226,6 +233,13 @@ class RealtimeSyncManager with WidgetsBindingObserver {
       'party_plan_deleted',
       'party_plan_reposted',
       'party_plan_cancelled',
+      'post_created',
+      'post_updated',
+      'post_deleted',
+      'event_created',
+      'event_updated',
+      'ad_created',
+      'ad_updated',
       'party_plan_request_created',
       'party_plan_request_received',
       'party_plan_request_updated',

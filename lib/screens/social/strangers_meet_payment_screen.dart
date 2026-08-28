@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/realtime_sync_manager.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'strangers_meet_ticket_screen.dart';
@@ -280,29 +281,36 @@ class _StrangersMeetPaymentScreenState
                 );
 
           if (confirmRes != null && confirmRes['success'] == true) {
+            RealtimeSyncManager.instance.triggerLocalUpdate('strangers_meet_updated');
             widget.onPaymentSuccess();
             if (widget.isJoinPayment) {
               if (mounted) {
-                _showNotificationToast(
-                  title: 'Payment Confirmed',
-                  message: 'Payment Successful via Smart Wallet! 🎫',
-                  icon: Icons.check_circle_outline_rounded,
-                  iconColor: const Color(0xFF10B981),
-                  iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
-                  borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
-                );
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => StrangersMeetTicketScreen(
-                      request: widget.request,
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _showNotificationToast(
+                    title: 'Payment Confirmed',
+                    message: 'Payment Successful via Smart Wallet! 🎫',
+                    icon: Icons.check_circle_outline_rounded,
+                    iconColor: const Color(0xFF10B981),
+                    iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
+                    borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
+                  );
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(
+                        request: widget.request,
+                      ),
                     ),
-                  ),
-                );
+                  );
+                });
               }
             } else {
               if (mounted) {
-                _promptChargesPerHead(confirmRes);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _promptChargesPerHead(confirmRes);
+                });
               }
             }
             return true;
@@ -805,6 +813,7 @@ class _StrangersMeetPaymentScreenState
                                       );
 
                                   if (success) {
+                                    RealtimeSyncManager.instance.triggerLocalUpdate('strangers_meet_updated');
                                     Navigator.pop(
                                       context,
                                     ); // Close bottom sheet

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/realtime_sync_manager.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
@@ -25,6 +26,21 @@ class _StrangersMeetRequestsScreenState extends State<StrangersMeetRequestsScree
   void initState() {
     super.initState();
     _loadRequests();
+    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimeDataChanged);
+    RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimeDataChanged);
+  }
+
+  void _onRealtimeDataChanged() {
+    if (mounted) {
+      _loadRequests();
+    }
+  }
+
+  @override
+  void dispose() {
+    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(_onRealtimeDataChanged);
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimeDataChanged);
+    super.dispose();
   }
 
   Future<void> _loadRequests() async {

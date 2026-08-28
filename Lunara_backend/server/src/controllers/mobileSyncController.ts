@@ -1,15 +1,18 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
-import Notification from '../models/Notification';
-import PartyPlan from '../models/PartyPlan';
-import PartyPlanRequest from '../models/PartyPlanRequest';
-import StrangersMeetRequest from '../models/StrangersMeetRequest';
-import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
-import Conversation from '../models/Conversation';
-import Message, { MessageStatus } from '../models/Message';
-import SmartWallet from '../models/SmartWallet';
-import User from '../models/User';
-import UserSubscription from '../models/UserSubscription';
+import {
+    Notification,
+    PartyPlan,
+    PartyPlanRequest,
+    StrangersMeetRequest,
+    StrangersMeetJoiner,
+    Conversation,
+    Message,
+    SmartWallet,
+    User,
+    UserSubscription,
+} from '../models';
+import { MessageStatus } from '../models/Message';
 import { logger } from '../config/logger';
 
 /**

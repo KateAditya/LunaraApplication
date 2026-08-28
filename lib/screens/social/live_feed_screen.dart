@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/realtime_sync_manager.dart';
 import 'party_plan_detail_screen.dart';
 import 'post_detail_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
@@ -188,9 +189,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // Background sync timer every 25 seconds (sockets provide instant real-time pushes)
-    _pollingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
-      if (mounted) {
+    // Background sync timer every 15 seconds (sockets provide instant real-time pushes)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         _loadFeed(showLoader: false);
       }
     });
@@ -198,6 +199,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.planPostedNotifier.addListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.addListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.addListener(_onAuthSessionChanged);
+
+    RealtimeSyncManager.instance.liveFeedNotifier.addListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.partyPlanNotifier.addListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.recentPostsNotifier.addListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimeLiveFeedChanged);
+  }
+
+  void _onRealtimeLiveFeedChanged() {
+    if (!mounted) return;
+    _loadFeed(showLoader: false);
   }
 
   @override
@@ -206,6 +218,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.planPostedNotifier.removeListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
+
+    RealtimeSyncManager.instance.liveFeedNotifier.removeListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.partyPlanNotifier.removeListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.recentPostsNotifier.removeListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimeLiveFeedChanged);
     _disposeSocketListeners();
     _pollingTimer?.cancel();
     _pulseController.dispose();
@@ -222,6 +240,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _initSocketListeners() {
     ApiService.addSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.addSocketListener('party_plan_deleted', _onPartyPlanDeleted);
+    ApiService.addSocketListener('post_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('post_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('post_deleted', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('venue_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('venue_updated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('event_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('event_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
@@ -315,19 +340,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
-    _liveFeedDebounceTimer?.cancel();
   }
 
-  Timer? _liveFeedDebounceTimer;
+  bool _hasPendingRefetch = false;
 
   void _onPartyPlanRequestUpdated(dynamic data) {
     if (!mounted) return;
-    _liveFeedDebounceTimer?.cancel();
-    _liveFeedDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        _loadFeed(showLoader: false);
-      }
-    });
+    _loadFeed(showLoader: false);
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -423,7 +442,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   Future<void> _loadFeed({bool showLoader = true}) async {
     final requestUserId = _sessionUserId;
-    if (_isFetchingFeed) return;
+    if (_isFetchingFeed) {
+      _hasPendingRefetch = true;
+      return;
+    }
     _isFetchingFeed = true;
 
     if (showLoader && _feedItems.isEmpty && _notifications.isEmpty) {
@@ -468,6 +490,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted && requestUserId == _sessionUserId) setState(() => _isLoading = false);
     } finally {
       _isFetchingFeed = false;
+      if (_hasPendingRefetch && mounted) {
+        _hasPendingRefetch = false;
+        _loadFeed(showLoader: false);
+      }
     }
   }
 

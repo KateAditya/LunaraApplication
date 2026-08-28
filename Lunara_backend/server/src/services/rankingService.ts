@@ -4,6 +4,8 @@ import {
     UserMatch,
     UserLike,
     PartyPlan,
+    StrangersMeetRequest,
+    GroupParty,
     UserSubscription,
     SubscriptionPackage,
     ProfileBoost,
@@ -63,6 +65,8 @@ export class RankingService {
                 likesAgg,
                 superlikesAgg,
                 plansAgg,
+                strangersMeetAgg,
+                groupPartyAgg,
                 activeSubs,
                 activeBoosts,
                 usersWithProfiles
@@ -89,8 +93,23 @@ export class RankingService {
                     attributes: ['userId', [PartyPlan.sequelize!.fn('COUNT', PartyPlan.sequelize!.col('id')), 'count']],
                     where: {
                         userId: { [Op.in]: candidateUserIds },
-                        status: 'active',
-                        createdAt: { [Op.gte]: thirtyDaysAgo },
+                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
+                    },
+                    group: ['userId'],
+                }),
+                StrangersMeetRequest.findAll({
+                    attributes: ['userId', [StrangersMeetRequest.sequelize!.fn('COUNT', StrangersMeetRequest.sequelize!.col('id')), 'count']],
+                    where: {
+                        userId: { [Op.in]: candidateUserIds },
+                        status: { [Op.notIn]: ['cancelled', 'rejected', 'expired'] },
+                    },
+                    group: ['userId'],
+                }),
+                GroupParty.findAll({
+                    attributes: ['userId', [GroupParty.sequelize!.fn('COUNT', GroupParty.sequelize!.col('id')), 'count']],
+                    where: {
+                        userId: { [Op.in]: candidateUserIds },
+                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
                     },
                     group: ['userId'],
                 }),
@@ -128,7 +147,9 @@ export class RankingService {
             superlikesAgg.forEach((r: any) => superlikesMap.set(r.getDataValue('targetUserId'), parseInt(r.getDataValue('count')) || 0));
 
             const plansMap = new Map<string, number>();
-            plansAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), parseInt(r.getDataValue('count')) || 0));
+            plansAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
+            strangersMeetAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
+            groupPartyAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
 
             const vipTierMap = new Map<string, string>();
             const seenSubUsers = new Set<string>();

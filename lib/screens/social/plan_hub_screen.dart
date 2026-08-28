@@ -8,6 +8,8 @@ import '../discovery/group_party_booking_screen.dart';
 import '../discovery/all_users_screen.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
+import 'dart:math' as math;
+import '../../models/strangers_meet_request.dart';
 import '../../models/venue.dart';
 import '../../services/api_service.dart';
 import '../../models/user.dart';
@@ -52,6 +54,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
 
   List<Map<String, dynamic>> _customerList = [];
   List<Map<String, dynamic>> _partyPlans = [];
+  List<StrangersMeetRequest> _strangersMeets = [];
   List<Map<String, dynamic>> _upcomingNights = [];
   bool _isLoadingCustomers = true;
 
@@ -170,10 +173,12 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         ApiService.fetchCustomers(),
         ApiService.fetchPartyPlans(),
         ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party'),
+        ApiService.fetchMyStrangersMeetRequests(),
       ]);
-      final customers = results[0];
-      final plans = results[1];
-      final dynamicPartyAds = results[2];
+      final customers = results[0] as List<Map<String, dynamic>>;
+      final plans = results[1] as List<Map<String, dynamic>>;
+      final dynamicPartyAds = results[2] as List<Map<String, dynamic>>;
+      final meets = results[3] as List<StrangersMeetRequest>;
 
       List<Map<String, dynamic>> upcoming = [];
       if (dynamicPartyAds.isNotEmpty) {
@@ -212,6 +217,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         setState(() {
           _customerList = customers;
           _partyPlans = plans;
+          _strangersMeets = meets;
           _upcomingNights = upcoming;
           _isLoadingCustomers = false;
         });
@@ -1101,15 +1107,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     final scoredList = filteredList.map((u) {
       final userId = u['id']?.toString() ?? '';
 
-      // Dynamic count of active plans created by the user (from API or local party plans filter)
+      // Dynamic count of active plans created by the user (Party Plans + Stranger Meets + Group Parties)
       final rawPlansCount =
-          u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'];
-      final planCount = rawPlansCount != null
+          u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'] ?? u['doostCount'] ?? u['doost'];
+      final apiPlanCount = rawPlansCount != null
           ? (int.tryParse(rawPlansCount.toString()) ?? 0)
-          : _partyPlans.where((p) {
-              final creatorId = (p['userId'] ?? p['user']?['id'])?.toString();
-              return creatorId == userId;
-            }).length;
+          : 0;
+
+      final localPartyCount = _partyPlans.where((p) {
+        final creatorId = (p['userId'] ?? p['user']?['id'] ?? p['creatorId'] ?? p['creator']?['id'])?.toString();
+        return creatorId == userId;
+      }).length;
+
+      final localStrangerCount = _strangersMeets.where((s) {
+        final creatorId = (s.userId ?? s.user?['id'] ?? s.user?['userId'])?.toString();
+        return creatorId == userId;
+      }).length;
+
+      final planCount = math.max(apiPlanCount, localPartyCount + localStrangerCount);
 
       // Real dynamic super likes count received by the user from server API
       final rawSuperLikes =
@@ -3880,19 +3895,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         });
                                       }
                                     } catch (e) {
-                                      if (!mounted) return;
                                       final cleanErr = e.toString().replaceAll('Exception: ', '');
-                                      if (cleanErr.contains('4 hours') || cleanErr.contains('already have a') || cleanErr.contains('FOUR_HOUR_TIME_LOCK')) {
-                                        setSheetState(() => isPosting = false);
-                                        Navigator.pop(context); // Close bottom sheet
-                                        TimeLockBlockedDialog.show(
-                                          context,
-                                          errorData: {
-                                            'message': cleanErr,
-                                            'conflictingEventTitle': selectedVenue?.name ?? 'Venue',
-                                          },
-                                        );
-                                        return;
+                                      if (context.mounted) {
+                                        if (cleanErr.contains('4 hours') || cleanErr.contains('already have a') || cleanErr.contains('FOUR_HOUR_TIME_LOCK')) {
+                                          setSheetState(() => isPosting = false);
+                                          TimeLockBlockedDialog.show(
+                                            context,
+                                            errorData: {
+                                              'message': cleanErr,
+                                              'conflictingEventTitle': selectedVenue?.name ?? 'Venue',
+                                            },
+                                          );
+                                          return;
+                                        }
                                       }
                                       setSheetState(() {
                                         isPosting = false;
@@ -4455,7 +4470,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         setSheetState(() {
                                           isPosting = false;
                                         });
-                                        Navigator.pop(context);
                                         TimeLockBlockedDialog.show(context, errorData: errorBody);
                                         return;
                                       }
@@ -6125,10 +6139,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               }
                             } catch (e) {
                               if (context.mounted) {
-                                Navigator.pop(context); // Close loading dialog
                                 final cleanErr = e.toString().replaceAll('Exception: ', '');
                                 if (cleanErr.contains('4 hours') || cleanErr.contains('already have a') || cleanErr.contains('FOUR_HOUR_TIME_LOCK')) {
-                                  Navigator.pop(context); // Close bottom sheet
+                                  setSheetState(() => sheetErrorMsg = '');
                                   TimeLockBlockedDialog.show(
                                     context,
                                     errorData: {

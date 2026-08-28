@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../core/theme.dart';
 import 'package:lunara_app/screens/profile/profile_screen.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
+import '../../services/realtime_sync_manager.dart';
 import '../discovery/venue_detail_screen.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../models/venue.dart';
 import '../../widgets/lunara_network_image.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
@@ -29,10 +32,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _alreadyRequested = false;
   late Razorpay _razorpay;
   String? _lastOrderId;
+  double? _calculatedDistanceKm;
+  bool _isFetchingDistance = false;
 
   @override
   void initState() {
     super.initState();
+    _checkAndFetchDistanceSilently();
     if (!kIsWeb) {
       try {
         _razorpay = Razorpay();
@@ -47,6 +53,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final targetPlanId = widget.post['id']?.toString() ?? '';
     _alreadyRequested = widget.post['hasRequested'] == true || ApiService.isPartyPlanRequestedSync(targetPlanId);
 
+    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimePostDetailChanged);
+    RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimePostDetailChanged);
+
     if (widget.post['type'] == 'strangers_meet') {
       _loadStrangersMeetDetails();
       ApiService.addSocketListener(
@@ -55,6 +64,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     } else {
       _isLoading = false;
+      _loadPartyPlanDetails();
+    }
+  }
+
+  void _onRealtimePostDetailChanged() {
+    if (!mounted) return;
+    if (widget.post['type'] == 'strangers_meet') {
+      _loadStrangersMeetDetails(showFullScreenLoader: false);
+    } else {
       _loadPartyPlanDetails();
     }
   }
@@ -102,6 +120,221 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _checkAndFetchDistanceSilently() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          _fetchActualDistance(showPermissionPrompt: false);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchActualDistance({bool showPermissionPrompt = true}) async {
+    if (_isFetchingDistance) return;
+    setState(() => _isFetchingDistance = true);
+
+    try {
+      if (showPermissionPrompt) {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          await Geolocator.openLocationSettings();
+        }
+
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+      }
+
+      LocationPermission finalPerm = await Geolocator.checkPermission();
+      if (finalPerm == LocationPermission.whileInUse || finalPerm == LocationPermission.always) {
+        final userPos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 8),
+          ),
+        );
+
+        final v = widget.venue ??
+            (widget.post['venueMap'] is Map ? widget.post['venueMap'] : null) ??
+            (widget.post['venue'] is Map ? widget.post['venue'] : null);
+
+        double? vLat = double.tryParse(
+          v?['latitude']?.toString() ??
+              v?['lat']?.toString() ??
+              widget.post['latitude']?.toString() ??
+              widget.post['lat']?.toString() ??
+              '',
+        );
+        double? vLng = double.tryParse(
+          v?['longitude']?.toString() ??
+              v?['lng']?.toString() ??
+              widget.post['longitude']?.toString() ??
+              widget.post['lng']?.toString() ??
+              '',
+        );
+
+        if (vLat == null || vLng == null || vLat == 0.0 || vLng == 0.0) {
+          // Resolve dynamically from full venue directory
+          final venueId = v?['id']?.toString() ??
+              v?['venueId']?.toString() ??
+              widget.post['venueId']?.toString() ??
+              widget.post['targetVenueId']?.toString() ??
+              '';
+          final venueArea = (v?['area'] ?? widget.post['area'] ?? widget.post['locality'] ?? '')
+              .toString()
+              .replaceAll(RegExp(r'\(.*?\)', caseSensitive: false), '')
+              .trim();
+          final venueCity = (v?['city'] ?? widget.post['city'] ?? '').toString().trim();
+          final venueName = (v?['name'] ?? widget.post['venue'] ?? widget.post['venueName'] ?? '')
+              .toString()
+              .trim();
+
+          try {
+            final allVenues = await ApiService.fetchVenues(city: venueCity.isNotEmpty ? venueCity : null);
+            Venue? matched;
+            if (venueId.isNotEmpty && venueId != '0') {
+              matched = allVenues.where((vn) => vn.id == venueId).firstOrNull;
+            }
+            if (matched == null && venueName.isNotEmpty && !venueName.toLowerCase().contains('secret venue')) {
+              matched = allVenues.where((vn) => vn.name.toLowerCase() == venueName.toLowerCase()).firstOrNull;
+            }
+            if (matched == null && venueArea.isNotEmpty && !venueArea.toLowerCase().contains('secret location')) {
+              matched = allVenues.where((vn) {
+                final area = vn.area?.toLowerCase() ?? '';
+                final addr = vn.addressLine1.toLowerCase();
+                final vAreaLower = venueArea.toLowerCase();
+                return area == vAreaLower || addr.contains(vAreaLower);
+              }).firstOrNull;
+            }
+            if (matched != null && matched.latitude != null && matched.longitude != null) {
+              vLat = matched.latitude;
+              vLng = matched.longitude;
+            }
+          } catch (err) {
+            debugPrint('Error matching venue dynamically for distance: $err');
+          }
+        }
+
+        if (vLat != null && vLng != null && vLat != 0.0 && vLng != 0.0) {
+          final meters = Geolocator.distanceBetween(
+            userPos.latitude,
+            userPos.longitude,
+            vLat,
+            vLng,
+          );
+          if (mounted) {
+            setState(() {
+              _calculatedDistanceKm = meters / 1000.0;
+              _isFetchingDistance = false;
+            });
+          }
+          return;
+        }
+
+        // Fallback: If pre-calculated distance string is available on the post
+        final rawDistance = widget.post['distance'] ?? v?['distance'];
+        if (rawDistance != null) {
+          final parsed = double.tryParse(rawDistance.toString().replaceAll(RegExp(r'[^\d.]'), ''));
+          if (parsed != null && parsed > 0) {
+            if (mounted) {
+              setState(() {
+                _calculatedDistanceKm = parsed;
+                _isFetchingDistance = false;
+              });
+            }
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching location distance: $e');
+    }
+
+    if (mounted) {
+      setState(() => _isFetchingDistance = false);
+    }
+  }
+
+  Widget _buildDistanceOrLocationWidget() {
+    if (_calculatedDistanceKm != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.near_me_rounded,
+              size: 14,
+              color: LunaraTheme.electricViolet,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${_calculatedDistanceKm!.toStringAsFixed(1)} km away',
+              style: const TextStyle(
+                color: LunaraTheme.electricViolet,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return InkWell(
+      onTap: () => _fetchActualDistance(showPermissionPrompt: true),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: LunaraTheme.purpleGradient,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isFetchingDistance)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 1.5,
+                ),
+              )
+            else
+              const Icon(
+                Icons.my_location_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
+            const SizedBox(width: 6),
+            const Text(
+              'GET ACTUAL DISTANCE',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 10,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _onStrangersMeetUpdated(dynamic data) {
     if (data is Map) {
       final reqId = data['requestId']?.toString();
@@ -113,6 +346,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(_onRealtimePostDetailChanged);
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimePostDetailChanged);
     if (!kIsWeb) {
       try {
         _razorpay.clear();
@@ -135,18 +370,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (showFullScreenLoader) {
       setState(() => _isLoading = true);
     }
-    final rawId = widget.post['id'] ??
-        widget.post['requestId'] ??
-        widget.post['entityId'] ??
+    final rawId = widget.post['requestId'] ??
         widget.post['strangersMeetRequestId'] ??
         widget.post['strangersMeetId'] ??
-        widget.post['meetId'];
+        widget.post['meetId'] ??
+        (widget.post['data'] is Map
+            ? widget.post['data']['requestId'] ??
+                widget.post['data']['id'] ??
+                widget.post['data']['strangersMeetRequestId']
+            : null) ??
+        (widget.post['plan'] is Map
+            ? widget.post['plan']['id'] ?? widget.post['plan']['requestId']
+            : null) ??
+        (widget.post['request'] is Map ? widget.post['request']['id'] : null) ??
+        widget.post['id'] ??
+        widget.post['entityId'];
 
     StrangersMeetRequest? req;
     if (rawId != null && rawId.toString().trim().isNotEmpty) {
       String cleanId = rawId.toString().trim();
-      cleanId = cleanId.replaceAll(RegExp(r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_)'), '');
+      cleanId = cleanId.replaceAll(RegExp(r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_|strangers_meet_|notification_|notif_)'), '');
       req = await ApiService.fetchStrangersMeetRequestById(cleanId);
+      if (req == null && cleanId != rawId.toString().trim()) {
+        req = await ApiService.fetchStrangersMeetRequestById(rawId.toString().trim());
+      }
     }
 
     if (req == null) {
@@ -622,7 +869,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         maxPersons = int.tryParse(rawMax.toString()) ?? maxPersons;
       }
     }
-    final String venueName = req.venue?['name'] ?? widget.post['venue']?['name'] ?? 'Unknown Venue';
+    final String rawVenueName = req.venue?['name'] ?? widget.venue?['name'] ?? widget.post['venue']?['name'] ?? 'Unknown Venue';
 
     final cachedUser = ApiService.cachedCurrentUser;
     Map<String, dynamic> hostUserMap = req.user != null && req.user!.isNotEmpty
@@ -646,15 +893,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         (widget.post['user'] != null && widget.post['user']['id']?.toString() == currentUserId) ||
         (widget.post['plan'] is Map && widget.post['plan']['userId']?.toString() == currentUserId);
 
-    if (isMyPost && cachedUser != null && (hostUserMap['firstName'] == null || hostUserMap['firstName'].toString().isEmpty || hostUserMap['firstName'] == 'Lunara')) {
-      hostUserMap['firstName'] = cachedUser.firstName;
-      hostUserMap['lastName'] = cachedUser.lastName;
-      hostUserMap['photoUrl'] = hostUserMap['photoUrl'] ?? cachedUser.profilePhoto;
-      hostUserMap['profileImageUrl'] = hostUserMap['profileImageUrl'] ?? cachedUser.profilePhoto;
+    if (isMyPost && cachedUser != null) {
+      if (hostUserMap['firstName'] == null || hostUserMap['firstName'].toString().isEmpty || hostUserMap['firstName'] == 'Lunara') {
+        hostUserMap['firstName'] = cachedUser.firstName;
+        hostUserMap['lastName'] = cachedUser.lastName;
+        hostUserMap['photoUrl'] = hostUserMap['photoUrl'] ?? cachedUser.profilePhoto;
+        hostUserMap['profileImageUrl'] = hostUserMap['profileImageUrl'] ?? cachedUser.profilePhoto;
+      }
     }
 
-    final String hostFirstName = (hostUserMap['firstName'] ?? hostUserMap['first_name'] ?? (isMyPost && cachedUser != null ? cachedUser.firstName : 'Lunara')).toString();
-    final String hostLastName = (hostUserMap['lastName'] ?? hostUserMap['last_name'] ?? (isMyPost && cachedUser != null ? cachedUser.lastName : 'User')).toString();
+    String fn = (hostUserMap['firstName'] ?? hostUserMap['first_name'] ?? '').toString().trim();
+    String ln = (hostUserMap['lastName'] ?? hostUserMap['last_name'] ?? '').toString().trim();
+    if ((fn.isEmpty || fn == 'Lunara') && hostUserMap['fullName'] != null && hostUserMap['fullName'].toString().trim().isNotEmpty) {
+      final parts = hostUserMap['fullName'].toString().trim().split(' ');
+      fn = parts.first;
+      ln = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+    if ((fn.isEmpty || fn == 'Lunara') && hostUserMap['name'] != null && hostUserMap['name'].toString().trim().isNotEmpty) {
+      final parts = hostUserMap['name'].toString().trim().split(' ');
+      fn = parts.first;
+      ln = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+    if ((fn.isEmpty || fn == 'Lunara') && isMyPost && cachedUser != null) {
+      fn = cachedUser.firstName;
+      ln = cachedUser.lastName;
+    }
+
+    final String hostFirstName = fn.isNotEmpty ? fn : 'Lunara';
+    final String hostLastName = ln.isNotEmpty ? ln : (fn != 'Lunara' ? '' : 'User');
     final String? hostPhoto = hostUserMap['photoUrl'] ??
         hostUserMap['profileImageUrl'] ??
         hostUserMap['profilePhotoUrl'] ??
@@ -672,6 +938,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
       }
     }
+
+    final bool isSecretVenue = widget.post['showVenueDetails'] == false ||
+        widget.post['isSecret'] == true ||
+        widget.post['isSecretVenue'] == true ||
+        req.venue?['showVenueDetails'] == false ||
+        req.venue?['isSecret'] == true ||
+        req.venue?['isSecretVenue'] == true ||
+        widget.venue?['showVenueDetails'] == false ||
+        widget.venue?['isSecret'] == true ||
+        widget.venue?['isSecretVenue'] == true ||
+        req.venue?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        widget.venue?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        widget.post['venue']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+        widget.post['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+    final bool hasConfirmedBooking = myJoinerInfo != null &&
+        (myJoinerInfo['paymentStatus'] == 'paid' ||
+            myJoinerInfo['status'] == 'CONFIRMED' ||
+            myJoinerInfo['status'] == 'APPROVED');
+    final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
+    final String venueName = hideVenue ? 'SECRET VENUE 🔒' : rawVenueName;
 
     final isFastFilling = slotsFilled >= 2;
 
@@ -787,68 +1073,93 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Column(
                       children: [
                         // Venue details
-                        Row(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: LunaraTheme.electricViolet.withValues(
-                                  alpha: 0.1,
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: (hideVenue ? Colors.amber : LunaraTheme.electricViolet).withValues(
+                                      alpha: 0.1,
+                                    ),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    hideVenue ? Icons.lock_outline_rounded : Icons.location_on_rounded,
+                                    color: hideVenue ? Colors.amber[800] : LunaraTheme.electricViolet,
+                                    size: 20,
+                                  ),
                                 ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.location_on_rounded,
-                                color: LunaraTheme.electricViolet,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'HAPPENING AT',
-                                    style: TextStyle(
-                                      color: Colors.black38,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.5,
-                                    ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        hideVenue ? 'VENUE PRIVACY' : 'HAPPENING AT',
+                                        style: const TextStyle(
+                                          color: Colors.black38,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        venueName.toUpperCase(),
+                                        style: TextStyle(
+                                          color: hideVenue ? Colors.amber[900] : Colors.black,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  Text(
-                                    venueName.toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.black,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (widget.venue != null)
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => VenueDetailScreen(
-                                        venue: widget.venue!,
+                                ),
+                                if (!hideVenue && widget.venue != null)
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => VenueDetailScreen(
+                                            venue: widget.venue!,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text(
+                                      'VIEW',
+                                      style: TextStyle(
+                                        color: LunaraTheme.electricViolet,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1,
                                       ),
                                     ),
-                                  );
-                                },
-                                child: const Text(
-                                  'VIEW',
+                                  ),
+                              ],
+                            ),
+                            if (hideVenue) ...[
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 44),
+                                child: Text(
+                                  'Locality: ${widget.venue?['area'] ?? widget.venue?['city'] ?? widget.post['area'] ?? widget.post['city'] ?? 'Local Area'} (Exact venue revealed once host approves)',
                                   style: TextStyle(
-                                    color: LunaraTheme.electricViolet,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1,
+                                    color: Colors.grey[600],
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 44),
+                                child: _buildDistanceOrLocationWidget(),
+                              ),
+                            ],
                           ],
                         ),
                         const Padding(
@@ -1450,8 +1761,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final req = _meetRequest;
-    final String reqStatus = (req?.status.isNotEmpty == true ? req!.status : status).toLowerCase();
-    final String payStatus = (req?.paymentStatus.isNotEmpty == true ? req!.paymentStatus : widget.post['paymentStatus'] ?? '').toString().toLowerCase();
+    final String reqStatus = (req?.status.isNotEmpty == true
+            ? req!.status
+            : (widget.post['status'] ?? widget.post['plan']?['status'] ?? widget.post['request']?['status'] ?? status))
+        .toString()
+        .toLowerCase();
+    final String payStatus = (req?.paymentStatus.isNotEmpty == true
+            ? req!.paymentStatus
+            : (widget.post['paymentStatus'] ?? widget.post['payment_status'] ?? widget.post['plan']?['paymentStatus'] ?? ''))
+        .toString()
+        .toLowerCase();
 
     final double depositAmount = req?.paymentAmount ??
         (widget.post['paymentAmount'] is num
@@ -1500,9 +1819,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           width: double.infinity,
           height: 60,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
-            ),
+            gradient: LunaraTheme.purpleGradient,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
@@ -1514,18 +1831,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           child: ElevatedButton.icon(
             onPressed: () {
-              if (req != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => StrangersMeetPaymentScreen(
-                      request: req,
-                      onPaymentSuccess: () => _loadStrangersMeetDetails(showFullScreenLoader: false),
-                      isJoinPayment: false,
-                    ),
+              final targetReq = req ?? StrangersMeetRequest.fromJson(Map<String, dynamic>.from(widget.post));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetPaymentScreen(
+                    request: targetReq,
+                    onPaymentSuccess: () => _loadStrangersMeetDetails(showFullScreenLoader: false),
+                    isJoinPayment: false,
                   ),
-                );
-              }
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.transparent,
@@ -2009,7 +2325,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 size: 20,
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2023,26 +2339,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       letterSpacing: 1.5,
                                     ),
                                   ),
+                                  const SizedBox(height: 2),
                                   Text(
                                     venueName.toUpperCase(),
                                     style: TextStyle(
                                       color: hideVenue ? Colors.amber[900] : Colors.black,
-                                      fontSize: 16,
+                                      fontSize: 15,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  if (hideVenue)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2.0),
-                                      child: Text(
-                                        'Locality: ${widget.venue?['area'] ?? widget.venue?['city'] ?? 'Local Area'} (Exact venue revealed once host approves)',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
                                 ],
                               ),
                             ),
@@ -2069,6 +2374,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                           ],
                         ),
+                        if (hideVenue) ...[
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 44),
+                            child: Text(
+                              'Locality: ${widget.venue?['area'] ?? widget.venue?['city'] ?? widget.post['area'] ?? widget.post['city'] ?? 'Local Area'} (Exact venue revealed once host approves)',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 44),
+                            child: _buildDistanceOrLocationWidget(),
+                          ),
+                        ],
                       ],
                     ),
                   ),

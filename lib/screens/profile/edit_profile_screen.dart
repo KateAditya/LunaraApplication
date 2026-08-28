@@ -304,16 +304,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final String message = result['message']?.toString() ?? (success ? 'Profile picture updated successfully!' : 'Failed to update profile picture.');
     
     if (!mounted) return;
-    setState(() => _isLoading = false);
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (success) {
+      // Optimistically update local photo state immediately for instant feedback
+      setState(() {
+        for (var p in _localPhotoDetails) {
+          if (p['id'] == photoId) {
+            p['isPrimary'] = 'true';
+            _currentProfilePhotoUrl = p['url'];
+            _localProfilePhotoBytes = null;
+            _photoDeleted = false;
+          } else {
+            p['isPrimary'] = 'false';
+          }
+        }
+      });
       await _refreshProfileData();
       if (!mounted) return;
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.green),
       );
     } else {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
@@ -370,6 +384,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Navigator.pop(ctx);
                       _setAsPrimaryPhoto(photoId);
                     },
+                  )
+                else
+                  ListTile(
+                    leading: const Icon(Icons.check_circle_rounded, color: Colors.green, size: 24),
+                    title: Text(
+                      'Current Profile Picture (Main)',
+                      style: TextStyle(
+                        color: isDark ? Colors.white70 : Colors.black54,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
                   ),
                 ListTile(
                   leading: const Icon(Icons.delete_outline, color: Colors.red, size: 26),

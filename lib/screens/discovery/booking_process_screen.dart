@@ -1944,7 +1944,6 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 }
 
                                 if (isFreeBooking) {
-                                  Navigator.pop(bottomSheetCtx); // close popup
                                   showDialog(
                                     context: outerContext,
                                     barrierDismissible: false,
@@ -1971,6 +1970,9 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   }
 
                                   if (bookingRes != null && bookingRes['success'] == true) {
+                                    if (bottomSheetCtx.mounted) {
+                                      Navigator.pop(bottomSheetCtx);
+                                    }
                                     final data = bookingRes['data'];
                                     final createdBookingId = (data != null
                                         ? (data['id'] ?? data['bookingId'])
@@ -2072,8 +2074,6 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                   }
                                 }
 
-                                Navigator.pop(bottomSheetCtx); // close popup
-
                                 String? createdBookingId;
                                 final bookingDateStr =
                                     '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
@@ -2144,47 +2144,50 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       );
 
                                       if (payNowRes != null && payNowRes['success'] == true) {
-                                        TopNotificationBanner.show(
-                                          title: 'Booking Confirmed! 🎉',
-                                          body: 'Your payment was verified successfully. Digital ticket generated!',
-                                          data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
-                                        );
                                         if (outerContext.mounted) {
-                                          Navigator.push(
-                                            outerContext,
-                                            MaterialPageRoute(
-                                              builder: (_) => DigitalTicketScreen(
-                                                venue: widget.venue,
-                                                date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                                package: isSolo ? 'Solo Entry' : 'Standard Table',
-                                                time: formattedTime,
-                                                table: isSolo ? 'Solo Entry' : 'Standard Table',
-                                                guests: isSolo ? '1' : '$guests',
-                                                totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
-                                                ticketId: createdBookingId,
-                                                user: ApiService.cachedCurrentUser,
-                                                booking: {
-                                                  'id': createdBookingId,
-                                                  'bookingId': createdBookingId,
-                                                  'venue': widget.venue,
-                                                  'venueId': widget.venue['id'],
-                                                  'isSolo': isSolo,
-                                                  'goingMode': isSolo ? 'solo' : 'party_request',
-                                                  'bookingType': isSolo ? 'solo' : 'venue_booking',
-                                                  'category': isSolo ? 'solo' : 'venue_booking',
-                                                  'totalAmount': totalPrice,
-                                                  'paymentStatus': 'paid',
-                                                  'paymentMethod': 'Lunara Wallet',
-                                                  'status': 'CONFIRMED',
-                                                  'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
-                                                  'numberOfGuests': isSolo ? 1 : guests,
-                                                  'bookingDate': _selectedDate.toIso8601String(),
-                                                  'startTime': formattedTime,
-                                                  'user': ApiService.cachedCurrentUser,
-                                                },
+                                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                                            if (!outerContext.mounted) return;
+                                            TopNotificationBanner.show(
+                                              title: 'Booking Confirmed! 🎉',
+                                              body: 'Your payment was verified successfully. Digital ticket generated!',
+                                              data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
+                                            );
+                                            Navigator.push(
+                                              outerContext,
+                                              MaterialPageRoute(
+                                                builder: (_) => DigitalTicketScreen(
+                                                  venue: widget.venue,
+                                                  date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                                  package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  time: formattedTime,
+                                                  table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                                  guests: isSolo ? '1' : '$guests',
+                                                  totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                                  ticketId: createdBookingId,
+                                                  user: ApiService.cachedCurrentUser,
+                                                  booking: {
+                                                    'id': createdBookingId,
+                                                    'bookingId': createdBookingId,
+                                                    'venue': widget.venue,
+                                                    'venueId': widget.venue['id'],
+                                                    'isSolo': isSolo,
+                                                    'goingMode': isSolo ? 'solo' : 'party_request',
+                                                    'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                                    'category': isSolo ? 'solo' : 'venue_booking',
+                                                    'totalAmount': totalPrice,
+                                                    'paymentStatus': 'paid',
+                                                    'paymentMethod': 'Lunara Wallet',
+                                                    'status': 'CONFIRMED',
+                                                    'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                                    'numberOfGuests': isSolo ? 1 : guests,
+                                                    'bookingDate': _selectedDate.toIso8601String(),
+                                                    'startTime': formattedTime,
+                                                    'user': ApiService.cachedCurrentUser,
+                                                  },
+                                                ),
                                               ),
-                                            ),
-                                          );
+                                            );
+                                          });
                                         }
                                         return true;
                                       }

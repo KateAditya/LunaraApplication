@@ -1791,11 +1791,26 @@ class ApiService {
     String id,
   ) async {
     try {
-      final response = await get('/api/mobile/strangers-meet/$id');
+      final cleanId = id.trim().replaceAll(
+        RegExp(r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_|strangers_meet_|notification_|notif_)'),
+        '',
+      ).trim();
+
+      final response = await get('/api/mobile/strangers-meet/$cleanId');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           return StrangersMeetRequest.fromJson(data['data']);
+        }
+      }
+
+      if (cleanId != id) {
+        final response2 = await get('/api/mobile/strangers-meet/$id');
+        if (response2.statusCode == 200) {
+          final data2 = jsonDecode(response2.body);
+          if (data2['success'] == true && data2['data'] != null) {
+            return StrangersMeetRequest.fromJson(data2['data']);
+          }
         }
       }
     } catch (e) {
@@ -2403,13 +2418,34 @@ class ApiService {
 
   static Future<Map<String, dynamic>> setPrimaryPhoto(String photoId) async {
     try {
-      final response = await put('/api/profile/photos/$photoId/primary');
-      final Map<String, dynamic> data = jsonDecode(response.body);
+      final userId = currentUserId;
+      final requestBody = userId != null ? {'userId': userId} : <String, dynamic>{};
+
+      var response = await put(
+        '/api/profile/photos/$photoId/primary',
+        body: requestBody,
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        response = await put(
+          '/api/mobile/user/photos/$photoId/primary',
+          body: requestBody,
+        );
+      }
+
+      Map<String, dynamic> data = {};
+      try {
+        if (response.body.isNotEmpty) {
+          data = jsonDecode(response.body);
+        }
+      } catch (_) {}
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         _lastProfileFetchTime = null;
         return {
           'success': true,
           'message': data['message'] ?? 'Profile picture updated successfully!',
+          'data': data['data'],
         };
       }
       return {
@@ -2479,7 +2515,7 @@ class ApiService {
     final response = await _httpClient.put(
       uri,
       headers: headers,
-      body: jsonEncode(body),
+      body: body != null ? jsonEncode(body) : null,
     );
     _checkAutoblockedResponse(response);
     return response;
@@ -2498,7 +2534,7 @@ class ApiService {
     final response = await _httpClient.post(
       uri,
       headers: headers,
-      body: jsonEncode(body),
+      body: body != null ? jsonEncode(body) : null,
     );
     _checkAutoblockedResponse(response);
     return response;
@@ -2517,7 +2553,7 @@ class ApiService {
     final response = await _httpClient.patch(
       uri,
       headers: headers,
-      body: jsonEncode(body),
+      body: body != null ? jsonEncode(body) : null,
     );
     _checkAutoblockedResponse(response);
     return response;

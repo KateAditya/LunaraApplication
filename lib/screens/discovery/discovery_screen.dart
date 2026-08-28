@@ -76,84 +76,57 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
+  Timer? _autoRefreshTimer;
+
   void _initRealtimeListeners() {
     RealtimeSyncManager.instance.partyPlanNotifier.addListener(_onRealtimePartyPlan);
+    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimeDataChanged);
+    RealtimeSyncManager.instance.recentPostsNotifier.addListener(_onRealtimeDataChanged);
     RealtimeSyncManager.instance.venueNotifier.addListener(_onRealtimeVenue);
     RealtimeSyncManager.instance.profileNotifier.addListener(_onRealtimeProfile);
+    RealtimeSyncManager.instance.globalSyncTick.addListener(_onGlobalSyncTick);
+
+    _startAutoRefreshTimer();
   }
 
   void _disposeRealtimeListeners() {
     RealtimeSyncManager.instance.partyPlanNotifier.removeListener(_onRealtimePartyPlan);
+    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(_onRealtimeDataChanged);
+    RealtimeSyncManager.instance.recentPostsNotifier.removeListener(_onRealtimeDataChanged);
     RealtimeSyncManager.instance.venueNotifier.removeListener(_onRealtimeVenue);
     RealtimeSyncManager.instance.profileNotifier.removeListener(_onRealtimeProfile);
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onGlobalSyncTick);
+
+    _autoRefreshTimer?.cancel();
+  }
+
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
+      if (mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _loadVenues(showLoading: false);
+      }
+    });
+  }
+
+  void _onRealtimeDataChanged() {
+    if (!mounted) return;
+    _loadVenues(showLoading: false);
+  }
+
+  void _onGlobalSyncTick() {
+    if (!mounted) return;
+    _loadVenues(showLoading: false);
   }
 
   void _onRealtimePartyPlan() {
     if (!mounted) return;
-    final event = RealtimeSyncManager.instance.partyPlanNotifier.value;
-    if (event == null) return;
-    final eventType = event['eventType']?.toString() ?? '';
-    final data = event['data'];
-
-    if (eventType == 'party_plan_created' && data is Map) {
-      final planMap = Map<String, dynamic>.from(data);
-      final planId = (planMap['id'] ?? planMap['planId'])?.toString();
-      if (planId != null) {
-        setState(() {
-          final idx = _partyPlans.indexWhere((p) => (p['id'] ?? p['planId'])?.toString() == planId);
-          if (idx == -1) {
-            _partyPlans.insert(0, planMap);
-          } else {
-            _partyPlans[idx] = planMap;
-          }
-        });
-      }
-    } else if (eventType == 'party_plan_deleted') {
-      final entityId = event['entityId']?.toString() ?? (data is Map ? data['planId']?.toString() : null);
-      if (entityId != null) {
-        setState(() {
-          _partyPlans.removeWhere((p) => (p['id'] ?? p['planId'])?.toString() == entityId);
-        });
-      }
-    } else if (eventType == 'delta_sync') {
-      _loadVenues();
-    }
+    _loadVenues(showLoading: false);
   }
 
   void _onRealtimeVenue() {
     if (!mounted) return;
-    final event = RealtimeSyncManager.instance.venueNotifier.value;
-    if (event == null) return;
-    final eventType = event['eventType']?.toString() ?? '';
-    final data = event['data'];
-
-    if (eventType == 'venue_created' && data is Map) {
-      try {
-        final venueObj = Venue.fromJson(Map<String, dynamic>.from(data));
-        setState(() {
-          if (!_allVenues.any((v) => v.id == venueObj.id)) {
-            _allVenues.insert(0, venueObj);
-          }
-        });
-      } catch (_) {}
-    } else if (eventType == 'venue_updated' && data is Map) {
-      try {
-        final venueObj = Venue.fromJson(Map<String, dynamic>.from(data));
-        setState(() {
-          final idx = _allVenues.indexWhere((v) => v.id == venueObj.id);
-          if (idx != -1) {
-            _allVenues[idx] = venueObj;
-          }
-        });
-      } catch (_) {}
-    } else if (eventType == 'venue_deleted') {
-      final entityId = event['entityId']?.toString();
-      if (entityId != null) {
-        setState(() {
-          _allVenues.removeWhere((v) => v.id == entityId);
-        });
-      }
-    }
+    _loadVenues(showLoading: false);
   }
 
   void _onRealtimeProfile() {
@@ -329,7 +302,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     }
   }
 
-  Future<void> _loadVenues() async {
+  Future<void> _loadVenues({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() => _isLoading = true);
+    }
     try {
       final results = await Future.wait([
         ApiService.fetchVenues(city: ApiService.selectedCity),
@@ -527,6 +503,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           'showVenueDetails': false,
                           'city': venue['city'] ?? user['city'] ?? 'Pune',
                           'area': venue['area'] ?? 'Secret Location',
+                          'latitude': venue['latitude'] ?? venue['lat'],
+                          'longitude': venue['longitude'] ?? venue['lng'],
                         }
                       : venue,
                   'createdAt': plan['createdAt'],
@@ -2715,6 +2693,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                 'isSecret': true,
                                 'showVenueDetails': false,
                                 'city': feed['city'] ?? 'Pune',
+                                'area': feed['area'] ?? 'Secret Location',
+                                'latitude': feed['latitude'] ?? feed['lat'],
+                                'longitude': feed['longitude'] ?? feed['lng'],
                               };
                             }
                           } else {

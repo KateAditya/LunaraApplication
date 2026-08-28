@@ -413,12 +413,27 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         ]);
         const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
 
-        const plansCount = await PartyPlan.count({
-            where: {
-                userId,
-                status: 'active'
-            }
-        });
+        const [partyPlansCnt, strangersMeetCnt, groupPartyCnt] = await Promise.all([
+            PartyPlan.count({
+                where: {
+                    userId,
+                    status: { [Op.notIn]: ['cancelled', 'rejected'] }
+                }
+            }),
+            StrangersMeetRequest.count({
+                where: {
+                    userId,
+                    status: { [Op.notIn]: ['cancelled', 'rejected', 'expired'] }
+                }
+            }),
+            GroupParty.count({
+                where: {
+                    userId,
+                    status: { [Op.notIn]: ['cancelled', 'rejected'] }
+                }
+            })
+        ]);
+        const plansCount = partyPlansCnt + strangersMeetCnt + groupPartyCnt;
 
         const bookingsCount = await Booking.count({
             where: { userId }
@@ -972,10 +987,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 boostsRemaining: scoredUser.boosts,
                 isBoosted: scoredUser.boosts > 0,
                 isVipActive: tierMap[user.id] !== 'FREE' && tierMap[user.id] !== undefined,
-                plansCount: scoredUser.plans,
-                activePartyPlanCount: scoredUser.plans,
-                doostCount: scoredUser.plans,
-                doost: scoredUser.plans,
+                plansCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
+                activePartyPlanCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
+                doostCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
+                doost: plansMap[user.id] ?? scoredUser.plans ?? 0,
                 points: pointsMap[user.id],
                 rankScore: scoredUser.rankScore,
                 rankingPriority: scoredUser.priorityTier,

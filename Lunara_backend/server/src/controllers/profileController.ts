@@ -169,16 +169,21 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
             });
 
             if (nextPhoto) {
-                nextPhoto.isPrimary = true;
-                await nextPhoto.save();
-                const rawPath = nextPhoto.filePath.replace(/\\/g, '/');
+                await UserPhoto.update(
+                    { isPrimary: true },
+                    { where: { id: nextPhoto.id, userId } }
+                );
+                const rawFilePath = nextPhoto.filePath || (nextPhoto as any).dataValues?.filePath || (nextPhoto as any).dataValues?.file_path || '';
+                const rawPath = String(rawFilePath).replace(/\\/g, '/');
                 const newProfileUrl = rawPath.startsWith('http') || rawPath.startsWith('/')
                     ? rawPath
-                    : '/' + rawPath;
-                await (User as any).update(
-                    { profileImageUrl: newProfileUrl },
-                    { where: { id: userId } }
-                );
+                    : (rawPath ? '/' + rawPath : null);
+                if (newProfileUrl) {
+                    await (User as any).update(
+                        { profileImageUrl: newProfileUrl },
+                        { where: { id: userId } }
+                    );
+                }
             } else {
                 await (User as any).update(
                     { profileImageUrl: null },
@@ -193,7 +198,7 @@ export const deletePhoto = async (req: Request, res: Response): Promise<Response
         });
     } catch (error: any) {
         logger.error('[Profile] Error deleting photo:', error);
-        return res.status(500).json({ success: false, message: 'Failed to delete photo' });
+        return res.status(500).json({ success: false, message: 'Failed to delete photo', error: error?.message });
     }
 };
 
@@ -217,30 +222,37 @@ export const setPrimaryPhoto = async (req: Request, res: Response): Promise<Resp
             { where: { userId } }
         );
 
-        // Mark this photo as primary
-        photo.isPrimary = true;
-        await photo.save();
+        // Mark this photo as primary using static / model update to avoid full instance validation errors
+        await UserPhoto.update(
+            { isPrimary: true },
+            { where: { id: photo.id, userId } }
+        );
 
-        const rawPath = photo.filePath.replace(/\\/g, '/');
+        const rawFilePath = photo.filePath || (photo as any).dataValues?.filePath || (photo as any).dataValues?.file_path || '';
+        const rawPath = String(rawFilePath).replace(/\\/g, '/');
         const newProfileUrl = rawPath.startsWith('http') || rawPath.startsWith('/')
             ? rawPath
-            : '/' + rawPath;
+            : (rawPath ? '/' + rawPath : null);
 
-        await (User as any).update(
-            { profileImageUrl: newProfileUrl },
-            { where: { id: userId } }
-        );
+        if (newProfileUrl) {
+            await (User as any).update(
+                { profileImageUrl: newProfileUrl },
+                { where: { id: userId } }
+            );
+        }
 
         try {
             const { RealtimeEventBroker } = require('../services/RealtimeEventBroker');
-            RealtimeEventBroker.emitToUser(userId, 'profile_photo_updated', 'user', userId, {
-                userId,
-                profileImageUrl: newProfileUrl,
-            });
-            RealtimeEventBroker.emitToLiveFeed('profile_photo_updated', 'user', userId, {
-                userId,
-                profileImageUrl: newProfileUrl,
-            });
+            if (newProfileUrl) {
+                RealtimeEventBroker.emitToUser(userId, 'profile_photo_updated', 'user', userId, {
+                    userId,
+                    profileImageUrl: newProfileUrl,
+                });
+                RealtimeEventBroker.emitToLiveFeed('profile_photo_updated', 'user', userId, {
+                    userId,
+                    profileImageUrl: newProfileUrl,
+                });
+            }
         } catch (_) {}
 
         return res.status(200).json({
@@ -253,6 +265,6 @@ export const setPrimaryPhoto = async (req: Request, res: Response): Promise<Resp
         });
     } catch (error: any) {
         logger.error('[Profile] Error setting primary photo:', error);
-        return res.status(500).json({ success: false, message: 'Failed to update primary photo' });
+        return res.status(500).json({ success: false, message: 'Failed to update primary photo', error: error?.message });
     }
 };
