@@ -721,72 +721,82 @@ export class EntitlementService {
         walletData?: any;
     }> {
         const { userId, addonPackageId, count = 1 } = params;
+        const t = await sequelize.transaction();
 
-        const addonPkg = await SubscriptionAddonPackage.findByPk(addonPackageId);
-        if (!addonPkg || !addonPkg.isActive) {
-            throw { statusCode: 400, message: 'Invalid or inactive Add-on package' };
-        }
+        try {
+            const addonPkg = await SubscriptionAddonPackage.findByPk(addonPackageId, { transaction: t });
+            if (!addonPkg || !addonPkg.isActive) {
+                await t.rollback();
+                throw { statusCode: 400, message: 'Invalid or inactive Add-on package' };
+            }
 
-        const unitPrice = Number(addonPkg.price);
-        const totalPrice = unitPrice * count;
-        const totalQuantity = addonPkg.quantity * count;
+            const unitPrice = Number(addonPkg.price);
+            const totalPrice = unitPrice * count;
+            const totalQuantity = addonPkg.quantity * count;
 
-        // Execute Wallet debit
-        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
-            userId,
-            price: totalPrice,
-            transactionType: addonPkg.featureKey === 'superlike'
-                ? WalletTransactionType.SUPER_LIKE_PURCHASE
-                : (addonPkg.featureKey === 'profile_boost' ? WalletTransactionType.BOOST_PURCHASE : WalletTransactionType.VIP_PURCHASE),
-            reference: `ADDON_${addonPkg.featureKey.toUpperCase()}_${Date.now()}`,
-            metadata: {
+            // Execute Wallet debit
+            const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+                userId,
+                price: totalPrice,
+                transactionType: addonPkg.featureKey === 'superlike'
+                    ? WalletTransactionType.SUPER_LIKE_PURCHASE
+                    : (addonPkg.featureKey === 'profile_boost' ? WalletTransactionType.BOOST_PURCHASE : WalletTransactionType.VIP_PURCHASE),
+                reference: `ADDON_${addonPkg.featureKey.toUpperCase()}_${Date.now()}`,
+                metadata: {
+                    addonPackageId: addonPkg.id,
+                    addonName: addonPkg.name,
+                    featureKey: addonPkg.featureKey,
+                    quantity: totalQuantity,
+                },
+            });
+
+            // Credit UserAddon
+            const userAddon = await UserAddon.create({
+                userId,
                 addonPackageId: addonPkg.id,
-                addonName: addonPkg.name,
                 featureKey: addonPkg.featureKey,
+                purchasedQuantity: totalQuantity,
+                usedQuantity: 0,
+                remainingQuantity: totalQuantity,
+                status: UserAddonStatus.ACTIVE,
+                metadata: {
+                    paymentMethod: 'SMART_WALLET',
+                    walletTransactionId: purchaseResult.data?.transaction?.id,
+                    pricePaid: totalPrice,
+                },
+            }, { transaction: t });
+
+            // Audit Log
+            await EntitlementAuditLog.create({
+                userId,
+                addonId: userAddon.id,
+                feature: addonPkg.featureKey,
+                action: 'ADDON_PURCHASED',
+                source: 'ADDON',
                 quantity: totalQuantity,
-            },
-        });
+                oldValue: { remainingQuantity: 0 },
+                newValue: { remainingQuantity: totalQuantity },
+                metadata: { addonName: addonPkg.name, price: totalPrice, method: 'WALLET' },
+            }, { transaction: t });
 
-        // Credit UserAddon
-        const userAddon = await UserAddon.create({
-            userId,
-            addonPackageId: addonPkg.id,
-            featureKey: addonPkg.featureKey,
-            purchasedQuantity: totalQuantity,
-            usedQuantity: 0,
-            remainingQuantity: totalQuantity,
-            status: UserAddonStatus.ACTIVE,
-            metadata: {
-                paymentMethod: 'SMART_WALLET',
-                walletTransactionId: purchaseResult.data?.transaction?.id,
-                pricePaid: totalPrice,
-            },
-        });
+            await t.commit();
 
-        // Audit Log
-        await EntitlementAuditLog.create({
-            userId,
-            addonId: userAddon.id,
-            feature: addonPkg.featureKey,
-            action: 'ADDON_PURCHASED',
-            source: 'ADDON',
-            quantity: totalQuantity,
-            oldValue: { remainingQuantity: 0 },
-            newValue: { remainingQuantity: totalQuantity },
-            metadata: { addonName: addonPkg.name, price: totalPrice, method: 'WALLET' },
-        });
+            RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                featureKey: addonPkg.featureKey,
+                addonPurchased: totalQuantity,
+                newBalance: userAddon.remainingQuantity,
+            });
 
-        RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
-            featureKey: addonPkg.featureKey,
-            addonPurchased: totalQuantity,
-        });
-
-        return {
-            success: true,
-            message: `Successfully purchased ${addonPkg.name}!`,
-            addon: userAddon,
-            walletData: purchaseResult.data,
-        };
+            return {
+                success: true,
+                message: `Successfully purchased ${totalQuantity} ${addonPkg.name} using Smart Wallet!`,
+                addon: userAddon,
+                walletData: purchaseResult.data,
+            };
+        } catch (error) {
+            await t.rollback();
+            throw error;
+        }
     }
 
     /**
@@ -848,100 +858,113 @@ export class EntitlementService {
         addon?: UserAddon;
     }> {
         const { userId, addonPackageId, gatewayOrderId, gatewayPaymentId, razorpaySignature } = params;
+        const t = await sequelize.transaction();
 
-        const addonPkg = await SubscriptionAddonPackage.findByPk(addonPackageId);
-        if (!addonPkg || !addonPkg.isActive) {
-            throw new Error('Invalid or inactive Add-on package');
-        }
+        try {
+            const addonPkg = await SubscriptionAddonPackage.findByPk(addonPackageId, { transaction: t });
+            if (!addonPkg || !addonPkg.isActive) {
+                await t.rollback();
+                throw new Error('Invalid or inactive Add-on package');
+            }
 
-        // Idempotency: prevent double activation on repeated webhook / client callbacks
-        const existingTx = await SubscriptionTransaction.findOne({
-            where: { gatewayPaymentId },
-        });
-        if (existingTx) {
-            const existingAddon = await UserAddon.findOne({
-                where: { userId, addonPackageId: addonPkg.id },
-                order: [['createdAt', 'DESC']],
+            // Idempotency: prevent double activation on repeated webhook / client callbacks
+            const existingTx = await SubscriptionTransaction.findOne({
+                where: { gatewayPaymentId },
+                transaction: t,
             });
+            if (existingTx) {
+                const existingAddon = await UserAddon.findOne({
+                    where: { userId, addonPackageId: addonPkg.id },
+                    order: [['createdAt', 'DESC']],
+                    transaction: t,
+                });
+                await t.commit();
+                return {
+                    success: true,
+                    message: 'Add-on already activated',
+                    addon: existingAddon || undefined,
+                };
+            }
+
+            // Verify Razorpay signature
+            const secret = process.env.RAZORPAY_KEY_SECRET || 'secret123';
+            const expectedSignature = crypto
+                .createHmac('sha256', secret)
+                .update(`${gatewayOrderId}|${gatewayPaymentId}`)
+                .digest('hex');
+
+            if (expectedSignature !== razorpaySignature && !gatewayPaymentId.startsWith('pay_mock_')) {
+                await t.rollback();
+                throw new Error('Invalid payment signature');
+            }
+
+            const totalQuantity = addonPkg.quantity;
+            const price = Number(addonPkg.price);
+
+            // Record SubscriptionTransaction
+            await SubscriptionTransaction.create({
+                userId,
+                packageId: addonPkg.id,
+                type: TransactionType.PURCHASE,
+                amount: price,
+                status: TransactionStatus.SUCCESS,
+                gatewayOrderId,
+                gatewayPaymentId,
+                invoiceNumber: `ADDON-${Date.now().toString(36).toUpperCase()}`,
+                metadata: {
+                    addonName: addonPkg.name,
+                    featureKey: addonPkg.featureKey,
+                    quantity: totalQuantity,
+                },
+            }, { transaction: t });
+
+            // Credit UserAddon
+            const userAddon = await UserAddon.create({
+                userId,
+                addonPackageId: addonPkg.id,
+                featureKey: addonPkg.featureKey,
+                purchasedQuantity: totalQuantity,
+                usedQuantity: 0,
+                remainingQuantity: totalQuantity,
+                status: UserAddonStatus.ACTIVE,
+                metadata: {
+                    paymentMethod: 'RAZORPAY',
+                    gatewayPaymentId,
+                    gatewayOrderId,
+                    pricePaid: price,
+                },
+            }, { transaction: t });
+
+            // Audit Log
+            await EntitlementAuditLog.create({
+                userId,
+                addonId: userAddon.id,
+                feature: addonPkg.featureKey,
+                action: 'ADDON_PURCHASED',
+                source: 'ADDON',
+                quantity: totalQuantity,
+                oldValue: { remainingQuantity: 0 },
+                newValue: { remainingQuantity: totalQuantity },
+                requestId: gatewayPaymentId,
+                metadata: { addonName: addonPkg.name, price, method: 'RAZORPAY' },
+            }, { transaction: t });
+
+            await t.commit();
+
+            RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                featureKey: addonPkg.featureKey,
+                addonPurchased: totalQuantity,
+            });
+
             return {
                 success: true,
-                message: 'Add-on already activated',
-                addon: existingAddon || undefined,
+                message: `Successfully purchased ${addonPkg.name}!`,
+                addon: userAddon,
             };
+        } catch (error) {
+            await t.rollback();
+            throw error;
         }
-
-        // Verify Razorpay signature
-        const secret = process.env.RAZORPAY_KEY_SECRET || 'secret123';
-        const expectedSignature = crypto
-            .createHmac('sha256', secret)
-            .update(`${gatewayOrderId}|${gatewayPaymentId}`)
-            .digest('hex');
-
-        if (expectedSignature !== razorpaySignature && !gatewayPaymentId.startsWith('pay_mock_')) {
-            throw new Error('Invalid payment signature');
-        }
-
-        const totalQuantity = addonPkg.quantity;
-        const price = Number(addonPkg.price);
-
-        // Record SubscriptionTransaction
-        await SubscriptionTransaction.create({
-            userId,
-            packageId: addonPkg.id,
-            type: TransactionType.PURCHASE,
-            amount: price,
-            status: TransactionStatus.SUCCESS,
-            gatewayOrderId,
-            gatewayPaymentId,
-            invoiceNumber: `ADDON-${Date.now().toString(36).toUpperCase()}`,
-            metadata: {
-                addonName: addonPkg.name,
-                featureKey: addonPkg.featureKey,
-                quantity: totalQuantity,
-            },
-        });
-
-        // Credit UserAddon
-        const userAddon = await UserAddon.create({
-            userId,
-            addonPackageId: addonPkg.id,
-            featureKey: addonPkg.featureKey,
-            purchasedQuantity: totalQuantity,
-            usedQuantity: 0,
-            remainingQuantity: totalQuantity,
-            status: UserAddonStatus.ACTIVE,
-            metadata: {
-                paymentMethod: 'RAZORPAY',
-                gatewayPaymentId,
-                gatewayOrderId,
-                pricePaid: price,
-            },
-        });
-
-        // Audit Log
-        await EntitlementAuditLog.create({
-            userId,
-            addonId: userAddon.id,
-            feature: addonPkg.featureKey,
-            action: 'ADDON_PURCHASED',
-            source: 'ADDON',
-            quantity: totalQuantity,
-            oldValue: { remainingQuantity: 0 },
-            newValue: { remainingQuantity: totalQuantity },
-            requestId: gatewayPaymentId,
-            metadata: { addonName: addonPkg.name, price, method: 'RAZORPAY' },
-        });
-
-        RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
-            featureKey: addonPkg.featureKey,
-            addonPurchased: totalQuantity,
-        });
-
-        return {
-            success: true,
-            message: `Successfully purchased ${addonPkg.name}!`,
-            addon: userAddon,
-        };
     }
 
     /**
