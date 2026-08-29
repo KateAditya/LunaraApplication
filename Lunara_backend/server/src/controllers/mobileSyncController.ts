@@ -11,6 +11,7 @@ import {
     SmartWallet,
     User,
     UserSubscription,
+    SubscriptionPackage,
 } from '../models';
 import { MessageStatus } from '../models/Message';
 import { logger } from '../config/logger';
@@ -93,7 +94,7 @@ export const getDeltaSync = async (req: Request, res: Response): Promise<Respons
                     userId,
                     updatedAt: { [Op.gt]: sinceDate },
                 },
-                attributes: ['id', 'meetRequestId', 'status', 'paymentStatus', 'updatedAt'],
+                attributes: ['id', 'strangersMeetRequestId', 'status', 'paymentStatus', 'updatedAt'],
                 limit: 30,
             }),
             // 7. User balance
@@ -107,8 +108,9 @@ export const getDeltaSync = async (req: Request, res: Response): Promise<Respons
             }),
             // 9. Active subscription
             UserSubscription.findOne({
-                where: { userId, status: 'active' },
-                attributes: ['id', 'tier', 'status', 'superlikesRemaining', 'boostsRemaining', 'expiresAt', 'updatedAt'],
+                where: { userId, status: 'ACTIVE' },
+                attributes: ['id', 'status', 'superlikesRemaining', 'boostsRemaining', 'endDate', 'updatedAt'],
+                include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
                 order: [['updatedAt', 'DESC']],
             }),
             // 10. Unread Chat count

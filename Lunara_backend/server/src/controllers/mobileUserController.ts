@@ -596,8 +596,8 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             },
         });
     } catch (error: any) {
-        logger.error('[MobileUser] Error fetching profile:', error);
-        return res.status(500).json({ success: false, message: 'Failed to retrieve profile' });
+        logger.error('[MobileUser] Error fetching profile for userId:', req.query.userId || req.user?.id, error?.stack || error?.message || error);
+        return res.status(500).json({ success: false, message: 'Failed to retrieve profile', error: error?.message });
     }
 };
 
