@@ -6,7 +6,7 @@
 const fs = require('fs');
 const https = require('https');
 
-const API_BASE = 'https://lunara-api-server-a8gfdvg0hjdec6gx.centralindia-01.azurewebsites.net';
+const API_BASE = 'https://lunara-api-v2-b2cnahe5bzcxfdds.centralindia-01.azurewebsites.net';
 const SECRET = 'lunara-bootstrap-2026';
 const SQL_FILE = __dirname + '/lunara_db_restore.sql';
 const CHUNK_SIZE = 50; // statements per request
