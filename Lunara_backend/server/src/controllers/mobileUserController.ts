@@ -451,16 +451,21 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const pointsCount = 1000 + (bookingsCount * 250) + (matchesCount * 50);
 
         // Fetch active subscription tier for golden ring / badge rendering
-        const activeSub = await UserSubscription.findOne({
-            where: {
-                userId,
-                status: SubscriptionStatus.ACTIVE,
-                endDate: { [Op.gt]: new Date() },
-            },
-            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
-            order: [['createdAt', 'DESC']],
-        });
-        const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
+        let subscriptionTier: string = 'FREE';
+        try {
+            const activeSub = await UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: new Date() },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                order: [['createdAt', 'DESC']],
+            });
+            subscriptionTier = (activeSub as any)?.package?.tier ?? 'FREE';
+        } catch (subErr) {
+            logger.warn(`[MobileUser] Subscription lookup failed for user ${userId}:`, subErr);
+        }
         const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
         const planSuperlikesBase = planSuperlikesMap[subscriptionTier] ?? 0;
         const superLikesCount = receivedSuperLikes + planSuperlikesBase;
@@ -559,8 +564,8 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     interests: profile.interests ?? [],
                     instagramHandle: profile.instagramHandle ?? null,
                     spotifyProfile: profile.spotifyProfile ?? null,
-                    profileCompletionPct: profile.getCompletionPercentage(),
-                    isProfileComplete: profile.isProfileComplete(),
+                    profileCompletionPct: typeof profile.getCompletionPercentage === 'function' ? profile.getCompletionPercentage() : 0,
+                    isProfileComplete: typeof profile.isProfileComplete === 'function' ? profile.isProfileComplete() : false,
                     createdAt: profile.createdAt,
                     updatedAt: profile.updatedAt,
                 } : null,
@@ -584,7 +589,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     matchDistanceKm: preferences.matchDistanceKm,
                     showMeInMatching: preferences.showMeInMatching,
                     bookingAlertsEnabled: preferences.bookingAlertsEnabled,
-                    isConfigured: preferences.isConfigured(),
+                    isConfigured: typeof preferences.isConfigured === 'function' ? preferences.isConfigured() : false,
                     createdAt: preferences.createdAt,
                     updatedAt: preferences.updatedAt,
                 } : null,

@@ -820,6 +820,67 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        // ── Validate Selected Users for Private & Both Mode ───────────────────
+        if (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) {
+            const rawSelected = selectedUsers || [];
+            const targetUserIds: string[] = (Array.isArray(rawSelected) ? rawSelected : [rawSelected]).map((u: any) => {
+                if (typeof u === 'string') return u.trim();
+                if (u && typeof u === 'object') return (u.id || u.userId || '').toString().trim();
+                return '';
+            }).filter(Boolean);
+
+            const conflictingUsers: Array<{ id: string; name: string; reason?: string }> = [];
+            const validUserIds: string[] = [];
+
+            for (const targetId of targetUserIds) {
+                const targetUser = await User.findByPk(targetId, {
+                    attributes: ['id', 'firstName', 'lastName'],
+                });
+                const targetName = targetUser
+                    ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'The selected user'
+                    : 'The selected user';
+
+                const targetLockCheck = await EventTimeLockService.validateFourHourGap(targetId, planDateTime, 'party_plan');
+                const targetConflictMsg = await checkExistingBookingForDate(targetId, partyDate, 'party_plan');
+
+                if (!targetLockCheck.allowed || targetConflictMsg) {
+                    conflictingUsers.push({
+                        id: targetId,
+                        name: targetName,
+                        reason: !targetLockCheck.allowed ? (targetLockCheck as any).message : (targetConflictMsg || undefined),
+                    });
+                } else {
+                    validUserIds.push(targetId);
+                }
+            }
+
+            if (conflictingUsers.length > 0) {
+                const conflictingNames = conflictingUsers.map(u => u.name);
+                const namesDisplay = conflictingNames.length === 1
+                    ? conflictingNames[0]
+                    : conflictingNames.length <= 3
+                        ? conflictingNames.join(', ')
+                        : `${conflictingNames.slice(0, 2).join(', ')} and ${conflictingNames.length - 2} others`;
+
+                const message = conflictingUsers.length === 1
+                    ? `${namesDisplay} has another plan at the scheduled time. Change time or use another profile to send the request.`
+                    : `${conflictingUsers.length} selected users (${namesDisplay}) have other plans at the scheduled time. Change time or remove them to proceed.`;
+
+                res.status(400).json({
+                    success: false,
+                    code: 'USER_ALREADY_HAS_PLAN',
+                    reason: 'USER_ALREADY_HAS_PLAN',
+                    conflictingUserId: conflictingUsers[0].id,
+                    conflictingUserName: namesDisplay,
+                    conflictingUsers,
+                    conflictingUserIds: conflictingUsers.map(u => u.id),
+                    validUserIds,
+                    message,
+                });
+                return;
+            }
+        }
+
         // ── Generate Razorpay Order ───────────────────────────────────────────
         // Commitment deposit is always ₹99 per person, regardless of payment model.
         // SELF_PAY only means the Host covers the party expense at the venue — it does NOT
@@ -1283,7 +1344,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                             type: 'party_plan_created',
                             partyPlanId: plan.id,
                         });
-                    } catch (_) {}
+                    } catch (_) { }
                 }
 
                 res.json({ success: true, message: 'Payment verified. Private invitations dispatched.', data: plan });
@@ -3784,7 +3845,7 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
         try {
             const venue = await Venue.findByPk(plan.venueId);
             if (venue) venueName = venue.name;
-        } catch (_) {}
+        } catch (_) { }
 
         // Post-commit notification & socket broadcast
         setImmediate(async () => {
@@ -3990,7 +4051,7 @@ export const repostPartyPlan = async (req: Request, res: Response): Promise<void
         try {
             const venue = await Venue.findByPk(plan.venueId);
             if (venue) venueName = venue.name;
-        } catch (_) {}
+        } catch (_) { }
 
         // Post-commit notifications and socket broadcast
         setImmediate(async () => {
@@ -4145,10 +4206,10 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                                     include: [userInclude('requester')],
                                 });
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         if (!plan) {
@@ -4174,39 +4235,39 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                                 include: [userInclude('requester')],
                             });
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
-            if (plan && !request) {
-                if ((plan as any).matchedRequestId) {
-                    request = await PartyPlanRequest.findByPk((plan as any).matchedRequestId, {
-                        include: [userInclude('requester')],
-                    });
-                }
-                if (!request) {
-                    request = await PartyPlanRequest.findOne({
-                        where: {
-                            planId: plan.id,
-                            [Op.or]: [
-                                { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, 'chat_enabled' as any, 'match_confirmed' as any, PartyPlanRequestStatus.PAYMENT_PENDING] } },
-                                { joinerPaymentStatus: 'paid' as any },
-                            ],
-                        },
-                        order: [['updatedAt', 'DESC']],
-                        include: [userInclude('requester')],
-                    });
-                }
-
-                if (!request) {
-                    request = await PartyPlanRequest.findOne({
-                        where: { planId: plan.id },
-                        order: [['createdAt', 'DESC']],
-                        include: [userInclude('requester')],
-                    });
-                }
+        if (plan && !request) {
+            if ((plan as any).matchedRequestId) {
+                request = await PartyPlanRequest.findByPk((plan as any).matchedRequestId, {
+                    include: [userInclude('requester')],
+                });
             }
+            if (!request) {
+                request = await PartyPlanRequest.findOne({
+                    where: {
+                        planId: plan.id,
+                        [Op.or]: [
+                            { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, 'chat_enabled' as any, 'match_confirmed' as any, PartyPlanRequestStatus.PAYMENT_PENDING] } },
+                            { joinerPaymentStatus: 'paid' as any },
+                        ],
+                    },
+                    order: [['updatedAt', 'DESC']],
+                    include: [userInclude('requester')],
+                });
+            }
+
+            if (!request) {
+                request = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id },
+                    order: [['createdAt', 'DESC']],
+                    include: [userInclude('requester')],
+                });
+            }
+        }
 
         if (!plan) {
             res.status(404).json({ success: false, message: 'Party plan or request not found' });
@@ -4857,14 +4918,14 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         }
                         io.emit('live_feed_update', { type: 'party_plan_reach_update', planId: id });
                     }
-                } catch (_) {}
+                } catch (_) { }
             });
 
             res.json({
-              success: true,
-              isFirstCheck: true,
-              message: 'First reach evidence recorded successfully. Final verification will occur at scheduled party time.',
-              firstCheckStatus: choice,
+                success: true,
+                isFirstCheck: true,
+                message: 'First reach evidence recorded successfully. Final verification will occur at scheduled party time.',
+                firstCheckStatus: choice,
             });
             return;
         }

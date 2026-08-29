@@ -14,6 +14,7 @@ import '../../models/venue.dart';
 import '../../widgets/lunara_network_image.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
+import 'chat_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -1379,105 +1380,223 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildParticipantsSection() {
-    final joiners = (_meetRequest?.joiners ?? []).where((j) {
-      if (j is Map) {
-        final status = j['status']?.toString();
-        final payStatus = j['paymentStatus']?.toString();
-        return status == 'accepted' || status == 'paid' || payStatus == 'paid';
-      }
-      return false;
+    final allJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().toList();
+
+    // 1. Actual Joined — paid participants
+    final actualJoined = allJoiners.where((j) {
+      final status = (j['status'] ?? '').toString().toLowerCase();
+      final payStatus = (j['paymentStatus'] ?? '').toString().toLowerCase();
+      return status == 'paid' || payStatus == 'paid';
     }).toList();
-    if (joiners.isEmpty) {
+
+    // 2. People Joining — accepted by host, awaiting payment
+    final peopleJoining = allJoiners.where((j) {
+      final status = (j['status'] ?? '').toString().toLowerCase();
+      final payStatus = (j['paymentStatus'] ?? '').toString().toLowerCase();
+      final bool isPaid = status == 'paid' || payStatus == 'paid';
+      return !isPaid && (status == 'accepted' || status == 'confirmed' || payStatus == 'pending');
+    }).toList();
+
+    if (actualJoined.isEmpty && peopleJoining.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 32),
-        const Text(
-          'PEOPLE JOINING',
-          style: TextStyle(
-            color: Colors.black38,
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 90,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: joiners.length,
-            itemBuilder: (context, index) {
-              final joiner = joiners[index];
-              final ju = joiner['user'] as Map<String, dynamic>?;
-              if (ju == null) return const SizedBox.shrink();
-
-              final name = ju['firstName'] ?? 'User';
-              final photo = ju['photoUrl'] ?? ju['profileImageUrl'];
-              String? finalPhoto = photo;
-              if (finalPhoto != null &&
-                  finalPhoto.startsWith('/') &&
-                  !finalPhoto.startsWith('assets')) {
-                finalPhoto = '${ApiService.baseUrl}$finalPhoto';
-              }
-
-              return GestureDetector(
-                onTap: () {
-                  User? profileUser;
-                  try {
-                    profileUser = User.fromJson(ju);
-                  } catch (_) {}
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ProfileScreen(user: profileUser),
+        // ── 1. ACTUAL JOINED (PAID) SECTION ──────────────────────────────────
+        if (actualJoined.isNotEmpty) ...[
+          const SizedBox(height: 32),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'PEOPLE JOINED (${actualJoined.length})',
+                style: const TextStyle(
+                  color: Colors.black38,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle_rounded, size: 10, color: Colors.green),
+                    SizedBox(width: 4),
+                    Text(
+                      'PAID & CONFIRMED',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  );
-                },
-                child: Container(
-                  width: 70,
-                  margin: const EdgeInsets.only(right: 16),
-                  child: Column(
-                    children: [
-                      CircleAvatar(
-                        radius: 26,
-                        backgroundColor: LunaraTheme.electricViolet.withValues(
-                          alpha: 0.08,
-                        ),
-                        backgroundImage:
-                            finalPhoto != null && finalPhoto.isNotEmpty
-                            ? NetworkImage(finalPhoto)
-                            : null,
-                        child: finalPhoto == null || finalPhoto.isEmpty
-                            ? const Icon(
-                                Icons.person,
-                                color: LunaraTheme.electricViolet,
-                              )
-                            : null,
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 90,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: actualJoined.length,
+              itemBuilder: (context, index) {
+                return _buildParticipantItem(actualJoined[index], isPaid: true);
+              },
+            ),
+          ),
+        ],
+
+        // ── 2. PEOPLE JOINING (ACCEPTED) SECTION ─────────────────────────────
+        if (peopleJoining.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'PEOPLE JOINING (${peopleJoining.length})',
+                style: const TextStyle(
+                  color: Colors.black38,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.how_to_reg_rounded, size: 10, color: LunaraTheme.electricViolet),
+                    SizedBox(width: 4),
+                    Text(
+                      'ACCEPTED',
+                      style: TextStyle(
+                        color: LunaraTheme.electricViolet,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 90,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: peopleJoining.length,
+              itemBuilder: (context, index) {
+                return _buildParticipantItem(peopleJoining[index], isPaid: false);
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildParticipantItem(Map<dynamic, dynamic> joiner, {required bool isPaid}) {
+    final ju = joiner['user'] as Map<String, dynamic>?;
+    if (ju == null) return const SizedBox.shrink();
+
+    final name = ju['firstName'] ?? 'User';
+    final photo = ju['photoUrl'] ?? ju['profileImageUrl'];
+    String? finalPhoto = photo;
+    if (finalPhoto != null &&
+        finalPhoto.startsWith('/') &&
+        !finalPhoto.startsWith('assets')) {
+      finalPhoto = '${ApiService.baseUrl}$finalPhoto';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        User? profileUser;
+        try {
+          profileUser = User.fromJson(ju);
+        } catch (_) {}
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(user: profileUser),
+          ),
+        );
+      },
+      child: Container(
+        width: 70,
+        margin: const EdgeInsets.only(right: 16),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 26,
+                  backgroundColor: LunaraTheme.electricViolet.withValues(
+                    alpha: 0.08,
+                  ),
+                  backgroundImage:
+                      finalPhoto != null && finalPhoto.isNotEmpty
+                      ? NetworkImage(finalPhoto)
+                      : null,
+                  child: finalPhoto == null || finalPhoto.isEmpty
+                      ? const Icon(
+                          Icons.person,
+                          color: LunaraTheme.electricViolet,
+                        )
+                      : null,
+                ),
+                Positioned(
+                  bottom: -2,
+                  right: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: isPaid ? Colors.green : LunaraTheme.electricViolet,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Icon(
+                      isPaid ? Icons.check : Icons.hourglass_empty_rounded,
+                      color: Colors.white,
+                      size: 9,
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1738,6 +1857,113 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  void _showParticipantsChatModal(List<dynamic> joiners, String meetId) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF161622) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text(
+                    'Chat with Participants',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: joiners.length,
+                    separatorBuilder: (context, i) => const Divider(height: 1),
+                    itemBuilder: (context, idx) {
+                      final j = joiners[idx];
+                      final ju = j['user'] as Map<String, dynamic>? ?? {};
+                      final jId = j['userId'] ?? ju['id'] ?? j['id'];
+                      final jName = ju['firstName'] ?? j['firstName'] ?? 'Participant';
+                      final jLastName = ju['lastName'] ?? j['lastName'] ?? '';
+                      final jPhoto = ju['profilePhotoUrl'] ?? ju['photoUrl'] ?? ju['profileImageUrl'] ?? j['photoUrl'];
+
+                      return ListTile(
+                        leading: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                          backgroundImage: jPhoto != null && jPhoto.toString().isNotEmpty
+                              ? NetworkImage(
+                                  jPhoto.toString().startsWith('http')
+                                      ? jPhoto.toString()
+                                      : (jPhoto.toString().startsWith('/')
+                                          ? '${ApiService.baseUrl}$jPhoto'
+                                          : '${ApiService.baseUrl}/$jPhoto'),
+                                )
+                              : null,
+                          child: jPhoto == null || jPhoto.toString().isEmpty
+                              ? const Icon(Icons.person, color: LunaraTheme.electricViolet)
+                              : null,
+                        ),
+                        title: Text(
+                          '$jName $jLastName'.trim(),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chat_bubble_outline_rounded, color: LunaraTheme.electricViolet),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatScreen(
+                                user: {
+                                  'id': jId?.toString() ?? '',
+                                  'firstName': jName.toString(),
+                                  'lastName': jLastName.toString(),
+                                  'profilePhotoUrl': jPhoto?.toString(),
+                                  'contextType': 'strangers_meet',
+                                  'planId': meetId,
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildStrangersMeetActionButton(
     bool isMyPost,
     Map<String, dynamic>? myJoinerInfo,
@@ -1771,6 +1997,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             : (widget.post['paymentStatus'] ?? widget.post['payment_status'] ?? widget.post['plan']?['paymentStatus'] ?? ''))
         .toString()
         .toLowerCase();
+    final String hostPayStatus = (widget.post['hostPaymentStatus'] ?? widget.post['host_payment_status'] ?? '').toString().toLowerCase();
+
+    final bool isDepositPaid = payStatus == 'paid' ||
+        hostPayStatus == 'paid' ||
+        reqStatus == 'confirmed' ||
+        reqStatus == 'live' ||
+        reqStatus == 'completed';
 
     final double depositAmount = req?.paymentAmount ??
         (widget.post['paymentAmount'] is num
@@ -1812,7 +2045,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
-      } else if (reqStatus == 'approved' || reqStatus == 'accepted' || reqStatus == 'payment_pending' || (payStatus != 'paid' && reqStatus != 'confirmed' && reqStatus != 'completed' && reqStatus != 'live')) {
+      } else if (!isDepositPaid && (reqStatus == 'approved' || reqStatus == 'accepted' || reqStatus == 'payment_pending' || payStatus != 'paid')) {
         // Admin approved! Host must pay deposit to publish meet
         final feeLabel = depositAmount > 0 ? ' ₹${depositAmount.toStringAsFixed(0)}' : '';
         return Container(
@@ -1929,57 +2162,134 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           );
         }
       } else {
-        // Host Deposit Paid & Event Live / Upcoming for Host
-        return Container(
-          width: double.infinity,
-          height: 60,
-          decoration: BoxDecoration(
-            gradient: LunaraTheme.purpleGradient,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFb952eb).withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: ElevatedButton.icon(
-            onPressed: () {
-              if (req != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => StrangersMeetTicketScreen(request: req),
+        // Host Deposit Paid & Event Live / Confirmed -> Show CHAT and VIEW TICKET
+        final targetReq = req ?? StrangersMeetRequest.fromJson(Map<String, dynamic>.from(widget.post));
+        return Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: LunaraTheme.purpleGradient,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final joiners = (targetReq.joiners ?? []).where((j) {
+                      if (j is Map) {
+                        final st = j['status']?.toString().toLowerCase();
+                        final ps = j['paymentStatus']?.toString().toLowerCase();
+                        return st == 'accepted' || st == 'paid' || ps == 'paid' || st == 'confirmed';
+                      }
+                      return false;
+                    }).toList();
+
+                    if (joiners.length == 1) {
+                      final j = joiners.first;
+                      final ju = j['user'] as Map<String, dynamic>? ?? {};
+                      final jId = j['userId'] ?? ju['id'] ?? j['id'];
+                      final jName = ju['firstName'] ?? j['firstName'] ?? 'Participant';
+                      final jLastName = ju['lastName'] ?? j['lastName'] ?? '';
+                      final jPhoto = ju['profilePhotoUrl'] ?? ju['photoUrl'] ?? ju['profileImageUrl'] ?? j['photoUrl'];
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            user: {
+                              'id': jId?.toString() ?? '',
+                              'firstName': jName.toString(),
+                              'lastName': jLastName.toString(),
+                              'profilePhotoUrl': jPhoto?.toString(),
+                              'contextType': 'strangers_meet',
+                              'planId': targetReq.id,
+                            },
+                          ),
+                        ),
+                      );
+                    } else if (joiners.length > 1) {
+                      _showParticipantsChatModal(joiners, targetReq.id);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No participants have joined this meet yet. Chat unlocks when participants confirm!'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.transparent,
-              shadowColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                  icon: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
+                  label: const Text(
+                    'CHAT',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
             ),
-            icon: const Icon(Icons.confirmation_number_rounded, color: Colors.white),
-            label: const Text(
-              'VIEW TICKET',
-              style: TextStyle(
-                fontFamily: 'AllroundGothic',
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Container(
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StrangersMeetTicketScreen(request: targetReq),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  icon: const Icon(Icons.confirmation_number_rounded, color: Colors.black87, size: 20),
+                  label: const Text(
+                    'VIEW TICKET',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.black87,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         );
       }
     } else {
       // ───────────────────────────────────────────────────────────────────────
       // JOINER / VISITOR VIEW
       // ───────────────────────────────────────────────────────────────────────
-      if (payStatus != 'paid' && reqStatus != 'confirmed' && reqStatus != 'live') {
+      if (!isDepositPaid) {
         // Host has not paid deposit or admin has not approved yet
         return Container(
           width: double.infinity,
@@ -2029,42 +2339,111 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final jPayStatus = (myJoinerInfo['paymentStatus'] ?? '').toString().toLowerCase();
 
         if (jStatus == 'paid' || jPayStatus == 'paid') {
-          return Container(
-            width: double.infinity,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.green),
-            ),
-            child: Center(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  if (req != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StrangersMeetTicketScreen(request: req),
+          final targetReq = req ?? StrangersMeetRequest.fromJson(Map<String, dynamic>.from(widget.post));
+          return Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LunaraTheme.purpleGradient,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
                       ),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                ),
-                icon: const Icon(Icons.confirmation_number_rounded, color: Colors.green),
-                label: const Text(
-                  'VIEW TICKET',
-                  style: TextStyle(
-                    fontFamily: 'AllroundGothic',
-                    color: Colors.green,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final hostUser = (req?.user != null && req!.user!.isNotEmpty)
+                          ? req.user!
+                          : (widget.post['user'] is Map
+                              ? (widget.post['user'] as Map)
+                              : (widget.post['creator'] is Map
+                                  ? (widget.post['creator'] as Map)
+                                  : (widget.post['host'] is Map ? (widget.post['host'] as Map) : {})));
+                      final hostId = req?.userId ?? hostUser['id'] ?? widget.post['userId'] ?? widget.post['creatorId'];
+                      final hostFn = (hostUser['firstName'] ?? hostUser['name'] ?? 'Host').toString();
+                      final hostLn = (hostUser['lastName'] ?? '').toString();
+                      final hostPhotoUrl = (hostUser['photoUrl'] ?? hostUser['profilePhotoUrl'] ?? hostUser['profileImageUrl'])?.toString();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            user: {
+                              'id': hostId?.toString() ?? '',
+                              'firstName': hostFn,
+                              'lastName': hostLn,
+                              'profilePhotoUrl': hostPhotoUrl,
+                              'contextType': 'strangers_meet',
+                              'planId': targetReq.id,
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
+                    label: const Text(
+                      'CHAT',
+                      style: TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StrangersMeetTicketScreen(request: targetReq),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    icon: const Icon(Icons.confirmation_number_rounded, color: Colors.black87, size: 20),
+                    label: const Text(
+                      'VIEW TICKET',
+                      style: TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        color: Colors.black87,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           );
         } else if (jStatus == 'accepted' || jPayStatus == 'pending') {
           final feeLabel = charges > 0 ? ' ₹${charges.toStringAsFixed(0)}' : '';

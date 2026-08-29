@@ -25,6 +25,7 @@ import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
+import '../../widgets/dialogs/user_has_plan_conflict_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 class PlanHubScreen extends StatefulWidget {
@@ -4465,6 +4466,76 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                             errorMsg;
                                         errorCode = errorBody?['code'];
                                       } catch (_) {}
+
+                                      if (errorBody != null &&
+                                          (errorCode == 'USER_ALREADY_HAS_PLAN' ||
+                                              errorBody['reason'] == 'USER_ALREADY_HAS_PLAN' ||
+                                              errorBody['code'] == 'USER_ALREADY_HAS_PLAN' ||
+                                              errorMsg.contains('another plan') ||
+                                              errorMsg.contains('change time or use another profile') ||
+                                              errorMsg.contains('remove them to proceed'))) {
+                                        setSheetState(() {
+                                          isPosting = false;
+                                        });
+
+                                        final List<Map<String, dynamic>> rawConflictUsers = [];
+                                        if (errorBody['conflictingUsers'] is List) {
+                                          for (var item in errorBody['conflictingUsers']) {
+                                            if (item is Map) {
+                                              rawConflictUsers.add(Map<String, dynamic>.from(item));
+                                            }
+                                          }
+                                        }
+
+                                        final List<String> rawValidIds = [];
+                                        if (errorBody['validUserIds'] is List) {
+                                          for (var id in errorBody['validUserIds']) {
+                                            if (id != null) rawValidIds.add(id.toString());
+                                          }
+                                        }
+
+                                        UserHasPlanConflictDialog.show(
+                                          context,
+                                          message: errorMsg,
+                                          userName: errorBody['conflictingUserName']?.toString(),
+                                          conflictingUsers: rawConflictUsers,
+                                          validUserIds: rawValidIds,
+                                          onRemoveConflictingAndProceed: rawValidIds.isNotEmpty
+                                              ? () {
+                                                  if (_activeSheetSetState != null) {
+                                                    _activeSheetSetState!(() {
+                                                      selectedUserIds.clear();
+                                                      selectedUserIds.addAll(rawValidIds);
+                                                    });
+                                                  }
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Removed conflicting guests (${rawValidIds.length} remaining). Tap POST to proceed!',
+                                                      ),
+                                                      backgroundColor: Colors.green,
+                                                    ),
+                                                  );
+                                                }
+                                              : null,
+                                          onSelectAnotherProfile: () {
+                                            _showAllProfilesSelectionModal(
+                                              parentContext: context,
+                                              customerList: _customerList,
+                                              selectedUserIds: selectedUserIds,
+                                              onSelectionChanged: (newSel) {
+                                                if (_activeSheetSetState != null) {
+                                                  _activeSheetSetState!(() {
+                                                    selectedUserIds.clear();
+                                                    selectedUserIds.addAll(newSel);
+                                                  });
+                                                }
+                                              },
+                                            );
+                                          },
+                                        );
+                                        return;
+                                      }
 
                                       if (errorBody != null && (errorBody['reason'] == 'FOUR_HOUR_TIME_LOCK' || errorBody['conflictingEventType'] != null)) {
                                         setSheetState(() {

@@ -249,7 +249,9 @@ class _StrangersMeetPaymentScreenState
         ? latestRequest.chargesPerHead
         : (latestRequest.paymentAmount ?? 99.0);
 
-    SmartCheckoutSheet.show(
+    Map<String, dynamic>? walletConfirmResult;
+
+    final sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Strangers Meet - ${widget.request.subject}',
       subtitle: widget.isJoinPayment
@@ -281,38 +283,9 @@ class _StrangersMeetPaymentScreenState
                 );
 
           if (confirmRes != null && confirmRes['success'] == true) {
+            walletConfirmResult = confirmRes;
             RealtimeSyncManager.instance.triggerLocalUpdate('strangers_meet_updated');
             widget.onPaymentSuccess();
-            if (widget.isJoinPayment) {
-              if (mounted) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _showNotificationToast(
-                    title: 'Payment Confirmed',
-                    message: 'Payment Successful via Smart Wallet! 🎫',
-                    icon: Icons.check_circle_outline_rounded,
-                    iconColor: const Color(0xFF10B981),
-                    iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
-                    borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
-                  );
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => StrangersMeetTicketScreen(
-                        request: widget.request,
-                      ),
-                    ),
-                  );
-                });
-              }
-            } else {
-              if (mounted) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  _promptChargesPerHead(confirmRes);
-                });
-              }
-            }
             return true;
           } else {
             if (mounted) {
@@ -364,6 +337,29 @@ class _StrangersMeetPaymentScreenState
         }
       },
     );
+
+    if (sheetSuccess == true && walletConfirmResult != null && mounted) {
+      if (widget.isJoinPayment) {
+        _showNotificationToast(
+          title: 'Payment Confirmed',
+          message: 'Payment Successful via Smart Wallet! 🎫',
+          icon: Icons.check_circle_outline_rounded,
+          iconColor: const Color(0xFF10B981),
+          iconBgColor: const Color(0xFF10B981).withValues(alpha: 0.18),
+          borderColor: const Color(0xFF10B981).withValues(alpha: 0.3),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => StrangersMeetTicketScreen(
+              request: widget.request,
+            ),
+          ),
+        );
+      } else {
+        await _promptChargesPerHead(walletConfirmResult!);
+      }
+    }
   }
 
   Future<void> _executeDirectRazorpay() async {
