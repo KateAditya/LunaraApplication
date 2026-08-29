@@ -2079,7 +2079,8 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
 
         try {
             const summary = await EntitlementService.getEntitlementsSummary(userId);
-            superlikesRemaining = summary.totals.superlikesAvailable === 'unlimited' ? 999999 : (summary.totals.superlikesAvailable as number || 0);
+            const rawSuper = summary.totals.superlikesAvailable as any;
+            superlikesRemaining = rawSuper === 'unlimited' ? 999999 : (Number(rawSuper) || 0);
             const superlikeItem = summary.planBenefits.find(b => b.featureKey === 'superlike');
             superlikesPerCycle = superlikeItem?.includedQuantity || 0;
         } catch (subErr) {
