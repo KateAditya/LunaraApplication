@@ -2078,25 +2078,12 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         }
 
         try {
-            const UserSubscription = require('../models/UserSubscription').default;
-            const SubscriptionPackage = require('../models/SubscriptionPackage').default;
-
-            const activeSub = await UserSubscription.findOne({
-                where: {
-                    userId,
-                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
-                    endDate: { [Op.gt]: new Date() },
-                },
-                include: [{ model: SubscriptionPackage, as: 'package' }],
-                order: [['createdAt', 'DESC']],
-            });
-
-            if (activeSub) {
-                superlikesRemaining = activeSub.superlikesRemaining || 0;
-                superlikesPerCycle = (activeSub as any).package?.superlikesPerCycle || 0;
-            }
+            const summary = await EntitlementService.getEntitlementsSummary(userId);
+            superlikesRemaining = summary.totals.superlikesAvailable === 'unlimited' ? 999999 : (summary.totals.superlikesAvailable as number || 0);
+            const superlikeItem = summary.planBenefits.find(b => b.featureKey === 'superlike');
+            superlikesPerCycle = superlikeItem?.includedQuantity || 0;
         } catch (subErr) {
-            logger.warn('[swipeStatus] Could not fetch subscription limits:', subErr);
+            logger.warn('[swipeStatus] Could not fetch entitlement summary:', subErr);
         }
 
         // Get backtrack usage and limits

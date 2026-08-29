@@ -74,8 +74,8 @@ export class EntitlementService {
      */
     public static async seedDefaultAddons(): Promise<void> {
         try {
-            const count = await SubscriptionAddonPackage.count();
-            if (count === 0) {
+            const activeCount = await SubscriptionAddonPackage.count({ where: { isActive: true } });
+            if (activeCount === 0) {
                 const defaults = [
                     {
                         name: '+5 Super Likes',
@@ -85,6 +85,7 @@ export class EntitlementService {
                         badge: 'POPULAR',
                         description: 'Stand out and connect instantly with 5 priority Super Likes.',
                         displayOrder: 1,
+                        isActive: true,
                     },
                     {
                         name: '+15 Super Likes',
@@ -94,6 +95,7 @@ export class EntitlementService {
                         badge: 'BEST VALUE',
                         description: 'Triple your connections with 15 Super Likes at huge savings.',
                         displayOrder: 2,
+                        isActive: true,
                     },
                     {
                         name: '+1 Profile Boost',
@@ -103,6 +105,7 @@ export class EntitlementService {
                         badge: 'LIGHTNING',
                         description: 'Get up to 10x more profile views with a 30-minute spotlight.',
                         displayOrder: 3,
+                        isActive: true,
                     },
                     {
                         name: '+3 Profile Boosts',
@@ -112,6 +115,7 @@ export class EntitlementService {
                         badge: 'POPULAR',
                         description: '3 profile boosts to dominate the weekend nightlife scene.',
                         displayOrder: 4,
+                        isActive: true,
                     },
                     {
                         name: '+5 Party Plans',
@@ -121,13 +125,20 @@ export class EntitlementService {
                         badge: 'EXCLUSIVE',
                         description: 'Host 5 additional epic party plans without upgrading your plan.',
                         displayOrder: 5,
+                        isActive: true,
                     },
                 ];
 
                 for (const item of defaults) {
-                    await SubscriptionAddonPackage.create(item);
+                    const [existing] = await SubscriptionAddonPackage.findOrCreate({
+                        where: { name: item.name },
+                        defaults: item,
+                    });
+                    if (existing && !existing.isActive) {
+                        await existing.update({ isActive: true });
+                    }
                 }
-                logger.info('[EntitlementService] Seeded default subscription addon packages');
+                logger.info('[EntitlementService] Seeded/activated default subscription addon packages');
             }
         } catch (e) {
             logger.warn('[EntitlementService] Error seeding default addons:', e);

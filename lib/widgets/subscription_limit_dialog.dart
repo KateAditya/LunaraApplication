@@ -365,10 +365,11 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
+                            final targetTab = widget.feature == SubLimitFeature.superLike ? 1 : 0;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const VIPMembershipScreen(),
+                                builder: (_) => VIPMembershipScreen(initialTabIndex: targetTab),
                               ),
                             );
                           },

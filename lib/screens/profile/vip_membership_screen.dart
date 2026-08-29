@@ -19,7 +19,8 @@ enum VIPPaymentState {
 }
 
 class VIPMembershipScreen extends StatefulWidget {
-  const VIPMembershipScreen({super.key});
+  final int initialTabIndex;
+  const VIPMembershipScreen({super.key, this.initialTabIndex = 0});
 
   @override
   State<VIPMembershipScreen> createState() => _VIPMembershipScreenState();
@@ -75,7 +76,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex.clamp(0, 3));
 
     if (!kIsWeb) {
       try {
