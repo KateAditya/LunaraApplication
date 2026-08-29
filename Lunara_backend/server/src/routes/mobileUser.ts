@@ -209,6 +209,9 @@ async function getUserNotifications(
 
     // 0. Fetch stored DB Notification records
     try {
+        const { SubscriptionService } = require('../services/subscriptionService');
+        const canSeeWhoLiked = await SubscriptionService.hasAccess(uId, 'who_liked_me');
+
         const storedNotifs = await Notification.findAll({
             where: { recipientUserId: uId },
             order: [['createdAt', 'DESC']],
@@ -220,7 +223,7 @@ async function getUserNotifications(
             const snCreatedTime = sn.createdAt ? new Date(sn.createdAt).getTime() : 0;
             const isCleared = clearedAt > 0 && snCreatedTime <= clearedAt;
             const isRead = sn.isRead || isCleared || activeReadNotificationIds.has(notificationId);
-            const metadata = sn.metadata || {};
+            let metadata = sn.metadata || {};
             
             // Extract partyPlanId if present
             const pId = metadata.planId || metadata.partyPlanId || (sn.entityType === 'party_plan' ? sn.entityId : null);
@@ -228,18 +231,37 @@ async function getUserNotifications(
                 partyPlanIds.add(pId);
             }
 
+            const isLikeCategory = sn.category === 'likes' || sn.category === 'super_like' || sn.eventType === 'like' || sn.eventType === 'super_like';
+            let title = sn.title;
+            let body = sn.body;
+            let deepLink = sn.deepLink;
+            let actionType = sn.actionType;
+
+            if (isLikeCategory && !canSeeWhoLiked) {
+                const isSuper = sn.category === 'super_like' || sn.eventType === 'super_like';
+                title = isSuper ? '⭐ Someone Super Liked You' : '❤️ Someone liked your profile';
+                body = isSuper ? 'Someone sent you a Super Like! Upgrade to VIP to see who!' : 'Someone liked your profile! Upgrade to VIP to see who!';
+                deepLink = '/vip-membership';
+                actionType = 'open_vip_upgrade';
+                metadata = {
+                    matchId: metadata.matchId,
+                    isMasked: true,
+                    action: isSuper ? 'superlike' : 'like',
+                };
+            }
+
             notifications.push({
                 id: notificationId,
-                title: sn.title,
-                body: sn.body,
+                title,
+                body,
                 category: sn.category || 'system',
                 type: sn.eventType || 'system_notice',
                 createdAt: sn.createdAt ? sn.createdAt.toISOString() : new Date().toISOString(),
                 read: isRead,
                 isRead: isRead,
                 data: metadata,
-                deepLink: sn.deepLink,
-                actionType: sn.actionType,
+                deepLink,
+                actionType,
                 entityType: sn.entityType,
                 entityId: sn.entityId,
             });

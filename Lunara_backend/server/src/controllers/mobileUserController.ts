@@ -1777,15 +1777,22 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             const currentUser = await User.findByPk(userId);
             const targetUser = await User.findByPk(targetUserId);
             if (currentUser && targetUser) {
+                const { SubscriptionService } = require('../services/subscriptionService');
+                const canSeeWhoLikedTarget = await SubscriptionService.hasAccess(targetUserId, 'who_liked_me');
+                
                 const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
                 const isSuper = action === 'superlike';
-                const title = isSuper ? '⭐ Super Like!' : '💖 New Connection!';
+                
+                const title = isSuper
+                    ? (canSeeWhoLikedTarget ? `⭐ ${senderName} Super Liked You!` : '⭐ Someone Super Liked You')
+                    : (canSeeWhoLikedTarget ? `💖 ${senderName} liked your profile!` : '❤️ Someone liked your profile');
+                    
                 const body = isSuper 
-                    ? `${senderName} sent you a Super Like! 💜`
-                    : `${senderName} liked your profile ❤️`;
+                    ? (canSeeWhoLikedTarget ? `${senderName} sent you a Super Like! 💜` : 'Someone sent you a Super Like! Upgrade to VIP to see who!')
+                    : (canSeeWhoLikedTarget ? `${senderName} liked your profile ❤️` : 'Someone liked your profile! Upgrade to VIP to see who!');
 
                 let postedPlans: any[] = [];
-                if (isSuper) {
+                if (isSuper && canSeeWhoLikedTarget) {
                     try {
                         const activePlans = await PartyPlan.findAll({
                             where: {
@@ -1812,10 +1819,8 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     }
                 }
 
-                // Persist DB notification record idempotently for BOTH like and
-                // superlike — previously only superlike was persisted, so a
-                // plain like left no durable trace for a recipient who was
-                // offline with no FCM token registered at the moment it fired.
+                const dedupeKey = isSuper ? `SUPERLIKE:${match.id}` : `LIKE:${match.id}`;
+
                 try {
                     await Notification.findOrCreate({
                         where: {
@@ -1830,18 +1835,23 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             body,
                             category: isSuper ? 'super_like' : 'likes',
                             eventType: isSuper ? 'super_like' : 'like',
-                            actionType: 'view_profile',
+                            actionType: canSeeWhoLikedTarget ? 'view_profile' : 'open_vip_upgrade',
                             entityType: 'user_match',
                             entityId: match.id,
                             isRead: false,
                             priority: (isSuper ? 'HIGH' : 'NORMAL') as any,
-                            deepLink: `/profile/${currentUser.id}`,
-                            metadata: {
+                            deepLink: canSeeWhoLikedTarget ? `/profile/${currentUser.id}` : '/vip-membership',
+                            idempotencyKey: dedupeKey,
+                            metadata: canSeeWhoLikedTarget ? {
                                 matchId: match.id,
                                 senderId: currentUser.id,
                                 senderName,
                                 senderImage: currentUser.profileImageUrl || '',
                                 postedPlans,
+                                action: isSuper ? 'superlike' : 'like',
+                            } : {
+                                matchId: match.id,
+                                isMasked: true,
                                 action: isSuper ? 'superlike' : 'like',
                             },
                         }
@@ -1851,40 +1861,62 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 }
 
                 const { io } = require('../server');
-                io.to(`user_${targetUserId}`).emit('notification_created', {
-                    id: `match_${match.id}`,
-                    title,
-                    body,
-                    category: isSuper ? 'super_like' : 'likes',
-                    type: isSuper ? 'super_like' : 'like',
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    sender: {
-                        id: currentUser.id,
-                        firstName: currentUser.firstName,
-                        lastName: currentUser.lastName,
-                        profileImageUrl: currentUser.profileImageUrl,
-                    },
-                    data: {
+                if (io) {
+                    io.to(`user_${targetUserId}`).emit('notification_created', {
+                        id: `match_${match.id}`,
+                        title,
+                        body,
+                        category: isSuper ? 'super_like' : 'likes',
+                        type: isSuper ? 'super_like' : 'like',
+                        createdAt: new Date().toISOString(),
+                        read: false,
+                        sender: canSeeWhoLikedTarget ? {
+                            id: currentUser.id,
+                            firstName: currentUser.firstName,
+                            lastName: currentUser.lastName,
+                            profileImageUrl: currentUser.profileImageUrl,
+                        } : {
+                            id: 'masked',
+                            firstName: 'Someone',
+                            lastName: '',
+                            profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                        },
+                        data: canSeeWhoLikedTarget ? {
+                            matchId: match.id,
+                            senderId: currentUser.id,
+                            senderName,
+                            senderImage: currentUser.profileImageUrl || '',
+                            postedPlans,
+                            action: isSuper ? 'superlike' : 'like',
+                        } : {
+                            matchId: match.id,
+                            isMasked: true,
+                            action: isSuper ? 'superlike' : 'like',
+                        }
+                    });
+
+                    // Emit real-time like_received event for live UI synchronization
+                    io.to(`user_${targetUserId}`).emit('like_received', {
                         matchId: match.id,
-                        senderId: currentUser.id,
-                        senderName,
-                        senderImage: currentUser.profileImageUrl || '',
-                        postedPlans,
-                        action: isSuper ? 'superlike' : 'like',
-                    }
-                });
+                        likerId: canSeeWhoLikedTarget ? currentUser.id : 'masked',
+                        isSuper,
+                        timestamp: new Date().toISOString(),
+                    });
+                }
 
                 if (targetUser.fcmToken) {
                     const { sendPushNotification } = require('../services/fcmService');
                     await sendPushNotification(targetUser.fcmToken, {
                         title,
                         body,
-                        data: {
+                        data: canSeeWhoLikedTarget ? {
                             type: isSuper ? 'superlike' : 'like',
                             senderId: currentUser.id,
-                            senderName: senderName,
+                            senderName,
                             senderImage: currentUser.profileImageUrl || '',
+                        } : {
+                            type: isSuper ? 'superlike' : 'like',
+                            isMasked: 'true',
                         }
                     });
                 }
