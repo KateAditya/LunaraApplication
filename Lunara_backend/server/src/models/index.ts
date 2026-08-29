@@ -595,22 +595,6 @@ ChatSubscription.belongsTo(Conversation, { foreignKey: 'conversationId', as: 'co
 ChatSubscription.belongsTo(User, { foreignKey: 'paidById', as: 'paidBy' });
 
 // ============================================================================
-// Subscription & Addon Associations
-// ============================================================================
-
-User.hasMany(UserSubscription, { foreignKey: 'userId', as: 'subscriptions' });
-UserSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-
-SubscriptionPackage.hasMany(UserSubscription, { foreignKey: 'packageId', as: 'userSubscriptions' });
-UserSubscription.belongsTo(SubscriptionPackage, { foreignKey: 'packageId', as: 'package' });
-
-User.hasMany(UserAddon, { foreignKey: 'userId', as: 'addons' });
-UserAddon.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-
-SubscriptionAddonPackage.hasMany(UserAddon, { foreignKey: 'addonPackageId', as: 'userAddons' });
-UserAddon.belongsTo(SubscriptionAddonPackage, { foreignKey: 'addonPackageId', as: 'addonPackage' });
-
-// ============================================================================
 // Exports
 // ============================================================================
 
