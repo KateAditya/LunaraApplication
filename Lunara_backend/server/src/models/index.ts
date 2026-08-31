@@ -48,6 +48,7 @@ import DeletedAccount from './DeletedAccount';
 import PlanTimeLock from './PlanTimeLock';
 import PlanTimeLockConfig from './PlanTimeLockConfig';
 import PlanTimeLockConfigHistory from './PlanTimeLockConfigHistory';
+import BookingPolicyConfig, { BookingPolicyType } from './BookingPolicyConfig';
 import NotificationJob from './NotificationJob';
 import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
@@ -1002,6 +1003,8 @@ export default {
     PlanTimeLock,
     PlanTimeLockConfig,
     PlanTimeLockConfigHistory,
+    BookingPolicyConfig,
+    BookingPolicyType,
     NotificationJob,
     NightInterest,
     NightPartnerRequest,

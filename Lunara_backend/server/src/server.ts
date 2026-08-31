@@ -153,6 +153,7 @@ import { startBoostCron } from './cron/boostCron';
 import { startStrangersMeetCron } from './cron/strangersMeetCron';
 import { getAdminChatSettings, updateAdminChatSettings } from './controllers/chatSubscriptionController';
 import { getAdminTimeLockSettings, updateAdminTimeLockSettings } from './controllers/mobilePlanController';
+import { getAdminBookingPolicySettings, updateAdminBookingPolicySettings } from './controllers/adminBookingController';
 import dbRestoreRoutes from './routes/dbRestore';
 import adminSafetyChecksRoutes from './routes/adminSafetyChecks';
 
@@ -270,6 +271,10 @@ app.put('/api/admin/settings/chat', updateAdminChatSettings);
 // Admin — plan time lock settings
 app.get('/api/admin/settings/time-lock', getAdminTimeLockSettings);
 app.put('/api/admin/settings/time-lock', updateAdminTimeLockSettings);
+
+// Admin — universal booking & cancellation policy settings (Solo Booking & Small Group Party <=20)
+app.get('/api/admin/settings/booking-policy', getAdminBookingPolicySettings);
+app.put('/api/admin/settings/booking-policy', updateAdminBookingPolicySettings);
 
 // TEMP: DB restore endpoint — REMOVE AFTER USE
 app.use('/api/db-restore', dbRestoreRoutes);

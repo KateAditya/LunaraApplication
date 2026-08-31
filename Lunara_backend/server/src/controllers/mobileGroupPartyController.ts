@@ -10,6 +10,7 @@ import { logger } from '../config/logger';
 import { generateTicketForGroupPartyHelper } from '../services/ticketService';
 import { GroupPartyService, PartyType } from '../services/GroupPartyService';
 import { TimeLockError } from '../utils/bookingLimitValidator';
+import { BookingPolicyService } from '../services/BookingPolicyService';
 
 // Calculate pricing
 export const calculatePricing = async (req: Request, res: Response): Promise<void> => {
@@ -319,5 +320,41 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
     } catch (err: any) {
         logger.error('getGroupPartyTicket error:', err);
         res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const getSmallPartyCancellationPreview = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = req.user!.id;
+
+        const preview = await BookingPolicyService.getSmallGroupPartyCancellationPreview(id, userId);
+        res.json({ success: true, data: preview });
+    } catch (err: any) {
+        logger.error('getSmallPartyCancellationPreview error:', err);
+        res.status(400).json({ success: false, message: err.message });
+    }
+};
+
+export const cancelSmallGroupParty = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = req.user!.id;
+        const { reason } = req.body;
+
+        const result = await BookingPolicyService.cancelAndRefundGroupParty(id, userId, reason);
+        res.json({
+            success: true,
+            message: result.message,
+            data: {
+                partyId: result.party.id,
+                status: result.party.status,
+                refundAmount: result.refundAmount,
+                walletTransactionId: result.walletTransactionId,
+            },
+        });
+    } catch (err: any) {
+        logger.error('cancelSmallGroupParty error:', err);
+        res.status(400).json({ success: false, message: err.message });
     }
 };

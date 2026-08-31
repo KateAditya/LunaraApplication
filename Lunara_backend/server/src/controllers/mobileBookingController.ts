@@ -22,6 +22,7 @@ import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } fro
 import { VenueBookingService } from '../services/VenueBookingService';
 import { NotificationService } from '../services/NotificationService';
 import { TimeLockError } from '../utils/bookingLimitValidator';
+import { BookingPolicyService } from '../services/BookingPolicyService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -1798,6 +1799,61 @@ export const cancelPendingBooking = async (req: Request, res: Response): Promise
     }
 };
 
+export const getBookingPolicies = async (_req: Request, res: Response): Promise<void> => {
+    try {
+        const policies = await BookingPolicyService.getAllPolicies();
+        res.json({ success: true, data: policies });
+    } catch (err: any) {
+        logger.error('getBookingPolicies error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+export const getSoloCancellationPreview = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || req.query.userId;
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Authentication required' });
+            return;
+        }
+
+        const preview = await BookingPolicyService.getSoloBookingCancellationPreview(id, userId);
+        res.json({ success: true, data: preview });
+    } catch (err: any) {
+        logger.error('getSoloCancellationPreview error:', err);
+        res.status(400).json({ success: false, message: err.message });
+    }
+};
+
+export const cancelSoloBooking = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || req.body?.userId;
+        const { reason } = req.body;
+
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Authentication required' });
+            return;
+        }
+
+        const result = await BookingPolicyService.cancelAndRefundSoloBooking(id, userId, reason);
+        res.json({
+            success: true,
+            message: result.message,
+            data: {
+                bookingId: result.booking.id,
+                status: result.booking.status,
+                refundAmount: result.refundAmount,
+                walletTransactionId: result.walletTransactionId,
+            },
+        });
+    } catch (err: any) {
+        logger.error('cancelSoloBooking error:', err);
+        res.status(400).json({ success: false, message: err.message });
+    }
+};
+
 export default {
     getTablePackages,
     getTimeSlots,
@@ -1814,5 +1870,8 @@ export default {
     initiateLargePartyPayment,
     verifyLargePartyPayment,
     cancelPendingBooking,
+    getBookingPolicies,
+    getSoloCancellationPreview,
+    cancelSoloBooking,
 };
 

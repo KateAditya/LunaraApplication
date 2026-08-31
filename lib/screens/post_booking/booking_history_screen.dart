@@ -7,6 +7,7 @@ import '../discovery/digital_ticket_screen.dart';
 import '../social/large_party_ticket_screen.dart';
 import '../social/party_plan_ticket_screen.dart';
 import '../social/strangers_meet_ticket_screen.dart';
+import '../../widgets/booking_cancellation_dialog.dart';
 
 enum HistoryFilterType {
   all,
@@ -978,26 +979,75 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isCancelled
-                                      ? Colors.red.withValues(alpha: 0.1)
-                                      : LunaraTheme.electricViolet.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  status,
-                                  style: TextStyle(
-                                    color: isCancelled ? Colors.redAccent : LunaraTheme.electricViolet,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.8,
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if ((isSolo || (isGroupParty && booking['isLargePartyRequest'] != true)) && !isCancelled && status != 'COMPLETED') ...[
+                                    GestureDetector(
+                                      onTap: () {
+                                        final bId = booking['id']?.toString() ?? booking['bookingId']?.toString();
+                                        if (bId != null) {
+                                          BookingCancellationDialog.show(
+                                            context,
+                                            bookingId: bId,
+                                            isGroupParty: isGroupParty,
+                                            initialVenueName: venueName,
+                                            initialDate: eventDateStr,
+                                            initialTime: timeStr,
+                                            initialAmountPaid: amtVal,
+                                            onCancelled: _loadBookings,
+                                          );
+                                        }
+                                      },
+                                      child: Container(
+                                        margin: const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.25)),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.cancel_outlined, size: 10, color: Colors.redAccent),
+                                            SizedBox(width: 3),
+                                            Text(
+                                              'CANCEL',
+                                              style: TextStyle(
+                                                color: Colors.redAccent,
+                                                fontSize: 8.5,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isCancelled
+                                          ? Colors.red.withValues(alpha: 0.1)
+                                          : LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      status,
+                                      style: TextStyle(
+                                        color: isCancelled ? Colors.redAccent : LunaraTheme.electricViolet,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.8,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ],
                           ),

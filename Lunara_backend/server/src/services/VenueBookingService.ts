@@ -12,6 +12,8 @@ import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { parseEventDateTimeToUTC, formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
+import { BookingPolicyService } from './BookingPolicyService';
+import { BookingPolicyType } from '../models/BookingPolicyConfig';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -177,6 +179,17 @@ export class VenueBookingService {
 
         const planType = isUpcomingNight ? 'upcoming_night' : (isLargeParty ? 'large_group_party' : 'venue_booking');
 
+        // Authoritative Booking Lead Time Validation for Solo Bookings
+        if (goingMode === GoingMode.SOLO) {
+            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                BookingPolicyType.SOLO_BOOKING,
+                bookingStartDateTime
+            );
+            if (!leadTimeValidation.allowed) {
+                throw new Error(leadTimeValidation.reason || 'Booking lead time window has closed.');
+            }
+        }
+
         let razorpayOrder: any = null;
         // Solo mode or small party (<= 20) with price > 0 generates Razorpay order immediately
         if ((goingMode === GoingMode.SOLO || !isLargeParty) && pricing.totalAmount > 0) {
@@ -317,6 +330,20 @@ export class VenueBookingService {
         if (generatedSignature !== razorpay_signature) {
             await booking.update({ paymentStatus: PaymentStatus.PENDING });
             throw new Error('Invalid payment signature');
+        }
+
+        // Re-validate booking eligibility using central server time before final confirmation
+        if (booking.goingMode === GoingMode.SOLO) {
+            const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
+            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                BookingPolicyType.SOLO_BOOKING,
+                eventDateTime
+            );
+            if (!leadTimeValidation.allowed) {
+                await booking.update({ status: BookingStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING });
+                await PlanEligibilityService.releaseLock(booking.id);
+                throw new Error(leadTimeValidation.reason || 'Booking window has closed for this event time.');
+            }
         }
 
         await booking.update({

@@ -11,6 +11,8 @@ import { generateTicketForGroupPartyHelper } from './ticketService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { BookingPolicyService } from './BookingPolicyService';
+import { BookingPolicyType } from '../models/BookingPolicyConfig';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -156,6 +158,15 @@ export class GroupPartyService {
         const partyType = this.resolvePartyType(numberOfFriends, venue.capacity || 500);
 
         if (partyType === PartyType.SMALL) {
+            // Authoritative Booking Lead Time Validation for Small Group Party (<= 20)
+            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                BookingPolicyType.GROUP_PARTY,
+                partyDateTime
+            );
+            if (!leadTimeValidation.allowed) {
+                throw new Error(leadTimeValidation.reason || 'Group party booking lead time window has closed.');
+            }
+
             // SMALL PARTY FLOW
             const pricing = await this.calculateAuthoritativePricing(venueId, numberOfFriends);
             const requiresPayment = pricing.totalAmount > 0;
@@ -324,6 +335,18 @@ export class GroupPartyService {
                 await groupParty.update({ paymentStatus: GroupPartyPaymentStatus.FAILED });
                 throw new Error('Invalid payment signature');
             }
+        }
+
+        // Re-validate booking eligibility using central server time before final confirmation
+        const partyDateTime = parseBookingDateTime(groupParty.partyDate as any, groupParty.startTime);
+        const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+            BookingPolicyType.GROUP_PARTY,
+            partyDateTime
+        );
+        if (!leadTimeValidation.allowed) {
+            await groupParty.update({ status: GroupPartyStatus.CANCELLED, paymentStatus: GroupPartyPaymentStatus.FAILED });
+            await PlanEligibilityService.releaseLock(groupParty.id);
+            throw new Error(leadTimeValidation.reason || 'Booking window has closed for this group party slot.');
         }
 
         await groupParty.update({

@@ -9,6 +9,7 @@ import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } fro
 import WalletCashbackRule, { CashbackTriggerType, CashbackType } from '../models/WalletCashbackRule';
 import AuditLog from '../models/AuditLog';
 import Notification from '../models/Notification';
+import { RealtimeEventBroker } from './RealtimeEventBroker';
 
 export interface SmartRechargeOptions {
     insufficientBalance: boolean;
@@ -930,6 +931,80 @@ export class WalletService {
         } catch (err) {
             logger.warn('Failed to process cashback rules:', err);
         }
+    }
+
+    /**
+     * Atomically credits a refund to the user's Smart Wallet and syncs User balance.
+     */
+    public static async refundToWallet(params: {
+        userId: string;
+        amount: number;
+        bookingId?: string | null;
+        partyPlanId?: string | null;
+        reference: string;
+        reason?: string;
+        metadata?: object;
+    }, existingTransaction?: Transaction): Promise<{ wallet: SmartWallet; transaction: WalletTransaction }> {
+        const { userId, amount, bookingId, partyPlanId, reference, reason, metadata } = params;
+        if (!userId || isNaN(amount) || amount <= 0) {
+            throw new Error('Valid userId and positive refund amount are required');
+        }
+
+        const executeInTx = async (t: Transaction) => {
+            const wallet = await this.getOrCreateWallet(userId, t);
+            const opening = Number(wallet.balance || 0);
+            const closing = Math.round((opening + amount) * 100) / 100;
+            const newLifetimeRefunds = Math.round((Number(wallet.lifetimeRefunds || 0) + amount) * 100) / 100;
+
+            await wallet.update({
+                balance: closing,
+                lifetimeRefunds: newLifetimeRefunds,
+            }, { transaction: t });
+
+            await User.update(
+                { walletBalance: closing },
+                { where: { id: userId }, transaction: t }
+            );
+
+            const walletTx = await WalletTransaction.create({
+                walletId: wallet.id,
+                userId,
+                bookingId: bookingId || null,
+                partyPlanId: partyPlanId || null,
+                amount,
+                openingBalance: opening,
+                closingBalance: closing,
+                transactionType: WalletTransactionType.REFUND,
+                status: WalletTransactionStatus.SUCCESS,
+                reference,
+                source: 'LUNARA_REFUND',
+                destination: 'SMART_WALLET',
+                metadata: {
+                    reason: reason || 'Booking cancellation refund',
+                    ...metadata,
+                },
+            }, { transaction: t });
+
+            return { wallet, transaction: walletTx, closing };
+        };
+
+        let result;
+        if (existingTransaction) {
+            result = await executeInTx(existingTransaction);
+        } else {
+            result = await sequelize.transaction(async (t) => {
+                return await executeInTx(t);
+            });
+        }
+
+        RealtimeEventBroker.emitToUser(userId, 'wallet_updated', 'wallet', userId, {
+            balance: result.closing,
+            refundAmount: amount,
+            transactionId: result.transaction.id,
+        });
+
+        logger.info(`[WalletService] Successfully refunded ₹${amount} to user ${userId} wallet (Ref: ${reference})`);
+        return { wallet: result.wallet, transaction: result.transaction };
     }
 }
 

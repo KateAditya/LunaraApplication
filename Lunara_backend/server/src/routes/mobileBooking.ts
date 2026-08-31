@@ -83,19 +83,28 @@ router.post(
     ctrl.createPartyBooking
 );
 
-/**
- * GET /api/mobile/bookings
- * List all bookings for a user. Query: ?userId=<uuid>
- */
 router.get('/', optionalAuth, ctrl.listMyBookings);
+router.get('/policy', ctrl.getBookingPolicies);
+
+/**
+ * GET /api/mobile/bookings/:id/cancellation-preview
+ * Returns authoritative cancellation policy breakdown & refund amounts.
+ */
+router.get('/:id/cancellation-preview', authenticate, ctrl.getSoloCancellationPreview);
+
+/**
+ * POST /api/mobile/bookings/:id/cancel
+ * Confirms cancellation, invalidates tickets, and credits refund to Lunara Wallet.
+ */
+router.post('/:id/cancel', authenticate, ctrl.cancelSoloBooking);
 
 /**
  * POST /api/mobile/bookings/cancel-pending
- * DELETE /api/mobile/bookings/:id/cancel
+ * DELETE /api/mobile/bookings/:id/cancel-pending
  * Cancel an uncompleted/pending booking attempt immediately.
  */
 router.post('/cancel-pending', authenticate, ctrl.cancelPendingBooking);
-router.delete('/:id/cancel', authenticate, ctrl.cancelPendingBooking);
+router.delete('/:id/cancel-pending', authenticate, ctrl.cancelPendingBooking);
 
 // ─── Payment actions ──────────────────────────────────────────────────────────
 

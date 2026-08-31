@@ -4283,6 +4283,73 @@ class ApiService {
     return false;
   }
 
+  /// Fetches authoritative cancellation policy breakdown & refund amounts
+  static Future<Map<String, dynamic>?> fetchBookingCancellationPreview(
+    String bookingId, {
+    bool isGroupParty = false,
+  }) async {
+    try {
+      final path = isGroupParty
+          ? '/api/mobile/group-parties/$bookingId/cancellation-preview'
+          : '/api/mobile/bookings/$bookingId/cancellation-preview';
+      final response = await get(path);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      } else {
+        final data = jsonDecode(response.body);
+        return {'error': data['message'] ?? 'Failed to load cancellation preview'};
+      }
+    } catch (e) {
+      debugPrint('fetchBookingCancellationPreview error: $e');
+    }
+    return null;
+  }
+
+  /// Confirms booking cancellation and initiates atomic wallet refund
+  static Future<Map<String, dynamic>?> confirmBookingCancellation(
+    String bookingId, {
+    bool isGroupParty = false,
+    String? reason,
+  }) async {
+    try {
+      final path = isGroupParty
+          ? '/api/mobile/group-parties/$bookingId/cancel'
+          : '/api/mobile/bookings/$bookingId/cancel';
+      final response = await post(path, body: {'reason': reason ?? 'Cancelled by user'});
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return Map<String, dynamic>.from(data);
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Cancellation failed',
+        };
+      }
+    } catch (e) {
+      debugPrint('confirmBookingCancellation error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  /// Fetches universal booking & cancellation policies (Solo & Small Group Party)
+  static Future<Map<String, dynamic>?> fetchBookingPolicies() async {
+    try {
+      final response = await get('/api/mobile/bookings/policy');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchBookingPolicies error: $e');
+    }
+    return null;
+  }
+
 
   // â”€â”€ Subscription API Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
