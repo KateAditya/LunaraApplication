@@ -108,11 +108,11 @@ EntitlementAuditLog.init(
         indexes: [
             {
                 name: 'idx_entitlement_audit_user_feature',
-                fields: ['user_id', 'feature', 'createdAt'],
+                fields: ['user_id', 'feature', 'created_at'],
             },
             {
                 name: 'idx_entitlement_audit_action',
-                fields: ['action', 'createdAt'],
+                fields: ['action', 'created_at'],
             },
         ],
     }

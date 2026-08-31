@@ -930,6 +930,10 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             SmartWalletConfig,
             WalletPromotionalCampaign,
             AuditLog,
+            SubscriptionAddonPackage,
+            UserAddon,
+            EntitlementAuditLog,
+            BookingPolicyConfig,
         ];
         for (const m of modelsToSync) {
             try {
