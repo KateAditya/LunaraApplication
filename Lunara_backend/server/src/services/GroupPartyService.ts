@@ -874,23 +874,30 @@ export class GroupPartyService {
 
             const isCancellationPending = cancelReq?.status === 'PENDING_ADMIN_REVIEW';
             const isCancellationRejected = cancelReq?.status === 'REJECTED';
-            const isCancellationRefunded = cancelReq?.status === 'COMPLETED' || cancelReq?.status === 'REFUND_PROCESSING' || cancelReq?.status === 'REFUND_PAID';
+            const isCancellationProcessing = cancelReq?.status === 'REFUND_PROCESSING' || cancelReq?.status === 'APPROVED';
+            const isCancellationRefunded = cancelReq?.status === 'COMPLETED' || cancelReq?.status === 'REFUND_PAID';
+
+            const partySubject = bookingRecord.partySubject || `${venueName} Large Party`;
 
             let title = `Large Party Request at ${venueName} 🚨`;
             let body = `Your request for ${guestCount} guests at ${venueName} has been submitted for admin approval.`;
             let statusText = 'Request Submitted';
 
             if (isCancellationPending) {
-                title = `Large Party Cancellation Requested ⏳`;
-                body = `Your cancellation request for ${guestCount} guests at ${venueName} is under review by Lunara Admin.`;
-                statusText = 'Awaiting Admin Review';
+                title = `Cancellation Requested ⏳`;
+                body = `${partySubject}\nCancellation: Pending Admin Review`;
+                statusText = 'Pending Admin Review';
+            } else if (isCancellationProcessing) {
+                title = `Cancellation: Approved ✓`;
+                body = `Refund: ₹${cancelReq?.refundAmount || 0} • Refund Status: Processing`;
+                statusText = 'Refund Processing';
             } else if (isCancellationRefunded) {
-                title = `Large Party Cancelled & Refunded ✓`;
-                body = `Your Large Party was cancelled. Refund of ₹${cancelReq?.refundAmount || 0} (${cancelReq?.refundPercentage || 0}%) has been processed.`;
-                statusText = 'Cancelled & Refunded';
+                title = `Large Party Cancelled ❌`;
+                body = `Refund: ₹${cancelReq?.refundAmount || 0} • Refund Status: Paid`;
+                statusText = 'Refund Paid';
             } else if (isCancellationRejected && isPaymentConfirmed) {
-                title = `Large Party Confirmed! 🎉`;
-                body = `Cancellation request was not approved (${cancelReq?.adminNotes || 'Contact support'}). Your party of ${guestCount} guests at ${venueName} remains confirmed.`;
+                title = `Cancellation: Not Approved ℹ️`;
+                body = `Cancellation: Not Approved • Reason: ${cancelReq?.adminNotes || 'Request not approved per policy'}`;
                 statusText = 'Confirmed • Cancel Rejected';
             } else if (isCompleted) {
                 title = `Large Party Completed ✨`;
@@ -922,7 +929,7 @@ export class GroupPartyService {
             if (isPaymentPending && !isExpired && !isCancellationPending) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW', paymentAmount: bookingRecord.adminPaymentAmount });
             }
-            if (isPaymentConfirmed && !isCancellationRefunded) {
+            if (isPaymentConfirmed && !isCancellationRefunded && !isCancellationProcessing) {
                 actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
                 actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: false, action: 'VIEW_TICKET' });
             }
@@ -939,8 +946,12 @@ export class GroupPartyService {
                 read: false,
                 isRead: false,
                 category: 'bookings',
-                status: isExpired ? 'expired' : (isPaymentConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isRejected ? 'cancelled' : 'pending')))),
+                status: isExpired ? 'expired' : (isCancellationRefunded || isCancellationProcessing ? 'cancelled' : (isPaymentConfirmed ? 'confirmed' : (isCompleted ? 'completed' : (isApproved ? 'approved' : (isRejected ? 'cancelled' : 'pending'))))),
                 paymentStatus: bookingRecord.paymentStatus || 'pending',
+                cancellationStatus: cancelReq?.status,
+                cancellationRefundAmount: cancelReq?.refundAmount,
+                cancellationRefundPercentage: cancelReq?.refundPercentage,
+                cancellationRejectionReason: cancelReq?.adminNotes,
                 isExpired,
                 expiresAt: bookingRecord.expiresAt,
                 data: {
@@ -949,7 +960,12 @@ export class GroupPartyService {
                     venueName,
                     guestCount,
                     partyDate,
+                    partySubject,
                     statusText,
+                    cancellationStatus: cancelReq?.status,
+                    cancellationRefundAmount: cancelReq?.refundAmount,
+                    cancellationRefundPercentage: cancelReq?.refundPercentage,
+                    cancellationRejectionReason: cancelReq?.adminNotes,
                     isExpired,
                     expiresAt: bookingRecord.expiresAt,
                     timelineProgress: progressPercentage,

@@ -1,5 +1,5 @@
 import sequelize from '../config/database';
-import Booking, { BookingStatus } from '../models/Booking';
+import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import Ticket, { TicketStatus } from '../models/Ticket';
@@ -65,6 +65,7 @@ export function maskPaymentDetails(details: MaskedPayoutDetails): MaskedPayoutDe
 export class LargePartyCancellationService {
     /**
      * Submit a Host Large Party Cancellation Request
+     * Phase 2, 3, 19, 22
      */
     public static async requestCancellation(params: {
         bookingId: string;
@@ -135,7 +136,7 @@ export class LargePartyCancellationService {
             return { success: false, message: 'Only confirmed and paid Large Parties can be submitted for cancellation' };
         }
 
-        // Check if there is already an active pending request
+        // Idempotency: Check if there is already an active pending request (Phase 19)
         const existingPending = await LargePartyCancellationRequest.findOne({
             where: {
                 bookingId,
@@ -143,11 +144,19 @@ export class LargePartyCancellationService {
                     LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
                     LargePartyCancellationStatus.REFUND_PROCESSING,
                     LargePartyCancellationStatus.APPROVED,
+                    LargePartyCancellationStatus.COMPLETED,
                 ],
             },
         });
 
         if (existingPending) {
+            if (existingPending.status === LargePartyCancellationStatus.COMPLETED) {
+                return {
+                    success: false,
+                    message: 'This Large Party has already been cancelled and refund processed',
+                    data: existingPending,
+                };
+            }
             return {
                 success: false,
                 message: 'A cancellation request for this Large Party is already pending admin review',
@@ -174,7 +183,7 @@ export class LargePartyCancellationService {
             status: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
         });
 
-        // Notify Admins & Host via Socket/Push
+        // Notify Admins & Host via Socket/Push (Phase 17)
         try {
             const { io } = require('../server');
             const venueName = (booking as any)?.venue?.name || 'Venue';
@@ -199,6 +208,11 @@ export class LargePartyCancellationService {
                     bookingId: booking.id,
                     cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
                 });
+
+                io.to(`user_${userId}`).emit('large_party_cancellation_requested', {
+                    bookingId: booking.id,
+                    cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
+                });
             }
         } catch (notifErr) {
             logger.warn('Failed to dispatch notifications for large party cancellation request:', notifErr);
@@ -219,6 +233,7 @@ export class LargePartyCancellationService {
 
     /**
      * Admin: Get all cancellation requests with pagination and filters
+     * Phase 4, 21
      */
     public static async getAdminCancellations(params: {
         status?: LargePartyCancellationStatus;
@@ -315,6 +330,7 @@ export class LargePartyCancellationService {
 
     /**
      * Admin: Get detail of a specific cancellation request with precalculated refund policy previews
+     * Phase 5, 6
      */
     public static async getAdminCancellationDetail(requestId: string): Promise<{ success: boolean; message?: string; data?: any }> {
         const r = await LargePartyCancellationRequest.findByPk(requestId, {
@@ -332,7 +348,7 @@ export class LargePartyCancellationService {
                 {
                     model: Booking,
                     as: 'booking',
-                    attributes: ['id', 'bookingDate', 'startTime', 'numberOfGuests', 'status', 'paymentStatus', 'partySubject', 'partyRequirement', 'partyDescription', 'totalAmount'],
+                    attributes: ['id', 'bookingDate', 'startTime', 'numberOfGuests', 'status', 'paymentStatus', 'partySubject', 'partyRequirement', 'partyDescription', 'totalAmount', 'razorpayOrderId'],
                 },
                 {
                     model: User,
@@ -390,7 +406,6 @@ export class LargePartyCancellationService {
                 refundMethod: r.refundMethod,
                 reason: r.reason,
                 reasonDetails: r.reasonDetails,
-                // Masked for safety, but admin also has access to raw values when executing payouts
                 payoutDetails: {
                     upiId: r.upiId,
                     mobileNumber: r.mobileNumber,
@@ -419,6 +434,7 @@ export class LargePartyCancellationService {
 
     /**
      * Admin: Approve Large Party Cancellation with Chosen Policy
+     * Phase 7, 8, 11, 12, 13, 18, 19
      */
     public static async adminApproveCancellation(params: {
         requestId: string;
@@ -434,38 +450,58 @@ export class LargePartyCancellationService {
             return { success: false, message: 'Valid refund percentage between 0 and 100 is required' };
         }
 
-        const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
-            include: [
-                { model: Booking, as: 'booking' },
-                { model: User, as: 'user' },
-                { model: Venue, as: 'venue' },
-            ],
-        });
+        let calculatedRefund = 0;
+        let nonRefundable = 0;
+        let finalStatus = LargePartyCancellationStatus.REFUND_PROCESSING;
+        let bookingId = '';
+        let hostUserId = '';
+        let partySubject = 'Large Party';
+        let venueName = 'Venue';
+        let originalPaid = 0;
+        let hostUser: any = null;
 
-        if (!cancelReq) {
-            return { success: false, message: 'Large party cancellation request not found' };
-        }
-
-        if (cancelReq.status !== LargePartyCancellationStatus.PENDING_ADMIN_REVIEW) {
-            return { success: false, message: `Request is already in '${cancelReq.status}' status and cannot be approved again` };
-        }
-
-        const originalPaid = Number(cancelReq.originalPaidAmount || 0);
-        const calculatedRefund = Math.round((originalPaid * (refundPercentage / 100)) * 100) / 100;
-        const nonRefundable = Math.round((originalPaid - calculatedRefund) * 100) / 100;
-
-        const booking = (cancelReq as any).booking;
-        if (!booking) {
-            return { success: false, message: 'Associated booking not found' };
-        }
-
-        const hostUserId = cancelReq.userId;
-        const finalStatus = refundMethod === LargePartyRefundMethod.WALLET || calculatedRefund === 0
-            ? LargePartyCancellationStatus.COMPLETED
-            : LargePartyCancellationStatus.REFUND_PROCESSING;
-
-        // Atomic transaction execution
+        // Atomic transaction execution with Row-Level Lock to prevent duplicate approvals (Phase 19)
         await sequelize.transaction(async (t) => {
+            const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            if (!cancelReq) {
+                throw new Error('Large party cancellation request not found');
+            }
+
+            if (cancelReq.status !== LargePartyCancellationStatus.PENDING_ADMIN_REVIEW) {
+                throw new Error(`Request is already in '${cancelReq.status}' status and cannot be approved again`);
+            }
+
+            const booking = await Booking.findByPk(cancelReq.bookingId, {
+                include: [
+                    { model: Venue, as: 'venue' },
+                    { model: User, as: 'customer' },
+                ],
+                transaction: t,
+            });
+            if (!booking) {
+                throw new Error('Associated booking not found');
+            }
+
+            const user = await User.findByPk(cancelReq.userId, { transaction: t });
+
+            originalPaid = Number(cancelReq.originalPaidAmount || 0);
+            calculatedRefund = Math.round((originalPaid * (refundPercentage / 100)) * 100) / 100;
+            nonRefundable = Math.round((originalPaid - calculatedRefund) * 100) / 100;
+
+            bookingId = booking.id;
+            hostUserId = cancelReq.userId;
+            hostUser = user;
+            venueName = (booking as any)?.venue?.name || 'Venue';
+            partySubject = booking.partySubject || `${venueName} Large Party`;
+
+            finalStatus = refundMethod === LargePartyRefundMethod.WALLET || calculatedRefund === 0
+                ? LargePartyCancellationStatus.COMPLETED
+                : LargePartyCancellationStatus.REFUND_PROCESSING;
+
             // Update cancellation request
             await cancelReq.update(
                 {
@@ -477,35 +513,42 @@ export class LargePartyCancellationService {
                     adminReviewedBy: adminUserId,
                     adminReviewedAt: new Date(),
                     adminNotes: adminNotes?.trim() || undefined,
+                    paymentReference: refundMethod === LargePartyRefundMethod.WALLET && calculatedRefund > 0 ? `WALLET_CREDIT_${booking.id.substring(0, 8)}` : undefined,
                     paidAt: refundMethod === LargePartyRefundMethod.WALLET ? new Date() : undefined,
                     paidByAdminId: refundMethod === LargePartyRefundMethod.WALLET ? adminUserId : undefined,
                 },
                 { transaction: t }
             );
 
-            // Mark Booking as CANCELLED
+            // Mark Booking as CANCELLED, but separately track payment status (Phase 12, 18)
+            const targetPaymentStatus = refundMethod === LargePartyRefundMethod.WALLET || calculatedRefund === 0
+                ? PaymentStatus.REFUNDED
+                : PaymentStatus.PENDING;
+
             await booking.update(
                 {
                     status: BookingStatus.CANCELLED,
+                    paymentStatus: targetPaymentStatus,
                     cancellationReason: `Host Cancellation Approved by Admin (${refundPercentage}% refund): ${cancelReq.reason}`,
                 },
                 { transaction: t }
             );
 
-            // Invalidate tickets
+            // Invalidate tickets so CANCELLED is never treated as ACTIVE / CONFIRMED (Phase 18)
             await Ticket.update(
                 { ticketStatus: TicketStatus.CANCELLED },
                 { where: { bookingId: booking.id }, transaction: t }
             );
 
-            // If Wallet refund and amount > 0, credit host's wallet atomically
+            // Phase 13: If Wallet refund and amount > 0, credit host's wallet atomically with complete audit metadata
             if (refundMethod === LargePartyRefundMethod.WALLET && calculatedRefund > 0) {
                 const idempotentRef = `LP_REFUND_${booking.id}_${cancelReq.id}`;
                 const refundRes = await WalletService.creditRefund({
                     userId: hostUserId,
                     amount: calculatedRefund,
                     referenceId: idempotentRef,
-                    reason: `Large Party Cancellation Refund (${refundPercentage}%) for booking #${booking.id.substring(0, 8)}`,
+                    reason: `Large Party Cancellation Refund`,
+                    bookingId: booking.id,
                     transaction: t,
                 });
 
@@ -515,19 +558,17 @@ export class LargePartyCancellationService {
             }
         });
 
-        // Socket & Push Notifications
+        // Phase 11 & Phase 16: Socket & Push Notifications matching exact required copy
         try {
             const { io } = require('../server');
             const { sendPushNotification } = require('./fcmService');
-            const venueName = (cancelReq as any)?.venue?.name || 'Venue';
-            const hostUser = (cancelReq as any)?.user;
 
-            const notifTitle = 'Large Party Cancellation Approved ✓';
+            const notifTitle = 'Large Party Cancellation Approved';
             const notifBody = calculatedRefund > 0
                 ? (refundMethod === LargePartyRefundMethod.WALLET
-                    ? `Your Large Party at ${venueName} is cancelled. ₹${calculatedRefund} (${refundPercentage}%) has been credited to your Lunara Wallet.`
-                    : `Your Large Party at ${venueName} is cancelled. A refund of ₹${calculatedRefund} (${refundPercentage}%) is being processed to your payout account.`)
-                : `Your Large Party at ${venueName} is cancelled. As per policy, no refund applies.`;
+                    ? `Your cancellation request for ${partySubject} has been approved.\nOriginal Amount: ₹${originalPaid.toLocaleString('en-IN')}\nApproved Refund: ₹${calculatedRefund.toLocaleString('en-IN')}\nRefund Percentage: ${refundPercentage}%\n₹${calculatedRefund.toLocaleString('en-IN')} has been credited to your Lunara Wallet.`
+                    : `Your cancellation request for ${partySubject} has been approved.\nOriginal Amount: ₹${originalPaid.toLocaleString('en-IN')}\nApproved Refund: ₹${calculatedRefund.toLocaleString('en-IN')}\nRefund Percentage: ${refundPercentage}%\nYour refund/payment will be processed within 24 hours.`)
+                : `Your cancellation request for ${partySubject} has been approved.\nOriginal Amount: ₹${originalPaid.toLocaleString('en-IN')}\nRefund Percentage: 0%\nAs per policy, no refund applies.`;
 
             if (hostUser?.fcmToken) {
                 await sendPushNotification(hostUser.fcmToken, {
@@ -535,17 +576,18 @@ export class LargePartyCancellationService {
                     body: notifBody,
                     data: {
                         type: 'large_party_cancellation_approved',
-                        bookingId: booking.id,
-                        requestId: cancelReq.id,
+                        bookingId,
+                        requestId,
                         refundAmount: String(calculatedRefund),
+                        refundPercentage: String(refundPercentage),
                     },
                 });
             }
 
             if (io) {
                 io.to(`user_${hostUserId}`).emit('large_party_cancellation_approved', {
-                    bookingId: booking.id,
-                    requestId: cancelReq.id,
+                    bookingId,
+                    requestId,
                     refundAmount: calculatedRefund,
                     refundPercentage,
                     refundMethod,
@@ -553,21 +595,24 @@ export class LargePartyCancellationService {
                 });
 
                 io.to(`user_${hostUserId}`).emit('large_party_status_update', {
-                    bookingId: booking.id,
+                    bookingId,
                     status: 'cancelled',
                     cancellationStatus: finalStatus,
+                    cancellationRefundAmount: calculatedRefund,
+                    cancellationRefundPercentage: refundPercentage,
                 });
 
                 io.to(`user_${hostUserId}`).emit('notification_created', {
-                    id: `lp_cancel_${cancelReq.id}`,
+                    id: `lp_cancel_${requestId}`,
                     title: notifTitle,
                     body: notifBody,
                     createdAt: new Date().toISOString(),
                     read: false,
                     data: {
                         type: 'large_party_cancellation_approved',
-                        bookingId: booking.id,
+                        bookingId,
                         refundAmount: calculatedRefund,
+                        refundPercentage,
                     },
                 });
             }
@@ -579,8 +624,8 @@ export class LargePartyCancellationService {
             success: true,
             message: `Large Party cancelled successfully with ${refundPercentage}% refund. Total refund: ₹${calculatedRefund}.`,
             data: {
-                id: cancelReq.id,
-                bookingId: booking.id,
+                id: requestId,
+                bookingId,
                 status: finalStatus,
                 refundPercentage,
                 refundAmount: calculatedRefund,
@@ -592,6 +637,7 @@ export class LargePartyCancellationService {
 
     /**
      * Admin: Reject Large Party Cancellation Request
+     * Phase 9, 11, 17, 20
      */
     public static async adminRejectCancellation(params: {
         requestId: string;
@@ -604,41 +650,55 @@ export class LargePartyCancellationService {
             return { success: false, message: 'Rejection reason is required' };
         }
 
-        const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
-            include: [
-                { model: Booking, as: 'booking' },
-                { model: User, as: 'user' },
-                { model: Venue, as: 'venue' },
-            ],
-        });
+        let bookingId = '';
+        let hostUserId = '';
+        let venueName = 'Venue';
+        let hostUser: any = null;
 
-        if (!cancelReq) {
-            return { success: false, message: 'Large party cancellation request not found' };
-        }
+        await sequelize.transaction(async (t) => {
+            const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
 
-        if (cancelReq.status !== LargePartyCancellationStatus.PENDING_ADMIN_REVIEW) {
-            return { success: false, message: `Request is already in '${cancelReq.status}' status and cannot be rejected` };
-        }
+            if (!cancelReq) {
+                throw new Error('Large party cancellation request not found');
+            }
 
-        // Update cancellation request to REJECTED. Large Party booking remains active/confirmed.
-        await cancelReq.update({
-            status: LargePartyCancellationStatus.REJECTED,
-            adminNotes: rejectionReason.trim(),
-            adminReviewedBy: adminUserId,
-            adminReviewedAt: new Date(),
+            if (cancelReq.status !== LargePartyCancellationStatus.PENDING_ADMIN_REVIEW) {
+                throw new Error(`Request is already in '${cancelReq.status}' status and cannot be rejected`);
+            }
+
+            const booking = await Booking.findByPk(cancelReq.bookingId, {
+                include: [{ model: Venue, as: 'venue' }],
+                transaction: t,
+            });
+            const user = await User.findByPk(cancelReq.userId, { transaction: t });
+
+            bookingId = cancelReq.bookingId;
+            hostUserId = cancelReq.userId;
+            hostUser = user;
+            venueName = (booking as any)?.venue?.name || 'Venue';
+
+            // Update cancellation request to REJECTED. Large Party booking remains active/confirmed.
+            await cancelReq.update(
+                {
+                    status: LargePartyCancellationStatus.REJECTED,
+                    adminNotes: rejectionReason.trim(),
+                    adminReviewedBy: adminUserId,
+                    adminReviewedAt: new Date(),
+                },
+                { transaction: t }
+            );
         });
 
         // Socket & Push Notifications
         try {
             const { io } = require('../server');
             const { sendPushNotification } = require('./fcmService');
-            const venueName = (cancelReq as any)?.venue?.name || 'Venue';
-            const hostUser = (cancelReq as any)?.user;
-            const hostUserId = cancelReq.userId;
-            const bookingId = cancelReq.bookingId;
 
             const notifTitle = 'Large Party Cancellation Not Approved';
-            const notifBody = `Your cancellation request for Large Party at ${venueName} was not approved by Lunara Admin. Reason: ${rejectionReason.trim()}. Your Large Party remains active.`;
+            const notifBody = `Your cancellation request for Large Party at ${venueName} was not approved by Lunara Admin.\nReason: ${rejectionReason.trim()}\nYour Large Party remains active.`;
 
             if (hostUser?.fcmToken) {
                 await sendPushNotification(hostUser.fcmToken, {
@@ -647,7 +707,7 @@ export class LargePartyCancellationService {
                     data: {
                         type: 'large_party_cancellation_rejected',
                         bookingId,
-                        requestId: cancelReq.id,
+                        requestId,
                         reason: rejectionReason.trim(),
                     },
                 });
@@ -656,7 +716,7 @@ export class LargePartyCancellationService {
             if (io) {
                 io.to(`user_${hostUserId}`).emit('large_party_cancellation_rejected', {
                     bookingId,
-                    requestId: cancelReq.id,
+                    requestId,
                     reason: rejectionReason.trim(),
                     status: LargePartyCancellationStatus.REJECTED,
                 });
@@ -664,10 +724,11 @@ export class LargePartyCancellationService {
                 io.to(`user_${hostUserId}`).emit('large_party_status_update', {
                     bookingId,
                     cancellationStatus: LargePartyCancellationStatus.REJECTED,
+                    cancellationRejectionReason: rejectionReason.trim(),
                 });
 
                 io.to(`user_${hostUserId}`).emit('notification_created', {
-                    id: `lp_cancel_rej_${cancelReq.id}`,
+                    id: `lp_cancel_rej_${requestId}`,
                     title: notifTitle,
                     body: notifBody,
                     createdAt: new Date().toISOString(),
@@ -687,8 +748,8 @@ export class LargePartyCancellationService {
             success: true,
             message: 'Cancellation request rejected successfully. Large Party remains active.',
             data: {
-                id: cancelReq.id,
-                bookingId: cancelReq.bookingId,
+                id: requestId,
+                bookingId,
                 status: LargePartyCancellationStatus.REJECTED,
                 rejectionReason: rejectionReason.trim(),
             },
@@ -697,55 +758,103 @@ export class LargePartyCancellationService {
 
     /**
      * Admin: Mark Manual Refund as Paid
+     * Phase 14, 15, 16, 19
      */
     public static async adminMarkRefundPaid(params: {
         requestId: string;
         adminUserId: string;
         paymentReference: string;
         paymentNotes?: string;
+        paymentMethod?: string;
     }): Promise<{ success: boolean; message: string; data?: any }> {
-        const { requestId, adminUserId, paymentReference, paymentNotes } = params;
+        const { requestId, adminUserId, paymentReference, paymentNotes, paymentMethod } = params;
 
         if (!paymentReference || paymentReference.trim().length === 0) {
             return { success: false, message: 'Payment reference / transaction ID is required' };
         }
 
-        const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
-            include: [
-                { model: Booking, as: 'booking' },
-                { model: User, as: 'user' },
-                { model: Venue, as: 'venue' },
-            ],
-        });
-
-        if (!cancelReq) {
-            return { success: false, message: 'Large party cancellation request not found' };
+        if (!adminUserId) {
+            return { success: false, message: 'Admin authorization required' };
         }
 
-        if (cancelReq.status !== LargePartyCancellationStatus.REFUND_PROCESSING &&
-            cancelReq.status !== LargePartyCancellationStatus.APPROVED) {
-            return { success: false, message: `Request status is '${cancelReq.status}'. Only processing refunds can be marked as paid.` };
-        }
+        let bookingId = '';
+        let hostUserId = '';
+        let refundAmt = 0;
+        let refundPct = 0;
+        let originalPaid = 0;
+        let hostUser: any = null;
+        let methodDisplay = paymentMethod || 'Bank Transfer';
 
-        await cancelReq.update({
-            status: LargePartyCancellationStatus.COMPLETED,
-            paymentReference: paymentReference.trim(),
-            paidByAdminId: adminUserId,
-            paidAt: new Date(),
-            adminNotes: paymentNotes?.trim() ? `${cancelReq.adminNotes ? cancelReq.adminNotes + ' | ' : ''}${paymentNotes.trim()}` : cancelReq.adminNotes,
+        // Atomic row-level lock transaction to prevent double payout settlement (Phase 15, 19)
+        await sequelize.transaction(async (t) => {
+            const cancelReq = await LargePartyCancellationRequest.findByPk(requestId, {
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            if (!cancelReq) {
+                throw new Error('Large party cancellation request not found');
+            }
+
+            // Phase 15: Validate not already paid and state is eligible
+            if (cancelReq.status === LargePartyCancellationStatus.COMPLETED && cancelReq.paidAt) {
+                throw new Error('Refund has already been marked as paid and settled');
+            }
+
+            if (
+                cancelReq.status !== LargePartyCancellationStatus.REFUND_PROCESSING &&
+                cancelReq.status !== LargePartyCancellationStatus.APPROVED
+            ) {
+                throw new Error(`Request status is '${cancelReq.status}'. Only approved or processing refunds can be marked as paid.`);
+            }
+
+            refundAmt = Number(cancelReq.refundAmount || 0);
+            if (refundAmt <= 0) {
+                throw new Error('Refund amount must be greater than 0 to mark as paid');
+            }
+
+            const booking = await Booking.findByPk(cancelReq.bookingId, {
+                include: [{ model: Venue, as: 'venue' }],
+                transaction: t,
+            });
+            const user = await User.findByPk(cancelReq.userId, { transaction: t });
+
+            bookingId = cancelReq.bookingId;
+            hostUserId = cancelReq.userId;
+            hostUser = user;
+            refundPct = cancelReq.refundPercentage || 0;
+            originalPaid = Number(cancelReq.originalPaidAmount || 0);
+
+            if (cancelReq.upiId) {
+                methodDisplay = 'UPI';
+            } else if (cancelReq.accountNumber) {
+                methodDisplay = 'Bank Transfer';
+            }
+
+            await cancelReq.update(
+                {
+                    status: LargePartyCancellationStatus.COMPLETED,
+                    paymentReference: paymentReference.trim(),
+                    paidByAdminId: adminUserId,
+                    paidAt: new Date(),
+                    adminNotes: paymentNotes?.trim() ? `${cancelReq.adminNotes ? cancelReq.adminNotes + ' | ' : ''}${paymentNotes.trim()}` : cancelReq.adminNotes,
+                },
+                { transaction: t }
+            );
+
+            // Mark booking payment status as refunded (Phase 12)
+            if (booking) {
+                await booking.update({ paymentStatus: PaymentStatus.REFUNDED }, { transaction: t });
+            }
         });
 
-        // Socket & Push Notifications
+        // Phase 16: Socket & Push Notifications matching exact required copy
         try {
             const { io } = require('../server');
             const { sendPushNotification } = require('./fcmService');
-            const venueName = (cancelReq as any)?.venue?.name || 'Venue';
-            const hostUser = (cancelReq as any)?.user;
-            const hostUserId = cancelReq.userId;
-            const refundAmt = cancelReq.refundAmount || 0;
 
-            const notifTitle = 'Large Party Refund Transferred ✓';
-            const notifBody = `Your refund of ₹${refundAmt} for Large Party at ${venueName} has been transferred. Reference: ${paymentReference.trim()}.`;
+            const notifTitle = 'Large Party Refund Completed';
+            const notifBody = `Your Large Party cancellation has been processed.\nOriginal Amount: ₹${originalPaid.toLocaleString('en-IN')}\nRefund Percentage: ${refundPct}%\nRefund Amount: ₹${refundAmt.toLocaleString('en-IN')}\nRefund Status: PAID\nPayment Method: ${methodDisplay}\nPayment Reference: ${paymentReference.trim()}\nThe amount has been paid successfully.`;
 
             if (hostUser?.fcmToken) {
                 await sendPushNotification(hostUser.fcmToken, {
@@ -753,8 +862,8 @@ export class LargePartyCancellationService {
                     body: notifBody,
                     data: {
                         type: 'large_party_refund_paid',
-                        bookingId: cancelReq.bookingId,
-                        requestId: cancelReq.id,
+                        bookingId,
+                        requestId,
                         paymentReference: paymentReference.trim(),
                         refundAmount: String(refundAmt),
                     },
@@ -763,22 +872,30 @@ export class LargePartyCancellationService {
 
             if (io) {
                 io.to(`user_${hostUserId}`).emit('large_party_refund_paid', {
-                    bookingId: cancelReq.bookingId,
-                    requestId: cancelReq.id,
+                    bookingId,
+                    requestId,
                     refundAmount: refundAmt,
                     paymentReference: paymentReference.trim(),
                 });
 
+                io.to(`user_${hostUserId}`).emit('large_party_status_update', {
+                    bookingId,
+                    status: 'cancelled',
+                    cancellationStatus: LargePartyCancellationStatus.COMPLETED,
+                    cancellationRefundAmount: refundAmt,
+                });
+
                 io.to(`user_${hostUserId}`).emit('notification_created', {
-                    id: `lp_refund_paid_${cancelReq.id}`,
+                    id: `lp_refund_paid_${requestId}`,
                     title: notifTitle,
                     body: notifBody,
                     createdAt: new Date().toISOString(),
                     read: false,
                     data: {
                         type: 'large_party_refund_paid',
-                        bookingId: cancelReq.bookingId,
+                        bookingId,
                         paymentReference: paymentReference.trim(),
+                        refundAmount: refundAmt,
                     },
                 });
             }
@@ -790,11 +907,10 @@ export class LargePartyCancellationService {
             success: true,
             message: 'Refund marked as paid successfully.',
             data: {
-                id: cancelReq.id,
-                bookingId: cancelReq.bookingId,
+                id: requestId,
+                bookingId,
                 status: LargePartyCancellationStatus.COMPLETED,
                 paymentReference: paymentReference.trim(),
-                paidAt: cancelReq.paidAt,
             },
         };
     }
