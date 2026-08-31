@@ -24,6 +24,7 @@ import '../profile/profile_screen.dart';
 import '../../models/user.dart';
 import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
+import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -288,6 +289,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -337,6 +341,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -1736,6 +1743,58 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
         _loadFeed();
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleStrangersMeetCancellationAction(
+    String meetId,
+    String cancellationId,
+    String action, {
+    String? rejectReason,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+      ),
+    );
+    try {
+      final result = await ApiService.respondStrangersMeetCancellation(
+        meetId,
+        cancellationId,
+        action: action,
+        rejectReason: rejectReason,
+      );
+      Navigator.pop(context);
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              action == 'accept'
+                  ? 'Cancellation approved & ₹${result['data']?['refundAmount'] ?? ''} credited to member wallet.'
+                  : 'Cancellation request rejected.',
+            ),
+            backgroundColor: action == 'accept' ? const Color(0xFF10B981) : Colors.grey,
+          ),
+        );
+        _loadFeed();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Failed to process cancellation.'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
       Navigator.pop(context);
@@ -4662,6 +4721,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
         ];
+      } else if (meetMap['pendingCancellationRequests'] is List &&
+          (meetMap['pendingCancellationRequests'] as List).isNotEmpty) {
+        final pendingCancellations = List<Map<String, dynamic>>.from(meetMap['pendingCancellationRequests']);
+        final firstCancel = pendingCancellations.first;
+        final cId = firstCancel['cancellationId']?.toString() ?? '';
+        final cName = firstCancel['name']?.toString() ?? 'Participant';
+        final cPaid = firstCancel['paidAmount'] != null ? ' (₹${firstCancel['paidAmount']})' : '';
+
+        title = '⚠️ Cancellation Requested';
+        badge = 'CANCELLATION REQUEST';
+        accent = const Color(0xFFF59E0B);
+        body = '$cName requested cancellation from your Stranger Meet$cPaid.';
+        statusSummary = 'Host Approval Required';
+        actionsList = [
+          NotificationAction(
+            label: 'Accept Cancellation',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            onTap: () => _handleStrangersMeetCancellationAction(meetId, cId, 'accept'),
+          ),
+          NotificationAction(
+            label: 'Reject',
+            icon: Icons.cancel_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => _handleStrangersMeetCancellationAction(meetId, cId, 'reject'),
+          ),
+        ];
       } else if (pendingIncomingRequests.isNotEmpty) {
         if (pendingIncomingRequests.length == 1) {
           final firstReq = pendingIncomingRequests.first;
@@ -4821,8 +4908,48 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
       final myPaymentStatus = (myRequest?['joinerPaymentStatus'] ?? myRequest?['paymentStatus'] ?? '').toString().toLowerCase();
+      final myCancel = meetMap['myCancellation'] is Map
+          ? Map<String, dynamic>.from(meetMap['myCancellation'])
+          : null;
 
-      if (myStatus == 'paid' || myPaymentStatus == 'paid') {
+      if (myCancel != null && myCancel['status'] == 'pending') {
+        title = '⏳ Cancellation Requested';
+        badge = 'CANCELLATION PENDING';
+        accent = const Color(0xFFF59E0B);
+        body = 'Your cancellation request for Stranger Meet at $venueName is awaiting host approval.';
+        statusSummary = 'Awaiting Host Approval';
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else if (myCancel != null && myCancel['status'] == 'approved') {
+        final ref = myCancel['refundAmount'] ?? myCancel['paidAmount'] ?? 0;
+        title = '✓ Cancellation Approved';
+        badge = 'REFUNDED';
+        accent = const Color(0xFF10B981);
+        body = 'Your cancellation was approved by $hostName. ₹$ref has been refunded to your Lunara Wallet.';
+        statusSummary = '₹$ref Refunded to Wallet';
+        actionsList = [
+          NotificationAction(
+            label: 'View Wallet',
+            icon: Icons.account_balance_wallet_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.pushNamed(context, '/wallet'),
+          ),
+        ];
+      } else if (myStatus == 'paid' || myPaymentStatus == 'paid') {
         title = '🎉 Meet Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
@@ -4861,6 +4988,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
+            },
+          ),
+          NotificationAction(
+            label: 'Cancel',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              final double paid = (chargesPerHead > 0 ? chargesPerHead : double.tryParse((meetMap['paymentAmount'] ?? '0').toString()) ?? 0.0).toDouble();
+              StrangersMeetCancellationDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                paidAmount: paid,
+                onCancelled: () => _loadFeed(),
+              );
             },
           ),
         ];

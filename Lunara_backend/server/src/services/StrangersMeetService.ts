@@ -1,6 +1,9 @@
 import { Transaction } from 'sequelize';
 import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus, StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
+import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from '../models/StrangersMeetCancellationRequest';
+import { WalletService } from './walletService';
+import User from '../models/User';
 import Venue from '../models/Venue';
 import { PlanEligibilityService } from './PlanEligibilityService';
 import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
@@ -641,6 +644,34 @@ export class StrangersMeetService {
                 primaryAction = 'Pending Approval';
             }
 
+            // Fetch cancellation requests for this meetup
+            const cancellationRequests = await StrangersMeetCancellationRequest.findAll({
+                where: { meetId },
+                include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
+                order: [['createdAt', 'DESC']],
+            });
+            const pendingCancellations = cancellationRequests.filter((c: any) => c.status === StrangersMeetCancellationStatus.PENDING);
+            const myCancellation = cancellationRequests.find((c: any) => c.userId === recipientUserId);
+
+            if (!isHost && myCancellation) {
+                if (myCancellation.status === StrangersMeetCancellationStatus.PENDING) {
+                    currentStatusText = 'Cancellation Requested • Awaiting Host Approval';
+                    primaryAction = 'Cancellation Pending';
+                    primaryActionUrl = `/strangers-meet/${request.id}/cancellation-status`;
+                    secondaryAction = 'View Details';
+                    secondaryActionUrl = `/strangers-meet/${request.id}`;
+                } else if (myCancellation.status === StrangersMeetCancellationStatus.APPROVED) {
+                    const refAmt = Number(myCancellation.refundAmount || myCancellation.paidAmount || 0).toFixed(0);
+                    currentStatusText = `✓ Cancellation Approved • ₹${refAmt} refunded to Lunara Wallet`;
+                    primaryAction = 'View Wallet';
+                    primaryActionUrl = '/wallet';
+                    secondaryAction = 'View Details';
+                    secondaryActionUrl = `/strangers-meet/${request.id}`;
+                }
+            } else if (isHost && pendingCancellations.length > 0) {
+                currentStatusText = `⚠️ ${pendingCancellations.length} Cancellation Request(s) Pending Review`;
+            }
+
             const venueName = reqAny.venue?.name || 'Venue';
             const eventDateStr = request.eventDateTime
                 ? formatDateTimeFull(request.eventDateTime)
@@ -681,6 +712,28 @@ export class StrangersMeetService {
                     status: j.status,
                     createdAt: j.createdAt,
                 })),
+                pendingCancellationRequests: pendingCancellations.map((c: any) => ({
+                    cancellationId: c.id,
+                    joinerId: c.joinerId,
+                    userId: c.userId,
+                    name: c.user ? `${c.user.firstName} ${c.user.lastName}`.trim() : 'Participant',
+                    photo: c.user?.profileImageUrl || '',
+                    paidAmount: c.paidAmount,
+                    reason: c.reason,
+                    otherReasonText: c.otherReasonText,
+                    createdAt: c.createdAt,
+                })),
+                myCancellation: myCancellation ? {
+                    id: myCancellation.id,
+                    status: myCancellation.status,
+                    paidAmount: myCancellation.paidAmount,
+                    refundAmount: myCancellation.refundAmount,
+                    reason: myCancellation.reason,
+                    otherReasonText: myCancellation.otherReasonText,
+                    rejectReason: myCancellation.rejectReason,
+                    respondedAt: myCancellation.respondedAt,
+                    createdAt: myCancellation.createdAt,
+                } : null,
                 totalSlots: request.numberOfPersons,
                 chargesPerHead: request.chargesPerHead,
                 paymentAmount: request.paymentAmount,
@@ -702,6 +755,292 @@ export class StrangersMeetService {
         } catch (err) {
             logger.error('[StrangersMeetService] enrichStrangersMeetNotificationCard error:', err);
             return null;
+        }
+    }
+
+    /**
+     * Joined member requests cancellation from Stranger Meet.
+     * Only ACCEPTED + PAID joiners can request.
+     */
+    public static async requestJoinerCancellation(options: {
+        meetId: string;
+        userId: string;
+        reason: string;
+        otherReasonText?: string;
+    }): Promise<{ cancellation: StrangersMeetCancellationRequest; message: string }> {
+        const { meetId, userId, reason, otherReasonText } = options;
+
+        const request = await StrangersMeetRequest.findByPk(meetId, {
+            include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'profileImageUrl'] }]
+        });
+        if (!request) {
+            throw new Error('Stranger Meet not found.');
+        }
+
+        // Validate meet is not already completed, ended, settled, or cancelled
+        const terminalStatuses = [
+            StrangersMeetStatus.COMPLETED,
+            StrangersMeetStatus.SETTLED,
+            StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+            StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+            StrangersMeetStatus.CANCELLED,
+            StrangersMeetStatus.REJECTED,
+            StrangersMeetStatus.NOT_STARTED,
+        ];
+        if (terminalStatuses.includes(request.status)) {
+            throw new Error('Cancellation is not available for a completed, ended, or cancelled Stranger Meet.');
+        }
+
+        // Validate member belongs to meet and is paid
+        const joiner = await StrangersMeetJoiner.findOne({
+            where: { strangersMeetRequestId: meetId, userId }
+        });
+
+        if (!joiner) {
+            throw new Error('You are not a participant in this Stranger Meet.');
+        }
+
+        const isPaid = joiner.paymentStatus === StrangersMeetJoinerPaymentStatus.PAID || (joiner.status as any) === 'paid';
+        if (!isPaid) {
+            throw new Error('Only confirmed and paid participants can request cancellation.');
+        }
+
+        // Check if there is already a pending cancellation request
+        const existingPending = await StrangersMeetCancellationRequest.findOne({
+            where: {
+                meetId,
+                joinerId: joiner.id,
+                status: StrangersMeetCancellationStatus.PENDING
+            }
+        });
+        if (existingPending) {
+            throw new Error('You already have a cancellation request pending host approval.');
+        }
+
+        // Authoritative paid amount from joiner record
+        const paidAmount = Number(joiner.paymentAmount || 0);
+
+        const cancellation = await StrangersMeetCancellationRequest.create({
+            meetId,
+            joinerId: joiner.id,
+            userId,
+            hostUserId: request.userId,
+            status: StrangersMeetCancellationStatus.PENDING,
+            reason: reason.trim(),
+            otherReasonText: otherReasonText?.trim() || null,
+            paidAmount,
+        });
+
+        const member = await User.findByPk(userId);
+        const memberName = member ? `${member.firstName} ${member.lastName}`.trim() : 'A participant';
+
+        // Notify Host via DB Notification + Push + Socket
+        try {
+            await this.emitNotification({
+                recipientUserId: request.userId,
+                eventType: 'strangers_meet_cancellation_requested',
+                title: 'Cancellation Request',
+                body: `${memberName} has requested cancellation from your Stranger Meet. Paid Amount: ₹${paidAmount.toFixed(0)}. Reason: ${reason}.`,
+                entityId: meetId,
+                metadata: {
+                    meetId,
+                    joinerId: joiner.id,
+                    cancellationId: cancellation.id,
+                    participantId: userId,
+                    participantName: memberName,
+                    participantPhoto: member?.profileImageUrl,
+                    paidAmount,
+                    reason,
+                    otherReasonText,
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify host of cancellation request: ' + notifErr.message);
+        }
+
+        return {
+            cancellation,
+            message: 'Cancellation request submitted to host for review.'
+        };
+    }
+
+    /**
+     * Host responds to member cancellation request (accept or reject).
+     * On accept: marks joiner cancelled, decrements slotsFilled, and executes atomic wallet refund.
+     * On reject: marks cancellation rejected, member remains joined/paid.
+     */
+    public static async respondToJoinerCancellation(options: {
+        meetId: string;
+        cancellationId: string;
+        hostUserId: string;
+        action: 'accept' | 'reject';
+        rejectReason?: string;
+    }): Promise<{ success: boolean; message: string; cancellation: StrangersMeetCancellationRequest }> {
+        const { meetId, cancellationId, hostUserId, action, rejectReason } = options;
+
+        const cancellation = await StrangersMeetCancellationRequest.findByPk(cancellationId);
+        if (!cancellation) {
+            throw new Error('Cancellation request not found.');
+        }
+
+        if (cancellation.meetId !== meetId) {
+            throw new Error('Cancellation request does not match this Stranger Meet.');
+        }
+
+        if (cancellation.hostUserId !== hostUserId) {
+            throw new Error('Only the host of this Stranger Meet can respond to cancellation requests.');
+        }
+
+        if (cancellation.status !== StrangersMeetCancellationStatus.PENDING) {
+            throw new Error(`This cancellation request has already been ${cancellation.status}.`);
+        }
+
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) {
+            throw new Error('Stranger Meet not found.');
+        }
+
+        const joiner = await StrangersMeetJoiner.findByPk(cancellation.joinerId);
+        if (!joiner) {
+            throw new Error('Joiner record not found.');
+        }
+
+        const host = await User.findByPk(hostUserId);
+        const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Host';
+
+        if (action === 'accept') {
+            const refundAmount = Number(cancellation.paidAmount || 0);
+
+            const sequelize = (await import('../config/database')).default;
+            await sequelize.transaction(async (t) => {
+                await cancellation.reload({ transaction: t, lock: t.LOCK.UPDATE });
+                if (cancellation.status !== StrangersMeetCancellationStatus.PENDING) {
+                    throw new Error('Cancellation request is no longer pending.');
+                }
+
+                await joiner.reload({ transaction: t, lock: t.LOCK.UPDATE });
+                await request.reload({ transaction: t, lock: t.LOCK.UPDATE });
+
+                // Mark joiner as cancelled
+                await joiner.update(
+                    {
+                        status: StrangersMeetJoinerStatus.REJECTED,
+                        paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+                    },
+                    { transaction: t }
+                );
+
+                // Decrement slotsFilled if > 0
+                if (Number(request.slotsFilled || 0) > 0) {
+                    await request.decrement('slotsFilled', { by: 1, transaction: t });
+                }
+
+                // Process atomic wallet refund if paidAmount > 0
+                let txnId: string | null = null;
+                if (refundAmount > 0) {
+                    const refundRes = await WalletService.creditRefund({
+                        userId: cancellation.userId,
+                        amount: refundAmount,
+                        referenceId: `SM_CANCEL_REFUND_${cancellation.id}`,
+                        reason: `Stranger Meet Cancellation Refund - ${request.subject}`,
+                        transaction: t,
+                    });
+                    txnId = refundRes.txn?.id || null;
+                }
+
+                await cancellation.update(
+                    {
+                        status: StrangersMeetCancellationStatus.APPROVED,
+                        refundAmount,
+                        walletTransactionId: txnId,
+                        respondedAt: new Date(),
+                    },
+                    { transaction: t }
+                );
+            });
+
+            await cancellation.reload();
+
+            // Send notification to member
+            try {
+                await this.emitNotification({
+                    recipientUserId: cancellation.userId,
+                    eventType: 'strangers_meet_cancellation_approved',
+                    title: 'Stranger Meet Cancellation Approved',
+                    body: `Your cancellation request for the Stranger Meet "${request.subject}" has been approved by the host. Amount Paid: ₹${refundAmount.toFixed(0)}. Refunded: ₹${refundAmount.toFixed(0)}. ₹${refundAmount.toFixed(0)} has been credited to your Lunara Wallet.`,
+                    entityId: meetId,
+                    metadata: {
+                        meetId,
+                        cancellationId: cancellation.id,
+                        refundAmount,
+                        paidAmount: refundAmount,
+                    },
+                });
+            } catch (notifErr: any) {
+                logger.warn('[StrangersMeetService] Failed to notify member of approved cancellation: ' + notifErr.message);
+            }
+
+            return {
+                success: true,
+                message: `Cancellation approved. ₹${refundAmount.toFixed(0)} has been refunded to the member's Lunara Wallet.`,
+                cancellation,
+            };
+        } else {
+            // Action === 'reject'
+            await cancellation.update({
+                status: StrangersMeetCancellationStatus.REJECTED,
+                rejectReason: rejectReason?.trim() || 'Host rejected cancellation request.',
+                respondedAt: new Date(),
+            });
+
+            // Member remains joined, send notification
+            try {
+                await this.emitNotification({
+                    recipientUserId: cancellation.userId,
+                    eventType: 'strangers_meet_cancellation_rejected',
+                    title: 'Cancellation Request Rejected',
+                    body: `${hostName} has rejected your cancellation request for "${request.subject}". Your Stranger Meet participation remains active.`,
+                    entityId: meetId,
+                    metadata: {
+                        meetId,
+                        cancellationId: cancellation.id,
+                        rejectReason: rejectReason || 'Host declined request',
+                    },
+                });
+            } catch (notifErr: any) {
+                logger.warn('[StrangersMeetService] Failed to notify member of rejected cancellation: ' + notifErr.message);
+            }
+
+            return {
+                success: true,
+                message: 'Cancellation request rejected. Member remains an active participant in the Stranger Meet.',
+                cancellation,
+            };
+        }
+    }
+
+    /**
+     * Retrieves cancellation request status for a Stranger Meet.
+     * Host receives all requests; participant receives their own.
+     */
+    public static async getJoinerCancellationStatus(meetId: string, userId: string) {
+        const request = await StrangersMeetRequest.findByPk(meetId);
+        if (!request) throw new Error('Stranger Meet not found.');
+
+        const isHost = request.userId === userId;
+        if (isHost) {
+            const allRequests = await StrangersMeetCancellationRequest.findAll({
+                where: { meetId },
+                include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
+                order: [['createdAt', 'DESC']],
+            });
+            return { isHost: true, requests: allRequests };
+        } else {
+            const userRequest = await StrangersMeetCancellationRequest.findOne({
+                where: { meetId, userId },
+                order: [['createdAt', 'DESC']],
+            });
+            return { isHost: false, request: userRequest };
         }
     }
 

@@ -49,6 +49,7 @@ import PlanTimeLock from './PlanTimeLock';
 import PlanTimeLockConfig from './PlanTimeLockConfig';
 import PlanTimeLockConfigHistory from './PlanTimeLockConfigHistory';
 import BookingPolicyConfig, { BookingPolicyType } from './BookingPolicyConfig';
+import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from './StrangersMeetCancellationRequest';
 import NotificationJob from './NotificationJob';
 import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
@@ -566,6 +567,18 @@ StrangersMeetJoiner.belongsTo(StrangersMeetRequest, { foreignKey: 'strangersMeet
 User.hasMany(StrangersMeetJoiner, { foreignKey: 'userId', as: 'joinedStrangersMeets', onDelete: 'CASCADE' });
 StrangersMeetJoiner.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+StrangersMeetRequest.hasMany(StrangersMeetCancellationRequest, { foreignKey: 'meetId', as: 'cancellationRequests', onDelete: 'CASCADE' });
+StrangersMeetCancellationRequest.belongsTo(StrangersMeetRequest, { foreignKey: 'meetId', as: 'meet' });
+
+StrangersMeetJoiner.hasOne(StrangersMeetCancellationRequest, { foreignKey: 'joinerId', as: 'cancellationRequest', onDelete: 'CASCADE' });
+StrangersMeetCancellationRequest.belongsTo(StrangersMeetJoiner, { foreignKey: 'joinerId', as: 'joiner' });
+
+User.hasMany(StrangersMeetCancellationRequest, { foreignKey: 'userId', as: 'sentMeetCancellationRequests', onDelete: 'CASCADE' });
+StrangersMeetCancellationRequest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+User.hasMany(StrangersMeetCancellationRequest, { foreignKey: 'hostUserId', as: 'receivedMeetCancellationRequests', onDelete: 'CASCADE' });
+StrangersMeetCancellationRequest.belongsTo(User, { foreignKey: 'hostUserId', as: 'host' });
+
 Plan.hasMany(PlanJoinRequest, { foreignKey: 'planId', as: 'joinRequests' });
 PlanJoinRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
 
@@ -631,6 +644,8 @@ export {
     GroupParty,
     StrangersMeetRequest,
     StrangersMeetJoiner,
+    StrangersMeetCancellationRequest,
+    StrangersMeetCancellationStatus,
     PartyPlanRequest,
     PartyPlanCancellationRequest,
     UserPenalty,
@@ -934,6 +949,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             UserAddon,
             EntitlementAuditLog,
             BookingPolicyConfig,
+            StrangersMeetCancellationRequest,
         ];
         for (const m of modelsToSync) {
             try {

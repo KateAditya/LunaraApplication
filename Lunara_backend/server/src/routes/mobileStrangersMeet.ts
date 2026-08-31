@@ -24,6 +24,9 @@ import {
     extendMeetup,
     confirmEndedMeetup,
     postNotStarted,
+    requestJoinerCancellation,
+    respondJoinerCancellation,
+    getJoinerCancellationStatus,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -324,6 +327,51 @@ router.post(
         validate,
     ],
     postNotStarted
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cancellation & Refund Flow (Joined Member Cancels)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /api/mobile/strangers-meet/:id/joiner-cancel-request
+// Member submits cancellation request to host
+router.post(
+    '/:id/joiner-cancel-request',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('reason').notEmpty().withMessage('Cancellation reason is required'),
+        body('otherReasonText').optional().isString(),
+        validate,
+    ],
+    requestJoinerCancellation
+);
+
+// PATCH /api/mobile/strangers-meet/:id/joiner-cancel-request/:cancellationId
+// Host approves or rejects member's cancellation request
+router.patch(
+    '/:id/joiner-cancel-request/:cancellationId',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        param('cancellationId').isUUID().withMessage('cancellationId must be a valid UUID'),
+        body('action').notEmpty().isIn(['accept', 'reject']).withMessage('action must be accept or reject'),
+        body('rejectReason').optional().isString(),
+        validate,
+    ],
+    respondJoinerCancellation
+);
+
+// GET /api/mobile/strangers-meet/:id/cancellation-status
+// Get cancellation request status for caller
+router.get(
+    '/:id/cancellation-status',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    getJoinerCancellationStatus
 );
 
 export default router;

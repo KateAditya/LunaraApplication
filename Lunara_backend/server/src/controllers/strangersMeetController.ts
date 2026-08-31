@@ -2493,6 +2493,95 @@ export const getSettlementSummary = async (req: Request, res: Response): Promise
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/joiner-cancel-request
+// Joined member requests cancellation from Stranger Meet
+// ─────────────────────────────────────────────────────────────────────────────
+export const requestJoinerCancellation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = req.user!.id || req.body.userId;
+        const { reason, otherReasonText } = req.body;
+
+        if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+            res.status(400).json({ success: false, message: 'Cancellation reason is required.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.requestJoinerCancellation({
+            meetId: id,
+            userId,
+            reason: reason.trim(),
+            otherReasonText: otherReasonText ? String(otherReasonText).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+        });
+    } catch (err: any) {
+        logger.error('requestJoinerCancellation error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to request cancellation' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/mobile/strangers-meet/:id/joiner-cancel-request/:cancellationId
+// Host responds to member cancellation request (accept / reject)
+// ─────────────────────────────────────────────────────────────────────────────
+export const respondJoinerCancellation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id, cancellationId } = req.params;
+        const hostUserId = req.user!.id || req.body.userId;
+        const { action, rejectReason } = req.body;
+
+        if (!action || (action !== 'accept' && action !== 'reject')) {
+            res.status(400).json({ success: false, message: 'Action must be accept or reject.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.respondToJoinerCancellation({
+            meetId: id,
+            cancellationId,
+            hostUserId,
+            action,
+            rejectReason: rejectReason ? String(rejectReason).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+        });
+    } catch (err: any) {
+        logger.error('respondJoinerCancellation error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to respond to cancellation request' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/strangers-meet/:id/cancellation-status
+// Get cancellation request status for caller (Host sees all, Member sees own)
+// ─────────────────────────────────────────────────────────────────────────────
+export const getJoinerCancellationStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const userId = req.user!.id;
+
+        const result = await StrangersMeetService.getJoinerCancellationStatus(id, userId);
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (err: any) {
+        logger.error('getJoinerCancellationStatus error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to get cancellation status' });
+    }
+};
+
+
 
 
 

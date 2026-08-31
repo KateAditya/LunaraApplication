@@ -11,6 +11,7 @@ import '../../widgets/lunara_ticket_widget.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 
 class StrangersMeetTicketScreen extends StatefulWidget {
   final StrangersMeetRequest request;
@@ -1128,6 +1129,46 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                   ),
                 ),
               ),
+              if (widget.request.userId != ApiService.currentUserId) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      StrangersMeetCancellationDialog.show(
+                        context,
+                        meetId: widget.request.id,
+                        subject: widget.request.subject,
+                        venueName: widget.request.venue?['name'] ?? 'Venue',
+                        paidAmount: widget.request.chargesPerHead > 0
+                            ? widget.request.chargesPerHead
+                            : (widget.request.paymentAmount ?? 0.0).toDouble(),
+                        onCancelled: () {
+                          Navigator.pop(context);
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.cancel_outlined, color: Color(0xFFEF4444), size: 18),
+                    label: const Text(
+                      'CANCEL STRANGER MEET',
+                      style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      side: const BorderSide(color: Color(0xFFEF4444)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => Navigator.pop(context),

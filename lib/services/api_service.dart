@@ -2174,6 +2174,95 @@ class ApiService {
     }
   }
 
+  /// Joined member requests cancellation from a Stranger Meet
+  static Future<Map<String, dynamic>> requestStrangersMeetCancellation(
+    String id, {
+    required String reason,
+    String? otherReasonText,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+
+    try {
+      final Map<String, dynamic> body = {
+        'userId': userId,
+        'reason': reason,
+      };
+      if (otherReasonText != null && otherReasonText.trim().isNotEmpty) {
+        body['otherReasonText'] = otherReasonText.trim();
+      }
+
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/joiner-cancel-request',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'], 'data': data['data']};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? data['error'] ?? 'Failed to request cancellation',
+        };
+      }
+    } catch (e) {
+      debugPrint('requestStrangersMeetCancellation error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Host approves or rejects a joined member's cancellation request
+  static Future<Map<String, dynamic>> respondStrangersMeetCancellation(
+    String id,
+    String cancellationId, {
+    required String action,
+    String? rejectReason,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+
+    try {
+      final Map<String, dynamic> body = {
+        'userId': userId,
+        'action': action,
+      };
+      if (rejectReason != null && rejectReason.trim().isNotEmpty) {
+        body['rejectReason'] = rejectReason.trim();
+      }
+
+      final response = await patch(
+        '/api/mobile/strangers-meet/$id/joiner-cancel-request/$cancellationId',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'], 'data': data['data']};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? data['error'] ?? 'Failed to respond to cancellation',
+        };
+      }
+    } catch (e) {
+      debugPrint('respondStrangersMeetCancellation error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch cancellation status for a Stranger Meet
+  static Future<Map<String, dynamic>?> fetchStrangersMeetCancellationStatus(String id) async {
+    try {
+      final response = await get('/api/mobile/strangers-meet/$id/cancellation-status');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) return data['data'];
+      }
+    } catch (e) {
+      debugPrint('fetchStrangersMeetCancellationStatus error: $e');
+    }
+    return null;
+  }
+
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Future<List<HelpArticle>> fetchHelpCenterArticles() async {
