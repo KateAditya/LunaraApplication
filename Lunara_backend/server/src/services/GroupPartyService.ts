@@ -866,11 +866,33 @@ export class GroupPartyService {
             const completedCount = timelineSteps.filter(s => s.completed).length;
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
 
+            const LargePartyCancellationRequest = (await import('../models/LargePartyCancellationRequest')).default;
+            const cancelReq = await LargePartyCancellationRequest.findOne({
+                where: { bookingId },
+                order: [['createdAt', 'DESC']],
+            });
+
+            const isCancellationPending = cancelReq?.status === 'PENDING_ADMIN_REVIEW';
+            const isCancellationRejected = cancelReq?.status === 'REJECTED';
+            const isCancellationRefunded = cancelReq?.status === 'COMPLETED' || cancelReq?.status === 'REFUND_PROCESSING' || cancelReq?.status === 'REFUND_PAID';
+
             let title = `Large Party Request at ${venueName} 🚨`;
             let body = `Your request for ${guestCount} guests at ${venueName} has been submitted for admin approval.`;
             let statusText = 'Request Submitted';
 
-            if (isCompleted) {
+            if (isCancellationPending) {
+                title = `Large Party Cancellation Requested ⏳`;
+                body = `Your cancellation request for ${guestCount} guests at ${venueName} is under review by Lunara Admin.`;
+                statusText = 'Awaiting Admin Review';
+            } else if (isCancellationRefunded) {
+                title = `Large Party Cancelled & Refunded ✓`;
+                body = `Your Large Party was cancelled. Refund of ₹${cancelReq?.refundAmount || 0} (${cancelReq?.refundPercentage || 0}%) has been processed.`;
+                statusText = 'Cancelled & Refunded';
+            } else if (isCancellationRejected && isPaymentConfirmed) {
+                title = `Large Party Confirmed! 🎉`;
+                body = `Cancellation request was not approved (${cancelReq?.adminNotes || 'Contact support'}). Your party of ${guestCount} guests at ${venueName} remains confirmed.`;
+                statusText = 'Confirmed • Cancel Rejected';
+            } else if (isCompleted) {
                 title = `Large Party Completed ✨`;
                 body = `Hope you had an amazing night at ${venueName}!`;
                 statusText = 'Completed';
@@ -897,10 +919,10 @@ export class GroupPartyService {
             }
 
             const actionButtons = [];
-            if (isPaymentPending && !isExpired) {
+            if (isPaymentPending && !isExpired && !isCancellationPending) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW', paymentAmount: bookingRecord.adminPaymentAmount });
             }
-            if (isPaymentConfirmed) {
+            if (isPaymentConfirmed && !isCancellationRefunded) {
                 actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: true, action: 'OPEN_CHAT' });
                 actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: false, action: 'VIEW_TICKET' });
             }

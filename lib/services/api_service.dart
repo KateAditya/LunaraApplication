@@ -2286,6 +2286,80 @@ class ApiService {
     }
   }
 
+  /// Host requests cancellation of Large Party (>20) for Admin Review
+  static Future<Map<String, dynamic>> requestLargePartyCancellation({
+    required String bookingId,
+    required String reason,
+    String? reasonDetails,
+    String? upiId,
+    String? mobileNumber,
+    String? accountHolderName,
+    String? accountNumber,
+    String? ifscCode,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+
+    try {
+      final Map<String, dynamic> body = {
+        'userId': userId,
+        'reason': reason,
+      };
+      if (reasonDetails != null && reasonDetails.trim().isNotEmpty) {
+        body['reasonDetails'] = reasonDetails.trim();
+      }
+      if (upiId != null && upiId.trim().isNotEmpty) {
+        body['upiId'] = upiId.trim();
+      }
+      if (mobileNumber != null && mobileNumber.trim().isNotEmpty) {
+        body['mobileNumber'] = mobileNumber.trim();
+      }
+      if (accountHolderName != null && accountHolderName.trim().isNotEmpty) {
+        body['accountHolderName'] = accountHolderName.trim();
+      }
+      if (accountNumber != null && accountNumber.trim().isNotEmpty) {
+        body['accountNumber'] = accountNumber.trim();
+      }
+      if (ifscCode != null && ifscCode.trim().isNotEmpty) {
+        body['ifscCode'] = ifscCode.trim();
+      }
+
+      final response = await post(
+        '/api/mobile/bookings/$bookingId/cancel-request',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'], 'data': data['data']};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? data['error'] ?? 'Failed to submit cancellation request',
+        };
+      }
+    } catch (e) {
+      debugPrint('requestLargePartyCancellation error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Fetch cancellation status for a Large Party
+  static Future<Map<String, dynamic>?> fetchLargePartyCancellationStatus(String bookingId) async {
+    try {
+      final response = await get('/api/mobile/bookings/$bookingId/cancellation-status');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('fetchLargePartyCancellationStatus error: $e');
+      return null;
+    }
+  }
+
   /// Fetch cancellation status for a Stranger Meet
   static Future<Map<String, dynamic>?> fetchStrangersMeetCancellationStatus(String id) async {
     try {

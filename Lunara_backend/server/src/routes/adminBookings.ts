@@ -88,4 +88,67 @@ router.post(
     ctrl.markNoShow
 );
 
+// ─── Large Party Cancellation Management ────────────────────────────────────
+
+// GET /api/admin/bookings/large-party-cancellations
+router.get(
+    '/large-party-cancellations',
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.getAdminCancellations(req, res);
+    }
+);
+
+// GET /api/admin/bookings/large-party-cancellations/:id
+router.get(
+    '/large-party-cancellations/:id',
+    [param('id').isUUID().withMessage('id must be a UUID'), validate],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.getAdminCancellationDetail(req, res);
+    }
+);
+
+// POST /api/admin/bookings/large-party-cancellations/:id/approve
+router.post(
+    '/large-party-cancellations/:id/approve',
+    [
+        param('id').isUUID().withMessage('id must be a UUID'),
+        body('refundPercentage').isFloat({ min: 0, max: 100 }).withMessage('refundPercentage must be between 0 and 100'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.adminApproveCancellation(req, res);
+    }
+);
+
+// POST /api/admin/bookings/large-party-cancellations/:id/reject
+router.post(
+    '/large-party-cancellations/:id/reject',
+    [
+        param('id').isUUID().withMessage('id must be a UUID'),
+        body('rejectionReason').notEmpty().withMessage('rejectionReason is required'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.adminRejectCancellation(req, res);
+    }
+);
+
+// POST /api/admin/bookings/large-party-cancellations/:id/mark-paid
+router.post(
+    '/large-party-cancellations/:id/mark-paid',
+    [
+        param('id').isUUID().withMessage('id must be a UUID'),
+        body('paymentReference').notEmpty().withMessage('paymentReference is required'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.adminMarkRefundPaid(req, res);
+    }
+);
+
 export default router;

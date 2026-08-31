@@ -52,6 +52,7 @@ import BookingPolicyConfig, { BookingPolicyType } from './BookingPolicyConfig';
 import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from './StrangersMeetCancellationRequest';
 import StrangersMeetHostCancellationRequest, { HostCancellationStatus, HostCancellationRefundMethod } from './StrangersMeetHostCancellationRequest';
 import StrangersMeetMemberRefund, { MemberRefundStatus } from './StrangersMeetMemberRefund';
+import LargePartyCancellationRequest, { LargePartyCancellationStatus, LargePartyRefundMethod } from './LargePartyCancellationRequest';
 import NotificationJob from './NotificationJob';
 import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
@@ -601,6 +602,16 @@ User.hasMany(StrangersMeetMemberRefund, { foreignKey: 'userId', as: 'strangerMee
 StrangersMeetMemberRefund.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 StrangersMeetMemberRefund.belongsTo(User, { foreignKey: 'paidByAdminId', as: 'paidByAdmin' });
 
+// Large Party Cancellation Associations
+Booking.hasOne(LargePartyCancellationRequest, { foreignKey: 'bookingId', as: 'cancellationRequest', onDelete: 'CASCADE' });
+LargePartyCancellationRequest.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
+User.hasMany(LargePartyCancellationRequest, { foreignKey: 'userId', as: 'largePartyCancellations', onDelete: 'CASCADE' });
+LargePartyCancellationRequest.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Venue.hasMany(LargePartyCancellationRequest, { foreignKey: 'venueId', as: 'largePartyCancellations', onDelete: 'SET NULL' });
+LargePartyCancellationRequest.belongsTo(Venue, { foreignKey: 'venueId', as: 'venue' });
+LargePartyCancellationRequest.belongsTo(User, { foreignKey: 'adminReviewedBy', as: 'adminReviewer' });
+LargePartyCancellationRequest.belongsTo(User, { foreignKey: 'paidByAdminId', as: 'adminPayer' });
+
 Plan.hasMany(PlanJoinRequest, { foreignKey: 'planId', as: 'joinRequests' });
 PlanJoinRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
 
@@ -709,6 +720,9 @@ export {
     NightPartnerRequest,
     NightPartnerMatch,
     Notification,
+    LargePartyCancellationRequest,
+    LargePartyCancellationStatus,
+    LargePartyRefundMethod,
 };
 
 // Export sync function
@@ -979,6 +993,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             StrangersMeetCancellationRequest,
             StrangersMeetHostCancellationRequest,
             StrangersMeetMemberRefund,
+            LargePartyCancellationRequest,
         ];
         for (const m of modelsToSync) {
             try {
@@ -1075,5 +1090,8 @@ export default {
     ProfileBoost,
     WalletTransaction,
     AuditLog,
+    LargePartyCancellationRequest,
+    LargePartyCancellationStatus,
+    LargePartyRefundMethod,
     syncModels,
 };

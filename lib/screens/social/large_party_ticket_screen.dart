@@ -15,6 +15,7 @@ import '../../widgets/smart_checkout_sheet.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../dialogs/large_party_cancellation_dialog.dart';
 
 enum _LargePartyPaymentState { loading, paid, awaitingPayment, expired }
 
@@ -1773,6 +1774,60 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                     style: OutlinedButton.styleFrom(
                       backgroundColor: Colors.white,
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
+                      final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
+                      final bookingId = (_bookingId ?? widget.booking['id'] ?? widget.booking['bookingId'] ?? '').toString();
+                      final partySubject = (widget.booking['partySubject'] ?? widget.booking['subject'] ?? '$venueName Large Party').toString();
+                      final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
+                      DateTime planDateTime = DateTime.now();
+                      if (rawDate != null) {
+                        try {
+                          planDateTime = DateTime.parse(rawDate.toString()).toLocal();
+                        } catch (_) {}
+                      }
+                      if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
+                      final scheduledDate = DateFormat('EEE, MMM dd, yyyy').format(planDateTime);
+                      final scheduledTime = _freshStartTime ?? (widget.booking['startTime']?.toString() ?? '20:00');
+                      final amountPaid = (_freshTotalAmount ?? (widget.booking['totalAmount'] as num?)?.toDouble() ?? 0.0).toDouble();
+
+                      LargePartyCancellationDialog.show(
+                        context,
+                        bookingId: bookingId,
+                        partySubject: partySubject,
+                        venueName: venueName,
+                        scheduledDate: scheduledDate,
+                        scheduledTime: scheduledTime,
+                        amountPaid: amountPaid,
+                        onSubmitted: () {
+                          Navigator.pop(context);
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.cancel_presentation_rounded, color: Color(0xFFEF4444), size: 18),
+                    label: const Text(
+                      'CANCEL LARGE PARTY',
+                      style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFFEF4444)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),

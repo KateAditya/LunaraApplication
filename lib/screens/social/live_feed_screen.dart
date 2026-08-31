@@ -276,6 +276,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.addSocketListener('large_party_status_update', _onGroupPartyUpdated);
+    ApiService.addSocketListener('large_party_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('large_party_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('large_party_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('large_party_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('group_party_status_update', _onGroupPartyUpdated);
     ApiService.addSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
@@ -333,6 +337,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('group_party_payment_success', _onGroupPartyUpdated);
     ApiService.removeSocketListener('large_party_status_update', _onGroupPartyUpdated);
+    ApiService.removeSocketListener('large_party_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('large_party_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('large_party_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('large_party_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
     ApiService.removeSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
@@ -2980,6 +2988,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             partyMap['isLargeBooking'] == true ||
             partyMap['type'] == 'large_party_timeline');
 
+    final String? cancelStatus = (partyMap['cancellationStatus'] ??
+        partyMap['cancellation_status'] ??
+        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null, orElse: () => <String, dynamic>{})['cancellationStatus'] ??
+        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null, orElse: () => <String, dynamic>{})['cancellation_status'])?.toString();
+    final double? refundAmt = (partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) != null
+        ? ((partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) as num).toDouble()
+        : null;
+    final String? rejectionReason = (partyMap['cancellationRejectionReason'] ?? partyMap['rejectionReason'] ?? partyMap['adminNotes'])?.toString();
+
     if (isExpired) {
       accentColor = const Color(0xFF9CA3AF);
       badgeText = 'EXPIRED';
@@ -2987,9 +3004,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       cardBody = 'Your party request at $venueName has expired.';
       actionButtonText = null;
       onActionTap = null;
+    } else if (isLargeParty && cancelStatus == 'PENDING_ADMIN_REVIEW') {
+      accentColor = const Color(0xFFF59E0B);
+      badgeText = 'CANCELLATION REQUESTED';
+      cardTitle = 'Cancellation Requested ⏳';
+      cardBody = 'Your cancellation request for $venueName is awaiting Lunara Admin review and refund calculation.';
+      actionButtonText = null;
+      onActionTap = null;
     } else if (overallStatus == 'confirmed') {
-      cardTitle = isLargeParty ? 'Large Party Confirmed! 🎉' : 'Group Party Confirmed! 🎉';
-      cardBody = 'Your party of $guestCount guests at $venueName$formattedTimeStr is fully confirmed. Get ready!';
+      if (isLargeParty && cancelStatus == 'REJECTED') {
+        cardTitle = 'Cancellation Not Approved ℹ️';
+        cardBody = 'Your cancellation was not approved: ${rejectionReason ?? "Request not approved per policy"}. Your Large Party at $venueName remains confirmed!';
+      } else {
+        cardTitle = isLargeParty ? 'Large Party Confirmed! 🎉' : 'Group Party Confirmed! 🎉';
+        cardBody = 'Your party of $guestCount guests at $venueName$formattedTimeStr is fully confirmed. Get ready!';
+      }
       badgeText = 'CONFIRMED';
       accentColor = const Color(0xFF10B981);
       actionButtonText = 'View Ticket';
@@ -3016,9 +3045,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _markGroupPartyAsRead(entries);
         _initiateLargePartyPayment(partyMap);
       };
-    } else if (overallStatus == 'cancelled') {
+    } else if (overallStatus == 'cancelled' || cancelStatus == 'COMPLETED' || cancelStatus == 'APPROVED' || cancelStatus == 'REFUND_PROCESSING' || cancelStatus == 'REFUND_PAID') {
       cardTitle = isLargeParty ? 'Large Party Cancelled ❌' : 'Group Party Cancelled ❌';
-      cardBody = 'Your party request at $venueName was cancelled.';
+      if (refundAmt != null && refundAmt > 0) {
+        cardBody = 'Your party at $venueName was cancelled. A refund of ₹${refundAmt.toInt()} has been processed.';
+      } else {
+        cardBody = 'Your party request at $venueName was cancelled.';
+      }
       badgeText = 'CANCELLED';
       accentColor = const Color(0xFFEF4444);
     } else {

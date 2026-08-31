@@ -149,6 +149,41 @@ router.post(
 );
 
 /**
+ * POST /api/mobile/bookings/:id/cancel-request
+ * Submit Host Large Party Cancellation Request.
+ */
+router.post(
+    '/:id/cancel-request',
+    [
+        authenticate,
+        param('id').notEmpty().withMessage('id is required'),
+        body('reason').notEmpty().withMessage('reason is required'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.requestCancellation(req, res);
+    }
+);
+
+/**
+ * GET /api/mobile/bookings/:id/cancellation-status
+ * Get cancellation status for Large Party Booking.
+ */
+router.get(
+    '/:id/cancellation-status',
+    [
+        authenticate,
+        param('id').notEmpty().withMessage('id is required'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { LargePartyCancellationController } = await import('../controllers/largePartyCancellationController');
+        return LargePartyCancellationController.getCancellationStatus(req, res);
+    }
+);
+
+/**
  * POST /api/mobile/bookings/:id/split-bill
  * Set up split payment with named members.
  */
