@@ -50,6 +50,8 @@ import PlanTimeLockConfig from './PlanTimeLockConfig';
 import PlanTimeLockConfigHistory from './PlanTimeLockConfigHistory';
 import BookingPolicyConfig, { BookingPolicyType } from './BookingPolicyConfig';
 import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from './StrangersMeetCancellationRequest';
+import StrangersMeetHostCancellationRequest, { HostCancellationStatus, HostCancellationRefundMethod } from './StrangersMeetHostCancellationRequest';
+import StrangersMeetMemberRefund, { MemberRefundStatus } from './StrangersMeetMemberRefund';
 import NotificationJob from './NotificationJob';
 import NightInterest from './NightInterest';
 import NightPartnerRequest from './NightPartnerRequest';
@@ -579,6 +581,26 @@ StrangersMeetCancellationRequest.belongsTo(User, { foreignKey: 'userId', as: 'us
 User.hasMany(StrangersMeetCancellationRequest, { foreignKey: 'hostUserId', as: 'receivedMeetCancellationRequests', onDelete: 'CASCADE' });
 StrangersMeetCancellationRequest.belongsTo(User, { foreignKey: 'hostUserId', as: 'host' });
 
+StrangersMeetRequest.hasMany(StrangersMeetHostCancellationRequest, { foreignKey: 'meetId', as: 'hostCancellationRequests', onDelete: 'CASCADE' });
+StrangersMeetHostCancellationRequest.belongsTo(StrangersMeetRequest, { foreignKey: 'meetId', as: 'meet' });
+
+User.hasMany(StrangersMeetHostCancellationRequest, { foreignKey: 'hostUserId', as: 'sentHostCancellationRequests', onDelete: 'CASCADE' });
+StrangersMeetHostCancellationRequest.belongsTo(User, { foreignKey: 'hostUserId', as: 'host' });
+StrangersMeetHostCancellationRequest.belongsTo(User, { foreignKey: 'adminReviewedBy', as: 'reviewer' });
+
+StrangersMeetHostCancellationRequest.hasMany(StrangersMeetMemberRefund, { foreignKey: 'hostCancellationRequestId', as: 'memberRefunds', onDelete: 'CASCADE' });
+StrangersMeetMemberRefund.belongsTo(StrangersMeetHostCancellationRequest, { foreignKey: 'hostCancellationRequestId', as: 'hostCancellationRequest' });
+
+StrangersMeetRequest.hasMany(StrangersMeetMemberRefund, { foreignKey: 'meetId', as: 'memberRefunds', onDelete: 'CASCADE' });
+StrangersMeetMemberRefund.belongsTo(StrangersMeetRequest, { foreignKey: 'meetId', as: 'meet' });
+
+StrangersMeetJoiner.hasMany(StrangersMeetMemberRefund, { foreignKey: 'joinerId', as: 'refunds', onDelete: 'CASCADE' });
+StrangersMeetMemberRefund.belongsTo(StrangersMeetJoiner, { foreignKey: 'joinerId', as: 'joiner' });
+
+User.hasMany(StrangersMeetMemberRefund, { foreignKey: 'userId', as: 'strangerMeetRefunds', onDelete: 'CASCADE' });
+StrangersMeetMemberRefund.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+StrangersMeetMemberRefund.belongsTo(User, { foreignKey: 'paidByAdminId', as: 'paidByAdmin' });
+
 Plan.hasMany(PlanJoinRequest, { foreignKey: 'planId', as: 'joinRequests' });
 PlanJoinRequest.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
 
@@ -646,6 +668,11 @@ export {
     StrangersMeetJoiner,
     StrangersMeetCancellationRequest,
     StrangersMeetCancellationStatus,
+    StrangersMeetHostCancellationRequest,
+    HostCancellationStatus,
+    HostCancellationRefundMethod,
+    StrangersMeetMemberRefund,
+    MemberRefundStatus,
     PartyPlanRequest,
     PartyPlanCancellationRequest,
     UserPenalty,
@@ -950,6 +977,8 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             EntitlementAuditLog,
             BookingPolicyConfig,
             StrangersMeetCancellationRequest,
+            StrangersMeetHostCancellationRequest,
+            StrangersMeetMemberRefund,
         ];
         for (const m of modelsToSync) {
             try {

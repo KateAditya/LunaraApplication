@@ -12,6 +12,11 @@ import {
     getNeedsHostContact,
     resolveEscalation,
     getSettlementSummary,
+    getAdminHostCancellations,
+    getAdminHostCancellationDetail,
+    adminApproveHostCancellation,
+    adminRejectHostCancellation,
+    adminMarkMemberRefundPaid,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -177,6 +182,86 @@ router.post(
         validate,
     ],
     paySettlement
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin Host Cancellation & Refund Management Routes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/strangers-meet/cancellations
+// Admin lists all host cancellation requests
+router.get(
+    '/cancellations/queue',
+    [
+        query('status').optional().isString(),
+        query('page').optional().isInt({ min: 1 }),
+        query('limit').optional().isInt({ min: 1, max: 100 }),
+        query('search').optional().isString(),
+        validate,
+    ],
+    getAdminHostCancellations
+);
+router.get(
+    '/cancellations',
+    [
+        query('status').optional().isString(),
+        query('page').optional().isInt({ min: 1 }),
+        query('limit').optional().isInt({ min: 1, max: 100 }),
+        query('search').optional().isString(),
+        validate,
+    ],
+    getAdminHostCancellations
+);
+
+// GET /api/admin/strangers-meet/cancellations/:id
+// Admin gets full detail of a host cancellation request with breakdown & policy calculations
+router.get(
+    '/cancellations/:id',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    getAdminHostCancellationDetail
+);
+
+// POST /api/admin/strangers-meet/cancellations/:id/approve
+// Admin approves host cancellation with refund percentage & method
+router.post(
+    '/cancellations/:id/approve',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('refundPercentage').isFloat({ min: 0, max: 100 }).withMessage('refundPercentage must be between 0 and 100'),
+        body('refundMethod').optional().isString(),
+        body('adminNotes').optional().isString(),
+        validate,
+    ],
+    adminApproveHostCancellation
+);
+
+// POST /api/admin/strangers-meet/cancellations/:id/reject
+// Admin rejects host cancellation request
+router.post(
+    '/cancellations/:id/reject',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('reason').optional().isString(),
+        validate,
+    ],
+    adminRejectHostCancellation
+);
+
+// POST /api/admin/strangers-meet/cancellations/member-refunds/:refundId/mark-paid
+// Admin marks manual refund as PAID with transaction reference
+router.post(
+    '/cancellations/member-refunds/:refundId/mark-paid',
+    [
+        param('refundId').isUUID().withMessage('refundId must be a valid UUID'),
+        body('paymentReference').notEmpty().withMessage('paymentReference is required'),
+        body('paymentMethod').optional().isString(),
+        body('paymentDate').optional().isISO8601().withMessage('Invalid payment date'),
+        validate,
+    ],
+    adminMarkMemberRefundPaid
 );
 
 export default router;

@@ -12,6 +12,7 @@ import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
+import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
 
 class StrangersMeetTicketScreen extends StatefulWidget {
   final StrangersMeetRequest request;
@@ -1150,6 +1151,44 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                       );
                     },
                     icon: const Icon(Icons.cancel_outlined, color: Color(0xFFEF4444), size: 18),
+                    label: const Text(
+                      'CANCEL STRANGER MEET',
+                      style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      side: const BorderSide(color: Color(0xFFEF4444)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      StrangersMeetHostCancellationDialog.show(
+                        context,
+                        meetId: widget.request.id,
+                        subject: widget.request.subject,
+                        venueName: widget.request.venue?['name'] ?? 'Venue',
+                        joinedCount: widget.request.slotsFilled,
+                        collectedAmount: (widget.request.slotsFilled * widget.request.chargesPerHead).toDouble(),
+                        onCancelled: () {
+                          Navigator.pop(context);
+                        },
+                      );
+                    },
+                    icon: const Icon(Icons.cancel_presentation_rounded, color: Color(0xFFEF4444), size: 18),
                     label: const Text(
                       'CANCEL STRANGER MEET',
                       style: TextStyle(

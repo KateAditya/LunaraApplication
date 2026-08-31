@@ -2581,6 +2581,187 @@ export const getJoinerCancellationStatus = async (req: Request, res: Response): 
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/strangers-meet/:id/host-cancel-request
+// Host submits cancellation request for Admin Review
+// ─────────────────────────────────────────────────────────────────────────────
+export const requestHostCancellation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const hostUserId = req.user!.id || req.body.userId;
+        const { reason, reasonText } = req.body;
+
+        if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+            res.status(400).json({ success: false, message: 'Valid cancellation reason is required.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.requestHostCancellation({
+            meetId: id,
+            hostUserId,
+            reason: reason.trim(),
+            reasonText: reasonText ? String(reasonText).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+        });
+    } catch (err: any) {
+        logger.error('requestHostCancellation error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to request host cancellation' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/strangers-meet/cancellations
+// Admin lists all host cancellation requests
+// ─────────────────────────────────────────────────────────────────────────────
+export const getAdminHostCancellations = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { status, page, limit, search } = req.query;
+
+        const result = await StrangersMeetService.getAdminHostCancellations({
+            status: status ? String(status) : undefined,
+            page: page ? Number(page) : undefined,
+            limit: limit ? Number(limit) : undefined,
+            search: search ? String(search) : undefined,
+        });
+
+        res.json({
+            success: true,
+            ...result,
+        });
+    } catch (err: any) {
+        logger.error('getAdminHostCancellations error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to fetch host cancellations' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/admin/strangers-meet/cancellations/:id
+// Admin gets detailed breakdown of host cancellation with policy previews
+// ─────────────────────────────────────────────────────────────────────────────
+export const getAdminHostCancellationDetail = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const result = await StrangersMeetService.getAdminHostCancellationDetail(id);
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (err: any) {
+        logger.error('getAdminHostCancellationDetail error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to fetch cancellation details' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/cancellations/:id/approve
+// Admin approves host cancellation with selected refund policy & method
+// ─────────────────────────────────────────────────────────────────────────────
+export const adminApproveHostCancellation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
+        const { refundPercentage, refundMethod, adminNotes } = req.body;
+
+        if (refundPercentage === undefined || refundPercentage === null || isNaN(Number(refundPercentage))) {
+            res.status(400).json({ success: false, message: 'refundPercentage is required and must be a number.' });
+            return;
+        }
+
+        const method = (refundMethod || 'WALLET').toUpperCase();
+        if (method !== 'WALLET' && method !== 'MANUAL_PAYOUT') {
+            res.status(400).json({ success: false, message: 'refundMethod must be WALLET or MANUAL_PAYOUT.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.adminApproveHostCancellation({
+            cancellationId: id,
+            adminId,
+            refundPercentage: Number(refundPercentage),
+            refundMethod: method,
+            adminNotes: adminNotes ? String(adminNotes).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+            memberRefunds: result.memberRefunds,
+        });
+    } catch (err: any) {
+        logger.error('adminApproveHostCancellation error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to approve host cancellation' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/cancellations/:id/reject
+// Admin rejects host cancellation request
+// ─────────────────────────────────────────────────────────────────────────────
+export const adminRejectHostCancellation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
+        const { reason } = req.body;
+
+        const result = await StrangersMeetService.adminRejectHostCancellation({
+            cancellationId: id,
+            adminId,
+            reason: reason ? String(reason).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+        });
+    } catch (err: any) {
+        logger.error('adminRejectHostCancellation error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to reject host cancellation' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/cancellations/member-refunds/:refundId/mark-paid
+// Admin marks manual refund as PAID with transaction reference
+// ─────────────────────────────────────────────────────────────────────────────
+export const adminMarkMemberRefundPaid = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { refundId } = req.params;
+        const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
+        const { paymentReference, paymentMethod, paymentDate } = req.body;
+
+        if (!paymentReference || typeof paymentReference !== 'string' || paymentReference.trim().length === 0) {
+            res.status(400).json({ success: false, message: 'paymentReference is required.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.adminMarkMemberRefundPaid({
+            refundId,
+            adminId,
+            paymentReference: paymentReference.trim(),
+            paymentMethod: paymentMethod ? String(paymentMethod).trim() : 'MANUAL_PAYOUT',
+            paymentDate,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.refund,
+        });
+    } catch (err: any) {
+        logger.error('adminMarkMemberRefundPaid error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to mark refund as paid' });
+    }
+};
+
+
 
 
 

@@ -1,7 +1,9 @@
-import { Transaction } from 'sequelize';
+import { Transaction, Op } from 'sequelize';
 import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus, StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from '../models/StrangersMeetCancellationRequest';
+import StrangersMeetHostCancellationRequest, { HostCancellationStatus } from '../models/StrangersMeetHostCancellationRequest';
+import StrangersMeetMemberRefund, { MemberRefundStatus } from '../models/StrangersMeetMemberRefund';
 import { WalletService } from './walletService';
 import User from '../models/User';
 import Venue from '../models/Venue';
@@ -672,6 +674,35 @@ export class StrangersMeetService {
                 currentStatusText = `⚠️ ${pendingCancellations.length} Cancellation Request(s) Pending Review`;
             }
 
+            // Fetch host cancellation request if any
+            const hostCancellation = await StrangersMeetHostCancellationRequest.findOne({
+                where: { meetId },
+                order: [['createdAt', 'DESC']],
+            });
+
+            if (hostCancellation) {
+                if (hostCancellation.status === HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+                    if (isHost) {
+                        currentStatusText = 'Cancellation Requested • Awaiting Admin Review';
+                        primaryAction = 'Pending Admin Review';
+                        primaryActionUrl = `/strangers-meet/${request.id}`;
+                    } else {
+                        currentStatusText = 'Host Cancellation Pending Admin Review';
+                    }
+                } else if (
+                    hostCancellation.status === HostCancellationStatus.REFUNDED ||
+                    hostCancellation.status === HostCancellationStatus.COMPLETED
+                ) {
+                    if (isHost) {
+                        currentStatusText = '✓ Stranger Meet Cancelled by Admin';
+                    } else {
+                        currentStatusText = '✓ Stranger Meet Cancelled • Refund Processed';
+                        primaryAction = 'View Wallet';
+                        primaryActionUrl = '/wallet';
+                    }
+                }
+            }
+
             const venueName = reqAny.venue?.name || 'Venue';
             const eventDateStr = request.eventDateTime
                 ? formatDateTimeFull(request.eventDateTime)
@@ -733,6 +764,16 @@ export class StrangersMeetService {
                     rejectReason: myCancellation.rejectReason,
                     respondedAt: myCancellation.respondedAt,
                     createdAt: myCancellation.createdAt,
+                } : null,
+                hostCancellation: hostCancellation ? {
+                    id: hostCancellation.id,
+                    status: hostCancellation.status,
+                    reason: hostCancellation.reason,
+                    reasonText: hostCancellation.reasonText,
+                    refundPolicyPercentage: hostCancellation.refundPolicyPercentage,
+                    totalRefundAmount: hostCancellation.totalRefundAmount,
+                    adminNotes: hostCancellation.adminNotes,
+                    createdAt: hostCancellation.createdAt,
                 } : null,
                 totalSlots: request.numberOfPersons,
                 chargesPerHead: request.chargesPerHead,
@@ -1042,6 +1083,605 @@ export class StrangersMeetService {
             });
             return { isHost: false, request: userRequest };
         }
+    }
+
+    /**
+     * Host requests cancellation of Stranger Meet.
+     * Enters PENDING_ADMIN_REVIEW state for Admin review.
+     */
+    public static async requestHostCancellation(options: {
+        meetId: string;
+        hostUserId: string;
+        reason: string;
+        reasonText?: string;
+    }): Promise<{ cancellation: StrangersMeetHostCancellationRequest; message: string }> {
+        const { meetId, hostUserId, reason, reasonText } = options;
+
+        const request = await StrangersMeetRequest.findByPk(meetId, {
+            include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'profileImageUrl'] }]
+        });
+        if (!request) {
+            throw new Error('Stranger Meet not found.');
+        }
+
+        if (request.userId !== hostUserId) {
+            throw new Error('Only the host can request cancellation for this Stranger Meet.');
+        }
+
+        const terminalStatuses = [
+            StrangersMeetStatus.COMPLETED,
+            StrangersMeetStatus.SETTLED,
+            StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+            StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+            StrangersMeetStatus.CANCELLED,
+            StrangersMeetStatus.REJECTED,
+            StrangersMeetStatus.NOT_STARTED,
+        ];
+        if (terminalStatuses.includes(request.status)) {
+            throw new Error('Cancellation is not available for a completed, ended, or already cancelled Stranger Meet.');
+        }
+
+        // Check if there is already a pending cancellation request
+        const existingPending = await StrangersMeetHostCancellationRequest.findOne({
+            where: {
+                meetId,
+                status: HostCancellationStatus.PENDING_ADMIN_REVIEW,
+            }
+        });
+        if (existingPending) {
+            throw new Error('A cancellation request is already pending admin review.');
+        }
+
+        // Fetch all confirmed & paid joiners to compute authoritative total
+        const paidJoiners = await StrangersMeetJoiner.findAll({
+            where: {
+                strangersMeetRequestId: meetId,
+                [Op.or]: [
+                    { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                    { status: 'paid' as any },
+                ]
+            }
+        });
+
+        const totalCollectedAmount = paidJoiners.reduce((sum, j) => sum + Number(j.paymentAmount || 0), 0);
+        const totalMembersCount = paidJoiners.length;
+
+        const cancellation = await StrangersMeetHostCancellationRequest.create({
+            meetId,
+            hostUserId,
+            reason: reason.trim(),
+            reasonText: reasonText?.trim() || null,
+            status: HostCancellationStatus.PENDING_ADMIN_REVIEW,
+            totalCollectedAmount,
+            totalMembersCount,
+        });
+
+        const host = (request as any).user;
+        const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Host';
+
+        // Notify Admins
+        try {
+            await this.emitNotification({
+                recipientUserId: hostUserId,
+                eventType: 'strangers_meet_host_cancellation_requested',
+                title: 'Stranger Meet Cancellation Request',
+                body: `${hostName} requested cancellation of Stranger Meet "${request.subject}". Reason: ${reason}. Total collected: ₹${totalCollectedAmount.toFixed(0)}.`,
+                entityId: meetId,
+                notifyAdmins: true,
+                metadata: {
+                    meetId,
+                    hostCancellationId: cancellation.id,
+                    hostUserId,
+                    hostName,
+                    reason,
+                    totalCollectedAmount,
+                    totalMembersCount,
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify admins of host cancellation request: ' + notifErr.message);
+        }
+
+        return {
+            cancellation,
+            message: 'Cancellation request submitted successfully. It will be reviewed by Lunara Admin.',
+        };
+    }
+
+    /**
+     * Admin — List all host cancellation requests with pagination and filters
+     */
+    public static async getAdminHostCancellations(options: {
+        status?: string;
+        page?: number;
+        limit?: number;
+        search?: string;
+    }) {
+        const page = Math.max(1, Number(options.page || 1));
+        const limit = Math.min(100, Math.max(1, Number(options.limit || 20)));
+        const offset = (page - 1) * limit;
+
+        const where: any = {};
+        if (options.status && options.status !== 'all') {
+            where.status = options.status;
+        }
+
+        const { count, rows } = await StrangersMeetHostCancellationRequest.findAndCountAll({
+            where,
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'meet',
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'area', 'addressLine1'] },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'host',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                },
+                {
+                    model: User,
+                    as: 'reviewer',
+                    attributes: ['id', 'firstName', 'lastName', 'email'],
+                },
+            ],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset,
+            distinct: true,
+        });
+
+        return {
+            total: count,
+            page,
+            limit,
+            totalPages: Math.ceil(count / limit),
+            data: rows,
+        };
+    }
+
+    /**
+     * Admin — Get full detail of a host cancellation request with breakdown and policy calculations
+     */
+    public static async getAdminHostCancellationDetail(cancellationId: string) {
+        const cancellation: any = await StrangersMeetHostCancellationRequest.findByPk(cancellationId, {
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'meet',
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'area', 'addressLine1', 'city'] },
+                        {
+                            model: StrangersMeetJoiner,
+                            as: 'joiners',
+                            include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'phone', 'email', 'profileImageUrl'] }],
+                        },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'host',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                },
+                {
+                    model: User,
+                    as: 'reviewer',
+                    attributes: ['id', 'firstName', 'lastName', 'email'],
+                },
+                {
+                    model: StrangersMeetMemberRefund,
+                    as: 'memberRefunds',
+                    include: [
+                        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'phone', 'email', 'profileImageUrl'] },
+                        { model: User, as: 'paidByAdmin', attributes: ['id', 'firstName', 'lastName', 'email'] },
+                    ],
+                },
+            ],
+        });
+
+        if (!cancellation) {
+            throw new Error('Host cancellation request not found.');
+        }
+
+        const meet = cancellation.meet;
+        const allJoiners = meet?.joiners || [];
+        const paidJoiners = allJoiners.filter((j: any) => j.paymentStatus === 'paid' || j.status === 'paid');
+
+        // Extract host payout details
+        const hostPayoutDetails = {
+            bankName: meet?.bankName || cancellation.host?.bankName,
+            accountNumber: meet?.accountNumber || cancellation.host?.accountNumber,
+            accountHolderName: meet?.accountHolderName || cancellation.host?.accountHolderName,
+            ifscCode: meet?.ifscCode || cancellation.host?.ifscCode,
+            upiId: meet?.upiId || cancellation.host?.upiId,
+            upiNumber: meet?.upiNumber,
+        };
+
+        // Calculate previews for standard policies (100%, 80%, 75%, 50%, 25%, 0%)
+        const totalPaid = cancellation.totalCollectedAmount;
+        const policyPreviews: Record<string, any> = {};
+        [100, 80, 75, 50, 25, 0].forEach((pct) => {
+            const totalRef = Math.round((totalPaid * (pct / 100)) * 100) / 100;
+            const membersPreview = paidJoiners.map((j: any) => ({
+                joinerId: j.id,
+                userId: j.userId,
+                name: j.user ? `${j.user.firstName} ${j.user.lastName}`.trim() : 'Participant',
+                paidAmount: Number(j.paymentAmount || 0),
+                refundPercentage: pct,
+                refundAmount: Math.round((Number(j.paymentAmount || 0) * (pct / 100)) * 100) / 100,
+            }));
+            policyPreviews[`${pct}%`] = {
+                percentage: pct,
+                totalPaid,
+                totalRefund: totalRef,
+                membersCount: paidJoiners.length,
+                members: membersPreview,
+            };
+        });
+
+        return {
+            cancellation,
+            hostPayoutDetails,
+            paidJoinersCount: paidJoiners.length,
+            paidJoiners: paidJoiners.map((j: any) => ({
+                id: j.id,
+                userId: j.userId,
+                name: j.user ? `${j.user.firstName} ${j.user.lastName}`.trim() : 'Participant',
+                phone: j.user?.phone,
+                email: j.user?.email,
+                profileImageUrl: j.user?.profileImageUrl,
+                paymentAmount: j.paymentAmount,
+                paymentStatus: j.paymentStatus,
+                status: j.status,
+                foodPreference: j.foodPreference,
+                drinkPreference: j.drinkPreference,
+                payoutDetails: {
+                    upiId: j.user?.upiId,
+                    bankName: j.user?.bankName,
+                    accountNumber: j.user?.accountNumber,
+                    ifscCode: j.user?.ifscCode,
+                    accountHolderName: j.user?.accountHolderName,
+                },
+            })),
+            policyPreviews,
+        };
+    }
+
+    /**
+     * Admin — Reject Host Cancellation Request
+     */
+    public static async adminRejectHostCancellation(options: {
+        cancellationId: string;
+        adminId: string;
+        reason?: string;
+    }) {
+        const { cancellationId, adminId, reason } = options;
+
+        const cancellation = await StrangersMeetHostCancellationRequest.findByPk(cancellationId, {
+            include: [{ model: StrangersMeetRequest, as: 'meet' }]
+        });
+        if (!cancellation) throw new Error('Host cancellation request not found.');
+
+        if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+            throw new Error(`Cancellation request is already in status: ${cancellation.status}`);
+        }
+
+        const adminNotes = reason?.trim() || 'Admin rejected cancellation request.';
+        await cancellation.update({
+            status: HostCancellationStatus.REJECTED,
+            adminReviewedBy: adminId,
+            adminReviewedAt: new Date(),
+            adminNotes,
+        });
+
+        const meet = (cancellation as any).meet;
+
+        // Send notification to Host
+        try {
+            await this.emitNotification({
+                recipientUserId: cancellation.hostUserId,
+                eventType: 'strangers_meet_host_cancellation_rejected',
+                title: 'Stranger Meet Cancellation Request Rejected',
+                body: `Your cancellation request for Stranger Meet "${meet?.subject || 'Meetup'}" was rejected. Reason: ${adminNotes}`,
+                entityId: cancellation.meetId,
+                metadata: {
+                    meetId: cancellation.meetId,
+                    cancellationId: cancellation.id,
+                    adminNotes,
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify host of rejection: ' + notifErr.message);
+        }
+
+        return {
+            success: true,
+            message: 'Host cancellation request rejected successfully. Meet remains active.',
+            cancellation,
+        };
+    }
+
+    /**
+     * Admin — Approve Host Cancellation Request with specified policy and refund method
+     */
+    public static async adminApproveHostCancellation(options: {
+        cancellationId: string;
+        adminId: string;
+        refundPercentage: number;
+        refundMethod: 'WALLET' | 'MANUAL_PAYOUT';
+        adminNotes?: string;
+    }) {
+        const { cancellationId, adminId, refundPercentage, refundMethod, adminNotes } = options;
+
+        if (refundPercentage < 0 || refundPercentage > 100) {
+            throw new Error('Refund percentage must be between 0 and 100.');
+        }
+
+        const cancellation = await StrangersMeetHostCancellationRequest.findByPk(cancellationId);
+        if (!cancellation) throw new Error('Host cancellation request not found.');
+
+        if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+            throw new Error(`Cancellation request has already been processed (status: ${cancellation.status}).`);
+        }
+
+        const request = await StrangersMeetRequest.findByPk(cancellation.meetId);
+        if (!request) throw new Error('Stranger Meet not found.');
+
+        const paidJoiners = await StrangersMeetJoiner.findAll({
+            where: {
+                strangersMeetRequestId: cancellation.meetId,
+                [Op.or]: [
+                    { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                    { status: 'paid' as any },
+                ]
+            },
+            include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] }]
+        });
+
+        const sequelize = (await import('../config/database')).default;
+        const memberRefundResults: any[] = [];
+        let totalRefundSum = 0;
+
+        await sequelize.transaction(async (t) => {
+            await cancellation.reload({ transaction: t, lock: t.LOCK.UPDATE });
+            if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+                throw new Error('Cancellation request is no longer pending.');
+            }
+
+            await request.reload({ transaction: t, lock: t.LOCK.UPDATE });
+
+            // Mark Stranger Meet as CANCELLED
+            await request.update(
+                {
+                    status: StrangersMeetStatus.CANCELLED,
+                    adminNotes: adminNotes || `Host cancellation approved with ${refundPercentage}% refund policy.`,
+                },
+                { transaction: t }
+            );
+
+            // Process each paid member independently
+            for (const joiner of paidJoiners) {
+                const memberPaid = Number(joiner.paymentAmount || 0);
+                const memberRefundAmount = Math.round((memberPaid * (refundPercentage / 100)) * 100) / 100;
+                totalRefundSum += memberRefundAmount;
+
+                // 1. Update joiner status first to acquire row lock cleanly
+                await StrangersMeetJoiner.update(
+                    {
+                        status: StrangersMeetJoinerStatus.REJECTED,
+                        paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
+                    },
+                    {
+                        where: { id: joiner.id },
+                        transaction: t,
+                    }
+                );
+
+                let txnId: string | null = null;
+                let refundStatus = MemberRefundStatus.PENDING;
+
+                // 2. Lunara Wallet refund
+                if (refundMethod === 'WALLET' && memberRefundAmount > 0) {
+                    const refundRes = await WalletService.creditRefund({
+                        userId: joiner.userId,
+                        amount: memberRefundAmount,
+                        referenceId: `SM_HOST_CANCEL_REFUND_${request.id}_${joiner.id}`,
+                        reason: `Stranger Meet Host Cancellation (${refundPercentage}% Refund) - ${request.subject}`,
+                        transaction: t,
+                    });
+                    txnId = refundRes.txn?.id || null;
+                    refundStatus = MemberRefundStatus.REFUND_PAID;
+                }
+
+                // 3. Member payout details for manual record
+                const memberUser = (joiner as any).user;
+                const payoutDetails = memberUser ? {
+                    upiId: memberUser.upiId,
+                    bankName: memberUser.bankName,
+                    accountNumber: memberUser.accountNumber,
+                    ifscCode: memberUser.ifscCode,
+                    accountHolderName: memberUser.accountHolderName,
+                } : null;
+
+                const memberRefund = await StrangersMeetMemberRefund.create(
+                    {
+                        hostCancellationRequestId: cancellation.id,
+                        meetId: request.id,
+                        joinerId: joiner.id,
+                        userId: joiner.userId,
+                        paidAmount: memberPaid,
+                        refundPercentage,
+                        refundAmount: memberRefundAmount,
+                        refundMethod,
+                        status: refundStatus,
+                        walletTransactionId: txnId,
+                        payoutDetails,
+                        paymentReference: txnId ? `WALLET_TXN_${txnId}` : null,
+                        paidByAdminId: txnId ? adminId : null,
+                        paidAt: txnId ? new Date() : null,
+                    },
+                    { transaction: t }
+                );
+
+                memberRefundResults.push({
+                    id: memberRefund.id,
+                    joinerId: joiner.id,
+                    userId: joiner.userId,
+                    name: memberUser ? `${memberUser.firstName} ${memberUser.lastName}`.trim() : 'Participant',
+                    paidAmount: memberPaid,
+                    refundAmount: memberRefundAmount,
+                    status: refundStatus,
+                });
+            }
+
+            const finalStatus = refundMethod === 'WALLET'
+                ? HostCancellationStatus.COMPLETED
+                : (paidJoiners.length > 0 ? HostCancellationStatus.REFUND_PROCESSING : HostCancellationStatus.APPROVED);
+
+            await cancellation.update(
+                {
+                    status: finalStatus,
+                    refundPolicyPercentage: refundPercentage,
+                    refundMethod: refundMethod as any,
+                    totalRefundAmount: totalRefundSum,
+                    adminReviewedBy: adminId,
+                    adminReviewedAt: new Date(),
+                    adminNotes: adminNotes || null,
+                },
+                { transaction: t }
+            );
+        });
+
+        await cancellation.reload();
+
+        // Dispatch Host Notification
+        try {
+            await this.emitNotification({
+                recipientUserId: cancellation.hostUserId,
+                eventType: 'strangers_meet_host_cancellation_approved',
+                title: 'Stranger Meet Cancellation Approved',
+                body: `Your cancellation request for "${request.subject}" has been approved. Member refunds (${refundPercentage}%) are being processed.`,
+                entityId: request.id,
+                metadata: {
+                    meetId: request.id,
+                    cancellationId: cancellation.id,
+                    refundPercentage,
+                    totalRefundAmount: totalRefundSum,
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify host of approved cancellation: ' + notifErr.message);
+        }
+
+        // Dispatch Member Notifications
+        for (const mr of memberRefundResults) {
+            try {
+                const refundText = mr.refundAmount > 0
+                    ? `Refund: ₹${mr.refundAmount.toFixed(0)} (${refundPercentage}% policy). ${refundMethod === 'WALLET' ? 'Credited to Lunara Wallet.' : 'Manual payout processing.'}`
+                    : `No refund applicable (${refundPercentage}% policy).`;
+
+                await this.emitNotification({
+                    recipientUserId: mr.userId,
+                    eventType: 'strangers_meet_cancelled',
+                    title: 'Stranger Meet Cancelled',
+                    body: `The Stranger Meet "${request.subject}" was cancelled by the host. ${refundText}`,
+                    entityId: request.id,
+                    metadata: {
+                        meetId: request.id,
+                        refundAmount: mr.refundAmount,
+                        refundPercentage,
+                        refundMethod,
+                    },
+                });
+            } catch (notifErr: any) {
+                logger.warn(`[StrangersMeetService] Failed to notify member ${mr.userId} of cancellation: ${notifErr.message}`);
+            }
+        }
+
+        return {
+            success: true,
+            message: `Stranger Meet cancelled successfully with ${refundPercentage}% refund policy. Total refund: ₹${totalRefundSum.toFixed(0)}.`,
+            cancellation,
+            memberRefunds: memberRefundResults,
+        };
+    }
+
+    /**
+     * Admin — Mark Member Refund as Paid (for Manual Payouts)
+     */
+    public static async adminMarkMemberRefundPaid(options: {
+        refundId: string;
+        adminId: string;
+        paymentReference: string;
+        paymentMethod: string;
+        paymentDate?: string;
+    }) {
+        const { refundId, adminId, paymentReference, paymentMethod, paymentDate } = options;
+
+        const refund = await StrangersMeetMemberRefund.findByPk(refundId, {
+            include: [
+                { model: StrangersMeetRequest, as: 'meet' },
+                { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+            ]
+        });
+        if (!refund) throw new Error('Member refund record not found.');
+
+        if (refund.status === MemberRefundStatus.REFUND_PAID) {
+            throw new Error(`Refund has already been marked as PAID on ${refund.paidAt?.toISOString()}. Reference: ${refund.paymentReference}`);
+        }
+
+        const paidDateObj = paymentDate ? new Date(paymentDate) : new Date();
+
+        await refund.update({
+            status: MemberRefundStatus.REFUND_PAID,
+            paymentReference: paymentReference.trim(),
+            refundMethod: paymentMethod.trim(),
+            paidByAdminId: adminId,
+            paidAt: paidDateObj,
+        });
+
+        // Check if all member refunds for this host cancellation are now PAID
+        const allRefunds = await StrangersMeetMemberRefund.findAll({
+            where: { hostCancellationRequestId: refund.hostCancellationRequestId }
+        });
+        const allPaid = allRefunds.every((r) => r.status === MemberRefundStatus.REFUND_PAID);
+        if (allPaid) {
+            await StrangersMeetHostCancellationRequest.update(
+                { status: HostCancellationStatus.COMPLETED },
+                { where: { id: refund.hostCancellationRequestId } }
+            );
+        }
+
+        const meet = (refund as any).meet;
+
+        // Send notification to member
+        try {
+            await this.emitNotification({
+                recipientUserId: refund.userId,
+                eventType: 'strangers_meet_refund_paid',
+                title: 'Stranger Meet Refund Paid',
+                body: `Your refund of ₹${refund.refundAmount.toFixed(0)} for "${meet?.subject || 'Meetup'}" has been paid via ${paymentMethod}. Reference: ${paymentReference}.`,
+                entityId: refund.meetId,
+                metadata: {
+                    meetId: refund.meetId,
+                    refundId: refund.id,
+                    refundAmount: refund.refundAmount,
+                    paymentReference,
+                    paymentMethod,
+                    paidAt: paidDateObj.toISOString(),
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify member of paid refund: ' + notifErr.message);
+        }
+
+        return {
+            success: true,
+            message: `Refund marked as PAID successfully. Reference: ${paymentReference}.`,
+            refund,
+        };
     }
 
     /**

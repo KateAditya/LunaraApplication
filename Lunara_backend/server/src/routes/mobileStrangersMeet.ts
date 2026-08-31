@@ -27,6 +27,7 @@ import {
     requestJoinerCancellation,
     respondJoinerCancellation,
     getJoinerCancellationStatus,
+    requestHostCancellation,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -372,6 +373,20 @@ router.get(
         validate,
     ],
     getJoinerCancellationStatus
+);
+
+// POST /api/mobile/strangers-meet/:id/host-cancel-request
+// Host submits cancellation request for Admin review
+router.post(
+    '/:id/host-cancel-request',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('reason').notEmpty().withMessage('Cancellation reason is required'),
+        body('reasonText').optional().isString(),
+        validate,
+    ],
+    requestHostCancellation
 );
 
 export default router;

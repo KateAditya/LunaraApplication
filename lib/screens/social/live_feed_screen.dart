@@ -292,6 +292,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_host_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_host_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -344,6 +349,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -4721,6 +4731,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
         ];
+      } else if (meetMap['hostCancellation'] is Map &&
+          (meetMap['hostCancellation']['status'] == 'PENDING_ADMIN_REVIEW' ||
+              meetMap['hostCancellation']['status'] == 'REFUND_PROCESSING')) {
+        final hostCancel = meetMap['hostCancellation'] as Map<String, dynamic>;
+        final isPendingReview = hostCancel['status'] == 'PENDING_ADMIN_REVIEW';
+
+        title = isPendingReview ? '⏳ Cancellation Requested' : '💳 Refund Processing';
+        badge = isPendingReview ? 'AWAITING ADMIN REVIEW' : 'REFUND IN PROGRESS';
+        accent = const Color(0xFFF59E0B);
+        body = isPendingReview
+            ? 'Your cancellation request has been submitted and is currently being reviewed by Lunara Admin.'
+            : 'Your Stranger Meet cancellation was approved. Member refunds are being processed.';
+        statusSummary = isPendingReview ? 'Awaiting Admin Review' : 'Refunds Processing';
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: true,
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error opening meet ticket: $e');
+              }
+            },
+          ),
+        ];
       } else if (meetMap['pendingCancellationRequests'] is List &&
           (meetMap['pendingCancellationRequests'] as List).isNotEmpty) {
         final pendingCancellations = List<Map<String, dynamic>>.from(meetMap['pendingCancellationRequests']);
@@ -4911,8 +4954,51 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final myCancel = meetMap['myCancellation'] is Map
           ? Map<String, dynamic>.from(meetMap['myCancellation'])
           : null;
+      final hostCancellation = meetMap['hostCancellation'] is Map
+          ? Map<String, dynamic>.from(meetMap['hostCancellation'])
+          : null;
 
-      if (myCancel != null && myCancel['status'] == 'pending') {
+      if (hostCancellation != null && hostCancellation['status'] == 'PENDING_ADMIN_REVIEW') {
+        title = '⏳ Host Cancellation Pending';
+        badge = 'HOST CANCELLATION';
+        accent = const Color(0xFFF59E0B);
+        body = 'The host has requested cancellation for this Stranger Meet. Lunara Admin is currently reviewing the request.';
+        statusSummary = 'Admin Review In Progress';
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else if (hostCancellation != null &&
+          (hostCancellation['status'] == 'COMPLETED' ||
+              hostCancellation['status'] == 'REFUNDED' ||
+              hostCancellation['status'] == 'REFUND_PROCESSING')) {
+        final ref = hostCancellation['totalRefundAmount'] ?? 0;
+        title = '✓ Stranger Meet Cancelled';
+        badge = 'REFUND PROCESSED';
+        accent = const Color(0xFF10B981);
+        body = 'The Stranger Meet was cancelled by the host. Refunds are processed according to the Lunara policy.';
+        statusSummary = 'Refund Processed';
+        actionsList = [
+          NotificationAction(
+            label: 'View Wallet',
+            icon: Icons.account_balance_wallet_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.pushNamed(context, '/wallet'),
+          ),
+        ];
+      } else if (myCancel != null && myCancel['status'] == 'pending') {
         title = '⏳ Cancellation Requested';
         badge = 'CANCELLATION PENDING';
         accent = const Color(0xFFF59E0B);

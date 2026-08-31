@@ -2249,6 +2249,43 @@ class ApiService {
     }
   }
 
+  /// Host requests cancellation of Stranger Meet for Admin Review
+  static Future<Map<String, dynamic>> requestStrangersMeetHostCancellation(
+    String id, {
+    required String reason,
+    String? reasonText,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+
+    try {
+      final Map<String, dynamic> body = {
+        'userId': userId,
+        'reason': reason,
+      };
+      if (reasonText != null && reasonText.trim().isNotEmpty) {
+        body['reasonText'] = reasonText.trim();
+      }
+
+      final response = await post(
+        '/api/mobile/strangers-meet/$id/host-cancel-request',
+        body: body,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'message': data['message'], 'data': data['data']};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? data['error'] ?? 'Failed to request host cancellation',
+        };
+      }
+    } catch (e) {
+      debugPrint('requestStrangersMeetHostCancellation error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
   /// Fetch cancellation status for a Stranger Meet
   static Future<Map<String, dynamic>?> fetchStrangersMeetCancellationStatus(String id) async {
     try {
