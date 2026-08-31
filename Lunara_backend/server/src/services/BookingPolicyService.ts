@@ -360,12 +360,14 @@ export class BookingPolicyService {
                     amount: refundAmount,
                     bookingId: booking.id,
                     reference: `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`,
-                    reason: cancellationReason || `Cancellation refund for Solo Booking (${refundCalc.refundPercentage}%)`,
+                    reason: cancellationReason || 'SOLO BOOKING CANCELLED',
                     metadata: {
                         originalAmountPaid: paidAmount,
                         refundPercentage: refundCalc.refundPercentage,
                         nonRefundableAmount: refundCalc.nonRefundableAmount,
+                        refundAmount,
                         bookingId: booking.id,
+                        transactionLabel: 'SOLO BOOKING CANCELLED',
                     },
                 }, t);
                 walletTxId = refundResult.transaction.id;
@@ -378,6 +380,9 @@ export class BookingPolicyService {
         }
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
+        const notifBody = refundAmount > 0
+            ? `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`
+            : `Your Solo Booking at ${venueName} has been cancelled.`;
 
         // Dispatch notifications
         await NotificationService.dispatch({
@@ -386,10 +391,8 @@ export class BookingPolicyService {
             category: 'bookings',
             entityType: 'Booking',
             entityId: booking.id,
-            title: '❌ Booking Cancelled',
-            body: refundAmount > 0
-                ? `Your booking at ${venueName} has been cancelled. ₹${refundAmount} has been refunded to your Lunara Wallet.`
-                : `Your booking at ${venueName} has been cancelled.`,
+            title: 'Booking Cancelled',
+            body: notifBody,
             priority: 'HIGH',
             idempotencyKey: `solo_cancel_${booking.id}`,
             actionType: 'view_details',
@@ -401,6 +404,14 @@ export class BookingPolicyService {
             status: BookingStatus.CANCELLED,
             refundAmount,
         });
+
+        try {
+            const { VenueBookingService } = await import('./VenueBookingService');
+            const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, userId);
+            if (enrichedCard) {
+                RealtimeEventBroker.emitToUser(userId, 'notification_updated', 'notification', booking.id, enrichedCard);
+            }
+        } catch (_) {}
 
         return {
             success: true,
@@ -527,12 +538,14 @@ export class BookingPolicyService {
                     bookingId: null,
                     partyPlanId: null,
                     reference: `REFUND_GP_${party.id.substring(0, 8).toUpperCase()}_${Date.now()}`,
-                    reason: cancellationReason || `Cancellation refund for Group Party (${refundCalc.refundPercentage}%)`,
+                    reason: cancellationReason || 'GROUP PARTY CANCELLED',
                     metadata: {
                         originalAmountPaid: paidAmount,
                         refundPercentage: refundCalc.refundPercentage,
                         nonRefundableAmount: refundCalc.nonRefundableAmount,
+                        refundAmount,
                         groupPartyId: party.id,
+                        transactionLabel: 'GROUP PARTY CANCELLED',
                     },
                 }, t);
                 walletTxId = refundResult.transaction.id;
@@ -545,6 +558,9 @@ export class BookingPolicyService {
         }
 
         const venueName = (party as any)?.venue?.name || 'Venue';
+        const notifBody = refundAmount > 0
+            ? `Your Group Party at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`
+            : `Your Group Party at ${venueName} has been cancelled.`;
 
         // Dispatch notifications
         await NotificationService.dispatch({
@@ -553,10 +569,8 @@ export class BookingPolicyService {
             category: 'bookings',
             entityType: 'GroupParty',
             entityId: party.id,
-            title: '❌ Group Party Cancelled',
-            body: refundAmount > 0
-                ? `Your group party at ${venueName} has been cancelled. ₹${refundAmount} has been refunded to your Lunara Wallet.`
-                : `Your group party at ${venueName} has been cancelled.`,
+            title: 'Group Party Cancelled',
+            body: notifBody,
             priority: 'HIGH',
             idempotencyKey: `gp_cancel_${party.id}`,
             actionType: 'view_details',
@@ -568,6 +582,14 @@ export class BookingPolicyService {
             status: GroupPartyStatus.CANCELLED,
             refundAmount,
         });
+
+        try {
+            const { GroupPartyService } = await import('./GroupPartyService');
+            const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, userId);
+            if (enrichedCard) {
+                RealtimeEventBroker.emitToUser(userId, 'notification_updated', 'notification', party.id, enrichedCard);
+            }
+        } catch (_) {}
 
         return {
             success: true,

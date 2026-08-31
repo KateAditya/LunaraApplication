@@ -433,6 +433,7 @@ export class VenueBookingService {
             const isActive = isConfirmed && bookingRecord.status !== BookingStatus.CANCELLED;
             const isCompleted = bookingRecord.status === BookingStatus.COMPLETED;
             const isCancelled = bookingRecord.status === BookingStatus.CANCELLED;
+            const isRefunded = bookingRecord.paymentStatus === PaymentStatus.REFUNDED;
 
             const reminder2h = bookingRecord.reminder2hSent || false;
             const reminder1h = bookingRecord.reminder1hSent || false;
@@ -461,13 +462,15 @@ export class VenueBookingService {
                 title = `Venue Booking Completed ✨`;
                 body = `Hope you enjoyed your experience at ${venueName}!`;
                 statusText = 'Completed';
-            } else if (isConfirmed) {
+            } else if (isConfirmed && !isCancelled) {
                 title = `Venue Booking Confirmed! 🎉`;
                 body = `Your table reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
                 statusText = 'Confirmed';
             } else if (isCancelled) {
                 title = `Venue Booking Cancelled ❌`;
-                body = `Your booking for ${venueName} was cancelled.`;
+                body = isRefunded
+                    ? `Your Solo Booking for ${venueName} was cancelled. Refund has been credited to your Lunara Wallet.`
+                    : `Your booking for ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
             }
 
@@ -475,8 +478,21 @@ export class VenueBookingService {
             if (!isPaid && !isCancelled) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
             }
-            if (isConfirmed) {
+            if (isConfirmed && !isCancelled) {
                 actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
+
+                // Check cancellation cutoff authoritatively
+                const eventDateTime = parseBookingDateTime(bookingRecord.bookingDate as any, bookingRecord.startTime);
+                const cutoffValidation = await BookingPolicyService.validateCancellationTime(
+                    BookingPolicyType.SOLO_BOOKING,
+                    eventDateTime
+                );
+                if (cutoffValidation.canCancel) {
+                    actionButtons.push({ id: 'cancel_booking', label: 'Cancel Booking', primary: false, action: 'CANCEL_BOOKING' });
+                }
+            }
+            if (isCancelled && isRefunded) {
+                actionButtons.push({ id: 'view_wallet', label: 'View Wallet', primary: true, action: 'VIEW_WALLET' });
             }
             actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
 

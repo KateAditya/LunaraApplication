@@ -698,6 +698,10 @@ export class GroupPartyService {
             let body = `Group party of ${guestCount} friends at ${venueName}.`;
             let statusText = 'Group Party Initiated';
 
+            const isRefunded = isLargeBooking
+                ? bookingRecord.paymentStatus === 'refunded'
+                : (gp?.paymentStatus === ('refunded' as any) || (gp as any)?.refundAmount > 0);
+
             if (isConfirmed) {
                 title = isLargeBooking ? `Large Party Confirmed! 🎉` : `Group Party Confirmed! 🎉`;
                 body = `Your party of ${guestCount} guests at ${venueName} is fully confirmed. Get ready!`;
@@ -722,7 +726,9 @@ export class GroupPartyService {
                 statusText = 'Rejected';
             } else if (isCancelled) {
                 title = isLargeBooking ? `Large Party Cancelled ❌` : `Group Party Cancelled ❌`;
-                body = `Your group party at ${venueName} was cancelled.`;
+                body = (!isLargeBooking && isRefunded)
+                    ? `Your group party at ${venueName} was cancelled. Refund has been credited to your Lunara Wallet.`
+                    : `Your group party at ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
             } else if (isCompleted) {
                 title = isLargeBooking ? `Large Party Completed ✨` : `Group Party Completed ✨`;
@@ -738,8 +744,22 @@ export class GroupPartyService {
             if (!isExpired && (isApproved || (isPending && gp?.paymentStatus === GroupPartyPaymentStatus.PENDING))) {
                 actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
             }
-            if (isConfirmed) {
+            if (isConfirmed && !isCancelled && !isExpired) {
                 actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
+
+                if (!isLargeBooking && gp) {
+                    const partyDt = parseBookingDateTime(gp.partyDate as any, gp.startTime);
+                    const cutoffValidation = await BookingPolicyService.validateCancellationTime(
+                        BookingPolicyType.GROUP_PARTY,
+                        partyDt
+                    );
+                    if (cutoffValidation.canCancel) {
+                        actionButtons.push({ id: 'cancel_booking', label: 'Cancel Booking', primary: false, action: 'CANCEL_BOOKING' });
+                    }
+                }
+            }
+            if (isCancelled && !isLargeBooking && isRefunded) {
+                actionButtons.push({ id: 'view_wallet', label: 'View Wallet', primary: true, action: 'VIEW_WALLET' });
             }
             actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
 
