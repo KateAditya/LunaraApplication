@@ -134,7 +134,7 @@ export const getDeltaSync = async (req: Request, res: Response): Promise<Respons
                     [Op.or]: [{ participantOne: userId }, { participantTwo: userId }],
                     updatedAt: { [Op.gt]: sinceDate },
                 },
-                attributes: ['id', 'lastMessage', 'lastMessageAt', 'updatedAt'],
+                attributes: ['id', 'lastMessagePreview', 'lastMessageAt', 'updatedAt'],
                 limit: 30,
             }),
         ]);
