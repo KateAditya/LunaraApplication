@@ -4,6 +4,9 @@ import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue } from '../models';
+import { PartyPlanStatus } from '../models/PartyPlan';
+import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
+import { GroupPartyStatus } from '../models/GroupParty';
 import Notification from '../models/Notification';
 import UserLike from '../models/UserLike';
 import User, { UserRole } from '../models/User';
@@ -417,19 +420,19 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             PartyPlan.count({
                 where: {
                     userId,
-                    status: { [Op.notIn]: ['cancelled', 'rejected'] }
+                    status: { [Op.ne]: PartyPlanStatus.CANCELLED }
                 }
             }),
             StrangersMeetRequest.count({
                 where: {
                     userId,
-                    status: { [Op.notIn]: ['cancelled', 'rejected', 'expired'] }
+                    status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] }
                 }
             }),
             GroupParty.count({
                 where: {
                     userId,
-                    status: { [Op.notIn]: ['cancelled', 'rejected'] }
+                    status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] }
                 }
             })
         ]);

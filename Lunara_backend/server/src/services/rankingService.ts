@@ -14,6 +14,9 @@ import {
 } from '../models';
 import { SubscriptionStatus } from '../models/UserSubscription';
 import { ProfileBoostStatus } from '../models/ProfileBoost';
+import { PartyPlanStatus } from '../models/PartyPlan';
+import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
+import { GroupPartyStatus } from '../models/GroupParty';
 import { logger } from '../config/logger';
 
 export interface ScoreExplanation {
@@ -93,7 +96,7 @@ export class RankingService {
                     attributes: ['userId', [PartyPlan.sequelize!.fn('COUNT', PartyPlan.sequelize!.col('id')), 'count']],
                     where: {
                         userId: { [Op.in]: candidateUserIds },
-                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
+                        status: { [Op.ne]: PartyPlanStatus.CANCELLED },
                     },
                     group: ['userId'],
                 }),
@@ -101,7 +104,7 @@ export class RankingService {
                     attributes: ['userId', [StrangersMeetRequest.sequelize!.fn('COUNT', StrangersMeetRequest.sequelize!.col('id')), 'count']],
                     where: {
                         userId: { [Op.in]: candidateUserIds },
-                        status: { [Op.notIn]: ['cancelled', 'rejected', 'expired'] },
+                        status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
                     },
                     group: ['userId'],
                 }),
@@ -109,7 +112,7 @@ export class RankingService {
                     attributes: ['userId', [GroupParty.sequelize!.fn('COUNT', GroupParty.sequelize!.col('id')), 'count']],
                     where: {
                         userId: { [Op.in]: candidateUserIds },
-                        status: { [Op.notIn]: ['cancelled', 'rejected'] },
+                        status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] },
                     },
                     group: ['userId'],
                 }),
