@@ -18,6 +18,8 @@ import 'large_party_ticket_screen.dart';
 import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'party_plan_ticket_screen.dart';
+import '../discovery/digital_ticket_screen.dart';
+import '../../widgets/booking_cancellation_dialog.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../profile/profile_screen.dart';
@@ -1965,19 +1967,48 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
         bookingData['startTime'] = cleanSt;
       }
-      final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue'};
+      final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue', 'id': bookingData['venueId']};
+      final bool isLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0) > 20 ||
+          bookingData['isLargePartyRequest'] == true ||
+          bookingData['goingMode'] == 'party_request' ||
+          category.contains('large');
+
       if (status == 'confirmed' || status == 'paid') {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LargePartyTicketScreen(
-              booking: bookingData,
-              venue: venueMap,
+        if (!isLarge) {
+          final guestsCount = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1);
+          final bool isSolo = guestsCount <= 1;
+          final dynamic rawAmt = bookingData['totalAmount'] ?? bookingData['amount'] ?? 0;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => DigitalTicketScreen(
+                venue: venueMap,
+                date: bookingData['bookingDate']?.toString(),
+                time: bookingData['startTime']?.toString(),
+                table: isSolo ? 'Solo Entry' : 'Standard Table',
+                guests: guestsCount.toString(),
+                package: isSolo ? 'Solo Entry' : 'Standard Table',
+                totalPrice: (rawAmt is num && rawAmt > 0) ? '₹${rawAmt.toStringAsFixed(0)}' : 'FREE (₹0)',
+                ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item.id)?.toString(),
+                ticketUrl: bookingData['ticketUrl']?.toString(),
+                status: 'CONFIRMED',
+                booking: bookingData,
+                user: ApiService.cachedCurrentUser,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LargePartyTicketScreen(
+                booking: bookingData,
+                venue: venueMap,
+              ),
+            ),
+          );
+        }
       } else if (status == 'approved' || status == 'pending') {
-        final bool isLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0) > 20 || bookingData['isLargePartyRequest'] == true;
         if (!isLarge || status == 'approved') {
           _initiateLargePartyPayment(bookingData);
         }
@@ -2422,14 +2453,57 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return null;
   }
 
+  // Helper to extract Solo and standard venue booking ID
+  String? _extractSoloBookingId(dynamic item) {
+    if (item == null || item is! Map) return null;
+    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
+    final goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? item['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+    final isLargeOrGroup = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? 0) > 20 ||
+        item['isLargePartyRequest'] == true ||
+        cat.contains('group_party') ||
+        cat.contains('large_party') ||
+        goingMode == 'party_request';
+
+    if (isLargeOrGroup || goingMode == 'plan' || cat.contains('party_plan') || cat.contains('stranger')) {
+      return null;
+    }
+
+    if (item['data'] is Map && (item['data']['type'] == 'venue_booking_timeline' || item['data']['type'] == 'venue_booking')) {
+      final id = (item['data']['bookingId'] ?? item['data']['id'])?.toString().trim();
+      if (id != null && id.isNotEmpty) return id;
+    }
+
+    if (item['eventType'] == 'booking_confirmed' ||
+        item['eventType'] == 'booking_cancelled' ||
+        item['eventType'] == 'booking_pending_payment' ||
+        item['eventType'] == 'venue_booking_received') {
+      final id = (item['entityId'] ?? item['bookingId'] ?? item['data']?['bookingId'] ?? item['metadata']?['bookingId'])?.toString().trim();
+      if (id != null && id.isNotEmpty) return id;
+    }
+
+    final id = item['bookingId'] ?? item['booking']?['id'] ?? item['booking']?['bookingId'] ?? item['data']?['bookingId'] ?? item['metadata']?['bookingId'];
+    if (id != null && id.toString().trim().isNotEmpty) {
+      return id.toString().trim();
+    }
+
+    final rawId = (item['id'] ?? item['entityId'])?.toString() ?? '';
+    if (rawId.startsWith('venue_booking_timeline_') || rawId.startsWith('solo_booking_') || rawId.startsWith('venue_booking_')) {
+      final cleanId = ApiService.cleanBookingId(rawId);
+      if (cleanId.isNotEmpty) return cleanId;
+    }
+
+    return null;
+  }
+
   List<UnifiedNotificationItem> _buildUnifiedTimeline() {
     final List<UnifiedNotificationItem> items = [];
     final currentUserId = ApiService.currentUserId ?? '';
 
-    // 1. Partition entries into Party Plan, Stranger Meet, Group Party, and General Notifications
+    // 1. Partition entries into Party Plan, Stranger Meet, Group Party, Solo Booking, and General Notifications
     final Map<String, List<Map<String, dynamic>>> partyPlanGroups = {};
     final Map<String, List<Map<String, dynamic>>> strangersMeetGroups = {};
     final Map<String, List<Map<String, dynamic>>> groupPartyGroups = {};
+    final Map<String, List<Map<String, dynamic>>> soloBookingGroups = {};
     final List<Map<String, dynamic>> nonPartyNotifications = [];
     final List<Map<String, dynamic>> nonPartyFeedItems = [];
 
@@ -2437,6 +2511,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final ppId = _extractPartyPlanId(n);
       final smId = _extractStrangersMeetId(n);
       final gpId = _extractGroupPartyId(n);
+      final soloId = _extractSoloBookingId(n);
 
       if (ppId != null && ppId.isNotEmpty) {
         partyPlanGroups.putIfAbsent(ppId, () => []).add(n);
@@ -2444,6 +2519,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         strangersMeetGroups.putIfAbsent(smId, () => []).add(n);
       } else if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(n);
+      } else if (soloId != null && soloId.isNotEmpty) {
+        soloBookingGroups.putIfAbsent(soloId, () => []).add(n);
       } else {
         nonPartyNotifications.add(n);
       }
@@ -2453,6 +2530,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final ppId = _extractPartyPlanId(fi);
       final smId = _extractStrangersMeetId(fi);
       final gpId = _extractGroupPartyId(fi);
+      final soloId = _extractSoloBookingId(fi);
 
       if (ppId != null && ppId.isNotEmpty) {
         partyPlanGroups.putIfAbsent(ppId, () => []).add(fi);
@@ -2460,6 +2538,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         strangersMeetGroups.putIfAbsent(smId, () => []).add(fi);
       } else if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(fi);
+      } else if (soloId != null && soloId.isNotEmpty) {
+        soloBookingGroups.putIfAbsent(soloId, () => []).add(fi);
       } else {
         nonPartyFeedItems.add(fi);
       }
@@ -2467,8 +2547,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     for (final booking in _largePartyBookings) {
       final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+      final soloId = _extractSoloBookingId(booking);
       if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
+      } else if (soloId != null && soloId.isNotEmpty) {
+        soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
       }
     }
 
@@ -2514,7 +2597,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // 5. Process General Push Notifications (Table Plans, System, Wallet, Promo)
+    // 5. Build Exactly ONE Authoritative Smart Card per Solo & Venue Table Booking
+    for (final entry in soloBookingGroups.entries) {
+      final bookingId = entry.key;
+      final bookingEntries = entry.value;
+      final smartCard = _buildAuthoritativeSoloBookingCard(bookingId, bookingEntries, currentUserId);
+      if (smartCard != null) {
+        items.add(smartCard);
+        processedBookingIds.add(bookingId);
+        final cleanId = ApiService.cleanBookingId(bookingId);
+        if (cleanId.isNotEmpty) processedBookingIds.add(cleanId);
+        for (final e in bookingEntries) {
+          final bId = e['bookingId']?.toString() ?? e['id']?.toString() ?? e['data']?['bookingId']?.toString();
+          if (bId != null && bId.isNotEmpty) {
+            processedBookingIds.add(bId);
+            processedBookingIds.add(ApiService.cleanBookingId(bId));
+          }
+        }
+      }
+    }
+
+    // 6. Process General Push Notifications (Table Plans, System, Wallet, Promo)
     for (final n in nonPartyNotifications) {
       final String goingMode = (n['goingMode'] ?? n['booking']?['goingMode'] ?? n['metadata']?['goingMode'] ?? '').toString().toLowerCase();
       final String partySubject = (n['partySubject'] ?? n['booking']?['partySubject'] ?? n['metadata']?['partySubject'] ?? '').toString().toLowerCase();
@@ -2697,19 +2800,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           fi['requestType'] == 'booking_payment' ||
           fi['paymentStatus'] == 'pending' ||
           fi['status'] == 'payment_pending';
-
-      // Completely skip solo and confirmed table bookings that do not require payment.
-      final bool isSoloOrTable = goingMode == 'solo' ||
-          goingMode == 'table_booking' ||
-          cat == 'booking' ||
-          cat == 'venue_booking' ||
-          partySubject.contains('table booking') ||
-          partySubject.contains('solo') ||
-          fi['booking'] != null;
-
-      if (isSoloOrTable && !isPendingPayment) {
-        continue;
-      }
 
       if (fiBookingId.isNotEmpty) {
         processedBookingIds.add(fiBookingId);
@@ -3124,6 +3214,274 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.saveLocalReadRequestIds();
     ApiService.saveLocalReadNotificationIds();
     if (mounted) setState(() {});
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Authoritative Solo & Table Booking Smart Card (1 Booking = 1 Card)
+  // ─────────────────────────────────────────────────────────────────────────────
+  UnifiedNotificationItem? _buildAuthoritativeSoloBookingCard(
+    String bookingId,
+    List<Map<String, dynamic>> entries,
+    String currentUserId,
+  ) {
+    if (entries.isEmpty) return null;
+
+    Map<String, dynamic> bookingMap = {};
+    for (final e in entries) {
+      if (e['data'] is Map && (e['data']['type'] == 'venue_booking_timeline' || e['data']['bookingId'] != null)) {
+        bookingMap = Map<String, dynamic>.from(e['data']);
+        break;
+      }
+      if (e['booking'] is Map) {
+        bookingMap = Map<String, dynamic>.from(e['booking']);
+        break;
+      }
+    }
+    if (bookingMap.isEmpty) {
+      bookingMap = Map<String, dynamic>.from(entries.first);
+      if (bookingMap['data'] is Map) {
+        bookingMap.addAll(Map<String, dynamic>.from(bookingMap['data']));
+      }
+    }
+
+    // Extract total amount
+    double totalAmount = 0.0;
+    for (final e in entries) {
+      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['booking']?['totalAmount'] ?? e['data']?['totalAmount'] ?? e['data']?['amount'];
+      if (rawAmt is num && rawAmt > 0) {
+        totalAmount = rawAmt.toDouble();
+        break;
+      } else if (rawAmt != null) {
+        final parsed = double.tryParse(rawAmt.toString());
+        if (parsed != null && parsed > 0) {
+          totalAmount = parsed;
+          break;
+        }
+      }
+    }
+    if (totalAmount > 0) {
+      bookingMap['totalAmount'] = totalAmount;
+    }
+
+    // Extract venue name and date/time
+    String venueName = bookingMap['venueName'] ?? bookingMap['venue']?['name'] ?? 'Venue';
+    for (final e in entries) {
+      final vName = e['venueName'] ?? e['venue']?['name'] ?? e['data']?['venueName'] ?? e['booking']?['venue']?['name'];
+      if (vName != null && vName.toString().isNotEmpty) {
+        venueName = vName.toString();
+        break;
+      }
+    }
+
+    String dateStr = bookingMap['bookingDate']?.toString() ?? '';
+    String timeStr = bookingMap['startTime']?.toString() ?? bookingMap['time']?.toString() ?? '';
+    for (final e in entries) {
+      final d = e['bookingDate'] ?? e['data']?['bookingDate'] ?? e['booking']?['bookingDate'];
+      final t = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['booking']?['startTime'];
+      if (d != null && d.toString().isNotEmpty && dateStr.isEmpty) dateStr = d.toString();
+      if (t != null && t.toString().isNotEmpty && timeStr.isEmpty) timeStr = t.toString();
+    }
+    if (timeStr.isNotEmpty) {
+      timeStr = LunaraDateFormatter.normalizeTimeTo12Hour(timeStr);
+    }
+
+    int guestCount = (bookingMap['numberOfGuests'] ?? bookingMap['guestCount'] ?? 1);
+    for (final e in entries) {
+      final g = e['numberOfGuests'] ?? e['guestCount'] ?? e['data']?['guestCount'] ?? e['booking']?['numberOfGuests'];
+      if (g is int && g > 0) {
+        guestCount = g;
+        break;
+      }
+    }
+
+    String ticketCode = (bookingMap['ticketCode'] ?? bookingMap['ticketId'] ?? '').toString();
+    for (final e in entries) {
+      final tc = e['ticketCode'] ?? e['ticketId'] ?? e['data']?['ticketCode'] ?? e['booking']?['ticketCode'];
+      if (tc != null && tc.toString().isNotEmpty) {
+        ticketCode = tc.toString();
+        break;
+      }
+    }
+
+    // Status evaluation
+    bool isConfirmed = false;
+    bool isCancelled = false;
+    bool isCompleted = false;
+    bool isPending = false;
+    bool isRefunded = false;
+
+    for (final e in entries) {
+      final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '').toString().toLowerCase();
+      final paymentStatus = (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '').toString().toLowerCase();
+      final title = (e['title'] ?? '').toString().toLowerCase();
+      final eventType = (e['eventType'] ?? e['type'] ?? '').toString().toLowerCase();
+
+      if (status == 'cancelled' || eventType == 'booking_cancelled' || title.contains('cancelled')) {
+        isCancelled = true;
+        if (paymentStatus == 'refunded' || e['refundAmount'] != null) isRefunded = true;
+      } else if (status == 'completed' || title.contains('completed')) {
+        isCompleted = true;
+      } else if (paymentStatus == 'paid' || status == 'confirmed' || eventType == 'booking_confirmed' || eventType == 'booking_paynow' || eventType == 'payment_success') {
+        isConfirmed = true;
+      } else if (status == 'pending' || paymentStatus == 'pending' || eventType == 'booking_pending_payment') {
+        isPending = true;
+      }
+    }
+
+    if (isCancelled) {
+      isConfirmed = false;
+      isPending = false;
+    } else if (isConfirmed) {
+      isPending = false;
+    }
+
+    final bool isSolo = guestCount <= 1;
+    final String bookingTypeLabel = isSolo ? 'Solo Booking' : 'Table Booking ($guestCount Guests)';
+    String title = '$bookingTypeLabel at $venueName 🎟';
+    String body = isConfirmed
+        ? 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!'
+        : (isCancelled
+            ? (isRefunded ? 'Your booking was cancelled. ₹${totalAmount > 0 ? (totalAmount * 0.8).toStringAsFixed(0) : '0'} refunded to your Lunara Wallet.' : 'Your booking was cancelled.')
+            : (isCompleted
+                ? 'Hope you enjoyed your experience at $venueName!'
+                : 'Complete payment of ₹${totalAmount.toStringAsFixed(0)} to secure your table reservation.'));
+
+    String badge = 'CONFIRMED';
+    Color accentColor = const Color(0xFF7C3AED);
+    IconData icon = Icons.confirmation_number_rounded;
+
+    if (isCancelled) {
+      badge = 'CANCELLED';
+      accentColor = const Color(0xFFEF4444);
+      icon = Icons.cancel_rounded;
+    } else if (isCompleted) {
+      badge = 'COMPLETED';
+      accentColor = const Color(0xFF10B981);
+      icon = Icons.check_circle_rounded;
+    } else if (isPending) {
+      badge = 'PAYMENT PENDING';
+      accentColor = const Color(0xFFF59E0B);
+      icon = Icons.payment_rounded;
+    }
+
+    List<NotificationAction> actionsList = [];
+    if (isConfirmed && !isCancelled) {
+      actionsList.add(
+        NotificationAction(
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
+          isPrimary: true,
+          onTap: () {
+            final venueMap = bookingMap['venue'] is Map ? bookingMap['venue'] : {'name': venueName, 'id': bookingMap['venueId']};
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DigitalTicketScreen(
+                  venue: venueMap,
+                  date: dateStr,
+                  time: timeStr,
+                  table: isSolo ? 'Solo Entry' : 'Standard Table',
+                  guests: guestCount.toString(),
+                  package: isSolo ? 'Solo Entry' : 'Standard Table',
+                  totalPrice: totalAmount > 0 ? '₹${totalAmount.toStringAsFixed(0)}' : 'FREE (₹0)',
+                  ticketId: ticketCode.isNotEmpty ? ticketCode : bookingId,
+                  ticketUrl: bookingMap['ticketUrl']?.toString(),
+                  status: 'CONFIRMED',
+                  booking: {
+                    ...bookingMap,
+                    'id': bookingId,
+                    'bookingId': bookingId,
+                    'venue': venueMap,
+                    'isSolo': isSolo,
+                    'goingMode': isSolo ? 'solo' : 'party_request',
+                    'bookingType': isSolo ? 'solo' : 'venue_booking',
+                    'category': isSolo ? 'solo' : 'venue_booking',
+                    'totalAmount': totalAmount,
+                    'paymentStatus': 'paid',
+                    'status': 'CONFIRMED',
+                    'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                    'numberOfGuests': guestCount,
+                    'bookingDate': dateStr,
+                    'startTime': timeStr,
+                    'user': ApiService.cachedCurrentUser,
+                  },
+                  user: ApiService.cachedCurrentUser,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
+      actionsList.add(
+        NotificationAction(
+          label: 'Cancel Booking',
+          icon: Icons.cancel_outlined,
+          isPrimary: false,
+          onTap: () {
+            BookingCancellationDialog.show(
+              context,
+              bookingId: bookingId,
+              isGroupParty: false,
+              initialVenueName: venueName,
+              initialDate: dateStr,
+              initialTime: timeStr,
+              initialAmountPaid: totalAmount,
+              onCancelled: () => _loadFeed(),
+            );
+          },
+        ),
+      );
+    } else if (isPending && !isCancelled) {
+      actionsList.add(
+        NotificationAction(
+          label: 'Pay Now',
+          icon: Icons.credit_card_rounded,
+          isPrimary: true,
+          onTap: () => _initiatePendingBookingPayment(bookingMap),
+        ),
+      );
+    } else if (isCancelled && isRefunded) {
+      actionsList.add(
+        NotificationAction(
+          label: 'View Wallet',
+          icon: Icons.account_balance_wallet_rounded,
+          isPrimary: true,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen())),
+        ),
+      );
+    }
+
+    final createdAt = _parseDateTime(entries.first['createdAt'] ?? entries.first['updatedAt']);
+    final timeAgo = _formatTimeAgo(entries.first['createdAt'] ?? entries.first['updatedAt']);
+
+    return UnifiedNotificationItem(
+      id: 'venue_booking_timeline_$bookingId',
+      category: 'booking',
+      title: title,
+      body: body,
+      createdAt: createdAt,
+      timeAgo: timeAgo,
+      isRead: false,
+      isExpired: false,
+      badgeText: badge,
+      accentColor: accentColor,
+      categoryIcon: icon,
+      avatarUrl: bookingMap['venue']?['images']?[0]?['filePath'] ?? bookingMap['venueImageUrl'],
+      actions: actionsList.isNotEmpty ? actionsList : null,
+      rawData: {
+        ...bookingMap,
+        'id': bookingId,
+        'bookingId': bookingId,
+        'venueName': venueName,
+        'bookingDate': dateStr,
+        'startTime': timeStr,
+        'totalAmount': totalAmount,
+        'numberOfGuests': guestCount,
+        'ticketCode': ticketCode,
+      },
+      statusSummary: isCancelled ? 'Cancelled' : (isConfirmed ? 'Confirmed' : 'Payment Pending'),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

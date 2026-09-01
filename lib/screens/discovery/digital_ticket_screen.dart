@@ -1510,53 +1510,64 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               (route) => false,
             ),
           ),
-          if (_isSoloBooking && !(widget.status ?? widget.booking?['status']?.toString() ?? '').toUpperCase().contains('CANCEL')) ...[
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: () {
-                final bookingId = widget.booking?['id']?.toString() ??
-                    widget.booking?['bookingId']?.toString();
-                if (bookingId != null) {
-                  final venueMap = _resolvedVenueMap;
-                  final venueName = venueMap?['name']?.toString() ??
-                      widget.booking?['venueName']?.toString() ??
-                      'Venue';
-                  final eventDt = _getEventDateTime();
-                  final dateStr = eventDt != null
-                      ? LunaraDateFormatter.formatEventDate(eventDt, pattern: 'EEE, d MMM yyyy')
-                      : (widget.date ?? 'Event Date');
-                  final timeStr = eventDt != null
-                      ? LunaraDateFormatter.formatEventTime(eventDt)
-                      : (widget.time ?? '');
-                  final amtPaid = double.tryParse((widget.totalPrice ??
-                          widget.booking?['totalAmount']?.toString() ??
-                          '0')
-                      .replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+          Builder(
+            builder: (ctx) {
+              final String currentStatus = (widget.status ?? widget.booking?['status']?.toString() ?? '').toUpperCase();
+              final bool isCancelled = currentStatus.contains('CANCEL');
+              final bool isCompleted = currentStatus.contains('COMPLET');
+              final String? resolvedBookingId = widget.booking?['id']?.toString() ??
+                  widget.booking?['bookingId']?.toString() ??
+                  (widget.ticketId != null && !widget.ticketId!.startsWith('FREE_') ? widget.ticketId : null);
 
-                  BookingCancellationDialog.show(
-                    context,
-                    bookingId: bookingId,
-                    isGroupParty: false,
-                    initialVenueName: venueName,
-                    initialDate: dateStr,
-                    initialTime: timeStr,
-                    initialAmountPaid: amtPaid,
-                    onCancelled: () => Navigator.of(context).pop(),
-                  );
-                }
-              },
-              icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
-              label: const Text(
-                'CANCEL BOOKING & GET REFUND',
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
+              if (isCancelled || isCompleted || _isTicketExpired() || resolvedBookingId == null || resolvedBookingId.isEmpty) {
+                return const SizedBox.shrink();
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: TextButton.icon(
+                  onPressed: () {
+                    final venueMap = _resolvedVenueMap;
+                    final venueName = venueMap?['name']?.toString() ??
+                        widget.booking?['venueName']?.toString() ??
+                        'Venue';
+                    final eventDt = _getEventDateTime();
+                    final dateStr = eventDt != null
+                        ? LunaraDateFormatter.formatEventDate(eventDt, pattern: 'EEE, d MMM yyyy')
+                        : (widget.date ?? 'Event Date');
+                    final timeStr = eventDt != null
+                        ? LunaraDateFormatter.formatEventTime(eventDt)
+                        : (widget.time ?? '');
+                    final amtPaid = double.tryParse((widget.totalPrice ??
+                            widget.booking?['totalAmount']?.toString() ??
+                            '0')
+                        .replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+
+                    BookingCancellationDialog.show(
+                      context,
+                      bookingId: resolvedBookingId,
+                      isGroupParty: false,
+                      initialVenueName: venueName,
+                      initialDate: dateStr,
+                      initialTime: timeStr,
+                      initialAmountPaid: amtPaid,
+                      onCancelled: () => Navigator.of(context).pop(),
+                    );
+                  },
+                  icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                  label: const Text(
+                    'CANCEL BOOKING & GET REFUND',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              );
+            },
+          ),
         ],
       ),
     );

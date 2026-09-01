@@ -570,6 +570,21 @@ export const getBookings = async (req: Request, res: Response) => {
         const isLargeRequested = String(isLargePartyRequest) === 'true';
         const isUpcomingRequested = String(isUpcomingNight) === 'true';
 
+        // Non-large party bookings only show to admin when paid or free (or if explicitly filtering for a status)
+        if (!status && !isLargeRequested) {
+            where[Op.and] = [
+                ...(where[Op.and] || []),
+                {
+                    [Op.or]: [
+                        { isLargePartyRequest: true },
+                        { paymentStatus: PaymentStatus.PAID },
+                        { totalAmount: 0 },
+                        { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] } }
+                    ]
+                }
+            ];
+        }
+
         if (goingMode === 'solo') {
             where.goingMode = { [Op.or]: ['solo', { [Op.is]: null }] };
             where.isGroupBooking = { [Op.or]: [false, { [Op.is]: null }] };
@@ -747,9 +762,19 @@ export const getBookingStats = async (req: Request, res: Response) => {
             where.venueId = { [Op.in]: ownedVenueIds };
         }
 
-        const totalBookings = await Booking.count({ where });
+        const baseValidWhere = {
+            ...where,
+            [Op.or]: [
+                { isLargePartyRequest: true },
+                { paymentStatus: PaymentStatus.PAID },
+                { totalAmount: 0 },
+                { status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] } }
+            ]
+        };
+
+        const totalBookings = await Booking.count({ where: baseValidWhere });
         const pendingBookings = await Booking.count({
-            where: { ...where, status: 'pending' }
+            where: { ...where, isLargePartyRequest: true, status: 'pending' }
         });
         const confirmedBookings = await Booking.count({
             where: { ...where, status: 'confirmed' }

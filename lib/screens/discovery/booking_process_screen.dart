@@ -1807,6 +1807,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 if (isSubmittingBooking) return;
                                 setModalState(() => isSubmittingBooking = true);
 
+                                try {
                                 if (isLargeParty) {
                                   if (_partySubjectController.text
                                           .trim()
@@ -2079,7 +2080,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
                                 final formattedTime = _formatTimeOfBooking(_selectedTime);
 
-                                SmartCheckoutSheet.show(
+                                await SmartCheckoutSheet.show(
                                   context: outerContext,
                                   title: widget.venue['name']?.toString() ?? 'Venue',
                                   subtitle: isSolo
@@ -2252,12 +2253,79 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                         : (bookingRes['bookingId']?.toString() ?? '');
 
                                     if (kIsWeb) {
+                                      if (!outerContext.mounted) return false;
+                                      // Explicit Web Payment Confirmation Dialog
+                                      final bool? confirmed = await showDialog<bool>(
+                                        context: outerContext,
+                                        barrierDismissible: false,
+                                        builder: (dialogCtx) => AlertDialog(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                          title: Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.payment_rounded, color: LunaraTheme.electricViolet, size: 22),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              const Text('Confirm Payment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                            ],
+                                          ),
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text('Venue: ${widget.venue['name'] ?? 'Venue'}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                              const SizedBox(height: 4),
+                                              Text('Date & Time: ${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year} • $formattedTime'),
+                                              const SizedBox(height: 4),
+                                              Text('Guests: ${isSolo ? '1 (Solo)' : '$guests Guests'}'),
+                                              const Divider(height: 24),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  const Text('Total Amount:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                                  Text('₹${totalPrice.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: LunaraTheme.electricViolet)),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 12),
+                                              const Text('Complete payment to generate and secure your digital ticket.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.of(dialogCtx).pop(false),
+                                              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                                            ),
+                                            ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: LunaraTheme.electricViolet,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                              ),
+                                              onPressed: () => Navigator.of(dialogCtx).pop(true),
+                                              child: const Text('Pay & Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirmed != true) {
+                                        if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                          await ApiService.cancelPendingBooking(createdBookingId!);
+                                          createdBookingId = null;
+                                        }
+                                        return false;
+                                      }
+
                                       final payNowRes = await ApiService.payNowBooking(
                                         createdBookingId!,
                                         paymentMethod: 'UPI',
-                                        razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_direct',
-                                        razorpayPaymentId: 'pay_direct_${DateTime.now().millisecondsSinceEpoch}',
-                                        razorpaySignature: 'mock_signature',
+                                        razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_web_${DateTime.now().millisecondsSinceEpoch}',
+                                        razorpayPaymentId: 'pay_web_${DateTime.now().millisecondsSinceEpoch}',
+                                        razorpaySignature: 'web_signature_${DateTime.now().millisecondsSinceEpoch}',
                                       );
                                       if (payNowRes != null && payNowRes['success'] == true) {
                                         TopNotificationBanner.show(
@@ -2303,8 +2371,13 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                           );
                                         }
                                         return true;
+                                      } else {
+                                        if (createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                          await ApiService.cancelPendingBooking(createdBookingId!);
+                                          createdBookingId = null;
+                                        }
+                                        return false;
                                       }
-                                      return false;
                                     }
 
                                     final rzp = Razorpay();
@@ -2682,7 +2755,12 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     return true;
                                   },
                                 );
-                              },
+                              } finally {
+                                if (modalCtx.mounted) {
+                                  setModalState(() => isSubmittingBooking = false);
+                                }
+                              }
+                            },
                             ),
                           ],
                         ),
