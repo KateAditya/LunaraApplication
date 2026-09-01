@@ -200,7 +200,7 @@ class StrangersMeetRequest {
 
     return StrangersMeetRequest(
       id: (json['id'] ?? json['bookingId'] ?? '').toString(),
-      userId: json['userId'] ?? json['user_id'] ?? userMap?['id']?.toString(),
+      userId: json['userId'] ?? json['user_id'] ?? json['hostId'] ?? json['host_id'] ?? (json['host'] is Map ? json['host']['id']?.toString() : null) ?? userMap?['id']?.toString(),
       subject: (json['subject'] ?? json['tablePackage'] ?? 'Strangers Meetup').toString(),
       tagline: (json['tagline'] ?? '').toString(),
       eventDateTime: parsedDate,

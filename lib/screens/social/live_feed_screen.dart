@@ -27,6 +27,7 @@ import '../../models/user.dart';
 import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
+import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +252,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('event_created', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('event_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_made_public', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_guest_cancelled_prompt', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
@@ -312,6 +315,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
     ApiService.removeSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_made_public', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_guest_cancelled_prompt', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
@@ -4656,8 +4661,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     final hostPhoto = rawMeetHostPhoto != null ? ApiService.formatImageUrl(rawMeetHostPhoto) : null;
 
-    final String meetHostId = (meetMap['userId'] ?? hostCreator['id'] ?? '').toString();
-    final bool isHost = currentUserId.isNotEmpty && (meetHostId == currentUserId || meetMap['role'] == 'host');
+    final String meetHostId = (meetMap['userId'] ??
+            meetMap['user_id'] ??
+            meetMap['hostId'] ??
+            meetMap['host_id'] ??
+            hostCreator['id'] ??
+            (meetMap['host'] is Map ? meetMap['host']['id'] : null) ??
+            '')
+        .toString();
+    final bool isHost = currentUserId.isNotEmpty &&
+        (meetHostId == currentUserId ||
+            meetMap['role'] == 'host' ||
+            meetMap['isHost'] == true);
 
     Map<String, dynamic>? myRequest;
     final List<Map<String, dynamic>> pendingIncomingRequests = [];
@@ -4670,10 +4685,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final String eRequesterId = (e['requesterId'] ?? e['requester']?['id'] ?? e['userId'] ?? e['actorUserId'] ?? e['data']?['userId'] ?? '').toString();
       final String title = (e['title'] ?? '').toString().toLowerCase();
 
-      if (reqType == 'my_request' || reqType == 'stranger_meet_join' || eRequesterId == currentUserId || (e['isMyRequest'] == true) || reqType.contains('request_sent') || title.contains('request sent')) {
-        if (!isHost || eRequesterId == currentUserId) {
-          myRequest = e;
-        }
+      if (!isHost &&
+          (reqType == 'my_request' ||
+              reqType == 'stranger_meet_join' ||
+              (eRequesterId == currentUserId &&
+                  reqType != 'stranger_meet_deposit' &&
+                  reqType != 'strangers_meet_deposit_paid') ||
+              (e['isMyRequest'] == true) ||
+              reqType.contains('request_sent') ||
+              title.contains('request sent'))) {
+        myRequest = e;
       }
       if (reqType == 'incoming_request' || (isHost && e['requester'] != null && eRequesterId != currentUserId)) {
         if (status == 'pending') {
@@ -5333,6 +5354,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               }
             },
           ),
+          NotificationAction(
+            label: 'Cancel',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              final double deposit = (meetMap['paymentAmount'] != null ? double.tryParse(meetMap['paymentAmount'].toString()) ?? 0.0 : 0.0).toDouble();
+              StrangersMeetHostCancellationDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                joinedCount: paidJoinerRecord != null ? 1 : 0,
+                collectedAmount: (paidJoinerRecord != null ? chargesPerHead : 0.0),
+                onCancelled: () => _loadFeed(),
+              );
+            },
+          ),
         ];
       }
     } else {
@@ -5473,15 +5512,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.grey[200],
             onTap: () {
-              final double paid = (chargesPerHead > 0 ? chargesPerHead : double.tryParse((meetMap['paymentAmount'] ?? '0').toString()) ?? 0.0).toDouble();
-              StrangersMeetCancellationDialog.show(
-                context,
-                meetId: meetId,
-                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
-                venueName: venueName,
-                paidAmount: paid,
-                onCancelled: () => _loadFeed(),
-              );
+              if (isHost) {
+                final double deposit = (meetMap['paymentAmount'] != null ? double.tryParse(meetMap['paymentAmount'].toString()) ?? 0.0 : 0.0).toDouble();
+                StrangersMeetHostCancellationDialog.show(
+                  context,
+                  meetId: meetId,
+                  subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
+                  venueName: venueName,
+                  joinedCount: paidJoinerRecord != null ? 1 : 0,
+                  collectedAmount: (paidJoinerRecord != null ? chargesPerHead : 0.0),
+                  onCancelled: () => _loadFeed(),
+                );
+              } else {
+                final double paid = (chargesPerHead > 0 ? chargesPerHead : double.tryParse((meetMap['paymentAmount'] ?? '0').toString()) ?? 0.0).toDouble();
+                StrangersMeetCancellationDialog.show(
+                  context,
+                  meetId: meetId,
+                  subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                  venueName: venueName,
+                  paidAmount: paid,
+                  onCancelled: () => _loadFeed(),
+                );
+              }
             },
           ),
         ];

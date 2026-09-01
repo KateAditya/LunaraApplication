@@ -1,8 +1,8 @@
-// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../core/theme.dart';
+import 'strangers_meet_host_cancellation_dialog.dart';
 
 class StrangersMeetCancellationDialog extends StatefulWidget {
   final String meetId;
@@ -106,10 +106,24 @@ class _StrangersMeetCancellationDialogState
       );
       widget.onCancelled?.call();
     } else {
+      final msg = result['message']?.toString() ?? '';
+      if (msg.toLowerCase().contains('not a participant')) {
+        Navigator.pop(context, false);
+        StrangersMeetHostCancellationDialog.show(
+          context,
+          meetId: widget.meetId,
+          subject: widget.subject,
+          venueName: widget.venueName,
+          joinedCount: 0,
+          collectedAmount: 0.0,
+          onCancelled: widget.onCancelled,
+        );
+        return;
+      }
       setState(() {
         _isSubmitting = false;
         _errorMessage =
-            result['message'] ?? 'Failed to submit cancellation request.';
+            msg.isNotEmpty ? msg : 'Failed to submit cancellation request.';
       });
     }
   }
@@ -154,7 +168,7 @@ class _StrangersMeetCancellationDialogState
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withOpacity(0.15),
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -241,7 +255,7 @@ class _StrangersMeetCancellationDialogState
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF59E0B).withOpacity(0.2),
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -348,9 +362,9 @@ class _StrangersMeetCancellationDialogState
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.12),
+                    color: Colors.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [

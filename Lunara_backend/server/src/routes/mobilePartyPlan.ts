@@ -29,6 +29,7 @@ import {
     withdrawPartyPlanRequest,
     revokePartyPlanAcceptance,
     getPlanSummary,
+    makePartyPlanPublic,
 } from '../controllers/partyPlanController';
 
 const router = Router();
@@ -209,6 +210,20 @@ router.post(
         validate,
     ],
     repostPartyPlan
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/make-public
+// Make a private or both Party Plan public in Live Feed
+// ─────────────────────────────────────────────────────────────────────────────
+router.post(
+    '/:id/make-public',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    makePartyPlanPublic
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -564,6 +564,13 @@ class _HostPartyPlanManagerScreenState
   }
 
   void _showHostChoiceDialog(String planId, String selectedReason, String? otherText) {
+    Map<String, dynamic>? plan;
+    try {
+      plan = _myPlans.firstWhere((p) => p['id']?.toString() == planId || p['planId']?.toString() == planId);
+    } catch (_) {}
+    final vis = plan?['visibility']?.toString().toLowerCase() ?? 'public';
+    final isPrivateOrBoth = vis == 'private' || vis == 'both';
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -625,6 +632,41 @@ class _HostPartyPlanManagerScreenState
                 ],
               ),
             ),
+            if (isPrivateOrBoth) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.tealAccent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.3)),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.public_rounded, color: Colors.tealAccent, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Option B: Repost Publicly',
+                          style: TextStyle(
+                            color: Colors.tealAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '• Makes your plan public in the Live Feed.\n• Anyone nearby can discover and join.\n• Your ₹99 deposit remains active.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -633,16 +675,16 @@ class _HostPartyPlanManagerScreenState
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.event_repeat_rounded, color: LunaraTheme.electricViolet, size: 18),
-                      SizedBox(width: 8),
+                      const Icon(Icons.event_repeat_rounded, color: LunaraTheme.electricViolet, size: 18),
+                      const SizedBox(width: 8),
                       Text(
-                        'Option B: Repost Plan',
-                        style: TextStyle(
+                        isPrivateOrBoth ? 'Option C: Reschedule' : 'Option B: Repost Plan',
+                        style: const TextStyle(
                           color: LunaraTheme.electricViolet,
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -650,8 +692,8 @@ class _HostPartyPlanManagerScreenState
                       ),
                     ],
                   ),
-                  SizedBox(height: 4),
-                  Text(
+                  const SizedBox(height: 4),
+                  const Text(
                     '• Reschedule for a new date & time.\n• Remains active & live in feed (no refund).\n• Prior requests cleared for new schedule.',
                     style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
                   ),
@@ -679,6 +721,21 @@ class _HostPartyPlanManagerScreenState
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
             ),
           ),
+          if (isPrivateOrBoth)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _handleHostMakePublic(planId);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text(
+                'REPOST PUBLICLY',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -688,14 +745,41 @@ class _HostPartyPlanManagerScreenState
               backgroundColor: LunaraTheme.electricViolet,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text(
-              'REPOST PLAN',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+            child: Text(
+              isPrivateOrBoth ? 'RESCHEDULE' : 'REPOST PLAN',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _handleHostMakePublic(String planId) async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      final res = await ApiService.makePartyPlanPublic(planId);
+      if (!mounted) return;
+      if (res?['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Plan is now Public in the Live Feed! Anyone can now discover and join.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to make plan public.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   void _handleHostCancelAndRefund(String planId, String reason, String? otherText) async {

@@ -4422,21 +4422,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           );
 
                                           if (!mounted) return;
-                                          if (paymentSuccess == true) {
-                                            // Direct user to the Live Feed so they can see their post immediately
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => const LiveFeedScreen(
-                                                  initialTabIndex: 1,
-                                                ),
+                                          // Direct host immediately to the Live Feed so they can view their newly created Party Plan Smart Card
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => const LiveFeedScreen(
+                                                initialTabIndex: 1,
                                               ),
-                                            );
-                                          } else {
+                                            ),
+                                          );
+                                          if (paymentSuccess != true) {
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               const SnackBar(
                                                 content: Text(
-                                                  '⚠️ Plan created as inactive. Complete your ₹99 deposit anytime from Manage Plans to activate it.',
+                                                  'Plan created! Complete your ₹99 deposit anytime from your Live Feed card or Manage Plans to activate it.',
                                                 ),
                                                 backgroundColor: Colors.orange,
                                                 duration: Duration(seconds: 4),

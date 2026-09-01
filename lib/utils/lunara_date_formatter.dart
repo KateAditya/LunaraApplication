@@ -50,7 +50,17 @@ class LunaraDateFormatter {
 
     DateTime? baseDt;
     if (dateVal is DateTime) {
-      baseDt = dateVal.toLocal();
+      if (dateVal.isUtc) {
+        final local = dateVal.toLocal();
+        // If device has a zero timezone offset (e.g. UTC runtime/web environment), adjust by +5:30 to match IST standard.
+        if (local.timeZoneOffset == Duration.zero) {
+          baseDt = dateVal.add(const Duration(hours: 5, minutes: 30));
+        } else {
+          baseDt = local;
+        }
+      } else {
+        baseDt = dateVal;
+      }
     } else {
       final str = dateVal.toString().trim();
       if (str.isEmpty) return null;
@@ -58,7 +68,16 @@ class LunaraDateFormatter {
       // Handle ISO strings
       final parsed = DateTime.tryParse(str);
       if (parsed != null) {
-        baseDt = parsed.toLocal();
+        if (parsed.isUtc || str.endsWith('Z') || str.contains('+00:00')) {
+          final local = parsed.toLocal();
+          if (local.timeZoneOffset == Duration.zero) {
+            baseDt = parsed.add(const Duration(hours: 5, minutes: 30));
+          } else {
+            baseDt = local;
+          }
+        } else {
+          baseDt = parsed.toLocal();
+        }
       } else {
         // Fallback: match YYYY-MM-DD
         final ymdMatch = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})').firstMatch(str);

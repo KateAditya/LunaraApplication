@@ -268,30 +268,45 @@ class _StrangersMeetPaymentScreenState
         );
         if (res != null && res['success'] == true) {
           final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
-          final confirmRes = widget.isJoinPayment
-              ? await ApiService.payStrangersMeetJoin(
-                  widget.request.id,
-                  'order_mock_wallet',
-                  'wallet_$transactionId',
-                  'mock_signature',
-                )
-              : await ApiService.payStrangersMeetRequest(
-                  widget.request.id,
-                  'order_mock_wallet',
-                  'wallet_$transactionId',
-                  'mock_signature',
-                );
+          try {
+            final confirmRes = widget.isJoinPayment
+                ? await ApiService.payStrangersMeetJoin(
+                    widget.request.id,
+                    'order_mock_wallet',
+                    'wallet_$transactionId',
+                    'mock_signature',
+                  )
+                : await ApiService.payStrangersMeetRequest(
+                    widget.request.id,
+                    'order_mock_wallet',
+                    'wallet_$transactionId',
+                    'mock_signature',
+                  );
 
-          if (confirmRes != null && confirmRes['success'] == true) {
-            walletConfirmResult = confirmRes;
-            RealtimeSyncManager.instance.triggerLocalUpdate('strangers_meet_updated');
-            widget.onPaymentSuccess();
-            return true;
-          } else {
+            if (confirmRes != null) {
+              walletConfirmResult = confirmRes;
+              RealtimeSyncManager.instance.triggerLocalUpdate('strangers_meet_updated');
+              widget.onPaymentSuccess();
+              return true;
+            } else {
+              if (mounted) {
+                _showNotificationToast(
+                  title: 'Wallet Confirmation Failed',
+                  message: 'Wallet confirmation could not be verified. Please contact support.',
+                  icon: Icons.error_outline_rounded,
+                  iconColor: const Color(0xFFF87171),
+                  iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
+                  borderColor: const Color(0xFFF87171).withValues(alpha: 0.3),
+                );
+              }
+              return false;
+            }
+          } catch (e) {
             if (mounted) {
+              final errStr = e.toString().replaceAll('Exception: ', '');
               _showNotificationToast(
                 title: 'Wallet Confirmation Failed',
-                message: confirmRes?['message'] ?? 'Wallet confirmation failed',
+                message: errStr,
                 icon: Icons.error_outline_rounded,
                 iconColor: const Color(0xFFF87171),
                 iconBgColor: const Color(0xFFF87171).withValues(alpha: 0.18),
@@ -338,7 +353,9 @@ class _StrangersMeetPaymentScreenState
       },
     );
 
-    if (sheetSuccess == true && walletConfirmResult != null && mounted) {
+    if ((sheetSuccess == true || walletConfirmResult != null) &&
+        walletConfirmResult != null &&
+        mounted) {
       if (widget.isJoinPayment) {
         _showNotificationToast(
           title: 'Payment Confirmed',

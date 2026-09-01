@@ -422,6 +422,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   Future<void> _initiateBoostPurchase() async {
+    final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
+    if (isElite) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You have unlimited boosts with your Elite VIP Plan! Just tap "ACTIVATE BOOST NOW". 👑'),
+          backgroundColor: Color(0xFF7C3AED),
+        ),
+      );
+      return;
+    }
+
     final boost = _boostOptions[_selectedBoostOption];
     final int count = boost['count'] ?? 1;
     final double price = (boost['price'] as num).toDouble();
@@ -1295,117 +1306,184 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           ),
           const SizedBox(height: 32),
 
-          Text(
-            'SELECT BOOST PACKAGE',
-            style: TextStyle(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.6),
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Boost Selection Grid
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.4,
-            ),
-            itemCount: _boostOptions.length,
-            itemBuilder: (context, index) {
-              final option = _boostOptions[index];
-              final isSelected = _selectedBoostOption == index;
-              final gridItemBg = isSelected
-                  ? Colors.purple.withValues(alpha: 0.15)
-                  : (isDark
-                        ? const Color(0xFF16161E)
-                        : const Color(0xFFF2F2F7));
-              final gridItemBorder = isSelected
-                  ? Colors.purple
-                  : (isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.black.withValues(alpha: 0.05));
-              final labelColor = isDark ? Colors.white : Colors.black87;
-              final priceColor = isSelected
-                  ? Colors.purpleAccent
-                  : (isDark ? Colors.white70 : Colors.black54);
-
-              return GestureDetector(
-                onTap: () => setState(() => _selectedBoostOption = index),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: gridItemBg,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: gridItemBorder, width: 2),
+          if (isElite) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFFFFB703).withValues(alpha: 0.15),
+                    const Color(0xFFFB8500).withValues(alpha: 0.08),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFFFFB703).withValues(alpha: 0.4),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFB703).withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_rounded,
+                      color: Color(0xFFFFB703),
+                      size: 28,
+                    ),
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
+                  const SizedBox(width: 16),
+                  Expanded(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          option['label'],
+                        const Text(
+                          'UNLIMITED BOOSTS ACTIVE',
                           style: TextStyle(
-                            color: labelColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                            color: Color(0xFFFFB703),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
-                          '₹${option['price']}',
+                          'You have unlimited profile boosts included with your Elite VIP Plan. Tap "ACTIVATE BOOST NOW" above anytime.',
                           style: TextStyle(
-                            color: priceColor,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
+                            color: isDark ? Colors.white70 : Colors.black87,
+                            fontSize: 12,
+                            height: 1.4,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 40),
-
-          // Boost Benefits Checklist
-          _buildBoostChecklist(),
-          const SizedBox(height: 40),
-
-          // Boost Action Button
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: _isProcessing ? null : _initiateBoostPurchase,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                ],
               ),
-              child: _isProcessing
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                      'PURCHASE FOR ₹${selectedBoost['price']}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: 1,
+            ),
+            const SizedBox(height: 32),
+            _buildBoostChecklist(),
+            const SizedBox(height: 20),
+          ] else ...[
+            Text(
+              'SELECT BOOST PACKAGE',
+              style: TextStyle(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Boost Selection Grid
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.4,
+              ),
+              itemCount: _boostOptions.length,
+              itemBuilder: (context, index) {
+                final option = _boostOptions[index];
+                final isSelected = _selectedBoostOption == index;
+                final gridItemBg = isSelected
+                    ? Colors.purple.withValues(alpha: 0.15)
+                    : (isDark
+                          ? const Color(0xFF16161E)
+                          : const Color(0xFFF2F2F7));
+                final gridItemBorder = isSelected
+                    ? Colors.purple
+                    : (isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.black.withValues(alpha: 0.05));
+                final labelColor = isDark ? Colors.white : Colors.black87;
+                final priceColor = isSelected
+                    ? Colors.purpleAccent
+                    : (isDark ? Colors.white70 : Colors.black54);
+
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedBoostOption = index),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: gridItemBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: gridItemBorder, width: 2),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            option['label'],
+                            style: TextStyle(
+                              color: labelColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '₹${option['price']}',
+                            style: TextStyle(
+                              color: priceColor,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
+                );
+              },
             ),
-          ),
+            const SizedBox(height: 40),
+
+            // Boost Benefits Checklist
+            _buildBoostChecklist(),
+            const SizedBox(height: 40),
+
+            // Boost Action Button
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : _initiateBoostPurchase,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: _isProcessing
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(
+                        'PURCHASE FOR ₹${selectedBoost['price']}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 1,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1970,6 +2048,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   Widget _buildAddonsTab() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
+
     return RefreshIndicator(
       color: LunaraTheme.electricViolet,
       onRefresh: () async {
@@ -1994,9 +2074,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0xFF7C3AED).withValues(alpha: 0.35),
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
                     blurRadius: 18,
-                    offset: Offset(0, 8),
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
@@ -2011,14 +2091,64 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                     spacing: 10,
                     runSpacing: 8,
                     children: [
-                      _addonBalanceBadge(Icons.star_rounded, '${_currentBalance('superlike')}', 'Superlikes', const Color(0xFF93C5FD)),
-                      _addonBalanceBadge(Icons.bolt_rounded, '${_currentBalance('boost')}', 'Boosts', Colors.amber),
-                      _addonBalanceBadge(Icons.swipe_rounded, '${_currentBalance('swipe')}', 'Swipes', const Color(0xFF67E8F9)),
+                      _addonBalanceBadge(
+                        Icons.star_rounded,
+                        isElite ? 'Unlimited' : '${_currentBalance('superlike')}',
+                        'Superlikes',
+                        const Color(0xFF93C5FD),
+                      ),
+                      _addonBalanceBadge(
+                        Icons.bolt_rounded,
+                        isElite ? 'Unlimited' : '${_currentBalance('boost')}',
+                        'Boosts',
+                        Colors.amber,
+                      ),
+                      _addonBalanceBadge(
+                        Icons.swipe_rounded,
+                        isElite ? 'Unlimited' : '${_currentBalance('swipe')}',
+                        'Swipes',
+                        const Color(0xFF67E8F9),
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
+            if (isElite) ...[
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB703).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFFFFB703).withValues(alpha: 0.35),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.workspace_premium_rounded,
+                      color: Color(0xFFFFB703),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your Elite VIP Plan includes unlimited boosts, superlikes, and swipes!',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 28),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2071,7 +2201,15 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     final color = _addonColor(addon.featureKey);
     final icon = _addonIcon(addon.featureKey);
     final unit = _addonUnit(addon.featureKey);
+    final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
+    final bool isUnlimitedForUser = isElite &&
+        (addon.featureKey == 'boost' ||
+            addon.featureKey == 'superlike' ||
+            addon.featureKey == 'swipe' ||
+            addon.featureKey == 'like' ||
+            addon.featureKey == 'party_plan');
     final balance = _currentBalance(addon.featureKey);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2113,9 +2251,24 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                 const SizedBox(height: 5),
                 Row(
                   children: [
-                    Icon(Icons.account_circle_rounded, size: 11, color: color.withValues(alpha: 0.7)),
-                    const SizedBox(width: 3),
-                    Text('Balance: $balance $unit', style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                    Icon(
+                      isUnlimitedForUser
+                          ? Icons.workspace_premium_rounded
+                          : Icons.account_circle_rounded,
+                      size: 13,
+                      color: isUnlimitedForUser ? const Color(0xFFFFB703) : color.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isUnlimitedForUser
+                          ? 'Included in Elite VIP'
+                          : 'Balance: $balance $unit',
+                      style: TextStyle(
+                        color: isUnlimitedForUser ? const Color(0xFFFFB703) : color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -2125,17 +2278,55 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('₹', style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(
+                isUnlimitedForUser ? 'INCLUDED' : '₹${addon.price.toStringAsFixed(0)}',
+                style: TextStyle(
+                  color: isUnlimitedForUser ? const Color(0xFFFFB703) : color,
+                  fontSize: isUnlimitedForUser ? 11 : 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               const SizedBox(height: 6),
               SizedBox(
                 height: 34,
-                child: ElevatedButton(
-                  onPressed: (_isProcessing && _pendingAddonPackageId != addon.id) ? null : () => _purchaseAddon(addon),
-                  style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), padding: const EdgeInsets.symmetric(horizontal: 18), elevation: 0),
-                  child: (_isProcessing && _pendingAddonPackageId == addon.id)
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('BUY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                ),
+                child: isUnlimitedForUser
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB703).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFFB703).withValues(alpha: 0.5), width: 1),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_rounded, color: Color(0xFFFFB703), size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'UNLIMITED',
+                              style: TextStyle(
+                                color: Color(0xFFFFB703),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ElevatedButton(
+                        onPressed: (_isProcessing && _pendingAddonPackageId != addon.id) ? null : () => _purchaseAddon(addon),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: color,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          elevation: 0,
+                        ),
+                        child: (_isProcessing && _pendingAddonPackageId == addon.id)
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('BUY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      ),
               ),
             ],
           ),
@@ -2145,6 +2336,24 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   void _purchaseAddon(SubscriptionAddonPackageModel addon) {
+    final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
+    final bool isUnlimitedForUser = isElite &&
+        (addon.featureKey == 'boost' ||
+            addon.featureKey == 'superlike' ||
+            addon.featureKey == 'swipe' ||
+            addon.featureKey == 'like' ||
+            addon.featureKey == 'party_plan');
+
+    if (isUnlimitedForUser) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${addon.name} is already unlimited with your Elite VIP Plan! ✨'),
+          backgroundColor: const Color(0xFF7C3AED),
+        ),
+      );
+      return;
+    }
+
     SmartCheckoutSheet.show(
       context: context,
       title: addon.name,

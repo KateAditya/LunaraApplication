@@ -646,46 +646,7 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                 }
             });
 
-            // Send notification to host that the meet is now published and notify users in the same city
-            setImmediate(async () => {
-                try {
-                    const host = await User.findByPk(request.userId);
-                    const { sendPushNotification } = require('../services/fcmService');
 
-                    // 1. Notify the host
-                    if (host?.fcmToken) {
-                        await sendPushNotification(host.fcmToken, {
-                            title: '🚀 Stranger Meet Published!',
-                            body: `Your Stranger Meet "${request.subject}" is now live and public.`,
-                            data: {
-                                type: 'strangers_meet_published',
-                                requestId: request.id,
-                            }
-                        });
-                    }
-
-                    // 2. Notify other users in the same city (Disabled: only notify host when strangers meet is posted/published)
-                    /*
-                    if (venueCity) {
-                        const tokens = await getEligibleUsersForEventNotification(request.userId, venueCity);
-                        if (tokens.length > 0) {
-                            await sendMulticastPushNotification(tokens, {
-                                title: `🤝 New Stranger Meet: ${request.subject}`,
-                                body: `${hostName} has scheduled a Stranger Meet at ${venueName}. Tap to view and join!`,
-                                data: {
-                                    type: 'strangers_meet_published',
-                                    requestId: request.id,
-                                    venueId: request.venueId,
-                                    hostId: request.userId,
-                                }
-                            });
-                        }
-                    }
-                    */
-                } catch (notifErr: any) {
-                    logger.warn('Failed to send published notification: ' + notifErr.message);
-                }
-            });
 
             res.json({
                 success: true,
@@ -2077,9 +2038,51 @@ export const updateChargesPerHead = async (req: Request, res: Response): Promise
             chargesPerHead: parsedCharges,
         });
 
+        // Send notification to host that the meet is now officially published with charges and is live!
+        setImmediate(async () => {
+            try {
+                const User = (await import('../models/User')).default;
+                const host = await User.findByPk(request.userId);
+                const { sendPushNotification } = require('../services/fcmService');
+
+                if (host?.fcmToken) {
+                    await sendPushNotification(host.fcmToken, {
+                        title: '🚀 Stranger Meet Published!',
+                        body: `Your Stranger Meet "${request.subject}" is now live and public!`,
+                        data: {
+                            type: 'strangers_meet_published',
+                            requestId: request.id,
+                        }
+                    });
+                }
+
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: request.userId,
+                    eventType: 'strangers_meet_published',
+                    title: '🚀 Stranger Meet Published!',
+                    body: `Your Stranger Meet "${request.subject}" is now live and public!`,
+                    entityId: request.id,
+                });
+
+                const { io } = require('../server');
+                if (io) {
+                    io.emit('live_feed_update', {
+                        type: 'strangers_meet_published',
+                        entityId: request.id,
+                    });
+                    io.emit('strangers_meet_published', {
+                        id: request.id,
+                        chargesPerHead: parsedCharges,
+                    });
+                }
+            } catch (notifErr: any) {
+                logger.warn('Failed to send published notification: ' + notifErr.message);
+            }
+        });
+
         res.json({
             success: true,
-            message: 'Charges per head updated successfully',
+            message: 'Meetup published successfully with entry price',
             data: {
                 id: request.id,
                 chargesPerHead: request.chargesPerHead,

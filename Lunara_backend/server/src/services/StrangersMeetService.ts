@@ -183,8 +183,8 @@ export class StrangersMeetService {
         await this.emitNotification({
             recipientUserId: request.userId,
             eventType: 'strangers_meet_deposit_paid',
-            title: '🎉 Deposit Verified!',
-            body: 'Your Strangers Meetup is LIVE and open for joiners!',
+            title: '🎉 Deposit Confirmed!',
+            body: 'Platform deposit verified. Set your entry price to publish your meetup!',
             entityId: request.id
         });
 
@@ -722,6 +722,16 @@ export class StrangersMeetService {
                 venueName,
                 venueArea: reqAny.venue?.area || 'Pune',
                 eventDate: eventDateStr,
+                userId: request.userId,
+                hostId: request.userId,
+                isHost,
+                role: isHost ? 'host' : 'joiner',
+                user: reqAny.user ? {
+                    id: reqAny.user.id,
+                    firstName: reqAny.user.firstName,
+                    lastName: reqAny.user.lastName,
+                    profileImageUrl: reqAny.user.profileImageUrl
+                } : null,
                 host: reqAny.user ? {
                     id: reqAny.user.id,
                     name: `${reqAny.user.firstName} ${reqAny.user.lastName}`.trim(),

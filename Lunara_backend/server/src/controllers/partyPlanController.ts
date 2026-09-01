@@ -2788,6 +2788,42 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
         } catch (socketErr: any) {
             logger.warn('Pre-payment match relist socket failed:', socketErr.message);
         }
+        const isPrivateOrBoth = plan.visibility === PartyPlanVisibility.PRIVATE || plan.visibility === PartyPlanVisibility.BOTH;
+        if (actor === 'requester' && isPrivateOrBoth) {
+            setImmediate(async () => {
+                try {
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: request.requesterId,
+                        eventType: 'party_plan_repost_prompt',
+                        category: 'requests',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: 'Guest Cancelled Invitation ⚠️',
+                        body: 'Your invited guest cancelled/withdrew. Would you like to make this Party Plan Public for everyone or Cancel with a full deposit refund?',
+                        metadata: {
+                            planId: plan.id,
+                            requestId: request.id,
+                            canMakePublic: true,
+                            canCancelRefund: true,
+                            actionNeeded: 'repost_or_cancel',
+                        },
+                        idempotencyKey: `guest_cancelled_prompt_${plan.id}_${request.id}`,
+                    });
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${plan.userId}`).emit('party_plan_guest_cancelled_prompt', {
+                            planId: plan.id,
+                            requestId: request.id,
+                            canMakePublic: true,
+                        });
+                    }
+                } catch (e: any) {
+                    logger.warn('Failed to send host repost prompt:', e.message);
+                }
+            });
+        }
+
         res.json({ success: true, message: actor === 'host' ? 'Acceptance revoked and payment window closed' : 'Request withdrawn and payment window closed', data: request });
     } catch (err: any) {
         await transaction.rollback();
@@ -2798,6 +2834,114 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
 
 export const withdrawPartyPlanRequest = (req: Request, res: Response) => endPrePaymentMatch(req, res, 'requester');
 export const revokePartyPlanAcceptance = (req: Request, res: Response) => endPrePaymentMatch(req, res, 'host');
+
+/**
+ * POST /api/mobile/party-plans/:id/make-public
+ * Converts a private or both Party Plan to PUBLIC visibility so anyone in the Live Feed can discover and join it.
+ */
+export const makePartyPlanPublic = async (req: Request, res: Response): Promise<void> => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const callerUserId = (req.user?.id || req.body?.userId || '').toString();
+
+        if (!id) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'Plan ID is required' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+            include: [
+                { model: Venue, as: 'venue' },
+                { model: User, as: 'creator' }
+            ]
+        });
+
+        if (!plan) {
+            await transaction.rollback();
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        if (callerUserId && plan.userId !== callerUserId) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'Only the host can make this Party Plan public' });
+            return;
+        }
+
+        if (plan.status === PartyPlanStatus.CANCELLED || (plan.lifecycleStatus as string) === 'cancelled') {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'Cannot make a cancelled Party Plan public' });
+            return;
+        }
+
+        const pendingCount = await PartyPlanRequest.count({
+            where: {
+                planId: plan.id,
+                status: {
+                    [Op.in]: [
+                        PartyPlanRequestStatus.PENDING,
+                        PartyPlanRequestStatus.PAYMENT_PENDING,
+                        PartyPlanRequestStatus.ACCEPTED
+                    ]
+                }
+            },
+            transaction
+        });
+
+        await plan.update({
+            visibility: PartyPlanVisibility.PUBLIC,
+            isLive: true,
+            lifecycleStatus: pendingCount > 0 ? PartyPlanLifecycleStatus.REQUEST_RECEIVED : PartyPlanLifecycleStatus.POSTED,
+        }, { transaction });
+
+        await transaction.commit();
+
+        setImmediate(async () => {
+            try {
+                const venueName = (plan as any).venue?.name || 'Venue';
+                await NotificationService.dispatch({
+                    recipientUserId: plan.userId,
+                    actorUserId: plan.userId,
+                    eventType: 'party_plan_made_public',
+                    category: 'events',
+                    entityType: 'party_plan',
+                    entityId: plan.id,
+                    title: '🎉 Party Plan is now Public!',
+                    body: `Your Party Plan at ${venueName} is now live and publicly visible in the Live Feed for everyone to discover!`,
+                    metadata: { planId: plan.id, visibility: 'public', isLive: true },
+                    idempotencyKey: `plan_made_public_${plan.id}`,
+                });
+
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, visibility: 'public', isLive: true });
+                    io.emit('party_plan_created', plan);
+                    io.emit('party_plan_relisted', { planId: plan.id });
+                    io.emit('live_feed_update', {
+                        type: 'party_plan_created',
+                        partyPlanId: plan.id,
+                    });
+                }
+            } catch (postErr: any) {
+                logger.warn('[makePartyPlanPublic] Post notification warning:', postErr.message);
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Party Plan is now public and visible in the Live Feed!',
+            data: plan
+        });
+    } catch (err: any) {
+        await transaction.rollback();
+        logger.error('[makePartyPlanPublic] Error:', err);
+        res.status(500).json({ success: false, message: 'Failed to make Party Plan public', error: err.message });
+    }
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/mobile/party-plans/requests/:reqId/reject
@@ -2945,6 +3089,37 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                         },
                         idempotencyKey: `invite_declined_${request.id}`,
                     });
+
+                    // If plan was private or both, notify host to repost publicly or cancel
+                    const isPrivateOrBoth = plan.visibility === PartyPlanVisibility.PRIVATE || plan.visibility === PartyPlanVisibility.BOTH;
+                    if (isPrivateOrBoth) {
+                        await NotificationService.dispatch({
+                            recipientUserId: plan.userId,
+                            actorUserId: request.requesterId,
+                            eventType: 'party_plan_repost_prompt',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: 'Invite Declined ⚠️',
+                            body: `${inviteeName} declined your private Party Plan invite. Would you like to make this Party Plan Public for everyone or Cancel and Refund?`,
+                            metadata: {
+                                planId: plan.id,
+                                requestId: request.id,
+                                canMakePublic: true,
+                                canCancelRefund: true,
+                                actionNeeded: 'repost_or_cancel',
+                            },
+                            idempotencyKey: `guest_declined_prompt_${plan.id}_${request.id}`,
+                        });
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${plan.userId}`).emit('party_plan_guest_cancelled_prompt', {
+                                planId: plan.id,
+                                requestId: request.id,
+                                canMakePublic: true,
+                            });
+                        }
+                    }
                 }
 
                 const { io } = require('../server');

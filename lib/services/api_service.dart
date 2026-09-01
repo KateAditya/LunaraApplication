@@ -1507,6 +1507,23 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>?> makePartyPlanPublic(String planId) async {
+    final userId = currentUserId;
+    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/$planId/make-public',
+        body: {'userId': userId},
+      );
+      notifyFeedNeedsRefresh();
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
+    } catch (e) {
+      debugPrint('makePartyPlanPublic error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   static Future<Map<String, dynamic>?> fetchWalletBalance() async {
     final userId = currentUserId;
     if (userId == null) return null;
