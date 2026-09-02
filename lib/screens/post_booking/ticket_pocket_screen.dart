@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../discovery/digital_ticket_screen.dart';
+import '../profile/lunara_wallet_screen.dart';
 import '../social/large_party_ticket_screen.dart';
 import '../social/party_plan_ticket_screen.dart';
 import '../social/strangers_meet_ticket_screen.dart';
@@ -49,15 +50,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   List<Map<String, dynamic>> _allBookings = [];
   List<Map<String, dynamic>> _activeBookings = [];
   List<Map<String, dynamic>> _pastBookings = [];
+  List<Map<String, dynamic>> _cancelledBookings = [];
   final Map<String, int> _activeCategoryCounts = {};
   final Map<String, int> _pastCategoryCounts = {};
+  final Map<String, int> _cancelledCategoryCounts = {};
   bool _isLoading = true;
   TicketFilterCategory _selectedCategory = TicketFilterCategory.all;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
@@ -123,12 +126,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     if (mounted) {
       final active = <Map<String, dynamic>>[];
       final past = <Map<String, dynamic>>[];
+      final cancelled = <Map<String, dynamic>>[];
       final activeCounts = <String, int>{};
       final pastCounts = <String, int>{};
+      final cancelledCounts = <String, int>{};
 
       for (final t in tickets) {
         final cat = _getTicketCategory(t);
-        if (_isActiveBooking(t)) {
+        if (_isCancelledBooking(t)) {
+          cancelled.add(t);
+          cancelledCounts[cat] = (cancelledCounts[cat] ?? 0) + 1;
+        } else if (_isActiveBooking(t)) {
           active.add(t);
           activeCounts[cat] = (activeCounts[cat] ?? 0) + 1;
         } else {
@@ -141,10 +149,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         _allBookings = tickets;
         _activeBookings = active;
         _pastBookings = past;
+        _cancelledBookings = cancelled;
         _activeCategoryCounts.clear();
         _activeCategoryCounts.addAll(activeCounts);
         _pastCategoryCounts.clear();
         _pastCategoryCounts.addAll(pastCounts);
+        _cancelledCategoryCounts.clear();
+        _cancelledCategoryCounts.addAll(cancelledCounts);
         _isLoading = false;
       });
     }
@@ -295,15 +306,27 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     return defaultExp;
   }
 
+  bool _isCancelledBooking(Map<String, dynamic> booking) {
+    final status = (booking['status'] ?? booking['bookingStatus'] ?? booking['ticketStatus'] ?? '').toString().toLowerCase().trim();
+    final paymentStatus = (booking['paymentStatus'] ?? '').toString().toLowerCase().trim();
+    final isCancelledFlag = booking['isCancelled'] == true;
+    final cancelStatus = (booking['cancellationStatus'] ?? booking['cancellation_status'] ?? '').toString().toLowerCase().trim();
+
+    return isCancelledFlag ||
+        status == 'cancelled' ||
+        status == 'rejected' ||
+        status == 'void' ||
+        status == 'no_show' ||
+        cancelStatus == 'approved' ||
+        cancelStatus == 'refunded' ||
+        cancelStatus == 'cancelled' ||
+        paymentStatus == 'refunded';
+  }
+
   bool _isActiveBooking(Map<String, dynamic> booking) {
+    if (_isCancelledBooking(booking)) return false;
     try {
-      final status = booking['status']?.toString().toLowerCase() ?? '';
-      if (status == 'cancelled' ||
-          status == 'no_show' ||
-          status == 'rejected' ||
-          status == 'void') {
-        return false;
-      }
+      final status = booking['status']?.toString().toLowerCase().trim() ?? '';
       if (status == 'completed' || status == 'used' || status == 'expired') {
         return false;
       }
@@ -347,12 +370,16 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   int _getCategoryCount(
     TicketFilterCategory category, {
-    required bool isActive,
+    required int tabIndex,
   }) {
     if (category == TicketFilterCategory.all) {
-      return isActive ? _activeBookings.length : _pastBookings.length;
+      if (tabIndex == 0) return _activeBookings.length;
+      if (tabIndex == 1) return _pastBookings.length;
+      return _cancelledBookings.length;
     }
-    final counts = isActive ? _activeCategoryCounts : _pastCategoryCounts;
+    final counts = tabIndex == 0
+        ? _activeCategoryCounts
+        : (tabIndex == 1 ? _pastCategoryCounts : _cancelledCategoryCounts);
     return counts[category.key] ?? 0;
   }
 
@@ -458,12 +485,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     return clean.toUpperCase();
   }
 
-  String _getBookingStatus(Map<String, dynamic> booking, bool isActive) {
-    final status = booking['status']?.toString().toLowerCase();
-    if (status == 'cancelled') return 'CANCELLED';
+  String _getBookingStatus(Map<String, dynamic> booking, int tabIndex) {
+    if (tabIndex == 2 || _isCancelledBooking(booking)) return 'CANCELLED';
+    final status = (booking['status'] ?? booking['bookingStatus'] ?? booking['ticketStatus'] ?? '').toString().toLowerCase().trim();
+    if (status == 'cancelled' || status == 'void' || status == 'rejected') return 'CANCELLED';
     if (status == 'no_show') return 'NO SHOW';
 
-    if (isActive) {
+    if (tabIndex == 0) {
       if (status == 'pending') return 'PENDING';
       return 'CONFIRMED';
     } else {
@@ -474,8 +502,109 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   Widget _buildTicketExpirationCard(
     Map<String, dynamic> booking, {
-    required bool isActive,
+    required int tabIndex,
   }) {
+    final bool isCancelled = tabIndex == 2 || _isCancelledBooking(booking);
+    if (isCancelled) {
+      final String totalPriceStr = booking['totalAmount']?.toString() ??
+          booking['paymentAmount']?.toString() ??
+          booking['chargesPerHead']?.toString() ??
+          booking['charges']?.toString() ??
+          '';
+      final double amountPaid = double.tryParse(totalPriceStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+      final String refundStr = amountPaid > 0 ? '₹${(amountPaid * 0.8).toStringAsFixed(0)} (80%)' : '';
+      final String subtext = amountPaid > 0
+          ? '$refundStr refunded to your Lunara Wallet'
+          : 'This booking / ticket has been cancelled.';
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEF4444).withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cancel_outlined,
+                size: 16,
+                color: Color(0xFFEF4444),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Flexible(
+                        child: Text(
+                          'BOOKING CANCELLED',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.8,
+                            color: Color(0xFFEF4444),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          amountPaid > 0 ? 'REFUNDED' : 'CANCELLED',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.4,
+                            color: Color(0xFFEF4444),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtext,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool isActive = tabIndex == 0;
     final eventStart = _extractEventStartDateTime(booking);
     final expirationTime = _extractExpirationDateTime(booking, eventStart);
     final now = DateTime.now();
@@ -611,25 +740,24 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bool isViewingActive = _tabController.index == 0;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(context),
-            _buildStatsBanner(_activeBookings.length, _pastBookings.length),
-            _buildTabBar(_activeBookings.length, _pastBookings.length),
-            _buildCategoryFilterBar(isActive: isViewingActive),
+            _buildStatsBanner(_activeBookings.length, _pastBookings.length, _cancelledBookings.length),
+            _buildTabBar(_activeBookings.length, _pastBookings.length, _cancelledBookings.length),
+            _buildCategoryFilterBar(tabIndex: _tabController.index),
             Expanded(
               child: (_isLoading && _allBookings.isEmpty)
                   ? _buildSkeletonList()
                   : TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildTicketListView(_activeBookings, isActive: true),
-                        _buildTicketListView(_pastBookings, isActive: false),
+                        _buildTicketListView(_activeBookings, tabIndex: 0),
+                        _buildTicketListView(_pastBookings, tabIndex: 1),
+                        _buildTicketListView(_cancelledBookings, tabIndex: 2),
                       ],
                     ),
             ),
@@ -685,11 +813,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildStatsBanner(int activeCount, int pastCount) {
+  Widget _buildStatsBanner(int activeCount, int pastCount, int cancelledCount) {
     final totalCount = _allBookings.length;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -708,14 +836,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(7),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: _lunaraPurple.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.receipt_long_rounded,
-              size: 16,
+              size: 15,
               color: _lunaraPurple,
             ),
           ),
@@ -728,22 +856,21 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 const Text(
                   'TOTAL BOOKINGS',
                   style: TextStyle(
-                    fontSize: 9.5,
+                    fontSize: 8.5,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
+                    letterSpacing: 0.8,
                     color: Colors.black54,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 1),
                 Text(
                   '$totalCount ${totalCount == 1 ? 'TICKET' : 'TICKETS'}',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF0F172A),
-                    letterSpacing: 0.3,
+                    letterSpacing: 0.2,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -752,13 +879,21 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             ),
           ),
           const SizedBox(width: 6),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _statPill('ACTIVE', activeCount, const Color(0xFF10B981)),
-              const SizedBox(width: 5),
-              _statPill('PAST', pastCount, Colors.grey[700]!),
-            ],
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _statPill('ACTIVE', activeCount, const Color(0xFF10B981)),
+                  const SizedBox(width: 3.5),
+                  _statPill('PAST', pastCount, Colors.grey[700]!),
+                  const SizedBox(width: 3.5),
+                  _statPill('CANCELLED', cancelledCount, const Color(0xFFEF4444)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -767,30 +902,30 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   Widget _statPill(String label, int count, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+      padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 2.5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 5,
-            height: 5,
+            width: 4.5,
+            height: 4.5,
             decoration: BoxDecoration(
               color: color,
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3.5),
           Text(
             '$count $label',
             style: TextStyle(
-              fontSize: 9.5,
+              fontSize: 8.5,
               fontWeight: FontWeight.w900,
-              letterSpacing: 0.3,
+              letterSpacing: 0.2,
               color: color,
             ),
           ),
@@ -799,7 +934,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildTabBar(int activeCount, int pastCount) {
+  Widget _buildTabBar(int activeCount, int pastCount, int cancelledCount) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
@@ -816,6 +951,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       ),
       child: TabBar(
         controller: _tabController,
+        padding: const EdgeInsets.all(3),
+        labelPadding: EdgeInsets.zero,
         indicator: BoxDecoration(
           gradient: _lunaraPurpleGradient,
           borderRadius: BorderRadius.circular(13),
@@ -828,66 +965,64 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           ],
         ),
         indicatorSize: TabBarIndicatorSize.tab,
-        indicatorPadding: const EdgeInsets.all(3),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.black54,
         labelStyle: const TextStyle(
-          fontSize: 11.5,
+          fontSize: 10,
           fontWeight: FontWeight.w900,
-          letterSpacing: 1.5,
+          letterSpacing: 0.5,
         ),
         dividerHeight: 0,
         tabs: [
           Tab(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('ACTIVE'),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _tabController.index == 0
-                        ? Colors.white.withValues(alpha: 0.25)
-                        : _lunaraPurple.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$activeCount',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      color: _tabController.index == 0 ? Colors.white : _lunaraPurple,
-                    ),
-                  ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('ACTIVE'),
+                    const SizedBox(width: 4),
+                    _tabBadge(activeCount, isSelected: _tabController.index == 0, color: _lunaraPurple),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           Tab(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('PAST'),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _tabController.index == 1
-                        ? Colors.white.withValues(alpha: 0.25)
-                        : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$pastCount',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      color: _tabController.index == 1 ? Colors.white : Colors.black87,
-                    ),
-                  ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('PAST'),
+                    const SizedBox(width: 4),
+                    _tabBadge(pastCount, isSelected: _tabController.index == 1, color: Colors.grey[700]!),
+                  ],
                 ),
-              ],
+              ),
+            ),
+          ),
+          Tab(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('CANCELLED'),
+                    const SizedBox(width: 4),
+                    _tabBadge(cancelledCount, isSelected: _tabController.index == 2, color: const Color(0xFFEF4444)),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -895,7 +1030,27 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildCategoryFilterBar({required bool isActive}) {
+  Widget _tabBadge(int count, {required bool isSelected, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? Colors.white.withValues(alpha: 0.25)
+            : color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$count',
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          color: isSelected ? Colors.white : color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryFilterBar({required int tabIndex}) {
     return Container(
       height: 42,
       margin: const EdgeInsets.only(top: 4, bottom: 8),
@@ -907,7 +1062,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         itemBuilder: (context, index) {
           final cat = TicketFilterCategory.values[index];
           final isSelected = _selectedCategory == cat;
-          final count = _getCategoryCount(cat, isActive: isActive);
+          final count = _getCategoryCount(cat, tabIndex: tabIndex);
           final catColor = cat == TicketFilterCategory.all
               ? _lunaraPurple
               : _getCategoryColor(cat.key);
@@ -1076,14 +1231,28 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     );
   }
 
-  Widget _buildTicketListView(List<Map<String, dynamic>> rawList, {required bool isActive}) {
+  Widget _buildTicketListView(List<Map<String, dynamic>> rawList, {required int tabIndex}) {
     final filteredTickets = _filterListByCategory(rawList, _selectedCategory);
 
     if (filteredTickets.isEmpty) {
+      final String emptyText;
+      if (tabIndex == 0) {
+        emptyText = _selectedCategory == TicketFilterCategory.all
+            ? 'NO ACTIVE TICKETS FOUND'
+            : 'NO ACTIVE ${_selectedCategory.label} TICKETS FOUND';
+      } else if (tabIndex == 1) {
+        emptyText = _selectedCategory == TicketFilterCategory.all
+            ? 'NO PAST TICKETS FOUND'
+            : 'NO PAST ${_selectedCategory.label} TICKETS FOUND';
+      } else {
+        emptyText = _selectedCategory == TicketFilterCategory.all
+            ? 'NO CANCELLED TICKETS FOUND'
+            : 'NO CANCELLED ${_selectedCategory.label} TICKETS FOUND';
+      }
+
       return _buildEmptyState(
-        _selectedCategory == TicketFilterCategory.all
-            ? (isActive ? 'NO ACTIVE TICKETS FOUND' : 'NO PAST TICKETS FOUND')
-            : 'NO ${isActive ? 'ACTIVE' : 'PAST'} ${_selectedCategory.label} TICKETS FOUND',
+        emptyText,
+        tabIndex: tabIndex,
       );
     }
 
@@ -1098,13 +1267,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         addRepaintBoundaries: true,
         itemBuilder: (context, index) {
           final booking = filteredTickets[index];
-          return _buildTicketCard(booking, isActive: isActive);
+          return _buildTicketCard(booking, tabIndex: tabIndex);
         },
       ),
     );
   }
 
-  Widget _buildEmptyState(String message) {
+  Widget _buildEmptyState(String message, {int tabIndex = 0}) {
+    final String subText = tabIndex == 2
+        ? 'You have no cancelled tickets. All your confirmed bookings are active or completed.'
+        : 'Book tables, host party plans, join group parties, or meet new people.';
+
     return Center(
       child: SingleChildScrollView(
         child: Padding(
@@ -1127,13 +1300,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                   ],
                 ),
                 child: Icon(
-                  _selectedCategory == TicketFilterCategory.all
-                      ? Icons.confirmation_number_outlined
-                      : _selectedCategory.icon,
+                  tabIndex == 2
+                      ? Icons.cancel_outlined
+                      : (_selectedCategory == TicketFilterCategory.all
+                          ? Icons.confirmation_number_outlined
+                          : _selectedCategory.icon),
                   size: 48,
-                  color: _selectedCategory == TicketFilterCategory.all
-                      ? Colors.grey[400]
-                      : _getCategoryColor(_selectedCategory.key),
+                  color: tabIndex == 2
+                      ? const Color(0xFFEF4444).withValues(alpha: 0.6)
+                      : (_selectedCategory == TicketFilterCategory.all
+                          ? Colors.grey[400]
+                          : _getCategoryColor(_selectedCategory.key)),
                 ),
               ),
               const SizedBox(height: 18),
@@ -1149,7 +1326,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                'Book tables, host party plans, join group parties, or meet new people.',
+                subText,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.grey[400],
@@ -1186,14 +1363,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
   Widget _buildTicketCard(
     Map<String, dynamic> booking, {
-    required bool isActive,
+    required int tabIndex,
   }) {
-    final status = _getBookingStatus(booking, isActive);
+    final bool isActive = tabIndex == 0;
+    final bool isCancelled = tabIndex == 2 || _isCancelledBooking(booking);
+    final status = _getBookingStatus(booking, tabIndex);
     final statusColor = switch (status) {
       'CONFIRMED' => _lunaraPurple,
       'PENDING' => Colors.amber.shade700,
       'USED' => Colors.black,
       'EXPIRED' => Colors.red.shade400,
+      'CANCELLED' => const Color(0xFFEF4444),
+      'NO SHOW' => Colors.grey.shade600,
       _ => Colors.black,
     };
 
@@ -1251,9 +1432,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final double amountPaid = double.tryParse(totalPriceStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
     final String displayAmount = amountPaid > 0 ? '₹${amountPaid.toStringAsFixed(0)}' : 'FREE';
 
-    final ticketCode = booking['ticketCode']?.toString() ??
-        booking['ticketId']?.toString() ??
-        (booking['id'] != null ? booking['id'].toString().substring(0, 8).toUpperCase() : '');
+    final ticketCode = booking['ticketCode'] ?? booking['ticketId'] ?? (booking['id']?.toString().substring(0, 8).toUpperCase() ?? '');
 
     final bool isEventTicket = category == 'event_booking' ||
         booking['isUpcomingNight'] == true ||
@@ -1299,6 +1478,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
       padding: const EdgeInsets.only(bottom: 18),
       child: GestureDetector(
         onTap: () {
+          if (isCancelled && amountPaid > 0) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen()));
+            return;
+          }
+
           // Party plan tickets have dedicated matched UI
           if (category == 'party_plan') {
             final rawPlan = booking['plan'] is Map
@@ -1427,7 +1611,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               bookingMap['paymentStatus'] = 'paid';
             }
             if (bookingMap['status'] == null || bookingMap['status'].toString().isEmpty) {
-              bookingMap['status'] = 'confirmed';
+              bookingMap['status'] = isCancelled ? 'cancelled' : 'confirmed';
             }
             if (bookingMap['ticketCode'] == null && ticketCode.isNotEmpty) {
               bookingMap['ticketCode'] = ticketCode;
@@ -1464,39 +1648,23 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             return;
           }
 
-          // Strangers meet tickets
+          // Strangers Meet Ticket Screen
           if (category == 'strangers_meet') {
             try {
               final rawMap = booking['rawRequest'] is Map
                   ? Map<String, dynamic>.from(booking['rawRequest'])
-                  : Map<String, dynamic>.from(booking);
-              if (booking['venue'] is Map && rawMap['venue'] == null) {
-                rawMap['venue'] = booking['venue'];
+                  : (booking['request'] is Map
+                      ? Map<String, dynamic>.from(booking['request'])
+                      : Map<String, dynamic>.from(booking));
+
+              if (venue != null && rawMap['venue'] == null) {
+                rawMap['venue'] = venue;
               }
-              if (booking['user'] is Map && rawMap['user'] == null) {
-                rawMap['user'] = booking['user'];
+              if (rawMap['ticketCode'] == null && ticketCode.isNotEmpty) {
+                rawMap['ticketCode'] = ticketCode;
               }
-              if (booking['host'] is Map && rawMap['host'] == null) {
-                rawMap['host'] = booking['host'];
-              }
-              if (booking['ticketCode'] != null && rawMap['ticketId'] == null) {
-                rawMap['ticketId'] = booking['ticketCode'];
-              }
-              if (rawMap['ticketCode'] == null && booking['ticketCode'] != null) {
-                rawMap['ticketCode'] = booking['ticketCode'];
-              }
-              final totalAmt = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'];
-              if (totalAmt != null && (rawMap['paymentAmount'] == null || rawMap['paymentAmount'] == 0)) {
-                rawMap['paymentAmount'] = totalAmt;
-              }
-              if (totalAmt != null && (rawMap['chargesPerHead'] == null || rawMap['chargesPerHead'] == 0)) {
-                rawMap['chargesPerHead'] = totalAmt;
-              }
-              if (booking['subject'] != null && rawMap['subject'] == null) {
-                rawMap['subject'] = booking['subject'];
-              }
-              if (booking['tagline'] != null && rawMap['tagline'] == null) {
-                rawMap['tagline'] = booking['tagline'];
+              if (rawMap['ticketId'] == null && ticketCode.isNotEmpty) {
+                rawMap['ticketId'] = ticketCode;
               }
               if (booking['startTime'] != null && rawMap['startTime'] == null) {
                 rawMap['startTime'] = booking['startTime'];
@@ -1512,7 +1680,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 rawMap['id'] = booking['bookingId'];
               }
               rawMap['paymentStatus'] = 'paid';
-              rawMap['status'] = 'confirmed';
+              rawMap['status'] = isCancelled ? 'cancelled' : 'confirmed';
 
               final req = StrangersMeetRequest.fromJson(rawMap);
               Navigator.push(
@@ -1594,14 +1762,15 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               ),
             ],
             border: Border.all(
-              color: categoryColor.withValues(alpha: 0.16),
+              color: isCancelled
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.25)
+                  : categoryColor.withValues(alpha: 0.16),
               width: 1.2,
             ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header Banner on Image ───────────────────────────
               SizedBox(
                 height: 145,
                 child: Stack(
@@ -1644,160 +1813,162 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                       padding: const EdgeInsets.all(16),
                       child: Stack(
                         children: [
-                      // Top Row: Category Tag + Status Badge
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.65),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: categoryColor.withValues(alpha: 0.5),
-                                    width: 1.2,
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.65),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: categoryColor.withValues(alpha: 0.5),
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(categoryIcon, size: 12, color: categoryColor),
+                                        const SizedBox(width: 5),
+                                        Flexible(
+                                          child: Text(
+                                            categoryName,
+                                            style: TextStyle(
+                                              color: categoryColor,
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.8,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(categoryIcon, size: 12, color: categoryColor),
-                                    const SizedBox(width: 5),
-                                    Flexible(
-                                      child: Text(
-                                        categoryName,
-                                        style: TextStyle(
-                                          color: categoryColor,
-                                          fontSize: 9.5,
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isCancelled ? const Color(0xFFEF4444) : Colors.white,
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: statusColor.withValues(alpha: 0.25),
+                                        blurRadius: 8,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    status,
+                                    style: TextStyle(
+                                      color: isCancelled ? Colors.white : statusColor,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayTitle,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.8,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        displaySubtitle,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(alpha: 0.9),
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.4,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: statusColor.withValues(alpha: 0.25),
-                                    blurRadius: 8,
+                                if (ticketCode.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      ticketCode,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              ),
-                              child: Text(
-                                status,
-                                style: TextStyle(
-                                  color: statusColor,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                      // Bottom Details on Image
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    displayTitle,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.8,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    displaySubtitle,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.9),
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.4,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
+                          ),
+                          if (isCancelled || status == 'CANCELLED')
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: _buildCancelledWatermark(),
+                            )
+                          else if (status == 'EXPIRED' || tabIndex == 1)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: _buildExpiredWatermark(),
                             ),
-                            if (ticketCode.isNotEmpty) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  ticketCode,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                        ],
                       ),
-                      if (status == 'EXPIRED' || !isActive)
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: _buildExpiredWatermark(),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-
-              // ── Card Body ─────────────────────────────────────────
+              ),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _buildTicketExpirationCard(booking, isActive: isActive),
+                    _buildTicketExpirationCard(booking, tabIndex: tabIndex),
                     Row(
                       children: [
                         Expanded(
@@ -1812,37 +1983,78 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8.5,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: isActive
-                                ? _lunaraPurpleGradient
-                                : null,
-                            color: isActive ? null : Colors.grey[200],
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: isActive
-                                ? [
-                                    BoxShadow(
-                                      color: _lunaraPurple.withValues(alpha: 0.35),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 3),
+                        if (isCancelled)
+                          GestureDetector(
+                            onTap: () {
+                              if (amountPaid > 0) {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen()));
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (amountPaid > 0) ...[
+                                    const Icon(Icons.account_balance_wallet_rounded, size: 13, color: Color(0xFFEF4444)),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Text(
+                                    amountPaid > 0 ? 'VIEW WALLET' : 'CANCELLED',
+                                    style: const TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1,
+                                      color: Color(0xFFEF4444),
                                     ),
-                                  ]
-                                : null,
-                          ),
-                          child: Text(
-                            'VIEW TICKET',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                              color: isActive ? Colors.white : Colors.black54,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8.5,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: isActive
+                                  ? _lunaraPurpleGradient
+                                  : null,
+                              color: isActive ? null : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: isActive
+                                  ? [
+                                      BoxShadow(
+                                        color: _lunaraPurple.withValues(alpha: 0.35),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Text(
+                              'VIEW TICKET',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                                color: isActive ? Colors.white : Colors.black54,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ],
@@ -1858,23 +2070,25 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   Widget _infoChip(IconData icon, String label, {int flex = 1}) {
     return Flexible(
       flex: flex,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.grey[400], size: 15),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.grey[400], size: 14),
+            const SizedBox(width: 3.5),
+            Text(
               label,
               style: const TextStyle(
                 color: Colors.black,
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w900,
               ),
-              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1904,6 +2118,41 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             'EXPIRED',
             style: TextStyle(
               color: Colors.red.shade600,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelledWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFEF4444),
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Text(
+            'CANCELLED',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
               fontSize: 16,
               fontWeight: FontWeight.w900,
               letterSpacing: 3.5,

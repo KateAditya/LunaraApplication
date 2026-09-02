@@ -273,20 +273,6 @@ export class VenueBookingService {
                         idempotencyKey: `venue_owner_booking_${booking.id}`,
                     }).catch(() => {});
                 }
-            } else if (razorpayOrder) {
-                await NotificationService.dispatch({
-                    recipientUserId: userId,
-                    eventType: 'booking_pending_payment',
-                    category: 'bookings',
-                    entityType: 'Booking',
-                    entityId: booking.id,
-                    title: '🎟 Booking Reserved',
-                    body: `Your booking at ${venue.name} for ${bookingDate} is reserved. Complete payment to secure your ticket!`,
-                    priority: 'HIGH',
-                    idempotencyKey: `booking_pending_${booking.id}`,
-                    actionType: 'pay_now',
-                    deepLink: `/checkout/${booking.id}`,
-                });
             }
 
             if (isLargeParty || isUpcomingNight) {

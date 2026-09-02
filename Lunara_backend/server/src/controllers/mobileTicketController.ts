@@ -565,7 +565,7 @@ export class MobileTicketController {
                 const totalAmt = Number(b.totalAmount || 0);
                 const isFreeBooking = totalAmt <= 0;
                 const bStatusStr = (b.status as string || '').toLowerCase();
-                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || (isFreeBooking && (bStatusStr === 'confirmed' || bStatusStr === 'completed'));
+                const isPaidBooking = isLargePaid || b.paymentStatus === 'paid' || b.paymentStatus === 'refunded' || bStatusStr === 'cancelled' || (isFreeBooking && (bStatusStr === 'confirmed' || bStatusStr === 'completed'));
                 if (!isPaidBooking) {
                     continue;
                 }

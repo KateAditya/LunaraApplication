@@ -307,28 +307,6 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 
         const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
-        if (booking.paymentStatus === PaymentStatus.PENDING) {
-            setImmediate(async () => {
-                try {
-                    await NotificationService.dispatchPendingPaymentNotification({
-                        recipientUserId: booking.userId,
-                        entityType: 'booking',
-                        entityId: booking.id,
-                        venueName: venueDetails?.name || 'Venue',
-                        amount: Number(booking.totalAmount) || Number(booking.depositAmount) || 0,
-                        metadata: {
-                            bookingId: booking.id,
-                            venueId: booking.venueId,
-                            goingMode: booking.goingMode,
-                            bookingDate: booking.bookingDate,
-                        }
-                    });
-                } catch (notifErr) {
-                    logger.warn('Failed to dispatch pending payment notification:', notifErr);
-                }
-            });
-        }
-
         const isFreeOrPaid = Number(booking.totalAmount || 0) <= 0 || booking.paymentStatus === PaymentStatus.PAID;
 
         res.status(201).json({
@@ -467,28 +445,6 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             await booking.save();
         } else {
             razorpayOrder = { id: 'dummy_order_' + booking.id, amount: amount * 100, currency: 'INR' };
-        }
-
-        if (booking.paymentStatus === PaymentStatus.PENDING) {
-            setImmediate(async () => {
-                try {
-                    await NotificationService.dispatchPendingPaymentNotification({
-                        recipientUserId: booking.userId,
-                        entityType: 'booking',
-                        entityId: booking.id,
-                        venueName: venueDetails?.name || ad.title || 'Party Event',
-                        amount,
-                        metadata: {
-                            bookingId: booking.id,
-                            partyEventId: ad.id,
-                            venueId: ad.venueId,
-                            isUpcomingNight: true,
-                        }
-                    });
-                } catch (notifErr) {
-                    logger.warn('Failed to dispatch pending payment notification for party booking:', notifErr);
-                }
-            });
         }
 
         res.status(201).json({

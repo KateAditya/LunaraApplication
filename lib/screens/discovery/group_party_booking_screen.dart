@@ -1919,7 +1919,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         String? createdGroupPartyId;
                         final rootContext = widget.rootContext;
 
-                        SmartCheckoutSheet.show(
+                        final bool? sheetSuccess = await SmartCheckoutSheet.show(
                           context: rootContext,
                           title: widget.venue.name,
                           subtitle: 'Group Party Booking ($parsed Friends)',
@@ -1983,35 +1983,6 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               );
 
                               if (verifySuccess) {
-                                TopNotificationBanner.show(
-                                  title: 'Group Party Confirmed! 🎉',
-                                  body: 'Your payment was verified successfully. Digital ticket generated!',
-                                  data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
-                                );
-                                if (rootContext.mounted) {
-                                  Navigator.push(
-                                    rootContext,
-                                    MaterialPageRoute(
-                                      builder: (_) => LargePartyTicketScreen(
-                                        booking: {
-                                          'id': createdGroupPartyId,
-                                          'bookingId': createdGroupPartyId,
-                                          'bookingDate': partyDateStr,
-                                          'partyDate': partyDateStr,
-                                          'startTime': formattedTime,
-                                          'status': 'confirmed',
-                                          'paymentStatus': 'paid',
-                                          'venue': widget.venue.toMap(),
-                                          'venueName': widget.venue.name,
-                                          'numberOfGuests': parsed,
-                                          'partySubject': 'Group Party',
-                                          'totalAmount': totalPrice,
-                                        },
-                                        venue: widget.venue.toMap(),
-                                      ),
-                                    ),
-                                  );
-                                }
                                 return true;
                               }
                             }
@@ -2530,6 +2501,38 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                             }
                           },
                         );
+
+                        if (sheetSuccess == true && createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
+                          TopNotificationBanner.show(
+                            title: 'Group Party Confirmed! 🎉',
+                            body: 'Your payment was verified successfully. Digital ticket generated!',
+                            data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
+                          );
+                          if (rootContext.mounted) {
+                            Navigator.pushReplacement(
+                              rootContext,
+                              MaterialPageRoute(
+                                builder: (_) => LargePartyTicketScreen(
+                                  booking: {
+                                    'id': createdGroupPartyId,
+                                    'bookingId': createdGroupPartyId,
+                                    'bookingDate': partyDateStr,
+                                    'partyDate': partyDateStr,
+                                    'startTime': formattedTime,
+                                    'status': 'confirmed',
+                                    'paymentStatus': 'paid',
+                                    'venue': widget.venue.toMap(),
+                                    'venueName': widget.venue.name,
+                                    'numberOfGuests': parsed,
+                                    'partySubject': 'Group Party',
+                                    'totalAmount': totalPrice,
+                                  },
+                                  venue: widget.venue.toMap(),
+                                ),
+                              ),
+                            );
+                          }
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: LunaraTheme.electricViolet,

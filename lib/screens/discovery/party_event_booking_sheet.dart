@@ -217,11 +217,11 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       return;
     }
 
-    // Paid Event Flow: Open Smart Checkout Sheet (Wallet / Razorpay / Hybrid)
     final parentContext = context;
     final eventTitle = widget.event['title'] ?? 'Party Event';
+    String? createdTicketCode;
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: parentContext,
       title: eventTitle,
       subtitle: '$_quantity x Ticket (${widget.event['venue'] ?? 'Event'})',
@@ -262,14 +262,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
             transactionId: transactionId,
           );
 
-          if (confirmRes != null && parentContext.mounted) {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              const SnackBar(
-                content: Text('Payment Successful via Smart Wallet! 🎫'),
-                backgroundColor: Color(0xFF10B981),
-              ),
-            );
-            _navigateToTicket(confirmRes['ticketCode'] ?? '', totalPrice);
+          if (confirmRes != null) {
+            createdTicketCode = confirmRes['ticketCode']?.toString() ?? '';
             return true;
           }
         }
@@ -369,6 +363,16 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         }
       },
     );
+
+    if (sheetSuccess == true && parentContext.mounted) {
+      ScaffoldMessenger.of(parentContext).showSnackBar(
+        const SnackBar(
+          content: Text('Payment Successful via Smart Wallet! 🎫'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+      _navigateToTicket(createdTicketCode ?? '', totalPrice);
+    }
   }
 
   @override

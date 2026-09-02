@@ -30,6 +30,7 @@ import { CancelledPartyPlans } from './pages/CancelledPartyPlans';
 import { CancellationAnalytics } from './pages/CancellationAnalytics';
 import { WalletManagement } from './pages/WalletManagement';
 import { EventBookingPage } from './pages/EventBooking/EventBookingPage';
+import { BookingPolicySettings } from './pages/BookingPolicySettings';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -108,6 +109,8 @@ function AppContent() {
             <Route path="wallet" element={<WalletManagement />} />
             <Route path="cancelled-plans" element={<CancelledPartyPlans />} />
             <Route path="cancellation-analytics" element={<CancellationAnalytics />} />
+            <Route path="booking-policies" element={<BookingPolicySettings />} />
+            <Route path="refund-settings" element={<Navigate to="/booking-policies" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

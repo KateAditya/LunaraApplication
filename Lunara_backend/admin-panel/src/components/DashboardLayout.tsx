@@ -31,6 +31,7 @@ import {
     BiRefresh,
     BiTimeFive,
     BiWallet,
+    BiUndo,
 } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 import { useThemeMode } from '../context/ThemeContext';
@@ -91,6 +92,7 @@ const navGroups: NavGroup[] = [
             { text: 'Subscription Manage', icon: <BiCrown />, path: '/subscriptions' },
             { text: 'Cancelled Plans', icon: <BiXCircle />, path: '/cancelled-plans' },
             { text: 'Cancellation Analytics', icon: <BiFlag />, path: '/cancellation-analytics' },
+            { text: 'Refund & Policy Settings', icon: <BiUndo />, path: '/booking-policies' },
         ],
     },
     {

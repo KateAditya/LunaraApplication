@@ -538,7 +538,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
     );
   }
 
-  void _handlePayment(BuildContext context) {
+  Future<void> _handlePayment(BuildContext context) async {
     int amountInPaise = 0;
     if (widget.totalPrice != null) {
       final cleanPrice = widget.totalPrice!.replaceAll(RegExp(r'[^\d]'), '');
@@ -647,7 +647,7 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
     final double itemPrice = amountInPaise / 100.0;
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: widget.venue['name']?.toString() ?? 'Lunara Booking',
       subtitle: widget.package,
@@ -655,13 +655,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
       onWalletPayment: () async {
         if (widget.onCustomWalletPayment != null) {
           final success = await widget.onCustomWalletPayment!();
-          if (success && mounted && widget.ticketScreenBuilder != null) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: widget.ticketScreenBuilder!),
-              (route) => route.isFirst,
-            );
-          }
           return success;
         }
 
@@ -691,61 +684,6 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
             );
           } else if (widget.onPaymentSuccess != null) {
             await widget.onPaymentSuccess!();
-          }
-          if (mounted) {
-            TopNotificationBanner.show(
-              title: 'Booking Confirmed! 🎉',
-              body: 'Your payment via Smart Wallet at ${widget.venue['name'] ?? 'Venue'} is confirmed. Digital ticket generated!',
-              data: {'bookingId': widget.bookingId},
-            );
-            if (widget.package == 'Party Plan Safety Deposit') {
-              Navigator.pop(context);
-            } else if (widget.ticketScreenBuilder != null) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: widget.ticketScreenBuilder!),
-                (route) => route.isFirst,
-              );
-            } else {
-              final isSolo = (widget.guests?.trim() == '1' ||
-                  widget.guests?.trim() == '1 Guest' ||
-                  widget.package.toLowerCase().contains('solo'));
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DigitalTicketScreen(
-                    venue: widget.venue,
-                    date: widget.date,
-                    package: widget.package,
-                    time: widget.time,
-                    table: widget.table ?? (isSolo ? 'Solo Entry' : null),
-                    guests: isSolo ? '1' : widget.guests,
-                    totalPrice: widget.totalPrice,
-                    ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
-                    user: ApiService.cachedCurrentUser,
-                    booking: {
-                      'id': widget.bookingId,
-                      'bookingId': widget.bookingId,
-                      'venue': widget.venue,
-                      'venueId': widget.venue['id'],
-                      'isSolo': isSolo,
-                      'goingMode': isSolo ? 'solo' : 'venue_booking',
-                      'bookingType': isSolo ? 'solo' : 'venue_booking',
-                      'category': isSolo ? 'solo' : 'venue_booking',
-                      'totalAmount': widget.totalPrice,
-                      'paymentStatus': 'paid',
-                      'paymentMethod': 'Lunara Wallet',
-                      'status': 'CONFIRMED',
-                      'tablePackage': widget.table ?? widget.package,
-                      'numberOfGuests': isSolo ? 1 : widget.guests,
-                      'bookingDate': widget.date,
-                      'startTime': widget.time,
-                      'user': ApiService.cachedCurrentUser,
-                    },
-                  ),
-                ),
-              );
-            }
           }
           return true;
         } else if (mounted) {
@@ -785,6 +723,62 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
         }
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Booking Confirmed! 🎉',
+        body: 'Your payment via Smart Wallet at ${widget.venue['name'] ?? 'Venue'} is confirmed. Digital ticket generated!',
+        data: {'bookingId': widget.bookingId},
+      );
+      if (widget.package == 'Party Plan Safety Deposit') {
+        Navigator.pop(context);
+      } else if (widget.ticketScreenBuilder != null) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: widget.ticketScreenBuilder!),
+          (route) => route.isFirst,
+        );
+      } else {
+        final isSolo = (widget.guests?.trim() == '1' ||
+            widget.guests?.trim() == '1 Guest' ||
+            widget.package.toLowerCase().contains('solo'));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DigitalTicketScreen(
+              venue: widget.venue,
+              date: widget.date,
+              package: widget.package,
+              time: widget.time,
+              table: widget.table ?? (isSolo ? 'Solo Entry' : null),
+              guests: isSolo ? '1' : widget.guests,
+              totalPrice: widget.totalPrice,
+              ticketId: widget.bookingId ?? widget.razorpayOrderId ?? 'TICKET',
+              user: ApiService.cachedCurrentUser,
+              booking: {
+                'id': widget.bookingId,
+                'bookingId': widget.bookingId,
+                'venue': widget.venue,
+                'venueId': widget.venue['id'],
+                'isSolo': isSolo,
+                'goingMode': isSolo ? 'solo' : 'venue_booking',
+                'bookingType': isSolo ? 'solo' : 'venue_booking',
+                'category': isSolo ? 'solo' : 'venue_booking',
+                'totalAmount': widget.totalPrice,
+                'paymentStatus': 'paid',
+                'paymentMethod': 'Lunara Wallet',
+                'status': 'CONFIRMED',
+                'tablePackage': widget.table ?? widget.package,
+                'numberOfGuests': isSolo ? 1 : widget.guests,
+                'bookingDate': widget.date,
+                'startTime': widget.time,
+                'user': ApiService.cachedCurrentUser,
+              },
+            ),
+          ),
+        );
+      }
+    }
   }
 
   void _executeDirectRazorpay(int amountInPaise) {

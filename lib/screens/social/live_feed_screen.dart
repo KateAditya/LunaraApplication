@@ -2181,6 +2181,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return null;
   }
 
+  static String? _extractVenuePhoto(dynamic venue) {
+    if (venue == null) return null;
+    if (venue is String) {
+      final s = venue.trim();
+      if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+      return null;
+    }
+    if (venue is Map) {
+      if (venue['images'] is List && (venue['images'] as List).isNotEmpty) {
+        final firstImg = (venue['images'] as List).first;
+        if (firstImg is Map) {
+          final fp = firstImg['filePath'] ?? firstImg['url'] ?? firstImg['image'];
+          if (fp != null && fp.toString().trim().isNotEmpty && fp.toString() != 'null') {
+            return fp.toString().trim();
+          }
+        } else if (firstImg is String && firstImg.trim().isNotEmpty && firstImg != 'null') {
+          return firstImg.trim();
+        }
+      }
+      final candidates = [
+        venue['imageUrl'],
+        venue['image'],
+        venue['filePath'],
+        venue['venueImageUrl'],
+        venue['coverImage'],
+        venue['photo'],
+      ];
+      for (final c in candidates) {
+        if (c != null) {
+          final s = c.toString().trim();
+          if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
+        }
+      }
+    }
+    return null;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Unified Item Builders & Mapping (1 PLAN / 1 MEET = 1 SMART CARD)
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2879,7 +2916,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badgeText: badge,
         accentColor: accentColor,
         categoryIcon: icon,
-        avatarUrl: fi['venue']?['images']?[0]?['filePath'] ?? fi['venueImageUrl'],
+        avatarUrl: _extractVenuePhoto(fi['venue']) ?? _extractVenuePhoto(fi) ?? fi['venueImageUrl']?.toString(),
         actionButtonText: actionText,
         onActionTap: actionTap,
         actions: actionsList,
@@ -3208,6 +3245,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ];
     }
 
+    final String? venuePhoto = _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);
+
     return UnifiedNotificationItem(
       id: 'group_party_timeline_$partyId',
       category: 'booking',
@@ -3220,6 +3259,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badgeText: badgeText,
       accentColor: accentColor,
       categoryIcon: Icons.groups_rounded,
+      avatarUrl: venuePhoto,
       actionButtonText: actionButtonText,
       onActionTap: onActionTap,
       actions: isExpired ? null : actions,
@@ -3495,7 +3535,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badgeText: badge,
       accentColor: accentColor,
       categoryIcon: icon,
-      avatarUrl: bookingMap['venue']?['images']?[0]?['filePath'] ?? bookingMap['venueImageUrl'],
+      avatarUrl: _extractVenuePhoto(bookingMap['venue']) ?? _extractVenuePhoto(bookingMap) ?? bookingMap['venueImageUrl']?.toString(),
       actions: actionsList.isNotEmpty ? actionsList : null,
       rawData: {
         ...bookingMap,
