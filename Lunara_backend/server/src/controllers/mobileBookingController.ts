@@ -23,6 +23,10 @@ import { VenueBookingService } from '../services/VenueBookingService';
 import { NotificationService } from '../services/NotificationService';
 import { TimeLockError } from '../utils/bookingLimitValidator';
 import { BookingPolicyService } from '../services/BookingPolicyService';
+import { BookingPolicyType } from '../models/BookingPolicyConfig';
+import { WalletService } from '../services/walletService';
+import { WalletTransactionType } from '../models/WalletTransaction';
+import { parseBookingDateTime } from '../services/EventTimeLockService';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -509,14 +513,20 @@ export const payNow = async (req: Request, res: Response) => {
         const { paymentMethod, transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
         const userId = (req as any).user?.id || req.body?.userId;
 
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Authentication required' });
+        }
+
         const booking = await Booking.findByPk(id);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
         if (booking.userId !== userId) {
             return res.status(403).json({ success: false, message: 'You can only pay for your own booking' });
         }
 
+        const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+
+        // Idempotency check: if already confirmed & paid, return ticket immediately
         if (booking.status === BookingStatus.CONFIRMED && booking.paymentStatus === PaymentStatus.PAID) {
-            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
             return res.json({
                 success: true,
                 message: 'Booking is already confirmed',
@@ -524,21 +534,124 @@ export const payNow = async (req: Request, res: Response) => {
             });
         }
 
-        const isWallet = paymentMethod === 'WALLET' || razorpay_payment_id?.startsWith('wallet_');
-        const finalMethod = isWallet ? PaymentMethod.WALLET : PaymentMethod.CARD;
-        const finalGateway = isWallet ? 'WALLET' : (razorpay_payment_id ? 'RAZORPAY' : 'DUMMY_PAY_NOW');
+        const totalAmount = Number(booking.totalAmount || 0);
+        const isFree = totalAmount <= 0;
+        const methodStr = (paymentMethod || '').toLowerCase();
+        const isWallet = methodStr === 'wallet' || razorpay_payment_id?.startsWith('wallet_');
+
+        let verifiedTxnId = transactionId || razorpay_payment_id;
+
+        if (!isFree) {
+            if (isWallet) {
+                // Verify or process Wallet deduction atomically
+                if (transactionId) {
+                    try {
+                        const WalletTransaction = (await import('../models/WalletTransaction')).default;
+                        const existingTxn = await WalletTransaction.findOne({
+                            where: {
+                                id: transactionId,
+                                userId,
+                            }
+                        });
+                        if (!existingTxn) {
+                            // Transaction ID supplied was not found for this user, attempt atomic wallet deduction
+                            const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+                                userId,
+                                price: totalAmount,
+                                transactionType: WalletTransactionType.BOOKING_PAYMENT,
+                                reference: `BOOK_${booking.id}_${Date.now()}`,
+                                bookingId: booking.id,
+                                metadata: { paymentType: 'booking_payment', bookingId: booking.id },
+                            });
+                            verifiedTxnId = purchaseResult.txn?.id || `wallet_${Date.now()}`;
+                        } else {
+                            verifiedTxnId = existingTxn.id;
+                        }
+                    } catch (wErr: any) {
+                        if (wErr.statusCode === 402) {
+                            return res.status(402).json({
+                                success: false,
+                                insufficientBalance: true,
+                                message: 'Insufficient wallet balance to complete booking.',
+                                data: wErr.shortfallData,
+                            });
+                        }
+                        return res.status(400).json({ success: false, message: wErr.message || 'Wallet payment failed' });
+                    }
+                } else {
+                    // No transactionId supplied, execute atomic wallet payment directly
+                    try {
+                        const purchaseResult = await WalletService.purchaseFeatureWithCredit({
+                            userId,
+                            price: totalAmount,
+                            transactionType: WalletTransactionType.BOOKING_PAYMENT,
+                            reference: `BOOK_${booking.id}_${Date.now()}`,
+                            bookingId: booking.id,
+                            metadata: { paymentType: 'booking_payment', bookingId: booking.id },
+                        });
+                        verifiedTxnId = purchaseResult.txn?.id || `wallet_${Date.now()}`;
+                    } catch (wErr: any) {
+                        if (wErr.statusCode === 402) {
+                            return res.status(402).json({
+                                success: false,
+                                insufficientBalance: true,
+                                message: 'Insufficient wallet balance to complete booking.',
+                                data: wErr.shortfallData,
+                            });
+                        }
+                        return res.status(400).json({ success: false, message: wErr.message || 'Wallet payment failed' });
+                    }
+                }
+            } else {
+                // Razorpay / Direct Card Payment Verification
+                const isMock = razorpay_payment_id?.startsWith('mock_') ||
+                    razorpay_order_id?.startsWith('order_mock_') ||
+                    razorpay_signature === 'mock_signature';
+
+                if (!isMock && razorpay_order_id && razorpay_payment_id && razorpay_signature) {
+                    const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+                    hmac.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+                    const generatedSignature = hmac.digest('hex');
+
+                    if (generatedSignature !== razorpay_signature) {
+                        return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+                    }
+                } else if (!isMock && !razorpay_payment_id) {
+                    return res.status(400).json({ success: false, message: 'Payment verification details missing' });
+                }
+                verifiedTxnId = razorpay_payment_id || `pay_${Date.now()}`;
+            }
+        }
+
+        // Re-validate booking eligibility / lead time using central server time before final confirmation
+        if (booking.goingMode === 'solo' as any) {
+            const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
+            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                BookingPolicyType.SOLO_BOOKING,
+                eventDateTime
+            );
+            if (!leadTimeValidation.allowed) {
+                return res.status(400).json({
+                    success: false,
+                    message: leadTimeValidation.reason || 'Booking lead time window has closed.',
+                });
+            }
+        }
+
+        const finalMethod = isWallet ? PaymentMethod.WALLET : (methodStr === 'upi' ? PaymentMethod.UPI : (methodStr === 'card' ? PaymentMethod.CARD : PaymentMethod.RAZORPAY));
+        const finalGateway = isWallet ? 'WALLET' : (isFree ? 'FREE' : (razorpay_payment_id ? 'RAZORPAY' : 'DIRECT'));
 
         // Record Payment transaction
         await Payment.create({
             bookingId: id,
             userId: userId || booking.userId,
-            amount: booking.totalAmount,
+            amount: totalAmount,
             paymentMethod: finalMethod,
             paymentGateway: finalGateway,
             status: TxnStatus.SUCCESSFUL,
             gatewayResponse: { 
-                mode: isWallet ? 'wallet' : 'gateway',
-                transactionId: transactionId || razorpay_payment_id,
+                mode: isWallet ? 'wallet' : (isFree ? 'free' : 'gateway'),
+                transactionId: verifiedTxnId,
                 razorpayOrderId: razorpay_order_id || booking.razorpayOrderId,
                 razorpaySignature: razorpay_signature || null,
                 paidAt: new Date().toISOString()
@@ -569,8 +682,7 @@ export const payNow = async (req: Request, res: Response) => {
         setImmediate(async () => {
             try {
                 await generateTicketForBookingHelper(booking.id);
-                const venueInfo = await Venue.findByPk(booking.venueId, { attributes: ['name'] });
-                const vName = venueInfo?.name || 'Venue';
+                const vName = venue?.name || 'Venue';
                 await NotificationService.dispatch({
                     recipientUserId: booking.userId,
                     eventType: 'booking_confirmed',
@@ -584,12 +696,19 @@ export const payNow = async (req: Request, res: Response) => {
                     actionType: 'view_ticket',
                     deepLink: `/ticket/${booking.id}`,
                 });
+
+                const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                const { io } = require('../server');
+                if (io && enrichedCard) {
+                    io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                    io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, status: 'confirmed' });
+                    io.to('live_feed').emit('live_feed_update', { type: 'venue_booking_activity', bookingId: booking.id, venueName: vName, status: 'confirmed', timestamp: new Date().toISOString() });
+                }
             } catch (ticketErr) {
                 logger.error(`Background ticket/notification processing failed for booking ${booking.id}:`, ticketErr);
             }
         });
 
-        const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
         return res.json({
             success: true,
             message: 'Payment successful. Your booking is confirmed!',

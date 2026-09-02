@@ -498,6 +498,8 @@ export class VenueBookingService {
 
             const updatedIso = bookingRecord.updatedAt ? bookingRecord.updatedAt.toISOString() : new Date().toISOString();
 
+            const rawTotal = Number(bookingRecord.totalAmount || bookingRecord.depositAmount || 0);
+
             return {
                 id: `venue_booking_timeline_${bookingId}`,
                 title,
@@ -507,6 +509,11 @@ export class VenueBookingService {
                 read: false,
                 isRead: false,
                 category: 'bookings',
+                status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isConfirmed ? 'confirmed' : 'pending')),
+                paymentStatus: bookingRecord.paymentStatus || (isConfirmed ? 'paid' : 'pending'),
+                totalAmount: rawTotal,
+                ticketCode: bookingRecord.ticketCode || undefined,
+                ticketUrl: (bookingRecord as any).ticketUrl || undefined,
                 data: {
                     type: 'venue_booking_timeline',
                     bookingId,
@@ -514,6 +521,18 @@ export class VenueBookingService {
                     guestCount,
                     bookingDate,
                     statusText,
+                    status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isConfirmed ? 'confirmed' : 'pending')),
+                    paymentStatus: bookingRecord.paymentStatus || (isConfirmed ? 'paid' : 'pending'),
+                    totalAmount: rawTotal,
+                    amount: rawTotal,
+                    ticketCode: bookingRecord.ticketCode || undefined,
+                    ticketUrl: (bookingRecord as any).ticketUrl || undefined,
+                    venue: (bookingRecord as any).venue ? {
+                        id: (bookingRecord as any).venue.id || bookingRecord.venueId,
+                        name: (bookingRecord as any).venue.name || venueName,
+                        address: (bookingRecord as any).venue.addressLine1,
+                        city: (bookingRecord as any).venue.city,
+                    } : undefined,
                     timelineProgress: progressPercentage,
                     currentStatusStep: isCompleted ? 9 : (isActive ? 5 : (isConfirmed ? 3 : 2)),
                     timelineSteps,

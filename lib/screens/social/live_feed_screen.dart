@@ -122,6 +122,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   List<Map<String, dynamic>> _feedItems = [];
   List<Map<String, dynamic>> _notifications = [];
   List<Map<String, dynamic>> _largePartyBookings = [];
+  List<Map<String, dynamic>> _userBookings = [];
   List<UnifiedNotificationItem> _cachedTimeline = [];
   bool _isLoading = true;
   bool _isFetchingFeed = false;
@@ -489,11 +490,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.fetchLiveFeedData(),
         ApiService.fetchNotifications(),
         ApiService.fetchMyLargePartyBookings(),
+        ApiService.fetchBookings(),
       ]);
 
       final data = responses[0] as Map<String, dynamic>;
       final notifs = responses[1] as List<Map<String, dynamic>>;
       final largeParties = responses[2] as List<Map<String, dynamic>>;
+      final rawBookings = (responses[3] as List<dynamic>?) ?? [];
+      final userBookings = rawBookings.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList();
 
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
@@ -504,6 +508,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
         _feedItems = combined;
         _largePartyBookings = largeParties;
+        _userBookings = userBookings;
         _notifications = notifs.map((n) {
           final nId = n['id']?.toString() ?? '';
           if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
@@ -536,6 +541,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _feedItems = [];
       _notifications = [];
       _largePartyBookings = [];
+      _userBookings = [];
       _cachedTimeline = [];
       _isLoading = _sessionUserId != null;
     });
@@ -1047,23 +1053,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String? mobileNumber,
     bool isHybrid = false,
   }) async {
-    final result = await ApiService.initiateLargePartyPayment(bookingId);
-    if (result == null || result['success'] != true) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return;
-    }
-
-    final orderData = result['order'] ?? result['data'] ?? result;
-    final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? 'rzp_test_T1rwVokR7tFger';
-    final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
-    final num amountInPaise = orderData['amount'] ?? ((amount * 100).toInt());
+    final cleanBookingId = ApiService.cleanBookingId(bookingId);
+    final num amountInPaise = (amount * 100).toInt();
+    const razorpayKey = 'rzp_test_T1rwVokR7tFger';
+    final orderId = 'order_bk_${cleanBookingId}_${DateTime.now().millisecondsSinceEpoch}';
 
     // On Web or desktop: require explicit confirmation dialog (cancel aborts cleanly without confirming)
     if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.linux) {
@@ -1089,10 +1082,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (shouldConfirm == true) {
         final confirmRes = await ApiService.payNowBooking(
-          bookingId,
+          cleanBookingId,
           paymentMethod: isHybrid ? 'hybrid' : 'razorpay',
-          razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-          razorpayPaymentId: 'mock_pay_${DateTime.now().millisecondsSinceEpoch}',
+          razorpayOrderId: orderId,
+          razorpayPaymentId: 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           razorpaySignature: 'mock_signature',
         );
         if (confirmRes != null && mounted) {
@@ -1128,7 +1121,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       try { rzp.clear(); } catch (_) {}
 
       final confirmRes = await ApiService.payNowBooking(
-        bookingId,
+        cleanBookingId,
         paymentMethod: isHybrid ? 'hybrid' : 'razorpay',
         razorpayOrderId: response.orderId ?? orderId,
         razorpayPaymentId: response.paymentId ?? '',
@@ -1176,13 +1169,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     });
 
     final options = {
-      'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_T1rwVokR7tFger',
-      'order_id': orderId,
+      'key': razorpayKey,
       'amount': amountInPaise,
       'name': 'Lunara – Booking',
       'description': 'Booking at $venueName',
       'prefill': {
-        'contact': mobileNumber ?? '9999999999',
+        'contact': mobileNumber ?? ApiService.cachedCurrentUser?.phone ?? '9999999999',
         'email': ApiService.cachedCurrentUser?.email ?? 'user@lunara.app',
       },
       'theme': {'color': '#7C3AED'},
@@ -2495,6 +2487,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (rawId.startsWith('venue_booking_timeline_') || rawId.startsWith('solo_booking_') || rawId.startsWith('venue_booking_')) {
       final cleanId = ApiService.cleanBookingId(rawId);
       if (cleanId.isNotEmpty) return cleanId;
+    } else if (rawId.isNotEmpty && (item['venueId'] != null || item['venue'] != null || item['bookingDate'] != null)) {
+      return rawId.trim();
     }
 
     return null;
@@ -2550,13 +2544,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    for (final booking in _userBookings) {
+      final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
+          booking['isLargePartyRequest'] == true ||
+          (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
+          (booking['isSmallGroupParty'] == true);
+      if (isLargeOrGroup) {
+        final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        if (gpId != null && gpId.isNotEmpty) {
+          groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
+        }
+      } else {
+        final soloId = _extractSoloBookingId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        if (soloId != null && soloId.isNotEmpty) {
+          soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
+        }
+      }
+    }
+
     for (final booking in _largePartyBookings) {
-      final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
-      final soloId = _extractSoloBookingId(booking);
-      if (gpId != null && gpId.isNotEmpty) {
-        groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
-      } else if (soloId != null && soloId.isNotEmpty) {
-        soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
+      final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
+          booking['isLargePartyRequest'] == true ||
+          (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
+          (booking['isSmallGroupParty'] == true);
+      if (isLargeOrGroup) {
+        final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        if (gpId != null && gpId.isNotEmpty) {
+          groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
+        }
+      } else {
+        final soloId = _extractSoloBookingId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        if (soloId != null && soloId.isNotEmpty) {
+          soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
+        }
       }
     }
 
@@ -3338,6 +3358,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isPending = false;
     } else if (isConfirmed) {
       isPending = false;
+    } else if (isPending && totalAmount <= 0) {
+      isConfirmed = true;
+      isPending = false;
     }
 
     final bool isSolo = guestCount <= 1;
@@ -3346,7 +3369,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String body = isConfirmed
         ? 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!'
         : (isCancelled
-            ? (isRefunded ? 'Your booking was cancelled. ₹${totalAmount > 0 ? (totalAmount * 0.8).toStringAsFixed(0) : '0'} refunded to your Lunara Wallet.' : 'Your booking was cancelled.')
+            ? ((isRefunded || totalAmount > 0) ? 'Your booking was cancelled. 80% (₹${totalAmount > 0 ? (totalAmount * 0.8).toStringAsFixed(0) : '0'}) refunded to your Lunara Wallet.' : 'Your booking was cancelled.')
             : (isCompleted
                 ? 'Hope you enjoyed your experience at $venueName!'
                 : 'Complete payment of ₹${totalAmount.toStringAsFixed(0)} to secure your table reservation.'));
@@ -3446,7 +3469,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           onTap: () => _initiatePendingBookingPayment(bookingMap),
         ),
       );
-    } else if (isCancelled && isRefunded) {
+    } else if (isCancelled && (isRefunded || totalAmount > 0)) {
       actionsList.add(
         NotificationAction(
           label: 'View Wallet',

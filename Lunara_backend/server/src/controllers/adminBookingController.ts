@@ -967,6 +967,32 @@ export const cancelBooking = async (req: Request, res: Response) => {
         }
 
         // Standard booking
+        const wasPaid = booking.paymentStatus === PaymentStatus.PAID || String(booking.paymentStatus).toUpperCase() === 'PAID';
+        const isSoloOrSmall = !booking.isLargePartyRequest && (booking.numberOfGuests || 1) <= 20;
+
+        if (wasPaid && isSoloOrSmall) {
+            try {
+                const refundResult = await BookingPolicyService.cancelAndRefundSoloBooking(
+                    booking.id,
+                    booking.userId,
+                    reason ? `Admin cancellation: ${reason}` : 'Cancelled by administrator'
+                );
+                return res.json({
+                    success: true,
+                    message: refundResult.message,
+                    data: {
+                        bookingId: refundResult.booking.id,
+                        status: refundResult.booking.status,
+                        paidAmount: Number(booking.totalAmount || 0),
+                        refundAmount: refundResult.refundAmount,
+                        walletTransactionId: refundResult.walletTransactionId,
+                    },
+                });
+            } catch (refundErr: any) {
+                logger.warn(`Admin refund processing encountered error: ${refundErr?.message}. Falling back to standard cancellation.`);
+            }
+        }
+
         await booking.update({ status: 'cancelled' as any });
         await PlanEligibilityService.releaseLock(id);
 
