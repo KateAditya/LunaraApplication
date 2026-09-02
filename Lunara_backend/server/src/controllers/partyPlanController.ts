@@ -747,33 +747,37 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Validate planDateTime is in the future ────────────────────────────
+        const diagStart = Date.now();
         const partyDate = new Date(planDateTime);
         if (isNaN(partyDate.getTime())) {
             res.status(400).json({ success: false, message: 'planDateTime must be a valid ISO date string (e.g. "2025-06-01T22:00:00.000Z")' });
             return;
         }
 
-        // ── Verify user exists ────────────────────────────────────────────────
-        const user = await User.findByPk(userId, {
-            attributes: USER_ATTRS,
-            include: [
-                { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
-                { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
-            ],
-        });
+        // ── Verify user and venue concurrently ─────────────────────────────────
+        const [user, venue] = await Promise.all([
+            User.findByPk(userId, {
+                attributes: USER_ATTRS,
+                include: [
+                    { model: UserProfile, as: 'profile', attributes: PROFILE_ATTRS, required: false },
+                    { model: UserPhoto, as: 'photos', attributes: ['id', 'filePath', 'isPrimary', 'displayOrder'], required: false },
+                ],
+            }),
+            Venue.findByPk(venueId, {
+                attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'openingTime', 'closingTime', 'daysOpen', 'closedDates']
+            })
+        ]);
+
         if (!user) {
             res.status(404).json({ success: false, message: 'User not found' });
             return;
         }
-
-        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '9999999999';
-
-        // ── Verify venue exists and is active ─────────────────────────────────
-        const venue = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale', 'openingTime', 'closingTime', 'daysOpen', 'closedDates'] });
         if (!venue) {
             res.status(404).json({ success: false, message: 'Venue not found' });
             return;
         }
+
+        const finalMobileNumber = mobileNumber?.trim() || user.phone?.trim() || '9999999999';
 
         // ── Validate Venue Timings and Holidays ────────────────────────────────
         const timingValidation = validateVenueTimingAndHolidays(venue, planDateTime);
@@ -782,7 +786,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
+        // ── Universal 4-Hour Time-Lock Validation (Host) ───────────────────────
         const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan');
         if (!timeLockCheck.allowed) {
             res.status(400).json({ success: false, ...timeLockCheck });
@@ -790,12 +794,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // Clear the user's own abandoned/unpaid party plan attempt(s) for this
-        // exact date first. A PartyPlan row is created below with
-        // hostPaymentStatus UNPAID and a fresh Razorpay order BEFORE the host
-        // actually pays the deposit — its `status` stays ACTIVE the whole
-        // time, so checkExistingBookingForDate below would otherwise treat a
-        // never-paid, abandoned attempt as a real commitment and permanently
-        // block every retry for that date.
+        // exact date first so retries are never blocked.
         const staleDayStart = new Date(partyDate);
         staleDayStart.setHours(0, 0, 0, 0);
         const staleDayEnd = new Date(partyDate);
@@ -813,13 +812,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             await PlanEligibilityService.releaseLock(stale.id);
         }
 
-        // ── Check for 1 plan per day limit (Party Plan) ──
-        const bookingConflictMsg = await checkExistingBookingForDate(userId, partyDate, 'party_plan');
-        if (bookingConflictMsg) {
-            res.status(400).json({ success: false, message: bookingConflictMsg });
-            return;
-        }
-
         // ── Validate Selected Users for Private & Both Mode ───────────────────
         if (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) {
             const rawSelected = selectedUsers || [];
@@ -832,25 +824,37 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             const conflictingUsers: Array<{ id: string; name: string; reason?: string }> = [];
             const validUserIds: string[] = [];
 
-            for (const targetId of targetUserIds) {
-                const targetUser = await User.findByPk(targetId, {
+            if (targetUserIds.length > 0) {
+                // Batch lookup all target users in a single query
+                const targetUsers = await User.findAll({
+                    where: { id: { [Op.in]: targetUserIds } },
                     attributes: ['id', 'firstName', 'lastName'],
                 });
-                const targetName = targetUser
-                    ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'The selected user'
-                    : 'The selected user';
+                const targetUserMap = new Map<string, any>();
+                for (const tu of targetUsers) targetUserMap.set(tu.id, tu);
 
-                const targetLockCheck = await EventTimeLockService.validateFourHourGap(targetId, planDateTime, 'party_plan');
-                const targetConflictMsg = await checkExistingBookingForDate(targetId, partyDate, 'party_plan');
+                // Run 4-hour time lock checks for all target users concurrently
+                const checkResults = await Promise.all(
+                    targetUserIds.map(async (targetId) => {
+                        const targetUser = targetUserMap.get(targetId);
+                        const targetName = targetUser
+                            ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'The selected user'
+                            : 'The selected user';
+                        const targetLockCheck = await EventTimeLockService.validateFourHourGap(targetId, planDateTime, 'party_plan');
+                        return { targetId, targetName, targetLockCheck };
+                    })
+                );
 
-                if (!targetLockCheck.allowed || targetConflictMsg) {
-                    conflictingUsers.push({
-                        id: targetId,
-                        name: targetName,
-                        reason: !targetLockCheck.allowed ? (targetLockCheck as any).message : (targetConflictMsg || undefined),
-                    });
-                } else {
-                    validUserIds.push(targetId);
+                for (const item of checkResults) {
+                    if (!item.targetLockCheck.allowed) {
+                        conflictingUsers.push({
+                            id: item.targetId,
+                            name: item.targetName,
+                            reason: (item.targetLockCheck as any).message,
+                        });
+                    } else {
+                        validUserIds.push(item.targetId);
+                    }
                 }
             }
 
@@ -879,6 +883,11 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 });
                 return;
             }
+        }
+
+        const tValidation = Date.now();
+        if (tValidation - diagStart > 300) {
+            logger.warn(`[createPartyPlan timing] Validation phase took ${tValidation - diagStart}ms`);
         }
 
         // ── Generate Razorpay Order ───────────────────────────────────────────
@@ -2062,13 +2071,6 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        const bookingConflictMsg = await checkExistingBookingForDate(callerUserId, plan.planDateTime, 'party_plan');
-        if (bookingConflictMsg) {
-            await transaction.rollback();
-            res.status(400).json({ success: false, message: bookingConflictMsg });
-            return;
-        }
-
         const newReq = await PartyPlanRequest.create({
             planId: id,
             requesterId: callerUserId,
@@ -2306,14 +2308,15 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         }
 
         // ── Universal 4-Hour Time-Lock Validation (Host & Partner) ────────────
-        const hostLock = await EventTimeLockService.validateFourHourGap(plan.userId, plan.planDateTime, 'party_plan', plan.id, { transaction });
+        const [hostLock, partnerLock] = await Promise.all([
+            EventTimeLockService.validateFourHourGap(plan.userId, plan.planDateTime, 'party_plan', plan.id, { transaction }),
+            EventTimeLockService.validateFourHourGap(request.requesterId, plan.planDateTime, 'party_plan', plan.id, { transaction })
+        ]);
         if (!hostLock.allowed) {
             await transaction.rollback();
             res.status(400).json({ success: false, ...hostLock, message: `Host schedule conflict: ${hostLock.message}` });
             return;
         }
-
-        const partnerLock = await EventTimeLockService.validateFourHourGap(request.requesterId, plan.planDateTime, 'party_plan', plan.id, { transaction });
         if (!partnerLock.allowed) {
             await transaction.rollback();
             res.status(400).json({ success: false, ...partnerLock, message: `Partner schedule conflict: ${partnerLock.message}` });

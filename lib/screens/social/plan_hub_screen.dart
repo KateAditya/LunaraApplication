@@ -141,10 +141,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   void _onPlanPostedOrAction() {
     if (!mounted) return;
     _socketDebounceTimer?.cancel();
-    _socketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+    _socketDebounceTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
-        _loadCustomers();
-        _loadVenues();
+        _loadPartyPlansOnly();
       }
     });
   }
@@ -152,12 +151,24 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   void _onSocketUpdate(dynamic data) {
     if (!mounted) return;
     _socketDebounceTimer?.cancel();
-    _socketDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+    _socketDebounceTimer = Timer(const Duration(milliseconds: 600), () {
       if (mounted) {
-        _loadCustomers();
-        _loadVenues();
+        _loadPartyPlansOnly();
       }
     });
+  }
+
+  Future<void> _loadPartyPlansOnly() async {
+    try {
+      final plans = await ApiService.fetchPartyPlans();
+      if (mounted) {
+        setState(() {
+          _partyPlans = plans;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error refreshing party plans via socket: $e');
+    }
   }
 
   String _formatToISTString(DateTime date, TimeOfDay time) {
@@ -169,64 +180,91 @@ class _PlanHubScreenState extends State<PlanHubScreen>
   }
 
   Future<void> _loadCustomers() async {
-    try {
-      final results = await Future.wait([
-        ApiService.fetchCustomers(),
-        ApiService.fetchPartyPlans(),
-        ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party'),
-        ApiService.fetchMyStrangersMeetRequests(),
-      ]);
-      final customers = results[0] as List<Map<String, dynamic>>;
-      final plans = results[1] as List<Map<String, dynamic>>;
-      final dynamicPartyAds = results[2] as List<Map<String, dynamic>>;
-      final meets = results[3] as List<StrangersMeetRequest>;
-
-      List<Map<String, dynamic>> upcoming = [];
-      if (dynamicPartyAds.isNotEmpty) {
-        upcoming = dynamicPartyAds.map((ad) {
-          final venue = ad['venue'] as Map<String, dynamic>? ?? {};
-          final imageUrl = ad['imagePath'] != null
-              ? (ad['imagePath'].toString().startsWith('http')
-                    ? ad['imagePath'].toString()
-                    : '${ApiService.baseUrl}${ad['imagePath']}')
-              : '';
-
-          String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
-          if (dateStr.isNotEmpty) {
-            try {
-              final dt = DateTime.parse(dateStr).toLocal();
-              dateStr = DateFormat('EEEE, MMM dd').format(dt);
-            } catch (_) {}
-          } else {
-            dateStr = 'Upcoming';
-          }
-
-          return {
-            'title': ad['title'] ?? ad['description'] ?? 'Special Event',
-            'date': dateStr,
-            'venue': venue['name'] ?? 'Unknown Venue',
-            'image': imageUrl,
-            'isAsset': false,
-            'venueId': ad['venueId'],
-            'venueMap': venue,
-            'aboutEvent': ad['aboutEvent'],
-          };
-        }).toList();
-      }
-
+    // Stage 1: Load Party Plans immediately (<150ms) so Plan Hub renders instantly
+    ApiService.fetchPartyPlans().then((plans) {
       if (mounted) {
         setState(() {
-          _customerList = customers;
           _partyPlans = plans;
-          _strangersMeets = meets;
-          _upcomingNights = upcoming;
           _isLoadingCustomers = false;
         });
       }
-    } catch (e) {
-      debugPrint('Error loading customers and plans: $e');
+    }).catchError((e) {
+      debugPrint('Error loading party plans: $e');
       if (mounted) setState(() => _isLoadingCustomers = false);
-    }
+    });
+
+    // Stage 2: Concurrently load secondary resources progressively in background
+    unawaited(() async {
+      try {
+        final customers = await ApiService.fetchCustomers(limit: 50);
+        if (mounted) {
+          setState(() {
+            _customerList = customers;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading customers progressively: $e');
+      }
+    }());
+
+    unawaited(() async {
+      try {
+        final dynamicPartyAds = await ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party');
+        List<Map<String, dynamic>> upcoming = [];
+        if (dynamicPartyAds.isNotEmpty) {
+          upcoming = dynamicPartyAds.map((ad) {
+            final venue = ad['venue'] as Map<String, dynamic>? ?? {};
+            final imageUrl = ad['imagePath'] != null
+                ? (ad['imagePath'].toString().startsWith('http')
+                      ? ad['imagePath'].toString()
+                      : '${ApiService.baseUrl}${ad['imagePath']}')
+                : '';
+
+            String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+            if (dateStr.isNotEmpty) {
+              try {
+                final dt = DateTime.parse(dateStr).toLocal();
+                dateStr = DateFormat('EEEE, MMM dd').format(dt);
+              } catch (_) {}
+            } else {
+              dateStr = 'Upcoming';
+            }
+
+            return {
+              'title': ad['title'] ?? ad['description'] ?? 'Special Event',
+              'date': dateStr,
+              'venue': venue['name'] ?? 'Unknown Venue',
+              'image': imageUrl,
+              'isAsset': false,
+              'venueId': ad['venueId'],
+              'venueMap': venue,
+              'aboutEvent': ad['aboutEvent'],
+            };
+          }).toList();
+        }
+
+        if (mounted) {
+          setState(() {
+            _upcomingNights = upcoming;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading ads progressively: $e');
+      }
+    }());
+
+    unawaited(() async {
+      try {
+        final meets = await ApiService.fetchMyStrangersMeetRequests();
+        if (mounted) {
+          setState(() {
+            _strangersMeets = meets;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading strangers meets progressively: $e');
+      }
+    }());
   }
 
   Future<void> _loadProfile() async {
@@ -4568,7 +4606,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     if (!mounted) return;
                                     setSheetState(() {
                                       isPosting = false;
-                                      sheetErrorMsg = 'Error: $e';
+                                      sheetErrorMsg = ApiService.formatUserFriendlyError(e);
                                     });
                                   }
                                 },

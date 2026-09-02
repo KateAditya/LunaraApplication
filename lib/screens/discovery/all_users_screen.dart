@@ -56,7 +56,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     }
     try {
       final fetched = await ApiService.fetchCustomers(
-        limit: 500,
+        limit: 100,
         includeAllCities: true,
       );
       if (fetched.isNotEmpty && mounted) {

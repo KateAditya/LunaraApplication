@@ -132,7 +132,10 @@ StrangersMeetJoiner.init(
         indexes: [
             { fields: ['strangers_meet_request_id'] },
             { fields: ['user_id'] },
+            { fields: ['status'] },
             { fields: ['payment_status'] },
+            { fields: ['user_id', 'status'] },
+            { fields: ['user_id', 'payment_status'] },
         ],
     }
 );

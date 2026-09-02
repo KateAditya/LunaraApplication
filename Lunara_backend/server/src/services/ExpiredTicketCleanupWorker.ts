@@ -71,11 +71,13 @@ export class ExpiredTicketCleanupWorker {
                             const cleanPath = fileUrlOrKey.startsWith('/') ? fileUrlOrKey.substring(1) : fileUrlOrKey;
                             const fullPath = path.join(process.cwd(), cleanPath);
 
-                            if (fs.existsSync(fullPath)) {
-                                fs.unlinkSync(fullPath);
+                            try {
+                                await fs.promises.unlink(fullPath);
                                 logger.info(`Successfully deleted local PDF ticket file: ${fullPath} for Ticket ${ticket.ticketId}`);
-                            } else {
-                                logger.debug(`Local PDF file not found at ${fullPath} (already removed). Continues cleanup.`);
+                            } catch (unlinkErr: any) {
+                                if (unlinkErr.code !== 'ENOENT') {
+                                    logger.warn(`Failed to delete PDF file ${fullPath}:`, unlinkErr);
+                                }
                             }
                         } else if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
                             // Remote Azure Blob cleanup if Azure storage is configured

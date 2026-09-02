@@ -62,11 +62,28 @@ app.use(cors({
 app.use(compression({ threshold: 256, level: 6 })); // High-speed gzip compression
 
 // Performance: Cache headers for read-heavy public endpoints (stale-while-revalidate)
+// Strictly non-cached for user-specific, payment, or transactional data
 app.use((req, res, next) => {
     if (req.method === 'GET') {
         const p = req.path;
-        if (p.startsWith('/api/venues') || p.startsWith('/api/ads/active') || p.startsWith('/api/mobile/cities') || p.startsWith('/api/support/')) {
-            res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=30');
+        if (
+            p.startsWith('/api/venues') ||
+            p.startsWith('/api/ads/active') ||
+            p.startsWith('/api/mobile/cities') ||
+            p.startsWith('/api/support/') ||
+            p.startsWith('/api/packages') ||
+            p.startsWith('/api/mobile/subscription-packages')
+        ) {
+            res.setHeader('Cache-Control', 'public, max-age=15, stale-while-revalidate=60');
+        } else if (
+            p.includes('/party-plans') ||
+            p.includes('/wallet') ||
+            p.includes('/bookings') ||
+            p.includes('/payments') ||
+            p.includes('/user/')
+        ) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+            res.setHeader('Pragma', 'no-cache');
         }
     }
     next();
@@ -76,6 +93,24 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
+
+// Diagnostic timing middleware for performance auditing (Phase 1 diagnostic monitoring)
+app.use((req, res, next) => {
+    const startHr = process.hrtime();
+    const method = req.method;
+    const url = req.originalUrl || req.url;
+
+    res.on('finish', () => {
+        const [seconds, nanoseconds] = process.hrtime(startHr);
+        const durationMs = (seconds * 1000 + nanoseconds / 1e6).toFixed(2);
+        const numMs = parseFloat(durationMs);
+
+        if (numMs > 500) {
+            logger.warn(`[SLOW ROUTE AUDIT] ${method} ${url} took ${durationMs}ms with status ${res.statusCode}`);
+        }
+    });
+    next();
+});
 // Rate limiting — apply globally. The keyGenerator strips any port from IP:PORT
 // strings produced by Azure's load balancer to avoid ERR_ERL_INVALID_IP_ADDRESS.
 const safeIpKeyGenerator = (req: any): string => {
@@ -272,8 +307,20 @@ app.post('/api/admin/party-plans/cancellations/:id/investigate', adminMarkForInv
 app.post('/api/admin/party-plans/cancellations/:id/restore', adminRestoreBooking);
 
 // Run background auto-approval & expiration check for cancellation requests every 15 minutes
-setInterval(() => {
-    checkExpiredOrAutoApprovedRequests().catch(err => logger.error('Cancellation auto-check error:', err));
+let isCancellationAutoCheckRunning = false;
+setInterval(async () => {
+    if (isCancellationAutoCheckRunning) {
+        logger.warn('[Cron] Cancellation auto-check is already running. Skipping overlapping execution.');
+        return;
+    }
+    isCancellationAutoCheckRunning = true;
+    try {
+        await checkExpiredOrAutoApprovedRequests();
+    } catch (err) {
+        logger.error('Cancellation auto-check error:', err);
+    } finally {
+        isCancellationAutoCheckRunning = false;
+    }
 }, 15 * 60 * 1000);
 
 // Admin — chat subscription settings

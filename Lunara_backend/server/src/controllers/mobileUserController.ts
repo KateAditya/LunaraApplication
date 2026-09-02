@@ -10,7 +10,6 @@ import { GroupPartyStatus } from '../models/GroupParty';
 import Notification from '../models/Notification';
 import UserLike from '../models/UserLike';
 import User, { UserRole } from '../models/User';
-import sequelize from '../config/database';
 import DeletedAccount from '../models/DeletedAccount';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage from '../models/SubscriptionPackage';
@@ -723,152 +722,23 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit);
 
-        const likesMap: Record<string, number> = {};
-        const superLikesMap: Record<string, number> = {};
-        const plansMap: Record<string, number> = {};
-        const tierMap: Record<string, string> = {};
-        const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
-        const boostsMap: Record<string, number> = {};
-        const pointsMap: Record<string, number> = {};
-
         const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
 
-        if (allUserIds.length > 0) {
-            const [
-                allLikesCounts,
-                superLikesCounts,
-                userLikesSuperCounts,
-                plansCounts,
-                groupPartyCounts,
-                strangersMeetCounts,
-                activeSubs,
-                mySwipes,
-                myUserLikes
-            ] = await Promise.all([
+        if (allUserIds.length > 0 && currentUserId) {
+            const [mySwipes, myUserLikes] = await Promise.all([
                 UserMatch.findAll({
-                    attributes: [
-                        'user2Id',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
                     where: {
-                        user2Id: { [Op.in]: allUserIds },
-                        status: { [Op.in]: ['pending', 'connected'] },
-                    },
-                    group: ['user2Id']
-                }),
-                UserMatch.findAll({
-                    attributes: [
-                        'user2Id',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
-                    where: {
-                        user2Id: { [Op.in]: allUserIds },
-                        matchReason: 'superlike',
-                        status: { [Op.in]: ['pending', 'connected'] },
-                    },
-                    group: ['user2Id']
+                        user1Id: currentUserId,
+                        user2Id: { [Op.in]: allUserIds }
+                    }
                 }),
                 UserLike.findAll({
-                    attributes: [
-                        'targetUserId',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
                     where: {
-                        targetUserId: { [Op.in]: allUserIds },
-                        actionType: 'superlike',
-                    },
-                    group: ['targetUserId']
-                }),
-                PartyPlan.findAll({
-                    attributes: [
-                        'userId',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
-                    where: {
-                        userId: { [Op.in]: allUserIds },
-                        status: 'active',
-                    },
-                    group: ['userId']
-                }),
-                GroupParty.findAll({
-                    attributes: [
-                        'userId',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
-                    where: {
-                        userId: { [Op.in]: allUserIds },
-                    },
-                    group: ['userId']
-                }),
-                StrangersMeetRequest.findAll({
-                    attributes: [
-                        'userId',
-                        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                    ],
-                    where: {
-                        userId: { [Op.in]: allUserIds },
-                    },
-                    group: ['userId']
-                }),
-                UserSubscription.findAll({
-                    where: {
-                        userId: { [Op.in]: allUserIds },
-                        status: SubscriptionStatus.ACTIVE,
-                        endDate: { [Op.gt]: new Date() },
-                    },
-                    include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
-                    order: [['createdAt', 'DESC']],
-                }),
-                currentUserId
-                    ? UserMatch.findAll({
-                        where: {
-                            user1Id: currentUserId,
-                            user2Id: { [Op.in]: allUserIds }
-                        }
-                    })
-                    : Promise.resolve([]),
-                currentUserId
-                    ? UserLike.findAll({
-                        where: {
-                            userId: currentUserId,
-                            targetUserId: { [Op.in]: allUserIds }
-                        }
-                    })
-                    : Promise.resolve([])
+                        userId: currentUserId,
+                        targetUserId: { [Op.in]: allUserIds }
+                    }
+                })
             ]);
-
-            allLikesCounts.forEach((c: any) => {
-                likesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
-            });
-            superLikesCounts.forEach((c: any) => {
-                superLikesMap[c.getDataValue('user2Id')] = parseInt(c.getDataValue('count')) || 0;
-            });
-            userLikesSuperCounts.forEach((c: any) => {
-                const targetId = c.getDataValue('targetUserId');
-                const cnt = parseInt(c.getDataValue('count')) || 0;
-                superLikesMap[targetId] = Math.max(superLikesMap[targetId] || 0, cnt);
-            });
-            plansCounts.forEach((c: any) => {
-                const uId = c.getDataValue('userId');
-                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
-            });
-            groupPartyCounts.forEach((c: any) => {
-                const uId = c.getDataValue('userId');
-                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
-            });
-            strangersMeetCounts.forEach((c: any) => {
-                const uId = c.getDataValue('userId');
-                plansMap[uId] = (plansMap[uId] || 0) + (parseInt(c.getDataValue('count')) || 0);
-            });
-
-            const seenUsers = new Set<string>();
-            for (const sub of activeSubs) {
-                if (!seenUsers.has(sub.userId)) {
-                    seenUsers.add(sub.userId);
-                    tierMap[sub.userId] = (sub as any).package?.tier ?? 'FREE';
-                    boostsMap[sub.userId] = sub.boostsRemaining ?? 0;
-                }
-            }
 
             if (mySwipes && Array.isArray(mySwipes)) {
                 mySwipes.forEach((s: any) => {
@@ -894,6 +764,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
+        const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
         const rankingExplanations = await RankingService.computeRankings(allUserIds);
         const scoredUsers = rankingExplanations.map((exp) => ({
             id: exp.userId,
@@ -903,6 +774,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             superlikes: exp.rawMetrics.superlikesCount,
             plans: exp.rawMetrics.plansCount,
             boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
+            vipTier: exp.rawMetrics.vipTier || 'FREE',
             explainScore: exp.breakdown,
         }));
 
@@ -994,16 +866,16 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 boostCount: scoredUser.boosts,
                 boostsRemaining: scoredUser.boosts,
                 isBoosted: scoredUser.boosts > 0,
-                isVipActive: tierMap[user.id] !== 'FREE' && tierMap[user.id] !== undefined,
-                plansCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
-                activePartyPlanCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
-                doostCount: plansMap[user.id] ?? scoredUser.plans ?? 0,
-                doost: plansMap[user.id] ?? scoredUser.plans ?? 0,
-                points: pointsMap[user.id],
+                isVipActive: scoredUser.vipTier !== 'FREE',
+                plansCount: scoredUser.plans ?? 0,
+                activePartyPlanCount: scoredUser.plans ?? 0,
+                doostCount: scoredUser.plans ?? 0,
+                doost: scoredUser.plans ?? 0,
+                points: undefined,
                 rankScore: scoredUser.rankScore,
                 rankingPriority: scoredUser.priorityTier,
-                subscriptionTier: tierMap[user.id] ?? 'FREE',
-                tierRank: tierRankMap[tierMap[user.id] ?? 'FREE'] ?? 0,
+                subscriptionTier: scoredUser.vipTier,
+                tierRank: tierRankMap[scoredUser.vipTier] ?? 0,
                 isLiked,
                 isSuperLiked,
                 swipeStatus: mySwipe?.status ?? null,

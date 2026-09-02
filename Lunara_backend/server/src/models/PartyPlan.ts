@@ -476,6 +476,8 @@ PartyPlan.init(
             { fields: ['status', 'created_at'] },
             { fields: ['user_id', 'status'] },
             { fields: ['venue_id', 'status'] },
+            { fields: ['user_id', 'plan_date_time'] },
+            { fields: ['user_id', 'plan_date_time', 'status'] },
         ],
     }
 );

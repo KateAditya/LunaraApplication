@@ -136,8 +136,8 @@ export class RankingService {
                     where: { id: { [Op.in]: candidateUserIds } },
                     attributes: ['id', 'reliabilityScore', 'isVerified'],
                     include: [
-                        { model: UserProfile, as: 'profile' },
-                        { model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false },
+                        { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'city'] },
+                        { model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['id'] },
                     ],
                 }),
             ]);

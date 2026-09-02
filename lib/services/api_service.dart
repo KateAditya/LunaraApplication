@@ -599,7 +599,7 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchCustomers({
     String? city,
-    int limit = 500,
+    int limit = 50,
     int page = 1,
     bool includeAllCities = false,
     bool forceRefresh = false,
@@ -2652,6 +2652,41 @@ class ApiService {
         debugPrint('Error parsing error response: $e');
       }
     }
+  }
+
+  /// Formats any low-level network/runtime exception into a user-friendly, non-technical message
+  /// while ensuring technical errors are safely logged for debugging internally.
+  static String formatUserFriendlyError(dynamic error) {
+    if (error == null) return 'Something went wrong. Please try again.';
+    final errStr = error.toString();
+    debugPrint('[API_CLIENT_ERROR_DIAGNOSTIC] $errStr');
+
+    if (error is TimeoutException ||
+        errStr.contains('TimeoutException') ||
+        errStr.contains('Future not completed') ||
+        errStr.contains('timed out')) {
+      return 'The connection took longer than expected. Please check your connection and tap to retry.';
+    }
+    if (errStr.contains('SocketException') ||
+        errStr.contains('Connection refused') ||
+        errStr.contains('Failed host lookup') ||
+        errStr.contains('ClientException') ||
+        errStr.contains('Network is unreachable')) {
+      return 'Unable to reach Lunara servers. Please check your internet connection and try again.';
+    }
+    if (errStr.contains('500') || errStr.contains('Internal Server Error')) {
+      return 'The server encountered a temporary issue. Please try again in a few moments.';
+    }
+    if (errStr.contains('502') || errStr.contains('Bad Gateway') || errStr.contains('503') || errStr.contains('Service Unavailable')) {
+      return 'Server is briefly undergoing maintenance. Please try again shortly.';
+    }
+    if (errStr.startsWith('Exception: ')) {
+      return errStr.substring(11).trim();
+    }
+    if (errStr.startsWith('Error: ')) {
+      return errStr.substring(7).trim();
+    }
+    return errStr;
   }
 
   static Future<http.Response> get(
