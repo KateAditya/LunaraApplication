@@ -672,6 +672,9 @@ Venue.init(
             { fields: ['city'] },
             { fields: ['category'] },
             { fields: ['status'] },
+            { fields: ['is_active'] },
+            { fields: ['city', 'is_active', 'status'] },
+            { fields: ['is_active', 'status'] },
             { fields: ['slug'], unique: true },
         ],
     }

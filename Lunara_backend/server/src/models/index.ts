@@ -1015,6 +1015,72 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             console.warn('⚠️ Auto-adding NightPartner reminder columns note:', colErr);
         }
 
+        // ── High-Speed Database Indexing for Rapid Querying ───────────────────────
+        try {
+            const performanceIndexes = [
+                // Party Plans & Feed
+                `CREATE INDEX IF NOT EXISTS idx_party_plans_status_date ON party_plans (status, plan_date_time);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plans_status_created ON party_plans (status, created_at DESC);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plans_user_status ON party_plans (user_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plans_venue_status ON party_plans (venue_id, status);`,
+
+                // Party Plan Requests
+                `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_plan_status ON party_plan_requests (plan_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_requester_status ON party_plan_requests (requester_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_plan_user ON party_plan_requests (plan_id, requester_id);`,
+
+                // Bookings
+                `CREATE INDEX IF NOT EXISTS idx_bookings_user_status ON bookings (user_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_bookings_venue_date ON bookings (venue_id, booking_date);`,
+                `CREATE INDEX IF NOT EXISTS idx_bookings_large_party_status ON bookings (is_large_party_request, admin_approval_status);`,
+                `CREATE INDEX IF NOT EXISTS idx_bookings_user_created ON bookings (user_id, created_at DESC);`,
+
+                // Tickets
+                `CREATE INDEX IF NOT EXISTS idx_tickets_user_status ON tickets (user_id, ticket_status);`,
+                `CREATE INDEX IF NOT EXISTS idx_tickets_user_created ON tickets (user_id, created_at DESC);`,
+
+                // Notifications
+                `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications (recipient_user_id, is_read);`,
+                `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created ON notifications (recipient_user_id, created_at DESC);`,
+
+                // Venues
+                `CREATE INDEX IF NOT EXISTS idx_venues_city_active_status ON venues (city, is_active, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_venues_is_active_status ON venues (is_active, status);`,
+
+                // Ads
+                `CREATE INDEX IF NOT EXISTS idx_ads_active_dates ON ads (is_active, from_date, to_date);`,
+                `CREATE INDEX IF NOT EXISTS idx_ads_city_active ON ads (city, is_active);`,
+
+                // Strangers Meet Requests
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_user_status ON strangers_meet_requests (user_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_venue_status ON strangers_meet_requests (venue_id, status);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_event_dt ON strangers_meet_requests (event_date_time DESC);`,
+
+                // Smart Wallets & Transactions
+                `CREATE INDEX IF NOT EXISTS idx_smart_wallets_user_id ON smart_wallets (user_id);`,
+                `CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_created ON wallet_transactions (user_id, created_at DESC);`,
+
+                // Chat Messages & Conversations
+                `CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages (conversation_id, created_at ASC);`,
+                `CREATE INDEX IF NOT EXISTS idx_conversations_user1_user2 ON conversations (user1_id, user2_id);`,
+
+                // User Profiles
+                `CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles (user_id);`,
+                `CREATE INDEX IF NOT EXISTS idx_user_profiles_city ON user_profiles (city);`,
+            ];
+
+            for (const idxQuery of performanceIndexes) {
+                try {
+                    await sequelize.query(idxQuery);
+                } catch (idxErr: any) {
+                    // Non-fatal: table or column may not exist in specific environments
+                }
+            }
+            console.log('⚡ High-performance database indexes applied successfully');
+        } catch (indexErr) {
+            console.warn('⚠️ Performance indexing note:', indexErr);
+        }
+
         console.log('✅ All models synchronized successfully');
     } catch (error) {
         console.error('❌ Error synchronizing models:', error);

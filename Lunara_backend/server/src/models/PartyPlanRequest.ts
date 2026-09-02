@@ -192,6 +192,10 @@ PartyPlanRequest.init(
             { fields: ['plan_id'] },
             { fields: ['requester_id'] },
             { fields: ['status'] },
+            { fields: ['plan_id', 'status'] },
+            { fields: ['requester_id', 'status'] },
+            { fields: ['plan_id', 'requester_id'] },
+            { fields: ['created_at'] },
         ],
     }
 );

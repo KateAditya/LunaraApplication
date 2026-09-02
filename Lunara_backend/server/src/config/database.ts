@@ -12,9 +12,9 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
-        min: parseInt(process.env.DB_POOL_MIN || '0'),
-        max: parseInt(process.env.DB_POOL_MAX || '20'),
-        acquire: 60000,
+        min: parseInt(process.env.DB_POOL_MIN || '4'),
+        max: parseInt(process.env.DB_POOL_MAX || '25'),
+        acquire: 30000,
         idle: 10000,
         evict: 5000,
     },

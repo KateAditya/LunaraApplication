@@ -59,7 +59,19 @@ app.use(cors({
     origin: true,
     credentials: true,
 }));
-app.use(compression()); // Compress responses
+app.use(compression({ threshold: 256, level: 6 })); // High-speed gzip compression
+
+// Performance: Cache headers for read-heavy public endpoints (stale-while-revalidate)
+app.use((req, res, next) => {
+    if (req.method === 'GET') {
+        const p = req.path;
+        if (p.startsWith('/api/venues') || p.startsWith('/api/ads/active') || p.startsWith('/api/mobile/cities') || p.startsWith('/api/support/')) {
+            res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=30');
+        }
+    }
+    next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());

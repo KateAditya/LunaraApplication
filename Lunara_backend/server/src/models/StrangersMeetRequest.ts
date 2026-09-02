@@ -531,6 +531,9 @@ StrangersMeetRequest.init(
             { fields: ['venue_id'] },
             { fields: ['status'] },
             { fields: ['payment_status'] },
+            { fields: ['user_id', 'status'] },
+            { fields: ['venue_id', 'status'] },
+            { fields: ['event_date_time'] },
             { fields: ['created_at'] },
         ],
     }

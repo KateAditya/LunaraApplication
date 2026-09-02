@@ -431,6 +431,10 @@ Booking.init(
             { fields: ['venue_id'] },
             { fields: ['booking_date'] },
             { fields: ['status'] },
+            { fields: ['user_id', 'status'] },
+            { fields: ['venue_id', 'booking_date'] },
+            { fields: ['is_large_party_request', 'admin_approval_status'] },
+            { fields: ['created_at'] },
             { fields: ['booking_number'], unique: true },
         ],
     }

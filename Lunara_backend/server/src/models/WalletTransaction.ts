@@ -204,6 +204,7 @@ WalletTransaction.init(
             { fields: ['user_id'] },
             { fields: ['transaction_type'] },
             { fields: ['status'] },
+            { fields: ['user_id', 'created_at'] },
             { fields: ['created_at'] },
         ],
     }

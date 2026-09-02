@@ -266,6 +266,8 @@ Ticket.init(
             { fields: ['booking_id'] },
             { fields: ['user_id'] },
             { fields: ['ticket_status'] },
+            { fields: ['user_id', 'ticket_status'] },
+            { fields: ['user_id', 'created_at'] },
             { fields: ['expires_at'] },
             { fields: ['storage_deletion_at', 'storage_cleanup_status'] },
             { fields: ['share_token'] },

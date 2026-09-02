@@ -28,9 +28,40 @@ class ApiService {
   /// Reusable HTTP client instance for connection pooling & Keep-Alive
   static final http.Client _httpClient = http.Client();
 
+  /// Default network timeout to prevent hanging on flaky connections
+  static const Duration defaultTimeout = Duration(seconds: 12);
+
   /// Concurrent in-flight GET request deduplication pool to prevent duplicate network calls
   static final Map<String, Future<http.Response>> _inFlightGets = {};
   static DateTime? _lastProfileFetchTime;
+
+  // ── High-Speed In-Memory Cache with Instant Stale-While-Revalidate ────────
+  static final Map<String, List<Venue>> _cachedVenuesByCity = {};
+  static final Map<String, DateTime> _venuesCacheTimestamps = {};
+
+  static final Map<String, List<Map<String, dynamic>>> _cachedAds = {};
+  static final Map<String, DateTime> _adsCacheTimestamps = {};
+
+  static final Map<String, List<Package>> _cachedPackagesByVenue = {};
+  static final Map<String, DateTime> _packagesCacheTimestamps = {};
+
+  static final Map<String, List<Map<String, dynamic>>> _cachedPartyPlans = {};
+  static final Map<String, DateTime> _partyPlansCacheTimestamps = {};
+
+  static final Map<String, List<Map<String, dynamic>>> _cachedCustomers = {};
+  static final Map<String, DateTime> _customersCacheTimestamps = {};
+
+  static Map<String, dynamic>? _cachedWalletBalance;
+  static DateTime? _walletBalanceCacheTime;
+
+  static Map<String, dynamic>? _cachedWalletData;
+  static DateTime? _walletDataCacheTime;
+
+  static Map<String, dynamic>? _cachedLiveFeedData;
+  static DateTime? _liveFeedCacheTime;
+
+  static List<Map<String, dynamic>>? _cachedNotifications;
+  static DateTime? _notificationsCacheTime;
 
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
@@ -76,6 +107,14 @@ class ApiService {
     localReadNotificationIds.clear();
     localReadRequestIds.clear();
     _readIdsLoaded = false;
+    _cachedLiveFeedData = null;
+    _liveFeedCacheTime = null;
+    _cachedNotifications = null;
+    _notificationsCacheTime = null;
+    _cachedWalletBalance = null;
+    _walletBalanceCacheTime = null;
+    _cachedWalletData = null;
+    _walletDataCacheTime = null;
   }
 
   /// Synchronously returns whether the current user has requested to join a given party plan.
@@ -455,10 +494,20 @@ class ApiService {
     return cachedCurrentUser!.calculateMatchWith(other);
   }
 
-  static Future<List<Venue>> fetchVenues({String? city}) async {
+  static Future<List<Venue>> fetchVenues({String? city, bool forceRefresh = false}) async {
+    final targetCity = (city ?? selectedCity ?? '').trim();
+    final cacheKey = targetCity.toLowerCase();
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedVenuesByCity.containsKey(cacheKey)) {
+      final cacheTime = _venuesCacheTimestamps[cacheKey];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 30) {
+        return _cachedVenuesByCity[cacheKey]!;
+      }
+    }
+
     try {
-      final targetCity = city ?? selectedCity;
-      final path = (targetCity != null && targetCity.isNotEmpty)
+      final path = targetCity.isNotEmpty
           ? '/api/venues?city=${Uri.encodeComponent(targetCity)}'
           : '/api/venues';
       final response = await get(path);
@@ -469,40 +518,57 @@ class ApiService {
               .map((json) => Venue.fromJson(json))
               .toList();
           if (list.isNotEmpty) {
+            _cachedVenuesByCity[cacheKey] = list;
+            _venuesCacheTimestamps[cacheKey] = DateTime.now();
             return list;
           }
         }
       }
       // Fallback: if we queried a specific city and got no venues, try fetching all venues
-      if (targetCity != null && targetCity.isNotEmpty) {
-        debugPrint(
-          'fetchVenues: No venues found for $targetCity, falling back to all venues.',
-        );
+      if (targetCity.isNotEmpty) {
         final fallbackResponse = await get('/api/venues');
         if (fallbackResponse.statusCode == 200) {
           final data = jsonDecode(fallbackResponse.body);
           if (data['success'] == true && data['venues'] != null) {
-            return (data['venues'] as List)
+            final list = (data['venues'] as List)
                 .map((json) => Venue.fromJson(json))
                 .toList();
+            if (list.isNotEmpty) {
+              _cachedVenuesByCity[cacheKey] = list;
+              _venuesCacheTimestamps[cacheKey] = DateTime.now();
+              return list;
+            }
           }
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching venues: $e');
-      return [];
     }
+    if (_cachedVenuesByCity.containsKey(cacheKey)) {
+      return _cachedVenuesByCity[cacheKey]!;
+    }
+    return [];
   }
 
   static Future<List<Map<String, dynamic>>> fetchActiveAds({
     String? city,
     String? type,
+    bool forceRefresh = false,
   }) async {
+    final targetCity = city ?? selectedCity ?? '';
+    final cacheKey = '${targetCity.toLowerCase()}_${type ?? 'all'}';
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedAds.containsKey(cacheKey)) {
+      final cacheTime = _adsCacheTimestamps[cacheKey];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 45) {
+        return _cachedAds[cacheKey]!;
+      }
+    }
+
     try {
-      final targetCity = city ?? selectedCity;
       final queryParams = <String>[];
-      if (targetCity != null && targetCity.isNotEmpty) {
+      if (targetCity.isNotEmpty) {
         queryParams.add('city=${Uri.encodeComponent(targetCity)}');
       }
       if (type != null && type.isNotEmpty) {
@@ -516,14 +582,19 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          _cachedAds[cacheKey] = list;
+          _adsCacheTimestamps[cacheKey] = DateTime.now();
+          return list;
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching active ads: $e');
-      return [];
     }
+    if (_cachedAds.containsKey(cacheKey)) {
+      return _cachedAds[cacheKey]!;
+    }
+    return [];
   }
 
   static Future<List<Map<String, dynamic>>> fetchCustomers({
@@ -531,7 +602,19 @@ class ApiService {
     int limit = 500,
     int page = 1,
     bool includeAllCities = false,
+    bool forceRefresh = false,
   }) async {
+    final targetCity = city ?? selectedCity ?? '';
+    final cacheKey = '${targetCity.toLowerCase()}_${limit}_${page}_$includeAllCities';
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedCustomers.containsKey(cacheKey)) {
+      final cacheTime = _customersCacheTimestamps[cacheKey];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 20) {
+        return _cachedCustomers[cacheKey]!;
+      }
+    }
+
     try {
       final userId = currentUserId;
       final Map<String, String> params = {
@@ -554,54 +637,86 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        // Be flexible with the key name (customers or data)
         final dynamic list = data['customers'] ?? data['data'];
         if (list != null && list is List) {
-          return List<Map<String, dynamic>>.from(list);
+          final result = List<Map<String, dynamic>>.from(list);
+          _cachedCustomers[cacheKey] = result;
+          _customersCacheTimestamps[cacheKey] = DateTime.now();
+          return result;
         } else if (data is List) {
-          return List<Map<String, dynamic>>.from(data);
+          final result = List<Map<String, dynamic>>.from(data);
+          _cachedCustomers[cacheKey] = result;
+          _customersCacheTimestamps[cacheKey] = DateTime.now();
+          return result;
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching customers: $e');
-      return [];
     }
+    if (_cachedCustomers.containsKey(cacheKey)) {
+      return _cachedCustomers[cacheKey]!;
+    }
+    return [];
   }
 
-  static Future<List<Package>> fetchVenuePackages(String venueId) async {
+  static Future<List<Package>> fetchVenuePackages(String venueId, {bool forceRefresh = false}) async {
+    if (venueId.isEmpty) return [];
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedPackagesByVenue.containsKey(venueId)) {
+      final cacheTime = _packagesCacheTimestamps[venueId];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 60) {
+        return _cachedPackagesByVenue[venueId]!;
+      }
+    }
+
     try {
       final response = await get(
         '/api/mobile/bookings/venues/$venueId/packages',
       );
-      //debugPrint('Packages Response Status: ${response.statusCode}');
-      //debugPrint('Packages Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
-
-        // The API returns packages in the 'data' field or 'packages' field
         final dynamic packageList =
             jsonResponse['data'] ?? jsonResponse['packages'];
 
         if (packageList is List) {
-          return packageList.map((json) => Package.fromJson(json)).toList();
+          final list = packageList.map((json) => Package.fromJson(json)).toList();
+          _cachedPackagesByVenue[venueId] = list;
+          _packagesCacheTimestamps[venueId] = DateTime.now();
+          return list;
         } else if (jsonResponse is List) {
-          return jsonResponse.map((json) => Package.fromJson(json)).toList();
+          final list = jsonResponse.map((json) => Package.fromJson(json)).toList();
+          _cachedPackagesByVenue[venueId] = list;
+          _packagesCacheTimestamps[venueId] = DateTime.now();
+          return list;
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching venue packages: $e');
-      return [];
     }
+    if (_cachedPackagesByVenue.containsKey(venueId)) {
+      return _cachedPackagesByVenue[venueId]!;
+    }
+    return [];
   }
 
   static Future<List<Map<String, dynamic>>> fetchPartyPlans({
     int page = 1,
     int limit = 20,
     String status = 'active',
+    bool forceRefresh = false,
   }) async {
+    final cacheKey = '${status}_${page}_$limit';
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedPartyPlans.containsKey(cacheKey)) {
+      final cacheTime = _partyPlansCacheTimestamps[cacheKey];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 8) {
+        return _cachedPartyPlans[cacheKey]!;
+      }
+    }
+
     try {
       final query = {
         'status': status,
@@ -618,14 +733,19 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          _cachedPartyPlans[cacheKey] = list;
+          _partyPlansCacheTimestamps[cacheKey] = DateTime.now();
+          return list;
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching party plans: $e');
-      return [];
     }
+    if (_cachedPartyPlans.containsKey(cacheKey)) {
+      return _cachedPartyPlans[cacheKey]!;
+    }
+    return [];
   }
 
   static Future<bool> submitLargePartyRequest({
@@ -1045,7 +1165,15 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchLiveFeedData({
     String? venueId,
     String? date,
+    bool forceRefresh = false,
   }) async {
+    final now = DateTime.now();
+    if (!forceRefresh && venueId == null && date == null && _cachedLiveFeedData != null && _liveFeedCacheTime != null) {
+      if (now.difference(_liveFeedCacheTime!).inSeconds < 4) {
+        return _cachedLiveFeedData!;
+      }
+    }
+
     try {
       final queryParams = <String, String>{};
       if (venueId != null) queryParams['venueId'] = venueId;
@@ -1067,7 +1195,7 @@ class ApiService {
               markPartyPlanAsRequestedLocal(pId, req);
             }
           }
-          return {
+          final result = {
             'feed': List<Map<String, dynamic>>.from(data['data'] ?? []),
             'myRequests': myReqs,
             'incomingRequests': List<Map<String, dynamic>>.from(
@@ -1077,13 +1205,20 @@ class ApiService {
               data['pendingPayments'] ?? [],
             ),
           };
+          if (venueId == null && date == null) {
+            _cachedLiveFeedData = result;
+            _liveFeedCacheTime = DateTime.now();
+          }
+          return result;
         }
       }
-      return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
     } catch (e) {
       debugPrint('Error fetching live feed: $e');
-      return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
     }
+    if (venueId == null && date == null && _cachedLiveFeedData != null) {
+      return _cachedLiveFeedData!;
+    }
+    return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
   }
 
   static Future<PartyPlanRequestResult> requestToJoinPartyPlanDetailed(
@@ -1524,9 +1659,17 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>?> fetchWalletBalance() async {
+  static Future<Map<String, dynamic>?> fetchWalletBalance({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) return null;
+
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedWalletBalance != null && _walletBalanceCacheTime != null) {
+      if (now.difference(_walletBalanceCacheTime!).inSeconds < 10) {
+        return _cachedWalletBalance;
+      }
+    }
+
     try {
       final response = await get(
         '/api/mobile/wallet/balance',
@@ -1534,19 +1677,29 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
+        if (data['success'] == true && data['data'] != null) {
+          _cachedWalletBalance = Map<String, dynamic>.from(data['data']);
+          _walletBalanceCacheTime = DateTime.now();
+          return _cachedWalletBalance;
         }
       }
     } catch (e) {
       debugPrint('fetchWalletBalance error: $e');
     }
-    return null;
+    return _cachedWalletBalance;
   }
 
-  static Future<Map<String, dynamic>?> fetchWalletData() async {
+  static Future<Map<String, dynamic>?> fetchWalletData({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) return null;
+
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedWalletData != null && _walletDataCacheTime != null) {
+      if (now.difference(_walletDataCacheTime!).inSeconds < 10) {
+        return _cachedWalletData;
+      }
+    }
+
     try {
       final response = await get(
         '/api/mobile/wallet',
@@ -1554,14 +1707,16 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
+        if (data['success'] == true && data['data'] != null) {
+          _cachedWalletData = Map<String, dynamic>.from(data['data']);
+          _walletDataCacheTime = DateTime.now();
+          return _cachedWalletData;
         }
       }
     } catch (e) {
       debugPrint('fetchWalletData error: $e');
     }
-    return null;
+    return _cachedWalletData;
   }
 
   static Future<Map<String, dynamic>?> createWalletRechargeOrder(double amount) async {
@@ -2503,6 +2658,7 @@ class ApiService {
     String endpoint, {
     Map<String, String>? queryParameters,
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse(
       '$baseUrl$endpoint',
@@ -2510,6 +2666,8 @@ class ApiService {
     debugPrint('GET $uri');
     final headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
 
@@ -2517,7 +2675,7 @@ class ApiService {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
-      final streamedResponse = await _httpClient.send(request);
+      final streamedResponse = await _httpClient.send(request).timeout(timeout ?? defaultTimeout);
       final response = await http.Response.fromStream(streamedResponse);
       _checkAutoblockedResponse(response);
       return response;
@@ -2530,7 +2688,7 @@ class ApiService {
     }
 
     final future = () async {
-      final res = await _httpClient.get(uri, headers: headers);
+      final res = await _httpClient.get(uri, headers: headers).timeout(timeout ?? defaultTimeout);
       _checkAutoblockedResponse(res);
       return res;
     }();
@@ -2722,18 +2880,21 @@ class ApiService {
   static Future<http.Response> put(
     String endpoint, {
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     debugPrint('PUT $uri');
     final headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.put(
       uri,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    );
+    ).timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -2741,18 +2902,21 @@ class ApiService {
   static Future<http.Response> post(
     String endpoint, {
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     debugPrint('POST $uri');
     final headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.post(
       uri,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    );
+    ).timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -2760,18 +2924,21 @@ class ApiService {
   static Future<http.Response> patch(
     String endpoint, {
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     debugPrint('PATCH $uri');
     final headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.patch(
       uri,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    );
+    ).timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -2779,17 +2946,20 @@ class ApiService {
   static Future<http.Response> delete(
     String endpoint, {
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     debugPrint('DELETE $uri');
     final headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final request = http.Request('DELETE', uri);
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await _httpClient.send(request);
+    final streamed = await _httpClient.send(request).timeout(timeout ?? defaultTimeout);
     final response = await http.Response.fromStream(streamed);
     _checkAutoblockedResponse(response);
     return response;
@@ -3380,9 +3550,17 @@ class ApiService {
   }
 
   /// Fetch in-app notifications for current user
-  static Future<List<Map<String, dynamic>>> fetchNotifications() async {
+  static Future<List<Map<String, dynamic>>> fetchNotifications({bool forceRefresh = false}) async {
     final userId = currentUserId;
     if (userId == null) return [];
+
+    final now = DateTime.now();
+    if (!forceRefresh && _cachedNotifications != null && _notificationsCacheTime != null) {
+      if (now.difference(_notificationsCacheTime!).inSeconds < 4) {
+        return _cachedNotifications!;
+      }
+    }
+
     await loadLocalReadIds();
     try {
       // Limit to max 20 IDs in query parameter to avoid HTTP 414 / 400 URL length limits
@@ -3401,10 +3579,18 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final list = data['data'] ?? data['notifications'];
-        if (list is List) return List<Map<String, dynamic>>.from(list);
+        if (list is List) {
+          final result = List<Map<String, dynamic>>.from(list);
+          _cachedNotifications = result;
+          _notificationsCacheTime = DateTime.now();
+          return result;
+        }
       }
     } catch (e) {
       debugPrint('fetchNotifications error: $e');
+    }
+    if (_cachedNotifications != null) {
+      return _cachedNotifications!;
     }
     return [];
   }
@@ -4985,21 +5171,45 @@ class ApiService {
   // â”€â”€ Ticket System Methods & Internal Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   static Map<String, String> get _authHeaders {
-    final headers = {'Content-Type': 'application/json'};
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
+    };
     if (_authToken != null) {
       headers['Authorization'] = 'Bearer $_authToken';
     }
     return headers;
   }
 
-  static Future<http.Response> _get(String path) async {
+  static Future<http.Response> _get(String path, {Duration? timeout}) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await _httpClient.get(uri, headers: _authHeaders);
+    final inFlightKey = uri.toString();
+    if (_inFlightGets.containsKey(inFlightKey)) {
+      return await _inFlightGets[inFlightKey]!;
+    }
+    final future = () async {
+      final res = await _httpClient.get(uri, headers: _authHeaders).timeout(timeout ?? defaultTimeout);
+      _checkAutoblockedResponse(res);
+      return res;
+    }();
+    _inFlightGets[inFlightKey] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlightGets.remove(inFlightKey);
+    }
   }
 
-  static Future<http.Response> _post(String path, Map<String, dynamic> body) async {
+  static Future<http.Response> _post(String path, Map<String, dynamic> body, {Duration? timeout}) async {
     final uri = Uri.parse('$baseUrl$path');
-    return await _httpClient.post(uri, headers: _authHeaders, body: jsonEncode(body));
+    final res = await _httpClient.post(
+      uri,
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    ).timeout(timeout ?? defaultTimeout);
+    _checkAutoblockedResponse(res);
+    return res;
   }
 
   /// Fetch user tickets with tab filtering ('upcoming', 'active', 'used', 'expired', 'cancelled')

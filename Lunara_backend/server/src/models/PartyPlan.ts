@@ -472,6 +472,10 @@ PartyPlan.init(
             { fields: ['lifecycle_status'] },
             { fields: ['plan_date_time'] },
             { fields: ['created_at'] },
+            { fields: ['status', 'plan_date_time'] },
+            { fields: ['status', 'created_at'] },
+            { fields: ['user_id', 'status'] },
+            { fields: ['venue_id', 'status'] },
         ],
     }
 );
