@@ -81,6 +81,61 @@ interface SMRequest {
   drinkPreference?: string;
 }
 
+export interface HostCancellationItem {
+  id: string;
+  meetId: string;
+  hostUserId: string;
+  reasonCategory: string;
+  reasonText: string | null;
+  status: 'PENDING_ADMIN_REVIEW' | 'APPROVED' | 'REFUND_PROCESSING' | 'COMPLETED' | 'REJECTED';
+  totalMembersCount: number;
+  totalCollectedAmount: number;
+  refundPolicyPercentage: number | null;
+  refundMethod: 'WALLET' | 'MANUAL_PAYOUT' | null;
+  totalRefundAmount: number | null;
+  adminReviewedBy: string | null;
+  adminReviewedAt: string | null;
+  adminNotes: string | null;
+  hostDepositAmount: number | null;
+  hostRefundType: 'FULL' | 'PARTIAL' | 'CUSTOM' | 'NO_REFUND' | null;
+  hostRefundPercentage: number | null;
+  hostRefundAmount: number | null;
+  hostRefundDestination: 'WALLET' | 'UPI' | 'BANK' | 'NONE' | null;
+  hostRefundStatus: 'NONE' | 'WALLET_CREDITED' | 'HOST_REFUND_PENDING_SETTLEMENT' | 'PAID' | null;
+  hostPayoutDetails: any;
+  hostSettlementTransactionId: string | null;
+  hostSettledAt: string | null;
+  hostSettledBy: string | null;
+  hostSettlementNotes: string | null;
+  createdAt: string;
+  host?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    profileImageUrl?: string;
+    upiId?: string;
+    accountNumber?: string;
+    bankName?: string;
+    ifscCode?: string;
+  };
+  meet?: {
+    id: string;
+    subject: string;
+    eventDateTime: string;
+    numberOfPersons: number;
+    paymentAmount: number;
+    chargesPerHead?: number;
+    venue?: {
+      name: string;
+      area?: string;
+      city?: string;
+    };
+  };
+  memberRefunds?: any[];
+}
+
 interface Counts {
   pending: number;
   approved: number;
@@ -116,12 +171,34 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }
 export const StrangersMeet: React.FC = () => {
   const { accessToken } = useAuthStore();
   const [activeTab, setActiveTab] = useState<
-    'pending' | 'approved' | 'in_progress' | 'needs_contact' | 'completed' | 'payouts' | 'rejected' | 'all'
+    'pending' | 'approved' | 'in_progress' | 'needs_contact' | 'completed' | 'payouts' | 'rejected' | 'all' | 'cancellations'
   >('pending');
   const [requests, setRequests] = useState<SMRequest[]>([]);
   const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, rejected: 0, payouts: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Cancellations state (Sections 15, 27, 28)
+  const [cancellations, setCancellations] = useState<HostCancellationItem[]>([]);
+  const [cancellationFilter, setCancellationFilter] = useState<'all' | 'pending' | 'settlement_pending' | 'completed' | 'rejected'>('all');
+  const [cancellationCounts, setCancellationCounts] = useState({ all: 0, pending: 0, settlement_pending: 0, completed: 0, rejected: 0 });
+  const [selectedCancellation, setSelectedCancellation] = useState<HostCancellationItem | null>(null);
+  const [cancellationDetail, setCancellationDetail] = useState<any | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Host approval decision state (Section 28)
+  const [hostRefundDecision, setHostRefundDecision] = useState<'FULL' | 'PARTIAL' | 'CUSTOM' | 'NO_REFUND'>('FULL');
+  const [hostRefundPercentage, setHostRefundPercentage] = useState<number>(100);
+  const [hostRefundCustomAmount, setHostRefundCustomAmount] = useState<string>('0');
+  const [hostRefundDestination, setHostRefundDestination] = useState<'WALLET' | 'UPI' | 'BANK'>('WALLET');
+  const [cancellationRejectionReason, setCancellationRejectionReason] = useState<string>('');
+  const [isRejectingCancellation, setIsRejectingCancellation] = useState(false);
+
+  // Host manual settlement modal state (Section 15)
+  const [settleCancellation, setSettleCancellation] = useState<HostCancellationItem | null>(null);
+  const [hostSettleRef, setHostSettleRef] = useState('');
+  const [hostSettleMethod, setHostSettleMethod] = useState('UPI');
+  const [hostSettleNotes, setHostSettleNotes] = useState('');
 
   // Modal state
   const [selected, setSelected] = useState<SMRequest | null>(null);
@@ -491,35 +568,223 @@ export const StrangersMeet: React.FC = () => {
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` };
 
+  const fetchCancellations = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const statusParam = cancellationFilter === 'all' ? '' : `?status=${cancellationFilter}`;
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations${statusParam}`, { headers });
+      const data = await res.json();
+      if (data.success) {
+        setCancellations(data.data || []);
+        if (data.counts) {
+          setCancellationCounts(data.counts);
+        }
+      } else {
+        setError(data.message || 'Failed to load cancellations');
+      }
+    } catch (e) {
+      setError('Network error loading cancellations.');
+    } finally {
+      setLoading(false);
+    }
+  }, [cancellationFilter, accessToken]);
+
   const fetchRequests = useCallback(async () => {
+    if (activeTab === 'cancellations') {
+      fetchCancellations();
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const statusParam = activeTab === 'all' ? '' : `?status=${activeTab}`;
-      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet${statusParam}`, { headers });
-      const data = await res.json();
+      const [reqRes, cancelRes] = await Promise.all([
+        fetch(`${BASE_URL}/api/admin/strangers-meet${statusParam}`, { headers }),
+        fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations?limit=1`, { headers }).catch(() => null),
+      ]);
+      const data = await reqRes.json();
       if (data.success) {
         setRequests(data.data);
         setCounts(data.counts || {});
       } else {
         setError(data.message || 'Failed to load requests');
       }
+      if (cancelRes) {
+        const cancelData = await cancelRes.json();
+        if (cancelData.success && cancelData.counts) {
+          setCancellationCounts(cancelData.counts);
+        }
+      }
     } catch (e) {
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [activeTab, accessToken]);
+  }, [activeTab, accessToken, fetchCancellations]);
 
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    if (activeTab === 'cancellations') {
+      fetchCancellations();
+    } else {
+      fetchRequests();
+    }
+  }, [activeTab, fetchRequests, fetchCancellations]);
 
   // Auto-refresh every 20s
   useEffect(() => {
-    const id = setInterval(fetchRequests, 20_000);
+    const id = setInterval(() => {
+      if (activeTab === 'cancellations') {
+        fetchCancellations();
+      } else {
+        fetchRequests();
+      }
+    }, 20_000);
     return () => clearInterval(id);
-  }, [fetchRequests]);
+  }, [activeTab, fetchRequests, fetchCancellations]);
+
+  // Cancellation Modals & Actions (Sections 15, 27, 28)
+  const openCancellationDetail = async (item: HostCancellationItem) => {
+    setSelectedCancellation(item);
+    setLoadingDetail(true);
+    setIsRejectingCancellation(false);
+    setCancellationRejectionReason('');
+    setHostRefundDecision('FULL');
+    setHostRefundPercentage(100);
+    const depositAmt = Number(item.hostDepositAmount || (item.meet as any)?.paymentAmount || 0);
+    setHostRefundCustomAmount(depositAmt.toString());
+    setHostRefundDestination('WALLET');
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations/${item.id}`, { headers });
+      const data = await res.json();
+      if (data.success) {
+        setCancellationDetail(data.data);
+      }
+    } catch (e) {
+      console.error('Failed to load detail', e);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  const handleApproveCancellation = async () => {
+    if (!selectedCancellation) return;
+    setSubmitting(true);
+    try {
+      const depositAmt = Number(selectedCancellation.hostDepositAmount || (selectedCancellation.meet as any)?.paymentAmount || 0);
+      let calculatedAmt = 0;
+      if (hostRefundDecision === 'FULL') {
+        calculatedAmt = depositAmt;
+      } else if (hostRefundDecision === 'PARTIAL') {
+        calculatedAmt = Math.round((depositAmt * (hostRefundPercentage / 100)) * 100) / 100;
+      } else if (hostRefundDecision === 'CUSTOM') {
+        calculatedAmt = Math.min(depositAmt, Math.max(0, parseFloat(hostRefundCustomAmount) || 0));
+      } else {
+        calculatedAmt = 0;
+      }
+
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations/${selectedCancellation.id}/approve`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          refundPercentage: 100, // 100% wallet refund to participants per Section 7-10
+          refundMethod: 'WALLET',
+          adminNotes: adminNote.trim() || undefined,
+          hostRefundDecision,
+          hostRefundPercentage: hostRefundDecision === 'PARTIAL' ? hostRefundPercentage : undefined,
+          hostRefundCustomAmount: hostRefundDecision === 'CUSTOM' ? calculatedAmt : undefined,
+          hostRefundDestination: calculatedAmt > 0 ? hostRefundDestination : 'NONE',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg('Host cancellation approved. Participant refunds issued and host refund processed.');
+        setSelectedCancellation(null);
+        setCancellationDetail(null);
+        fetchCancellations();
+        fetchRequests();
+      } else {
+        alert(data.message || 'Failed to approve cancellation');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Network error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRejectCancellation = async () => {
+    if (!selectedCancellation) return;
+    if (!cancellationRejectionReason.trim()) {
+      alert('Please provide a reason for rejecting the cancellation.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations/${selectedCancellation.id}/reject`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          reason: cancellationRejectionReason.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg('Host cancellation rejected. The meet remains active.');
+        setSelectedCancellation(null);
+        setCancellationDetail(null);
+        fetchCancellations();
+        fetchRequests();
+      } else {
+        alert(data.message || 'Failed to reject cancellation');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Network error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openHostSettlementModal = (item: HostCancellationItem) => {
+    setSettleCancellation(item);
+    setHostSettleRef('');
+    setHostSettleMethod('UPI');
+    setHostSettleNotes('');
+  };
+
+  const handleSettleHostRefund = async () => {
+    if (!settleCancellation) return;
+    if (!hostSettleRef.trim()) {
+      alert('Payment Reference / Transaction ID is required');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/admin/strangers-meet/cancellations/${settleCancellation.id}/settle-host-refund`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          paymentReference: hostSettleRef.trim(),
+          paymentMethod: hostSettleMethod,
+          notes: hostSettleNotes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg('Host refund marked as PAID successfully! Host notified.');
+        setSettleCancellation(null);
+        setHostSettleRef('');
+        fetchCancellations();
+      } else {
+        alert(data.message || 'Failed to settle host refund');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Network error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const openModal = (
     req: SMRequest,
@@ -743,6 +1008,868 @@ export const StrangersMeet: React.FC = () => {
     });
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER: Cancellations & Refunds View (Sections 15, 27, 28)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderCancellationsView = () => {
+    const filterChips: { key: typeof cancellationFilter; label: string; count: number }[] = [
+      { key: 'all', label: 'All', count: cancellationCounts.all },
+      { key: 'pending', label: 'Pending Admin Review', count: cancellationCounts.pending },
+      { key: 'settlement_pending', label: 'Settlement Pending', count: cancellationCounts.settlement_pending },
+      { key: 'completed', label: 'Completed', count: cancellationCounts.completed },
+      { key: 'rejected', label: 'Rejected', count: cancellationCounts.rejected },
+    ];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Filter Chips Bar (Section 27) */}
+        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {filterChips.map((chip) => {
+            const isSelected = cancellationFilter === chip.key;
+            return (
+              <button
+                key={chip.key}
+                onClick={() => setCancellationFilter(chip.key)}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: 20,
+                  border: isSelected ? '1.5px solid #7c3aed' : '1px solid var(--vz-border-color)',
+                  background: isSelected ? 'rgba(124, 58, 237, 0.12)' : 'var(--vz-card-bg)',
+                  color: isSelected ? '#7c3aed' : 'var(--vz-text-primary)',
+                  fontWeight: isSelected ? 700 : 500,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <span>{chip.label}</span>
+                <span
+                  style={{
+                    background: isSelected ? '#7c3aed' : 'var(--vz-light)',
+                    color: isSelected ? '#fff' : 'var(--vz-text-muted)',
+                    borderRadius: 12,
+                    padding: '0.05rem 0.45rem',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {chip.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* List of Cancellation Cards */}
+        {cancellations.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--vz-text-muted)', background: 'var(--vz-card-bg)', borderRadius: 12, border: '1px solid var(--vz-border-color)' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📭</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No cancellation requests in this filter</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {cancellations.map((item) => {
+              const depositAmt = Number(item.hostDepositAmount || (item.meet as any)?.paymentAmount || 0);
+              const isPending = item.status === 'PENDING_ADMIN_REVIEW';
+              const isSettlementPending = item.hostRefundStatus === 'HOST_REFUND_PENDING_SETTLEMENT';
+              const isPaid = item.hostRefundStatus === 'PAID';
+              const isWalletCredited = item.hostRefundStatus === 'WALLET_CREDITED';
+
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    background: 'var(--vz-card-bg)',
+                    border: isPending
+                      ? '1.5px solid #f59e0b'
+                      : isSettlementPending
+                      ? '1.5px solid #3b82f6'
+                      : '1px solid var(--vz-border-color)',
+                    borderRadius: 12,
+                    padding: '1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                  }}
+                >
+                  {/* Card Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
+                        <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--vz-text-primary)' }}>
+                          {item.meet?.subject || 'Strangers Meet'}
+                        </h4>
+                        {/* Status badge */}
+                        <span
+                          style={{
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: 6,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background:
+                              item.status === 'PENDING_ADMIN_REVIEW'
+                                ? 'rgba(245, 158, 11, 0.15)'
+                                : item.status === 'COMPLETED'
+                                ? 'rgba(16, 185, 129, 0.15)'
+                                : item.status === 'REJECTED'
+                                ? 'rgba(239, 68, 68, 0.15)'
+                                : 'rgba(59, 130, 246, 0.15)',
+                            color:
+                              item.status === 'PENDING_ADMIN_REVIEW'
+                                ? '#d97706'
+                                : item.status === 'COMPLETED'
+                                ? '#059669'
+                                : item.status === 'REJECTED'
+                                ? '#dc2626'
+                                : '#2563eb',
+                            border: `1px solid ${
+                              item.status === 'PENDING_ADMIN_REVIEW'
+                                ? 'rgba(245, 158, 11, 0.3)'
+                                : item.status === 'COMPLETED'
+                                ? 'rgba(16, 185, 129, 0.3)'
+                                : item.status === 'REJECTED'
+                                ? 'rgba(239, 68, 68, 0.3)'
+                                : 'rgba(59, 130, 246, 0.3)'
+                            }`,
+                          }}
+                        >
+                          {item.status.replace(/_/g, ' ')}
+                        </span>
+
+                        {/* Host refund status badge */}
+                        {isSettlementPending && (
+                          <span
+                            style={{
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              background: 'rgba(245, 158, 11, 0.2)',
+                              color: '#b45309',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                            }}
+                          >
+                            ⏳ Host Refund Pending Settlement (₹{Number(item.hostRefundAmount || 0).toFixed(0)})
+                          </span>
+                        )}
+                        {isPaid && (
+                          <span
+                            style={{
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              background: 'rgba(16, 185, 129, 0.2)',
+                              color: '#047857',
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                            }}
+                          >
+                            ✓ Host Refund Settled (₹{Number(item.hostRefundAmount || 0).toFixed(0)}) • Ref: {item.hostSettlementTransactionId}
+                          </span>
+                        )}
+                        {isWalletCredited && (
+                          <span
+                            style={{
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: 6,
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#059669',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                            }}
+                          >
+                            ✓ Host Refund: Wallet Credited (₹{Number(item.hostRefundAmount || 0).toFixed(0)})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ color: 'var(--vz-text-muted)', fontSize: '0.825rem' }}>
+                        📍 {item.meet?.venue?.name || 'Venue'} • 📅 {fmt(item.meet?.eventDateTime)} • Requested on: {fmt(item.createdAt)}
+                      </div>
+                    </div>
+
+                    {/* Action buttons on card */}
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {isPending && (
+                        <button
+                          onClick={() => openCancellationDetail(item)}
+                          style={{
+                            padding: '0.5rem 1rem',
+                            borderRadius: 8,
+                            border: 'none',
+                            background: '#7c3aed',
+                            color: '#fff',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          📋 Review & Decide Refunds
+                        </button>
+                      )}
+                      {isSettlementPending && (
+                        <button
+                          onClick={() => openHostSettlementModal(item)}
+                          style={{
+                            padding: '0.5rem 1rem',
+                            borderRadius: 8,
+                            border: 'none',
+                            background: '#059669',
+                            color: '#fff',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          💸 Mark Host Refund as Paid
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openCancellationDetail(item)}
+                        style={{
+                          padding: '0.5rem 0.85rem',
+                          borderRadius: 8,
+                          border: '1px solid var(--vz-border-color)',
+                          background: 'transparent',
+                          color: 'var(--vz-text-primary)',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👁 View Details
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Host & Meet Metrics Grid */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '0.75rem',
+                      background: 'rgba(0,0,0,0.03)',
+                      borderRadius: 8,
+                      padding: '0.85rem',
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', display: 'block' }}>Host Details</span>
+                      <strong style={{ fontSize: '0.875rem' }}>
+                        {item.host?.firstName} {item.host?.lastName}
+                      </strong>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)' }}>
+                        📞 {item.host?.phone || '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', display: 'block' }}>Participants</span>
+                      <strong style={{ fontSize: '0.875rem', color: '#7c3aed' }}>
+                        {item.totalMembersCount} Paid / Confirmed
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', display: 'block' }}>Total Participant Payments</span>
+                      <strong style={{ fontSize: '0.875rem', color: '#059669' }}>
+                        ₹{Number(item.totalCollectedAmount || 0).toFixed(0)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)', display: 'block' }}>Host Confirmation Deposit</span>
+                      <strong style={{ fontSize: '0.875rem', color: '#d97706' }}>
+                        ₹{depositAmt.toFixed(0)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Reason section */}
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.05)',
+                      borderLeft: '3px solid #ef4444',
+                      padding: '0.6rem 0.85rem',
+                      borderRadius: '0 6px 6px 0',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#dc2626' }}>
+                      Cancellation Reason: {item.reasonCategory}
+                    </div>
+                    {item.reasonText && (
+                      <div style={{ fontSize: '0.775rem', color: 'var(--vz-text-primary)', marginTop: '0.2rem' }}>
+                        "{item.reasonText}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER: Host Cancellation Review & Approval Modal (Section 28)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderCancellationReviewModal = () => {
+    if (!selectedCancellation) return null;
+    const item = selectedCancellation;
+    const depositAmt = Number(item.hostDepositAmount || (item.meet as any)?.paymentAmount || 0);
+
+    let calculatedHostRefund = 0;
+    if (hostRefundDecision === 'FULL') {
+      calculatedHostRefund = depositAmt;
+    } else if (hostRefundDecision === 'PARTIAL') {
+      calculatedHostRefund = Math.round((depositAmt * (hostRefundPercentage / 100)) * 100) / 100;
+    } else if (hostRefundDecision === 'CUSTOM') {
+      calculatedHostRefund = Math.min(depositAmt, Math.max(0, parseFloat(hostRefundCustomAmount) || 0));
+    } else {
+      calculatedHostRefund = 0;
+    }
+
+    const hostPayout = cancellationDetail?.hostPayoutDetails || item.hostPayoutDetails || {};
+    const paidJoiners = cancellationDetail?.paidJoiners || [];
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          zIndex: 1060,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          overflowY: 'auto',
+        }}
+      >
+        <div
+          style={{
+            background: 'var(--vz-card-bg)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 14,
+            padding: '1.75rem',
+            width: '100%',
+            maxWidth: 720,
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.75rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
+                Review Host Cancellation Request
+              </h3>
+              <p style={{ margin: '0.2rem 0 0', color: 'var(--vz-text-muted)', fontSize: '0.8rem' }}>
+                Stranger Meet: {item.meet?.subject || 'Meet'} • Venue: {item.meet?.venue?.name || 'Venue'}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedCancellation(null);
+                setCancellationDetail(null);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '1.25rem',
+                cursor: 'pointer',
+                color: 'var(--vz-text-muted)',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Cancellation Info & Reason Box */}
+          <div style={{ background: 'rgba(239, 68, 68, 0.06)', borderRadius: 10, padding: '1rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <span style={{ fontWeight: 700, color: '#dc2626', fontSize: '0.875rem' }}>
+                Reason: {item.reasonCategory}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--vz-text-muted)' }}>
+                Requested {fmt(item.createdAt)}
+              </span>
+            </div>
+            {item.reasonText && (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--vz-text-primary)' }}>
+                "{item.reasonText}"
+              </p>
+            )}
+          </div>
+
+          {/* Metrics summary */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ background: 'var(--vz-light)', padding: '0.75rem', borderRadius: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>Paid Joiners</span>
+              <strong style={{ fontSize: '1.1rem', color: '#7c3aed' }}>{item.totalMembersCount}</strong>
+            </div>
+            <div style={{ background: 'var(--vz-light)', padding: '0.75rem', borderRadius: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>Total Collected</span>
+              <strong style={{ fontSize: '1.1rem', color: '#059669' }}>₹{Number(item.totalCollectedAmount || 0).toFixed(0)}</strong>
+            </div>
+            <div style={{ background: 'var(--vz-light)', padding: '0.75rem', borderRadius: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--vz-text-muted)', display: 'block' }}>Host Confirmation Deposit</span>
+              <strong style={{ fontSize: '1.1rem', color: '#d97706' }}>₹{depositAmt.toFixed(0)}</strong>
+            </div>
+          </div>
+
+          {/* Section 1: Participant Refund Policy (Sections 7-10, 28) */}
+          <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '1.1rem' }}>👥</span>
+              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
+                Participant Refund Policy: 100% Lunara Wallet Refund
+              </h4>
+            </div>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>
+              Per platform rules, every confirmed participant automatically receives a 100% refund directly to their Lunara Wallet.
+            </p>
+            {loadingDetail ? (
+              <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>Loading participant list…</div>
+            ) : paidJoiners.length > 0 ? (
+              <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--vz-border-color)', borderRadius: 6 }}>
+                <table style={{ width: '100%', fontSize: '0.775rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--vz-light)', textAlign: 'left' }}>
+                      <th style={{ padding: '0.4rem 0.6rem' }}>Participant</th>
+                      <th style={{ padding: '0.4rem 0.6rem' }}>Paid Amount</th>
+                      <th style={{ padding: '0.4rem 0.6rem' }}>Refund (100%)</th>
+                      <th style={{ padding: '0.4rem 0.6rem' }}>Destination</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paidJoiners.map((j: any) => (
+                      <tr key={j.joinerId} style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                        <td style={{ padding: '0.4rem 0.6rem' }}>{j.name}</td>
+                        <td style={{ padding: '0.4rem 0.6rem' }}>₹{j.paidAmount}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', color: '#059669', fontWeight: 700 }}>₹{j.refundAmount}</td>
+                        <td style={{ padding: '0.4rem 0.6rem', color: '#7c3aed' }}>Lunara Wallet</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>
+                {item.totalMembersCount} participants will receive wallet refunds.
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Host Confirmation Deposit Decision (Sections 13, 14, 28) */}
+          <div style={{ border: '1.5px solid #f59e0b', borderRadius: 10, padding: '1rem', background: 'rgba(245, 158, 11, 0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '1.1rem' }}>👑</span>
+              <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#d97706' }}>
+                Host Confirmation Deposit Decision (Deposit: ₹{depositAmt.toFixed(0)})
+              </h4>
+            </div>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--vz-text-muted)' }}>
+              The host paid a confirmation deposit of ₹{depositAmt.toFixed(0)}. Decide how much to refund:
+            </p>
+
+            {/* Radio Options */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="hostRefundDecision"
+                  checked={hostRefundDecision === 'FULL'}
+                  onChange={() => setHostRefundDecision('FULL')}
+                />
+                <span><strong>Full Refund (100%)</strong> — ₹{depositAmt.toFixed(0)}</span>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="hostRefundDecision"
+                  checked={hostRefundDecision === 'PARTIAL'}
+                  onChange={() => setHostRefundDecision('PARTIAL')}
+                />
+                <span><strong>Partial Refund (%)</strong></span>
+                {hostRefundDecision === 'PARTIAL' && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: '0.5rem' }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={hostRefundPercentage}
+                      onChange={(e) => setHostRefundPercentage(Math.max(1, Math.min(99, Number(e.target.value) || 0)))}
+                      style={{ width: 60, padding: '0.2rem 0.4rem', borderRadius: 4, border: '1px solid var(--vz-border-color)', fontSize: '0.85rem' }}
+                    />
+                    <span>% = <strong>₹{calculatedHostRefund.toFixed(0)}</strong></span>
+                  </div>
+                )}
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="hostRefundDecision"
+                  checked={hostRefundDecision === 'CUSTOM'}
+                  onChange={() => setHostRefundDecision('CUSTOM')}
+                />
+                <span><strong>Custom Amount</strong></span>
+                {hostRefundDecision === 'CUSTOM' && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: '0.5rem' }}>
+                    <span>₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={depositAmt}
+                      value={hostRefundCustomAmount}
+                      onChange={(e) => setHostRefundCustomAmount(e.target.value)}
+                      style={{ width: 90, padding: '0.2rem 0.4rem', borderRadius: 4, border: '1px solid var(--vz-border-color)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                )}
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="hostRefundDecision"
+                  checked={hostRefundDecision === 'NO_REFUND'}
+                  onChange={() => setHostRefundDecision('NO_REFUND')}
+                />
+                <span><strong>No Refund</strong> — ₹0 (Deposit forfeited)</span>
+              </label>
+            </div>
+
+            {/* Destination Selection (if host refund > 0) */}
+            {calculatedHostRefund > 0 && (
+              <div style={{ borderTop: '1px dashed var(--vz-border-color)', paddingTop: '0.75rem', marginTop: '0.75rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.825rem' }}>
+                  Host Refund Destination:
+                </label>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="hostRefundDest"
+                      checked={hostRefundDestination === 'WALLET'}
+                      onChange={() => setHostRefundDestination('WALLET')}
+                    />
+                    <span>💼 Lunara Wallet (Instant credit)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="hostRefundDest"
+                      checked={hostRefundDestination === 'UPI'}
+                      onChange={() => setHostRefundDestination('UPI')}
+                    />
+                    <span>⚡ Host UPI {hostPayout.upiId ? `(${hostPayout.upiId})` : ''}</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="hostRefundDest"
+                      checked={hostRefundDestination === 'BANK'}
+                      onChange={() => setHostRefundDestination('BANK')}
+                    />
+                    <span>🏦 Bank Account {hostPayout.accountNumber ? `(•••${String(hostPayout.accountNumber).slice(-4)})` : ''}</span>
+                  </label>
+                </div>
+                {hostRefundDestination !== 'WALLET' && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#b45309', background: 'rgba(245, 158, 11, 0.1)', padding: '0.4rem 0.6rem', borderRadius: 4 }}>
+                    ⚠️ External settlement will be marked as "Pending Settlement". You will be able to mark it as PAID after initiating external transfer.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Admin Note Input */}
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.825rem', fontWeight: 600 }}>
+              Admin Note (Optional):
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Approved per medical certificate provided by host"
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: 6, border: '1px solid var(--vz-border-color)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Rejection Section if toggled */}
+          {isRejectingCancellation && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', borderRadius: 8, padding: '0.85rem', border: '1px solid #ef4444' }}>
+              <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.825rem', fontWeight: 700, color: '#dc2626' }}>
+                Reason for Rejection *
+              </label>
+              <textarea
+                placeholder="Explain to host why cancellation was rejected…"
+                value={cancellationRejectionReason}
+                onChange={(e) => setCancellationRejectionReason(e.target.value)}
+                rows={2}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid #ef4444', fontSize: '0.85rem', boxSizing: 'border-box', marginBottom: '0.5rem' }}
+              />
+              <button
+                onClick={handleRejectCancellation}
+                disabled={submitting || !cancellationRejectionReason.trim()}
+                style={{
+                  padding: '0.45rem 1rem',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  opacity: submitting || !cancellationRejectionReason.trim() ? 0.6 : 1,
+                }}
+              >
+                {submitting ? 'Rejecting…' : 'Confirm Rejection'}
+              </button>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--vz-border-color)', paddingTop: '1rem' }}>
+            <div>
+              {!isRejectingCancellation ? (
+                <button
+                  onClick={() => setIsRejectingCancellation(true)}
+                  disabled={submitting}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: 8,
+                    border: '1px solid #dc2626',
+                    background: 'transparent',
+                    color: '#dc2626',
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Reject Request
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsRejectingCancellation(false)}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: 8,
+                    border: '1px solid var(--vz-border-color)',
+                    background: 'transparent',
+                    color: 'var(--vz-text-muted)',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel Rejection
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                onClick={() => {
+                  setSelectedCancellation(null);
+                  setCancellationDetail(null);
+                }}
+                disabled={submitting}
+                style={{
+                  padding: '0.55rem 1.25rem',
+                  borderRadius: 8,
+                  border: '1px solid var(--vz-border-color)',
+                  background: 'transparent',
+                  color: 'var(--vz-text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+              <button
+                onClick={handleApproveCancellation}
+                disabled={submitting}
+                style={{
+                  padding: '0.55rem 1.5rem',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#7c3aed',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  opacity: submitting ? 0.7 : 1,
+                }}
+              >
+                {submitting ? 'Processing…' : '✓ Approve & Process Refunds'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER: Host Settlement Modal (Section 15)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderHostSettlementModal = () => {
+    if (!settleCancellation) return null;
+    const item = settleCancellation;
+    const hostPayout = item.hostPayoutDetails || item.host || {};
+
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          zIndex: 1070,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+        }}
+      >
+        <div
+          style={{
+            background: 'var(--vz-card-bg)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 14,
+            padding: '1.75rem',
+            width: '100%',
+            maxWidth: 520,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--vz-border-color)', paddingBottom: '0.75rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
+                Mark Host Refund as Settled
+              </h3>
+              <p style={{ margin: '0.2rem 0 0', color: 'var(--vz-text-muted)', fontSize: '0.8rem' }}>
+                Stranger Meet: {item.meet?.subject}
+              </p>
+            </div>
+            <button
+              onClick={() => setSettleCancellation(null)}
+              style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--vz-text-muted)' }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Refund Amount & Host Payout Box */}
+          <div style={{ background: 'rgba(16, 185, 129, 0.08)', borderRadius: 10, padding: '1rem', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--vz-text-muted)' }}>Refund Amount to Pay:</span>
+              <strong style={{ fontSize: '1.35rem', color: '#059669' }}>
+                ₹{Number(item.hostRefundAmount || 0).toFixed(0)}
+              </strong>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-primary)' }}>
+              <strong>Host:</strong> {item.host?.firstName} {item.host?.lastName} (📞 {item.host?.phone || '—'})
+            </div>
+            {hostPayout.upiId && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-primary)', marginTop: '0.2rem' }}>
+                <strong>UPI ID:</strong> {hostPayout.upiId}
+              </div>
+            )}
+            {hostPayout.accountNumber && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--vz-text-primary)', marginTop: '0.2rem' }}>
+                <strong>Bank Account:</strong> {hostPayout.accountNumber} ({hostPayout.bankName || 'Bank'}, IFSC: {hostPayout.ifscCode || '—'})
+              </div>
+            )}
+          </div>
+
+          {/* Inputs */}
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600, fontSize: '0.85rem' }}>
+              Payment Reference / Transaction ID *
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. UPI-REF-99238491823 or IMPS-49382103"
+              value={hostSettleRef}
+              onChange={(e) => setHostSettleRef(e.target.value)}
+              style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', fontSize: '0.9rem', boxSizing: 'border-box' }}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600, fontSize: '0.85rem' }}>
+              Payment Method
+            </label>
+            <select
+              value={hostSettleMethod}
+              onChange={(e) => setHostSettleMethod(e.target.value)}
+              style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', fontSize: '0.9rem', boxSizing: 'border-box' }}
+            >
+              <option value="UPI">UPI</option>
+              <option value="IMPS">IMPS (Immediate Payment)</option>
+              <option value="NEFT">NEFT</option>
+              <option value="RTGS">RTGS</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 600, fontSize: '0.85rem' }}>
+              Settlement Notes (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Transferred via HDFC net banking"
+              value={hostSettleNotes}
+              onChange={(e) => setHostSettleNotes(e.target.value)}
+              style={{ width: '100%', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1.5px solid var(--vz-border-color)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--vz-border-color)', paddingTop: '1rem' }}>
+            <button
+              onClick={() => setSettleCancellation(null)}
+              disabled={submitting}
+              style={{ padding: '0.55rem 1.25rem', borderRadius: 8, border: '1px solid var(--vz-border-color)', background: 'transparent', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSettleHostRefund}
+              disabled={submitting || !hostSettleRef.trim()}
+              style={{
+                padding: '0.55rem 1.5rem',
+                borderRadius: 8,
+                border: 'none',
+                background: '#059669',
+                color: '#fff',
+                fontWeight: 700,
+                cursor: 'pointer',
+                opacity: submitting || !hostSettleRef.trim() ? 0.6 : 1,
+              }}
+            >
+              {submitting ? 'Confirming…' : 'Confirm Settlement'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const tabs = [
     { key: 'pending', label: 'Pending Approvals', count: counts.pending },
     { key: 'approved', label: 'Approved (Upcoming)', count: counts.approved },
@@ -750,6 +1877,7 @@ export const StrangersMeet: React.FC = () => {
     { key: 'needs_contact', label: '⚠️ Needs Host Contact', count: counts.needsContact || 0 },
     { key: 'completed', label: '🏁 Completed Reviews', count: counts.completed || 0 },
     { key: 'payouts', label: '💳 Payouts & Settlements', count: counts.payouts || 0 },
+    { key: 'cancellations', label: '❌ Cancellations & Refunds', count: cancellationCounts.pending || 0 },
     { key: 'rejected', label: 'Rejected', count: counts.rejected },
     {
       key: 'all',
@@ -776,7 +1904,7 @@ export const StrangersMeet: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={fetchRequests}
+          onClick={activeTab === 'cancellations' ? fetchCancellations : fetchRequests}
           style={{
             padding: '0.5rem 1rem',
             borderRadius: 8,
@@ -805,7 +1933,7 @@ export const StrangersMeet: React.FC = () => {
         {tabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => setActiveTab(t.key as any)}
             style={{
               padding: '0.6rem 1.1rem',
               border: 'none',
@@ -830,6 +1958,8 @@ export const StrangersMeet: React.FC = () => {
                   background:
                     t.key === 'needs_contact'
                       ? '#ef4444'
+                      : t.key === 'cancellations'
+                      ? '#dc2626'
                       : activeTab === t.key
                       ? '#7c3aed'
                       : 'var(--vz-light)',
@@ -849,9 +1979,11 @@ export const StrangersMeet: React.FC = () => {
 
       {/* Content */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--vz-text-muted)' }}>Loading requests…</div>
+        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--vz-text-muted)' }}>Loading…</div>
       ) : error ? (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#dc2626' }}>{error}</div>
+      ) : activeTab === 'cancellations' ? (
+        renderCancellationsView()
       ) : requests.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--vz-text-muted)' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👥</div>
@@ -1610,6 +2742,12 @@ export const StrangersMeet: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Host Cancellation Review & Approval Modal (Section 28) */}
+      {selectedCancellation && renderCancellationReviewModal()}
+
+      {/* Host Manual Settlement Modal (Section 15) */}
+      {settleCancellation && renderHostSettlementModal()}
     </div>
   );
 };

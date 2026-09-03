@@ -37,7 +37,7 @@ export const calculatePricing = async (req: Request, res: Response): Promise<voi
 // Create Group Party & Razorpay Order
 export const createGroupParty = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime } = req.body;
+        const { venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime, paymentMode } = req.body;
         const userId = req.user!.id;
 
         const result = await GroupPartyService.createParty({
@@ -52,7 +52,8 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             partySubject,
             partyRequirement,
             partyDescription,
-            startTime
+            startTime,
+            paymentMode,
         });
 
         res.status(201).json({

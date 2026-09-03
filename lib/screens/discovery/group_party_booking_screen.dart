@@ -16,6 +16,7 @@ import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../social/large_party_ticket_screen.dart';
+import '../../services/notification_navigator.dart';
 
 
 class GroupPartyBookingScreen extends StatefulWidget {
@@ -1936,6 +1937,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                   : _optMobileController.text.trim(),
                               foodPreference: _foodPreference,
                               drinkPreference: _drinkPreference,
+                              paymentMode: 'wallet',
                             );
 
                             if (result == null || result['success'] != true) {
@@ -2504,13 +2506,36 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
                         if (sheetSuccess == true && createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
                           TopNotificationBanner.show(
-                            title: 'Group Party Confirmed! 🎉',
-                            body: 'Your payment was verified successfully. Digital ticket generated!',
+                            title: 'Group Party Confirmed! 🥳',
+                            body: 'Your party of $parsed guests at ${widget.venue.name} is fully confirmed. Digital ticket is ready!',
                             data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
                           );
-                          if (rootContext.mounted) {
+                          final navContext = rootContext.mounted ? rootContext : (NotificationNavigator.navigatorKey.currentContext ?? rootContext);
+                          if (navContext.mounted) {
                             Navigator.pushReplacement(
-                              rootContext,
+                              navContext,
+                              MaterialPageRoute(
+                                builder: (_) => LargePartyTicketScreen(
+                                  booking: {
+                                    'id': createdGroupPartyId,
+                                    'bookingId': createdGroupPartyId,
+                                    'bookingDate': partyDateStr,
+                                    'partyDate': partyDateStr,
+                                    'startTime': formattedTime,
+                                    'status': 'confirmed',
+                                    'paymentStatus': 'paid',
+                                    'venue': widget.venue.toMap(),
+                                    'venueName': widget.venue.name,
+                                    'numberOfGuests': parsed,
+                                    'partySubject': 'Group Party',
+                                    'totalAmount': totalPrice,
+                                  },
+                                  venue: widget.venue.toMap(),
+                                ),
+                              ),
+                            );
+                          } else if (NotificationNavigator.navigatorKey.currentState != null) {
+                            NotificationNavigator.navigatorKey.currentState!.pushReplacement(
                               MaterialPageRoute(
                                 builder: (_) => LargePartyTicketScreen(
                                   booking: {

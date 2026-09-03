@@ -41,6 +41,7 @@ export interface CreateBookingPayload {
     mobileNumber?: string;
     optionalMobileNumber?: string;
     isUpcomingNight?: boolean;
+    paymentMode?: string;
 }
 
 export class VenueBookingService {
@@ -103,7 +104,8 @@ export class VenueBookingService {
         const {
             userId, venueId, bookingDate, startTime, tablePackage: packageName,
             numberOfGuests, specialRequests, goingMode = 'solo', partySubject,
-            partyRequirement, partyDescription, mobileNumber, optionalMobileNumber, isUpcomingNight
+            partyRequirement, partyDescription, mobileNumber, optionalMobileNumber, isUpcomingNight,
+            paymentMode
         } = payload;
 
         if (![GoingMode.SOLO, GoingMode.PARTY_REQUEST].includes(goingMode as GoingMode)) {
@@ -190,9 +192,10 @@ export class VenueBookingService {
             }
         }
 
+        const isWalletPayment = (paymentMode || '').toLowerCase() === 'wallet';
         let razorpayOrder: any = null;
-        // Solo mode or small party (<= 20) with price > 0 generates Razorpay order immediately
-        if ((goingMode === GoingMode.SOLO || !isLargeParty) && pricing.totalAmount > 0) {
+        // Solo mode or small party (<= 20) with price > 0 generates Razorpay order immediately (skipped for wallet)
+        if ((goingMode === GoingMode.SOLO || !isLargeParty) && pricing.totalAmount > 0 && !isWalletPayment) {
             try {
                 razorpayOrder = await razorpay.orders.create({
                     amount: Math.round(pricing.totalAmount * 100),
@@ -235,8 +238,8 @@ export class VenueBookingService {
                     partyDescription: isLargeParty ? (partyDescription || undefined) : undefined,
                     mobileNumber: isLargeParty ? (mobileNumber?.trim() || undefined) : undefined,
                     optionalMobileNumber: isLargeParty ? (optionalMobileNumber?.trim() || undefined) : undefined,
-                    status: (isLargeParty || razorpayOrder) ? BookingStatus.PENDING : (pricing.totalAmount > 0 ? BookingStatus.PENDING : BookingStatus.CONFIRMED),
-                    paymentStatus: (isLargeParty || razorpayOrder || pricing.totalAmount > 0) ? PaymentStatus.PENDING : PaymentStatus.PAID,
+                    status: (isLargeParty || razorpayOrder || isWalletPayment || pricing.totalAmount > 0) ? BookingStatus.PENDING : BookingStatus.CONFIRMED,
+                    paymentStatus: (isLargeParty || razorpayOrder || isWalletPayment || pricing.totalAmount > 0) ? PaymentStatus.PENDING : PaymentStatus.PAID,
                     razorpayOrderId: razorpayOrder ? razorpayOrder.id : undefined
                 }, { transaction });
             }

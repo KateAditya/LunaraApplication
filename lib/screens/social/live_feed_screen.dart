@@ -5327,19 +5327,128 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
         ];
-      } else if (meetMap['hostCancellation'] is Map &&
-          (meetMap['hostCancellation']['status'] == 'PENDING_ADMIN_REVIEW' ||
-              meetMap['hostCancellation']['status'] == 'REFUND_PROCESSING')) {
+      } else if (meetMap['hostCancellation'] is Map) {
         final hostCancel = meetMap['hostCancellation'] as Map<String, dynamic>;
-        final isPendingReview = hostCancel['status'] == 'PENDING_ADMIN_REVIEW';
+        final String cancelStatus = hostCancel['status']?.toString() ?? '';
+        final String hostRefundStatus = hostCancel['hostRefundStatus']?.toString() ?? '';
+        final double hostRefundAmt = double.tryParse((hostCancel['hostRefundAmount'] ?? 0).toString()) ?? 0.0;
+        final String hostRefundDest = hostCancel['hostRefundDestination']?.toString() ?? 'UPI / Bank Account';
+        final String hostRef = hostCancel['hostSettlementTransactionId']?.toString() ?? '';
 
-        title = isPendingReview ? '⏳ Cancellation Requested' : '💳 Refund Processing';
-        badge = isPendingReview ? 'AWAITING ADMIN REVIEW' : 'REFUND IN PROGRESS';
-        accent = const Color(0xFFF59E0B);
-        body = isPendingReview
-            ? 'Your cancellation request has been submitted and is currently being reviewed by Lunara Admin.'
-            : 'Your Stranger Meet cancellation was approved. Member refunds are being processed.';
-        statusSummary = isPendingReview ? 'Awaiting Admin Review' : 'Refunds Processing';
+        if (hostRefundStatus == 'HOST_REFUND_PENDING_SETTLEMENT') {
+          title = '💰 STRANGERS MEET REFUND';
+          badge = 'PENDING';
+          accent = const Color(0xFFF59E0B);
+          body = 'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nSettlement: Processing within 24 hours';
+          statusSummary = 'Pending Settlement (within 24h)';
+          actionsList = [
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: true,
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error opening meet ticket: $e');
+                }
+              },
+            ),
+          ];
+        } else if (hostRefundStatus == 'PAID') {
+          title = '💰 STRANGERS MEET REFUND';
+          badge = 'SETTLED';
+          accent = const Color(0xFF10B981);
+          body = 'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nStatus: ✓ Amount Settled${hostRef.isNotEmpty ? '\nReference: $hostRef' : ''}';
+          statusSummary = 'Settled';
+          actionsList = [
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: true,
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error opening meet ticket: $e');
+                }
+              },
+            ),
+          ];
+        } else if (cancelStatus == 'PENDING_ADMIN_REVIEW') {
+          title = '⏳ Cancellation Requested';
+          badge = 'AWAITING ADMIN REVIEW';
+          accent = const Color(0xFFF59E0B);
+          body = 'Your cancellation request has been submitted and is waiting for admin approval.';
+          statusSummary = 'Waiting for admin approval';
+          actionsList = [
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: true,
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error opening meet ticket: $e');
+                }
+              },
+            ),
+          ];
+        } else {
+          title = 'Stranger Meet Cancelled';
+          badge = 'CANCELLED';
+          accent = const Color(0xFFEF4444);
+          final String hostWalletNote = hostRefundStatus == 'WALLET_CREDITED'
+              ? ' Host deposit refund of ₹${hostRefundAmt.toStringAsFixed(0)} credited to Lunara Wallet.'
+              : '';
+          body = 'You cancelled this Stranger Meet at $venueName. Participant refunds have been processed.$hostWalletNote';
+          statusSummary = 'Cancelled • Refunds Processed';
+          actionsList = [
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: true,
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error opening meet ticket: $e');
+                }
+              },
+            ),
+          ];
+        }
+      } else if (meetStatus == 'cancelled') {
+        title = 'Stranger Meet Cancelled';
+        badge = 'CANCELLED';
+        accent = const Color(0xFFEF4444);
+        body = 'This Stranger Meet at $venueName was cancelled.';
+        statusSummary = 'Cancelled';
         actionsList = [
           NotificationAction(
             label: 'View Ticket',
@@ -5544,14 +5653,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.grey[200],
             onTap: () {
-              final double deposit = (meetMap['paymentAmount'] != null ? double.tryParse(meetMap['paymentAmount'].toString()) ?? 0.0 : 0.0).toDouble();
+              final int actualPaidCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['joinedCount'] ?? 0).toString()) ?? 0;
+              final double totalCollected = actualPaidCount * chargesPerHead;
+              final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+              final double hostDeposit = double.tryParse((meetMap['paymentAmount'] ?? 0).toString()) ?? 0.0;
+              final String meetDate = parsedEventDate != null ? DateFormat('MMM dd, yyyy').format(parsedEventDate) : '';
+              final String meetTime = parsedEventDate != null ? DateFormat('hh:mm a').format(parsedEventDate) : '';
+
               StrangersMeetHostCancellationDialog.show(
                 context,
                 meetId: meetId,
                 subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
                 venueName: venueName,
-                joinedCount: paidJoinerRecord != null ? 1 : 0,
-                collectedAmount: (paidJoinerRecord != null ? chargesPerHead : 0.0),
+                joinedCount: actualPaidCount,
+                collectedAmount: totalCollected,
+                date: meetDate,
+                time: meetTime,
+                totalCapacity: totalCapacity > 0 ? totalCapacity : null,
+                paidCount: actualPaidCount,
+                hostDeposit: hostDeposit,
                 onCancelled: () => _loadFeed(),
               );
             },
@@ -5594,17 +5714,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
         ];
-      } else if (hostCancellation != null &&
+      } else if (meetStatus == 'cancelled' || (hostCancellation != null &&
           (hostCancellation['status'] == 'COMPLETED' ||
               hostCancellation['status'] == 'REFUNDED' ||
-              hostCancellation['status'] == 'REFUND_PROCESSING')) {
-        final ref = hostCancellation['totalRefundAmount'] ?? 0;
-        title = '✓ Stranger Meet Cancelled';
+              hostCancellation['status'] == 'APPROVED' ||
+              hostCancellation['status'] == 'REFUND_PROCESSING'))) {
+        final refAmount = (myRequest?['paymentAmount'] ?? chargesPerHead);
+        title = '🎉 Strangers Meet Cancelled';
         badge = 'REFUND PROCESSED';
         accent = const Color(0xFF10B981);
-        body = 'The Stranger Meet was cancelled by the host. Refunds are processed according to the Lunara policy.';
+        body = 'The Strangers Meet at $venueName was cancelled by the host. Your payment of ₹$refAmount has been refunded to your Lunara Wallet.';
         statusSummary = 'Refund Processed';
         actionsList = [
+          NotificationAction(
+            label: 'View Details',
+            icon: Icons.info_outline_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
           NotificationAction(
             label: 'View Wallet',
             icon: Icons.account_balance_wallet_rounded,
@@ -5697,14 +5832,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () {
               if (isHost) {
-                final double deposit = (meetMap['paymentAmount'] != null ? double.tryParse(meetMap['paymentAmount'].toString()) ?? 0.0 : 0.0).toDouble();
+                final int actualPaidCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['joinedCount'] ?? 0).toString()) ?? 0;
+                final double totalCollected = actualPaidCount * chargesPerHead;
+                final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+                final double hostDeposit = double.tryParse((meetMap['paymentAmount'] ?? 0).toString()) ?? 0.0;
+                final String meetDate = parsedEventDate != null ? DateFormat('MMM dd, yyyy').format(parsedEventDate) : '';
+                final String meetTime = parsedEventDate != null ? DateFormat('hh:mm a').format(parsedEventDate) : '';
+
                 StrangersMeetHostCancellationDialog.show(
                   context,
                   meetId: meetId,
                   subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
                   venueName: venueName,
-                  joinedCount: paidJoinerRecord != null ? 1 : 0,
-                  collectedAmount: (paidJoinerRecord != null ? chargesPerHead : 0.0),
+                  joinedCount: actualPaidCount,
+                  collectedAmount: totalCollected,
+                  date: meetDate,
+                  time: meetTime,
+                  totalCapacity: totalCapacity > 0 ? totalCapacity : null,
+                  paidCount: actualPaidCount,
+                  hostDeposit: hostDeposit,
                   onCancelled: () => _loadFeed(),
                 );
               } else {

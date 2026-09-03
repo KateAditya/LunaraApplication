@@ -39,6 +39,7 @@ router.post(
         body('numberOfFriends').isInt({ min: 1, max: 500 }).withMessage('numberOfFriends must be a positive number'),
         body('partyDate').isISO8601().withMessage('partyDate must be a valid date'),
         body('mobileNumber').notEmpty().withMessage('mobileNumber is required'),
+        body('paymentMode').optional({ nullable: true, checkFalsy: true }).isString(),
         validate,
     ],
     createGroupParty

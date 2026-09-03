@@ -17,6 +17,8 @@ import {
     adminApproveHostCancellation,
     adminRejectHostCancellation,
     adminMarkMemberRefundPaid,
+    adminRetryMemberWalletRefund,
+    adminSettleHostRefund,
 } from '../controllers/strangersMeetController';
 
 const router = Router();
@@ -225,14 +227,18 @@ router.get(
 );
 
 // POST /api/admin/strangers-meet/cancellations/:id/approve
-// Admin approves host cancellation with refund percentage & method
+// Admin approves host cancellation with refund percentage & method, and host refund decision
 router.post(
     '/cancellations/:id/approve',
     [
         param('id').isUUID().withMessage('id must be a valid UUID'),
-        body('refundPercentage').isFloat({ min: 0, max: 100 }).withMessage('refundPercentage must be between 0 and 100'),
+        body('refundPercentage').optional().isFloat({ min: 0, max: 100 }).withMessage('refundPercentage must be between 0 and 100'),
         body('refundMethod').optional().isString(),
         body('adminNotes').optional().isString(),
+        body('hostRefundDecision').optional().isIn(['FULL', 'PARTIAL', 'CUSTOM', 'NO_REFUND']).withMessage('Invalid hostRefundDecision'),
+        body('hostRefundPercentage').optional().isFloat({ min: 0, max: 100 }).withMessage('hostRefundPercentage must be between 0 and 100'),
+        body('hostRefundCustomAmount').optional().isFloat({ min: 0 }).withMessage('hostRefundCustomAmount must be non-negative'),
+        body('hostRefundDestination').optional().isIn(['WALLET', 'UPI', 'BANK', 'NONE']).withMessage('Invalid hostRefundDestination'),
         validate,
     ],
     adminApproveHostCancellation
@@ -262,6 +268,31 @@ router.post(
         validate,
     ],
     adminMarkMemberRefundPaid
+);
+
+// POST /api/admin/strangers-meet/cancellations/member-refunds/:refundId/retry-wallet
+// Admin retries failed/pending member wallet refund
+router.post(
+    '/cancellations/member-refunds/:refundId/retry-wallet',
+    [
+        param('refundId').isUUID().withMessage('refundId must be a valid UUID'),
+        validate,
+    ],
+    adminRetryMemberWalletRefund
+);
+
+// POST /api/admin/strangers-meet/cancellations/:id/settle-host-refund
+// Admin marks manual host refund as PAID with transaction reference
+router.post(
+    '/cancellations/:id/settle-host-refund',
+    [
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        body('paymentReference').notEmpty().withMessage('paymentReference is required'),
+        body('paymentMethod').optional().isString(),
+        body('notes').optional().isString(),
+        validate,
+    ],
+    adminSettleHostRefund
 );
 
 export default router;

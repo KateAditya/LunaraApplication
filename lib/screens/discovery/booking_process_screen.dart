@@ -15,6 +15,7 @@ import 'night_invite_partner_screen.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/time_lock_modal.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
+import '../../services/notification_navigator.dart';
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -2100,6 +2101,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       goingMode: isSolo ? 'solo' : 'party_request',
                                       numberOfGuests: isSolo ? 1 : guests,
                                       isUpcomingNight: widget.isUpcomingNight,
+                                      paymentMode: 'wallet',
                                     );
 
                                     if (bookingRes == null || bookingRes['success'] != true) {
@@ -2134,6 +2136,21 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                       return false;
                                     }
 
+                                    // Fast atomic 1-step wallet booking execution
+                                    final payNowRes = await ApiService.payNowBooking(
+                                      createdBookingId!,
+                                      paymentMethod: 'WALLET',
+                                    );
+
+                                    if (payNowRes != null &&
+                                        (payNowRes['success'] == true ||
+                                         payNowRes['bookingId'] != null ||
+                                         payNowRes['ticketCode'] != null ||
+                                         payNowRes['id'] != null)) {
+                                      return true;
+                                    }
+
+                                    // Fallback: Two-step wallet payment if atomic payment needs explicit pre-deduction
                                     final walletRes = await ApiService.payWithWallet(
                                       amount: totalPrice,
                                       bookingId: createdBookingId,
@@ -2142,13 +2159,17 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
 
                                     if (walletRes != null && walletRes['success'] == true) {
                                       final transactionId = walletRes['data']?['transactionId']?.toString() ?? 'wallet';
-                                      final payNowRes = await ApiService.payNowBooking(
+                                      final retryPayNowRes = await ApiService.payNowBooking(
                                         createdBookingId!,
                                         paymentMethod: 'WALLET',
                                         transactionId: transactionId,
                                       );
 
-                                      if (payNowRes != null && payNowRes['success'] == true) {
+                                      if (retryPayNowRes != null &&
+                                          (retryPayNowRes['success'] == true ||
+                                           retryPayNowRes['bookingId'] != null ||
+                                           retryPayNowRes['ticketCode'] != null ||
+                                           retryPayNowRes['id'] != null)) {
                                         return true;
                                       }
                                     }
@@ -2160,7 +2181,7 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     if (outerContext.mounted) {
                                       ScaffoldMessenger.of(outerContext).showSnackBar(
                                         SnackBar(
-                                          content: Text(walletRes?['message'] ?? 'Wallet payment failed'),
+                                          content: Text(payNowRes?['message'] ?? walletRes?['message'] ?? 'Wallet payment failed'),
                                           backgroundColor: Colors.redAccent,
                                         ),
                                       );
@@ -2716,14 +2737,51 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                 );
 
                                 if (checkoutSuccess == true && createdBookingId != null && createdBookingId!.isNotEmpty) {
+                                  final venueName = widget.venue['name']?.toString() ?? 'Venue';
                                   TopNotificationBanner.show(
-                                    title: 'Booking Confirmed! 🎉',
-                                    body: 'Your payment was verified successfully. Digital ticket generated!',
+                                    title: isSolo ? 'Solo Booking Confirmed! 🎟' : 'Booking Confirmed! 🎉',
+                                    body: 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!',
                                     data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
                                   );
-                                  if (outerContext.mounted) {
+                                  final navContext = outerContext.mounted ? outerContext : (NotificationNavigator.navigatorKey.currentContext ?? outerContext);
+                                  if (navContext.mounted) {
                                     Navigator.pushReplacement(
-                                      outerContext,
+                                      navContext,
+                                      MaterialPageRoute(
+                                        builder: (_) => DigitalTicketScreen(
+                                          venue: widget.venue,
+                                          date: '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                          package: isSolo ? 'Solo Entry' : 'Standard Table',
+                                          time: formattedTime,
+                                          table: isSolo ? 'Solo Entry' : 'Standard Table',
+                                          guests: isSolo ? '1' : '$guests',
+                                          totalPrice: '₹${totalPrice.toStringAsFixed(0)}',
+                                          ticketId: createdBookingId!,
+                                          user: ApiService.cachedCurrentUser,
+                                          booking: {
+                                            'id': createdBookingId,
+                                            'bookingId': createdBookingId,
+                                            'venue': widget.venue,
+                                            'venueId': widget.venue['id'],
+                                            'isSolo': isSolo,
+                                            'goingMode': isSolo ? 'solo' : 'party_request',
+                                            'bookingType': isSolo ? 'solo' : 'venue_booking',
+                                            'category': isSolo ? 'solo' : 'venue_booking',
+                                            'totalAmount': totalPrice,
+                                            'paymentStatus': 'paid',
+                                            'paymentMethod': 'Lunara Wallet',
+                                            'status': 'CONFIRMED',
+                                            'tablePackage': isSolo ? 'Solo Entry' : 'Standard Table',
+                                            'numberOfGuests': isSolo ? 1 : guests,
+                                            'bookingDate': _selectedDate.toIso8601String(),
+                                            'startTime': formattedTime,
+                                            'user': ApiService.cachedCurrentUser,
+                                          },
+                                        ),
+                                      ),
+                                    );
+                                  } else if (NotificationNavigator.navigatorKey.currentState != null) {
+                                    NotificationNavigator.navigatorKey.currentState!.pushReplacement(
                                       MaterialPageRoute(
                                         builder: (_) => DigitalTicketScreen(
                                           venue: widget.venue,

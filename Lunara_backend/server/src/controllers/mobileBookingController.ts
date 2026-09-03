@@ -277,6 +277,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             mobileNumber,
             optionalMobileNumber,
             isUpcomingNight,
+            paymentMode,
         } = req.body;
         const userId = (req as any).user?.id || req.body?.userId;
 
@@ -302,7 +303,8 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             partyDescription,
             mobileNumber,
             optionalMobileNumber,
-            isUpcomingNight
+            isUpcomingNight,
+            paymentMode,
         });
 
         const venueDetails = await Venue.findByPk(venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
@@ -639,14 +641,17 @@ export const payNow = async (req: Request, res: Response) => {
             try {
                 await generateTicketForBookingHelper(booking.id);
                 const vName = venue?.name || 'Venue';
+                const isSolo = booking.goingMode === ('solo' as any) || (booking.numberOfGuests || 1) <= 1;
+                const notifTitle = isSolo ? `Solo Booking at ${vName} 🎟` : `Table Booking (${booking.numberOfGuests || 1} Guests) at ${vName} 🎟`;
+                const notifBody = `Your reservation at ${vName} is fully confirmed. Digital ticket is ready!`;
                 await NotificationService.dispatch({
                     recipientUserId: booking.userId,
                     eventType: 'booking_confirmed',
                     category: 'bookings',
                     entityType: 'Booking',
                     entityId: booking.id,
-                    title: '🎉 Booking Confirmed!',
-                    body: `Your booking payment for ${vName} is successful! Your ticket is now available in your Ticket Wallet.`,
+                    title: notifTitle,
+                    body: notifBody,
                     priority: 'HIGH',
                     idempotencyKey: `booking_paynow_${booking.id}`,
                     actionType: 'view_ticket',

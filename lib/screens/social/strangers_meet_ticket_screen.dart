@@ -820,13 +820,21 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
+                                        color: (_freshStatus?.toLowerCase() == 'cancelled' || _freshPaymentStatus?.toLowerCase() == 'refunded')
+                                            ? const Color(0xFFFEF2F2)
+                                            : const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        amountPaid <= 0 ? 'FREE ENTRY' : 'PAID',
-                                        style: const TextStyle(
-                                          color: Color(0xFF15803D),
+                                        amountPaid <= 0
+                                            ? 'FREE ENTRY'
+                                            : ((_freshStatus?.toLowerCase() == 'cancelled' || _freshPaymentStatus?.toLowerCase() == 'refunded')
+                                                ? 'REFUNDED'
+                                                : 'PAID'),
+                                        style: TextStyle(
+                                          color: (_freshStatus?.toLowerCase() == 'cancelled' || _freshPaymentStatus?.toLowerCase() == 'refunded')
+                                              ? const Color(0xFFDC2626)
+                                              : const Color(0xFF15803D),
                                           fontSize: 8,
                                           fontWeight: FontWeight.w900,
                                           letterSpacing: 0.5,
@@ -1130,7 +1138,34 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                   ),
                 ),
               ),
-              if (widget.request.userId != ApiService.currentUserId) ...[
+              if ((_freshStatus != null && _freshStatus!.toLowerCase() == 'cancelled') ||
+                  (_freshPaymentStatus != null && _freshPaymentStatus!.toLowerCase() == 'refunded')) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Strangers Meet Cancelled • Refunded to Wallet',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (widget.request.userId != ApiService.currentUserId) ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
@@ -1176,6 +1211,7 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                   height: 50,
                   child: OutlinedButton.icon(
                     onPressed: () {
+                      final dt = widget.request.eventDateTime;
                       StrangersMeetHostCancellationDialog.show(
                         context,
                         meetId: widget.request.id,
@@ -1183,6 +1219,11 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
                         venueName: widget.request.venue?['name'] ?? 'Venue',
                         joinedCount: widget.request.slotsFilled,
                         collectedAmount: (widget.request.slotsFilled * widget.request.chargesPerHead).toDouble(),
+                        date: DateFormat('MMM dd, yyyy').format(dt),
+                        time: DateFormat('hh:mm a').format(dt),
+                        totalCapacity: widget.request.numberOfPersons,
+                        paidCount: widget.request.slotsFilled,
+                        hostDeposit: (widget.request.paymentAmount ?? 0).toDouble(),
                         onCancelled: () {
                           Navigator.pop(context);
                         },

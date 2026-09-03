@@ -286,11 +286,6 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                         });
                         if (success) {
                           navigator.pop(true);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted && navigator.canPop()) {
-                              navigator.pop(true);
-                            }
-                          });
                         }
                       }
                     } else {

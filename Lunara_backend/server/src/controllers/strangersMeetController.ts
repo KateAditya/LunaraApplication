@@ -1042,6 +1042,11 @@ export const initiateJoinPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
+        if (request.status === StrangersMeetStatus.CANCELLED) {
+            res.status(400).json({ success: false, code: 'STRANGERS_MEET_CANCELLED', message: 'This strangers meet has been cancelled' });
+            return;
+        }
+
         if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
             res.status(400).json({ success: false, message: 'This strangers meet is not active' });
             return;
@@ -1158,6 +1163,11 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
         const request = await StrangersMeetRequest.findByPk(id);
         if (!request) {
             res.status(404).json({ success: false, message: 'Strangers meet request not found' });
+            return;
+        }
+
+        if (request.status === StrangersMeetStatus.CANCELLED) {
+            res.status(400).json({ success: false, code: 'STRANGERS_MEET_CANCELLED', message: 'This strangers meet has been cancelled' });
             return;
         }
 
@@ -1463,6 +1473,11 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        if (request.status === StrangersMeetStatus.CANCELLED) {
+            res.status(400).json({ success: false, code: 'STRANGERS_MEET_CANCELLED', message: 'This strangers meet has been cancelled' });
+            return;
+        }
+
         if (request.status !== StrangersMeetStatus.APPROVED || request.paymentStatus !== StrangersMeetPaymentStatus.PAID) {
             res.status(400).json({ success: false, message: 'Host has not completed platform deposit payment for this Stranger Meet yet' });
             return;
@@ -1591,6 +1606,12 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
             try {
                 await request.reload({ transaction, lock: transaction.LOCK.UPDATE });
                 await joiner.reload({ transaction, lock: transaction.LOCK.UPDATE });
+
+                if (request.status === StrangersMeetStatus.CANCELLED) {
+                    await transaction.rollback();
+                    res.status(409).json({ success: false, code: 'STRANGERS_MEET_CANCELLED', message: 'This Strangers Meet has been cancelled.' });
+                    return;
+                }
 
                 if (request.status !== StrangersMeetStatus.APPROVED ||
                     request.paymentStatus !== StrangersMeetPaymentStatus.PAID ||
@@ -2670,12 +2691,19 @@ export const adminApproveHostCancellation = async (req: Request, res: Response):
     try {
         const { id } = req.params;
         const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
-        const { refundPercentage, refundMethod, adminNotes } = req.body;
+        const {
+            refundPercentage,
+            refundMethod,
+            adminNotes,
+            hostRefundDecision,
+            hostRefundPercentage,
+            hostRefundCustomAmount,
+            hostRefundDestination,
+        } = req.body;
 
-        if (refundPercentage === undefined || refundPercentage === null || isNaN(Number(refundPercentage))) {
-            res.status(400).json({ success: false, message: 'refundPercentage is required and must be a number.' });
-            return;
-        }
+        const refundPct = (refundPercentage !== undefined && refundPercentage !== null && !isNaN(Number(refundPercentage)))
+            ? Number(refundPercentage)
+            : 100;
 
         const method = (refundMethod || 'WALLET').toUpperCase();
         if (method !== 'WALLET' && method !== 'MANUAL_PAYOUT') {
@@ -2686,16 +2714,21 @@ export const adminApproveHostCancellation = async (req: Request, res: Response):
         const result = await StrangersMeetService.adminApproveHostCancellation({
             cancellationId: id,
             adminId,
-            refundPercentage: Number(refundPercentage),
+            refundPercentage: refundPct,
             refundMethod: method,
             adminNotes: adminNotes ? String(adminNotes).trim() : undefined,
+            hostRefundDecision,
+            hostRefundPercentage: hostRefundPercentage !== undefined ? Number(hostRefundPercentage) : undefined,
+            hostRefundCustomAmount: hostRefundCustomAmount !== undefined ? Number(hostRefundCustomAmount) : undefined,
+            hostRefundDestination,
         });
 
         res.json({
             success: true,
             message: result.message,
             data: result.cancellation,
-            memberRefunds: result.memberRefunds,
+            memberRefunds: (result as any).memberRefunds,
+            refundSummary: (result as any).refundSummary,
         });
     } catch (err: any) {
         logger.error('adminApproveHostCancellation error:', err);
@@ -2761,6 +2794,61 @@ export const adminMarkMemberRefundPaid = async (req: Request, res: Response): Pr
     } catch (err: any) {
         logger.error('adminMarkMemberRefundPaid error:', err);
         res.status(400).json({ success: false, message: err.message || 'Failed to mark refund as paid' });
+    }
+};
+
+export const adminRetryMemberWalletRefund = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { refundId } = req.params;
+        const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
+
+        const result = await StrangersMeetService.adminRetryMemberWalletRefund({
+            refundId,
+            adminId,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.refund,
+        });
+    } catch (err: any) {
+        logger.error('adminRetryMemberWalletRefund error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to retry wallet refund' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/strangers-meet/cancellations/:id/settle-host-refund
+// Admin marks manual host refund as PAID with transaction reference
+// ─────────────────────────────────────────────────────────────────────────────
+export const adminSettleHostRefund = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const adminId = req.user?.id || req.body.adminId || '00000000-0000-0000-0000-000000000001';
+        const { paymentReference, paymentMethod, notes } = req.body;
+
+        if (!paymentReference || typeof paymentReference !== 'string' || paymentReference.trim().length === 0) {
+            res.status(400).json({ success: false, message: 'paymentReference is required.' });
+            return;
+        }
+
+        const result = await StrangersMeetService.adminSettleHostRefund({
+            cancellationId: id,
+            adminId,
+            paymentReference: paymentReference.trim(),
+            paymentMethod: paymentMethod ? String(paymentMethod).trim() : undefined,
+            notes: notes ? String(notes).trim() : undefined,
+        });
+
+        res.json({
+            success: true,
+            message: result.message,
+            data: result.cancellation,
+        });
+    } catch (err: any) {
+        logger.error('adminSettleHostRefund error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to settle host refund' });
     }
 };
 

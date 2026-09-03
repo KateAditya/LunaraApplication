@@ -62,6 +62,7 @@ router.post(
         body('mobileNumber').optional({ nullable: true, checkFalsy: true }).isString(),
         body('optionalMobileNumber').optional({ nullable: true, checkFalsy: true }).isString(),
         body('isUpcomingNight').optional({ nullable: true }).isBoolean(),
+        body('paymentMode').optional({ nullable: true, checkFalsy: true }).isString(),
         validate,
     ],
     ctrl.createBooking

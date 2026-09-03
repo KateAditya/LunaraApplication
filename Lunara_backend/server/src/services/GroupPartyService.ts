@@ -47,6 +47,7 @@ export interface CreateGroupPartyPayload {
     partyRequirement?: string;
     partyDescription?: string;
     startTime?: string;
+    paymentMode?: string;
 }
 
 export class GroupPartyService {
@@ -116,7 +117,7 @@ export class GroupPartyService {
         amount?: number;
         currency?: string;
     }> {
-        const { userId, venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime } = payload;
+        const { userId, venueId, numberOfFriends, partyDate, mobileNumber, optionalMobileNumber, foodPreference, drinkPreference, partySubject, partyRequirement, partyDescription, startTime, paymentMode } = payload;
 
         if (!mobileNumber || !mobileNumber.trim()) {
             throw new Error('Mobile number is required');
@@ -170,9 +171,10 @@ export class GroupPartyService {
             // SMALL PARTY FLOW
             const pricing = await this.calculateAuthoritativePricing(venueId, numberOfFriends);
             const requiresPayment = pricing.totalAmount > 0;
+            const isWalletMode = (paymentMode || '').toLowerCase() === 'wallet';
             
             let razorpayOrder: any = null;
-            if (requiresPayment) {
+            if (requiresPayment && !isWalletMode) {
                 try {
                     razorpayOrder = await razorpay.orders.create({
                         amount: Math.round(pricing.totalAmount * 100),
@@ -474,8 +476,8 @@ export class GroupPartyService {
                 body = `Your group party of ${guestCount} friends at ${venueName} is confirmed!`;
                 type = 'group_party_confirmed';
             } else if (eventType === 'small_paid') {
-                title = 'Group Party Booked! 🎉';
-                body = `Your payment is verified. Group party at ${venueName} is confirmed!`;
+                title = 'Group Party Confirmed! 🥳';
+                body = `Your party of ${guestCount} guests at ${venueName} is fully confirmed. Get ready!`;
                 type = 'group_party_confirmed';
             } else if (eventType === 'large_submitted') {
                 title = 'Party Request Submitted ⏳';

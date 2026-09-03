@@ -2,7 +2,7 @@ import { Transaction, Op } from 'sequelize';
 import StrangersMeetRequest, { StrangersMeetStatus, StrangersMeetPaymentStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner, { StrangersMeetJoinerStatus, StrangersMeetJoinerPaymentStatus } from '../models/StrangersMeetJoiner';
 import StrangersMeetCancellationRequest, { StrangersMeetCancellationStatus } from '../models/StrangersMeetCancellationRequest';
-import StrangersMeetHostCancellationRequest, { HostCancellationStatus } from '../models/StrangersMeetHostCancellationRequest';
+import StrangersMeetHostCancellationRequest, { HostCancellationStatus, HostRefundStatus } from '../models/StrangersMeetHostCancellationRequest';
 import StrangersMeetMemberRefund, { MemberRefundStatus } from '../models/StrangersMeetMemberRefund';
 import { WalletService } from './walletService';
 import User from '../models/User';
@@ -12,6 +12,7 @@ import { validateVenueTimingAndHolidays } from '../utils/venueValidator';
 import { TimeLockError } from '../utils/bookingLimitValidator';
 import { EventTimeLockService } from './EventTimeLockService';
 import { generateTicketForStrangersMeetHelper } from './ticketService';
+import Ticket, { TicketStatus } from '../models/Ticket';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
@@ -986,6 +987,24 @@ export class StrangersMeetService {
                     await request.decrement('slotsFilled', { by: 1, transaction: t });
                 }
 
+                // Invalidate joiner ticket (Phase 10)
+                await Ticket.update(
+                    {
+                        ticketStatus: TicketStatus.CANCELLED,
+                        cancelledAt: new Date(),
+                    },
+                    {
+                        where: {
+                            bookingType: 'strangers_meet',
+                            [Op.or]: [
+                                { bookingId: cancellation.joinerId },
+                                { bookingId: meetId, userId: cancellation.userId },
+                            ],
+                        },
+                        transaction: t,
+                    }
+                );
+
                 // Process atomic wallet refund if paidAmount > 0
                 let txnId: string | null = null;
                 if (refundAmount > 0) {
@@ -1011,6 +1030,31 @@ export class StrangersMeetService {
             });
 
             await cancellation.reload();
+            await request.reload();
+
+            // Realtime socket events for live feed & user state
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    io.to('live_feed').emit('live_feed_update', {
+                        type: 'strangers_meet_joiner_cancelled',
+                        meetId,
+                        joinerId: cancellation.joinerId,
+                        userId: cancellation.userId,
+                        slotsFilled: request.slotsFilled,
+                        timestamp: new Date().toISOString(),
+                    });
+                    io.to(`user_${cancellation.userId}`).emit('strangers_meet_status_update', {
+                        meetId,
+                        status: 'cancelled_by_user',
+                        refundAmount,
+                    });
+                    io.to(`user_${hostUserId}`).emit('strangers_meet_status_update', {
+                        meetId,
+                        slotsFilled: request.slotsFilled,
+                    });
+                }
+            } catch (sockErr) {}
 
             // Send notification to member
             try {
@@ -1143,7 +1187,7 @@ export class StrangersMeetService {
         }
 
         // Fetch all confirmed & paid joiners to compute authoritative total
-        const paidJoiners = await StrangersMeetJoiner.findAll({
+        const allPaidJoiners = await StrangersMeetJoiner.findAll({
             where: {
                 strangersMeetRequestId: meetId,
                 [Op.or]: [
@@ -1153,8 +1197,41 @@ export class StrangersMeetService {
             }
         });
 
+        // Exclude any joiners who have already been refunded (via member refund or approved cancel)
+        const alreadyRefundedMRs = await StrangersMeetMemberRefund.findAll({
+            where: {
+                meetId,
+                status: MemberRefundStatus.REFUND_PAID,
+            },
+            attributes: ['joinerId']
+        });
+        const alreadyApprovedCancels = await StrangersMeetCancellationRequest.findAll({
+            where: {
+                meetId,
+                status: StrangersMeetCancellationStatus.APPROVED,
+            },
+            attributes: ['joinerId']
+        });
+        const alreadyRefundedJoinerIds = new Set([
+            ...alreadyRefundedMRs.map(r => r.joinerId),
+            ...alreadyApprovedCancels.map(r => r.joinerId),
+        ]);
+
+        const paidJoiners = allPaidJoiners.filter(j => !alreadyRefundedJoinerIds.has(j.id));
         const totalCollectedAmount = paidJoiners.reduce((sum, j) => sum + Number(j.paymentAmount || 0), 0);
         const totalMembersCount = paidJoiners.length;
+
+        const host = (request as any).user;
+        const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Host';
+        const hostDepositAmount = Number(request.paymentAmount || 0);
+        const hostPayoutDetails = {
+            bankName: request.bankName || (host as any)?.bankName || null,
+            accountNumber: request.accountNumber || (host as any)?.accountNumber || null,
+            accountHolderName: request.accountHolderName || (host as any)?.accountHolderName || null,
+            ifscCode: request.ifscCode || (host as any)?.ifscCode || null,
+            upiId: request.upiId || (host as any)?.upiId || null,
+            upiNumber: request.upiNumber || null,
+        };
 
         const cancellation = await StrangersMeetHostCancellationRequest.create({
             meetId,
@@ -1164,18 +1241,22 @@ export class StrangersMeetService {
             status: HostCancellationStatus.PENDING_ADMIN_REVIEW,
             totalCollectedAmount,
             totalMembersCount,
+            hostDepositAmount,
+            hostPayoutDetails,
+            hostRefundStatus: HostRefundStatus.NONE,
         });
 
-        const host = (request as any).user;
-        const hostName = host ? `${host.firstName} ${host.lastName}`.trim() : 'Host';
-
-        // Notify Admins
+        // Notify Admins (Consolidated notification per Section 5)
         try {
+            const venue = (request as any).venue;
+            const venueName = venue?.name || 'Venue';
+            const eventDateStr = request.eventDateTime ? formatDateTimeFull(request.eventDateTime) : '';
+
             await this.emitNotification({
                 recipientUserId: hostUserId,
                 eventType: 'strangers_meet_host_cancellation_requested',
-                title: 'Stranger Meet Cancellation Request',
-                body: `${hostName} requested cancellation of Stranger Meet "${request.subject}". Reason: ${reason}. Total collected: ₹${totalCollectedAmount.toFixed(0)}.`,
+                title: '⚠️ Strangers Meet Cancellation Request',
+                body: `Host: ${hostName} | Meet: ${request.subject} | Venue: ${venueName} | Participants: ${totalMembersCount}/${request.numberOfPersons} | Collected: ₹${totalCollectedAmount.toFixed(0)} | Host Deposit: ₹${hostDepositAmount.toFixed(0)} | Reason: ${reason}`,
                 entityId: meetId,
                 notifyAdmins: true,
                 metadata: {
@@ -1183,9 +1264,14 @@ export class StrangersMeetService {
                     hostCancellationId: cancellation.id,
                     hostUserId,
                     hostName,
-                    reason,
+                    meetTitle: request.subject,
+                    venueName,
+                    eventDate: eventDateStr,
+                    totalCapacity: request.numberOfPersons,
+                    paidParticipants: totalMembersCount,
                     totalCollectedAmount,
-                    totalMembersCount,
+                    hostConfirmationAmount: hostDepositAmount,
+                    reason,
                 },
             });
         } catch (notifErr: any) {
@@ -1213,7 +1299,17 @@ export class StrangersMeetService {
 
         const where: any = {};
         if (options.status && options.status !== 'all') {
-            where.status = options.status;
+            if (options.status === 'settlement_pending') {
+                where.hostRefundStatus = HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT;
+            } else if (options.status === 'pending') {
+                where.status = HostCancellationStatus.PENDING_ADMIN_REVIEW;
+            } else if (options.status === 'completed') {
+                where.status = HostCancellationStatus.COMPLETED;
+            } else if (options.status === 'rejected') {
+                where.status = HostCancellationStatus.REJECTED;
+            } else {
+                where.status = options.status;
+            }
         }
 
         const { count, rows } = await StrangersMeetHostCancellationRequest.findAndCountAll({
@@ -1229,7 +1325,7 @@ export class StrangersMeetService {
                 {
                     model: User,
                     as: 'host',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl', 'upiId', 'accountNumber', 'bankName', 'ifscCode'],
                 },
                 {
                     model: User,
@@ -1243,12 +1339,27 @@ export class StrangersMeetService {
             distinct: true,
         });
 
+        const [allCount, pendingCount, settlementPendingCount, completedCount, rejectedCount] = await Promise.all([
+            StrangersMeetHostCancellationRequest.count(),
+            StrangersMeetHostCancellationRequest.count({ where: { status: HostCancellationStatus.PENDING_ADMIN_REVIEW } }),
+            StrangersMeetHostCancellationRequest.count({ where: { hostRefundStatus: HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT } }),
+            StrangersMeetHostCancellationRequest.count({ where: { status: HostCancellationStatus.COMPLETED } }),
+            StrangersMeetHostCancellationRequest.count({ where: { status: HostCancellationStatus.REJECTED } }),
+        ]);
+
         return {
             total: count,
             page,
             limit,
             totalPages: Math.ceil(count / limit),
             data: rows,
+            counts: {
+                all: allCount,
+                pending: pendingCount,
+                settlement_pending: settlementPendingCount,
+                completed: completedCount,
+                rejected: rejectedCount,
+            },
         };
     }
 
@@ -1331,9 +1442,19 @@ export class StrangersMeetService {
             };
         });
 
+        const hostDeposit = Number(meet?.paymentAmount || cancellation.hostDepositAmount || 0);
+        const hostRefundPreviews = {
+            depositAmount: hostDeposit,
+            full: { type: 'FULL', percentage: 100, amount: hostDeposit },
+            partial80: { type: 'PARTIAL', percentage: 80, amount: Math.round(hostDeposit * 0.8 * 100) / 100 },
+            partial50: { type: 'PARTIAL', percentage: 50, amount: Math.round(hostDeposit * 0.5 * 100) / 100 },
+            none: { type: 'NO_REFUND', percentage: 0, amount: 0 },
+        };
+
         return {
             cancellation,
             hostPayoutDetails,
+            hostRefundPreviews,
             paidJoinersCount: paidJoiners.length,
             paidJoiners: paidJoiners.map((j: any) => ({
                 id: j.id,
@@ -1419,11 +1540,25 @@ export class StrangersMeetService {
     public static async adminApproveHostCancellation(options: {
         cancellationId: string;
         adminId: string;
-        refundPercentage: number;
-        refundMethod: 'WALLET' | 'MANUAL_PAYOUT';
+        refundPercentage?: number;
+        refundMethod?: 'WALLET' | 'MANUAL_PAYOUT';
         adminNotes?: string;
+        hostRefundDecision?: 'FULL' | 'PARTIAL' | 'CUSTOM' | 'NO_REFUND';
+        hostRefundPercentage?: number;
+        hostRefundCustomAmount?: number;
+        hostRefundDestination?: 'WALLET' | 'UPI' | 'BANK' | 'NONE';
     }) {
-        const { cancellationId, adminId, refundPercentage, refundMethod, adminNotes } = options;
+        const {
+            cancellationId,
+            adminId,
+            refundPercentage = 100,
+            refundMethod = 'WALLET',
+            adminNotes,
+            hostRefundDecision = 'NO_REFUND',
+            hostRefundPercentage,
+            hostRefundCustomAmount,
+            hostRefundDestination = 'NONE',
+        } = options;
 
         if (refundPercentage < 0 || refundPercentage > 100) {
             throw new Error('Refund percentage must be between 0 and 100.');
@@ -1432,14 +1567,26 @@ export class StrangersMeetService {
         const cancellation = await StrangersMeetHostCancellationRequest.findByPk(cancellationId);
         if (!cancellation) throw new Error('Host cancellation request not found.');
 
-        if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+        if (cancellation.status === HostCancellationStatus.COMPLETED) {
+            return {
+                message: 'Host cancellation has already been approved and completed.',
+                cancellation,
+                refundSummary: {
+                    totalMembers: cancellation.totalMembersCount,
+                    refundedCount: cancellation.totalMembersCount,
+                    totalRefundAmount: Number(cancellation.totalRefundAmount || 0),
+                },
+            };
+        }
+
+        if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW && cancellation.status !== HostCancellationStatus.REFUND_PROCESSING) {
             throw new Error(`Cancellation request has already been processed (status: ${cancellation.status}).`);
         }
 
         const request = await StrangersMeetRequest.findByPk(cancellation.meetId);
         if (!request) throw new Error('Stranger Meet not found.');
 
-        const paidJoiners = await StrangersMeetJoiner.findAll({
+        const allPaidJoiners = await StrangersMeetJoiner.findAll({
             where: {
                 strangersMeetRequestId: cancellation.meetId,
                 [Op.or]: [
@@ -1450,17 +1597,23 @@ export class StrangersMeetService {
             include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] }]
         });
 
+        let validAdminId: string | null = null;
+        if (adminId) {
+            const adminUser = await User.findByPk(adminId);
+            if (adminUser) validAdminId = adminUser.id;
+        }
+
         const sequelize = (await import('../config/database')).default;
         const memberRefundResults: any[] = [];
         let totalRefundSum = 0;
 
         await sequelize.transaction(async (t) => {
-            await cancellation.reload({ transaction: t, lock: t.LOCK.UPDATE });
-            if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW) {
+            await cancellation.reload({ transaction: t, lock: t.LOCK.UPDATE, include: [] });
+            if (cancellation.status !== HostCancellationStatus.PENDING_ADMIN_REVIEW && cancellation.status !== HostCancellationStatus.REFUND_PROCESSING) {
                 throw new Error('Cancellation request is no longer pending.');
             }
 
-            await request.reload({ transaction: t, lock: t.LOCK.UPDATE });
+            await request.reload({ transaction: t, lock: t.LOCK.UPDATE, include: [] });
 
             // Mark Stranger Meet as CANCELLED
             await request.update(
@@ -1471,41 +1624,76 @@ export class StrangersMeetService {
                 { transaction: t }
             );
 
-            // Process each paid member independently
-            for (const joiner of paidJoiners) {
+            // Invalidate all Tickets for this Strangers Meet (Phase 10)
+            await Ticket.update(
+                {
+                    ticketStatus: TicketStatus.CANCELLED,
+                    cancelledAt: new Date(),
+                },
+                {
+                    where: {
+                        bookingType: 'strangers_meet',
+                        [Op.or]: [
+                            { bookingId: request.id },
+                            { ticketId: request.ticketId || `SM-${request.id.substring(0, 8).toUpperCase()}` },
+                        ],
+                    },
+                    transaction: t,
+                }
+            );
+
+            // Find existing refunds to prevent duplicate refund credits
+            const existingMemberRefunds = await StrangersMeetMemberRefund.findAll({
+                where: {
+                    hostCancellationRequestId: cancellation.id,
+                    status: MemberRefundStatus.REFUND_PAID,
+                },
+                transaction: t,
+            });
+            const refundedJoinerIds = new Set(existingMemberRefunds.map(r => r.joinerId));
+
+            // Also check if any joiner was already refunded via prior independent cancellation
+            const priorApprovedParticipantCancels = await StrangersMeetCancellationRequest.findAll({
+                where: {
+                    meetId: cancellation.meetId,
+                    status: StrangersMeetCancellationStatus.APPROVED,
+                },
+                transaction: t,
+            });
+            for (const ac of priorApprovedParticipantCancels) {
+                refundedJoinerIds.add(ac.joinerId);
+            }
+
+            const eligibleJoiners = allPaidJoiners.filter(j => !refundedJoinerIds.has(j.id));
+
+            for (const joiner of eligibleJoiners) {
                 const memberPaid = Number(joiner.paymentAmount || 0);
                 const memberRefundAmount = Math.round((memberPaid * (refundPercentage / 100)) * 100) / 100;
                 totalRefundSum += memberRefundAmount;
 
-                // 1. Update joiner status first to acquire row lock cleanly
-                await StrangersMeetJoiner.update(
-                    {
-                        status: StrangersMeetJoinerStatus.REJECTED,
-                        paymentStatus: StrangersMeetJoinerPaymentStatus.PENDING,
-                    },
-                    {
-                        where: { id: joiner.id },
-                        transaction: t,
-                    }
-                );
-
                 let txnId: string | null = null;
-                let refundStatus = MemberRefundStatus.PENDING;
+                let refundStatus: MemberRefundStatus = MemberRefundStatus.PENDING;
 
-                // 2. Lunara Wallet refund
                 if (refundMethod === 'WALLET' && memberRefundAmount > 0) {
-                    const refundRes = await WalletService.creditRefund({
-                        userId: joiner.userId,
-                        amount: memberRefundAmount,
-                        referenceId: `SM_HOST_CANCEL_REFUND_${request.id}_${joiner.id}`,
-                        reason: `Stranger Meet Host Cancellation (${refundPercentage}% Refund) - ${request.subject}`,
-                        transaction: t,
-                    });
-                    txnId = refundRes.txn?.id || null;
+                    try {
+                        const refundRef = `SM_HOST_CANCEL_REFUND_${request.id}_${joiner.id}`;
+                        const creditRes = await WalletService.creditRefund({
+                            userId: joiner.userId,
+                            amount: memberRefundAmount,
+                            referenceId: refundRef,
+                            reason: `Host cancelled Stranger Meet - ${request.subject}`,
+                            transaction: t,
+                        });
+                        txnId = creditRes.txn?.id || null;
+                        refundStatus = MemberRefundStatus.REFUND_PAID;
+                    } catch (err: any) {
+                        logger.error(`[StrangersMeetService] Wallet refund failed for joiner ${joiner.id}: ${err.message}`);
+                        refundStatus = MemberRefundStatus.PENDING;
+                    }
+                } else if (memberRefundAmount === 0) {
                     refundStatus = MemberRefundStatus.REFUND_PAID;
                 }
 
-                // 3. Member payout details for manual record
                 const memberUser = (joiner as any).user;
                 const payoutDetails = memberUser ? {
                     upiId: memberUser.upiId,
@@ -1515,25 +1703,46 @@ export class StrangersMeetService {
                     accountHolderName: memberUser.accountHolderName,
                 } : null;
 
-                const memberRefund = await StrangersMeetMemberRefund.create(
-                    {
+                let memberRefund = await StrangersMeetMemberRefund.findOne({
+                    where: {
                         hostCancellationRequestId: cancellation.id,
-                        meetId: request.id,
                         joinerId: joiner.id,
-                        userId: joiner.userId,
-                        paidAmount: memberPaid,
-                        refundPercentage,
-                        refundAmount: memberRefundAmount,
-                        refundMethod,
-                        status: refundStatus,
-                        walletTransactionId: txnId,
-                        payoutDetails,
-                        paymentReference: txnId ? `WALLET_TXN_${txnId}` : null,
-                        paidByAdminId: txnId ? adminId : null,
-                        paidAt: txnId ? new Date() : null,
                     },
-                    { transaction: t }
-                );
+                    transaction: t,
+                });
+
+                if (!memberRefund) {
+                    memberRefund = await StrangersMeetMemberRefund.create(
+                        {
+                            hostCancellationRequestId: cancellation.id,
+                            meetId: request.id,
+                            joinerId: joiner.id,
+                            userId: joiner.userId,
+                            paidAmount: memberPaid,
+                            refundPercentage,
+                            refundAmount: memberRefundAmount,
+                            refundMethod,
+                            status: refundStatus,
+                            walletTransactionId: txnId,
+                            payoutDetails,
+                            paymentReference: txnId ? `WALLET_TXN_${txnId}` : null,
+                            paidByAdminId: txnId ? validAdminId : null,
+                            paidAt: txnId ? new Date() : null,
+                        },
+                        { transaction: t }
+                    );
+                } else {
+                    await memberRefund.update(
+                        {
+                            status: refundStatus,
+                            walletTransactionId: txnId || memberRefund.walletTransactionId,
+                            paymentReference: txnId ? `WALLET_TXN_${txnId}` : memberRefund.paymentReference,
+                            paidByAdminId: txnId ? validAdminId : memberRefund.paidByAdminId,
+                            paidAt: txnId ? new Date() : memberRefund.paidAt,
+                        },
+                        { transaction: t }
+                    );
+                }
 
                 memberRefundResults.push({
                     id: memberRefund.id,
@@ -1546,9 +1755,62 @@ export class StrangersMeetService {
                 });
             }
 
-            const finalStatus = refundMethod === 'WALLET'
-                ? HostCancellationStatus.COMPLETED
-                : (paidJoiners.length > 0 ? HostCancellationStatus.REFUND_PROCESSING : HostCancellationStatus.APPROVED);
+            // Calculate Host Confirmation Deposit Refund (Sections 13 & 14)
+            const hostDepositAmount = Number(request.paymentAmount || cancellation.hostDepositAmount || 0);
+            let hostRefundAmount = 0;
+            let hostRefundType: 'FULL' | 'PARTIAL' | 'CUSTOM' | 'NO_REFUND' = (hostRefundDecision as any) || 'NO_REFUND';
+            let hostRefundPct: number | null = null;
+
+            if (hostRefundType === 'FULL') {
+                hostRefundAmount = hostDepositAmount;
+                hostRefundPct = 100;
+            } else if (hostRefundType === 'PARTIAL') {
+                const pct = Math.min(100, Math.max(0, Number(hostRefundPercentage || 0)));
+                hostRefundPct = pct;
+                hostRefundAmount = Math.round((hostDepositAmount * (pct / 100)) * 100) / 100;
+            } else if (hostRefundType === 'CUSTOM') {
+                const customAmt = Math.min(hostDepositAmount, Math.max(0, Number(hostRefundCustomAmount || 0)));
+                hostRefundAmount = Math.round(customAmt * 100) / 100;
+                hostRefundPct = hostDepositAmount > 0 ? Math.round((hostRefundAmount / hostDepositAmount) * 100) : 0;
+            } else {
+                hostRefundType = 'NO_REFUND';
+                hostRefundAmount = 0;
+                hostRefundPct = 0;
+            }
+
+            const hostDest = (hostRefundDestination || 'NONE').toUpperCase();
+            let hostRefundStatus: HostRefundStatus = HostRefundStatus.NONE;
+            let hostTxnId: string | null = null;
+
+            if (hostRefundAmount > 0) {
+                if (hostDest === 'WALLET') {
+                    const hostRefundRef = `SM_HOST_DEPOSIT_REFUND_${request.id}`;
+                    try {
+                        const hostWalletTx = await WalletService.creditRefund({
+                            userId: cancellation.hostUserId,
+                            amount: hostRefundAmount,
+                            referenceId: hostRefundRef,
+                            reason: `Host deposit refund for cancelled Strangers Meet "${request.subject}"`,
+                            transaction: t,
+                        });
+                        hostRefundStatus = HostRefundStatus.WALLET_CREDITED;
+                        hostTxnId = hostWalletTx.txn?.id || null;
+                    } catch (walletErr: any) {
+                        logger.error('[StrangersMeetService] Host deposit wallet refund failed: ' + walletErr.message);
+                        hostRefundStatus = HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT;
+                    }
+                } else if (hostDest === 'UPI' || hostDest === 'BANK') {
+                    hostRefundStatus = HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT;
+                }
+            }
+
+            const allRefundsSuccessful = memberRefundResults.every((r) => r.status === MemberRefundStatus.REFUND_PAID);
+            const isHostSettlementPending = hostRefundStatus === HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT;
+            const finalStatus = isHostSettlementPending
+                ? HostCancellationStatus.REFUND_PROCESSING
+                : (refundMethod === 'WALLET'
+                    ? (allRefundsSuccessful || eligibleJoiners.length === 0 ? HostCancellationStatus.COMPLETED : HostCancellationStatus.REFUND_PROCESSING)
+                    : (eligibleJoiners.length > 0 ? HostCancellationStatus.REFUND_PROCESSING : HostCancellationStatus.APPROVED));
 
             await cancellation.update(
                 {
@@ -1556,9 +1818,18 @@ export class StrangersMeetService {
                     refundPolicyPercentage: refundPercentage,
                     refundMethod: refundMethod as any,
                     totalRefundAmount: totalRefundSum,
-                    adminReviewedBy: adminId,
+                    adminReviewedBy: validAdminId,
                     adminReviewedAt: new Date(),
                     adminNotes: adminNotes || null,
+                    hostDepositAmount,
+                    hostRefundType,
+                    hostRefundPercentage: hostRefundPct,
+                    hostRefundAmount,
+                    hostRefundDestination: hostDest as any,
+                    hostRefundStatus,
+                    hostSettlementTransactionId: hostTxnId ? `WALLET_TXN_${hostTxnId}` : null,
+                    hostSettledAt: hostTxnId ? new Date() : null,
+                    hostSettledBy: hostTxnId ? validAdminId : null,
                 },
                 { transaction: t }
             );
@@ -1566,41 +1837,66 @@ export class StrangersMeetService {
 
         await cancellation.reload();
 
-        // Dispatch Host Notification
+        const successfulRefundsCount = memberRefundResults.filter(r => r.status === MemberRefundStatus.REFUND_PAID).length;
+        const pendingRefundsCount = memberRefundResults.filter(r => r.status !== MemberRefundStatus.REFUND_PAID).length;
+        const totalRefundedSum = memberRefundResults
+            .filter(r => r.status === MemberRefundStatus.REFUND_PAID)
+            .reduce((sum, r) => sum + r.refundAmount, 0);
+
+        let hostNotifTitle = '✅ Cancellation Approved';
+        let hostNotifBody = `Your Strangers Meet "${request.subject}" has been cancelled. ${memberRefundResults.length} participants were eligible for refund. ${successfulRefundsCount} participant refunds processed successfully. Total refunded to participants: ₹${totalRefundedSum.toFixed(0)}.`;
+        
+        let hostRefundMsg = '';
+        if (cancellation.hostRefundStatus === HostRefundStatus.WALLET_CREDITED) {
+            hostRefundMsg = ` Your host deposit refund of ₹${Number(cancellation.hostRefundAmount || 0).toFixed(0)} has been credited to your Lunara Wallet.`;
+        } else if (cancellation.hostRefundStatus === HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT) {
+            hostRefundMsg = ` Your host refund of ₹${Number(cancellation.hostRefundAmount || 0).toFixed(0)} has been approved. Settlement will be processed within 24 hours.`;
+        } else if (Number(cancellation.hostDepositAmount || 0) > 0 && Number(cancellation.hostRefundAmount || 0) === 0) {
+            hostRefundMsg = ` Note: Host confirmation deposit was non-refundable as per policy.`;
+        }
+
+        // Dispatch Host Notification (Sections 11 & 16)
         try {
             await this.emitNotification({
                 recipientUserId: cancellation.hostUserId,
                 eventType: 'strangers_meet_host_cancellation_approved',
-                title: 'Stranger Meet Cancellation Approved',
-                body: `Your cancellation request for "${request.subject}" has been approved. Member refunds (${refundPercentage}%) are being processed.`,
+                title: hostNotifTitle,
+                body: `${hostNotifBody}${hostRefundMsg}`,
                 entityId: request.id,
                 metadata: {
                     meetId: request.id,
                     cancellationId: cancellation.id,
                     refundPercentage,
                     totalRefundAmount: totalRefundSum,
+                    successfulRefundsCount,
+                    pendingRefundsCount,
+                    hostRefundAmount: cancellation.hostRefundAmount,
+                    hostRefundStatus: cancellation.hostRefundStatus,
+                    hostRefundDestination: cancellation.hostRefundDestination,
                 },
             });
         } catch (notifErr: any) {
             logger.warn('[StrangersMeetService] Failed to notify host of approved cancellation: ' + notifErr.message);
         }
 
-        // Dispatch Member Notifications
+        // Dispatch Member Notifications (Phase 12)
         for (const mr of memberRefundResults) {
             try {
+                const refundRef = `SM-REF-${mr.joinerId.substring(0, 8).toUpperCase()}`;
                 const refundText = mr.refundAmount > 0
-                    ? `Refund: ₹${mr.refundAmount.toFixed(0)} (${refundPercentage}% policy). ${refundMethod === 'WALLET' ? 'Credited to Lunara Wallet.' : 'Manual payout processing.'}`
+                    ? `₹${mr.refundAmount.toFixed(0)} has been refunded to your Lunara Wallet. Refund Reference: ${refundRef}.`
                     : `No refund applicable (${refundPercentage}% policy).`;
 
                 await this.emitNotification({
                     recipientUserId: mr.userId,
                     eventType: 'strangers_meet_cancelled',
-                    title: 'Stranger Meet Cancelled',
-                    body: `The Stranger Meet "${request.subject}" was cancelled by the host. ${refundText}`,
+                    title: '❌ Strangers Meet Cancelled',
+                    body: `The Strangers Meet "${request.subject}" was cancelled by the host. ${refundText}`,
                     entityId: request.id,
                     metadata: {
                         meetId: request.id,
                         refundAmount: mr.refundAmount,
+                        refundReference: refundRef,
                         refundPercentage,
                         refundMethod,
                     },
@@ -1610,11 +1906,101 @@ export class StrangersMeetService {
             }
         }
 
+        // Realtime Socket updates (Phase 21)
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'strangers_meet_cancelled',
+                    meetId: request.id,
+                    status: 'cancelled',
+                    timestamp: new Date().toISOString(),
+                });
+                io.to(`user_${cancellation.hostUserId}`).emit('strangers_meet_status_update', {
+                    meetId: request.id,
+                    status: 'cancelled',
+                });
+                for (const mr of memberRefundResults) {
+                    io.to(`user_${mr.userId}`).emit('strangers_meet_status_update', {
+                        meetId: request.id,
+                        status: 'cancelled',
+                        refundAmount: mr.refundAmount,
+                    });
+                }
+            }
+        } catch (sockErr) {}
+
         return {
             success: true,
             message: `Stranger Meet cancelled successfully with ${refundPercentage}% refund policy. Total refund: ₹${totalRefundSum.toFixed(0)}.`,
             cancellation,
             memberRefunds: memberRefundResults,
+        };
+    }
+
+    /**
+     * Admin — Retry Member Wallet Refund (for failed or pending refunds)
+     */
+    public static async adminRetryMemberWalletRefund(options: {
+        refundId: string;
+        adminId: string;
+    }) {
+        const { refundId, adminId } = options;
+        const refund = await StrangersMeetMemberRefund.findByPk(refundId, {
+            include: [{ model: StrangersMeetRequest, as: 'meet' }, { model: User, as: 'user' }]
+        });
+        if (!refund) throw new Error('Member refund record not found.');
+        if (refund.status === MemberRefundStatus.REFUND_PAID) {
+            return { success: true, message: 'Refund has already been paid.', refund };
+        }
+
+        let validAdminId: string | null = null;
+        if (adminId) {
+            const adminUser = await User.findByPk(adminId);
+            if (adminUser) validAdminId = adminUser.id;
+        }
+
+        const sequelize = (await import('../config/database')).default;
+        await sequelize.transaction(async (t) => {
+            await refund.reload({ transaction: t, lock: t.LOCK.UPDATE, include: [] });
+            if (refund.status === MemberRefundStatus.REFUND_PAID) return;
+
+            const refundRes = await WalletService.creditRefund({
+                userId: refund.userId,
+                amount: Number(refund.refundAmount),
+                referenceId: `SM_HOST_CANCEL_REFUND_${refund.meetId}_${refund.joinerId}`,
+                reason: `Stranger Meet Cancellation Refund Retry - ${(refund as any).meet?.subject || 'Meetup'}`,
+                transaction: t,
+            });
+
+            const txnId = refundRes.txn?.id || null;
+            await refund.update({
+                status: MemberRefundStatus.REFUND_PAID,
+                walletTransactionId: txnId,
+                paymentReference: txnId ? `WALLET_TXN_${txnId}` : refund.paymentReference,
+                paidByAdminId: validAdminId,
+                paidAt: new Date(),
+            }, { transaction: t });
+        });
+
+        await refund.reload();
+
+        // Check if all member refunds for this host cancellation are now PAID
+        const allRefunds = await StrangersMeetMemberRefund.findAll({
+            where: { hostCancellationRequestId: refund.hostCancellationRequestId }
+        });
+        const allPaid = allRefunds.every((r) => r.status === MemberRefundStatus.REFUND_PAID);
+        if (allPaid) {
+            await StrangersMeetHostCancellationRequest.update(
+                { status: HostCancellationStatus.COMPLETED },
+                { where: { id: refund.hostCancellationRequestId } }
+            );
+        }
+
+        return {
+            success: true,
+            message: `Refund of ₹${Number(refund.refundAmount).toFixed(0)} retry completed and credited to wallet.`,
+            refund,
         };
     }
 
@@ -1691,6 +2077,119 @@ export class StrangersMeetService {
             success: true,
             message: `Refund marked as PAID successfully. Reference: ${paymentReference}.`,
             refund,
+        };
+    }
+
+    /**
+     * Admin — Mark manual host refund as SETTLED / PAID (Sections 14-16)
+     */
+    public static async adminSettleHostRefund(options: {
+        cancellationId: string;
+        adminId: string;
+        paymentReference: string;
+        paymentMethod?: string;
+        notes?: string;
+    }) {
+        const { cancellationId, adminId, paymentReference, paymentMethod, notes } = options;
+
+        if (!paymentReference || !paymentReference.trim()) {
+            throw new Error('Payment reference / transaction ID is required.');
+        }
+
+        const cancellation = await StrangersMeetHostCancellationRequest.findByPk(cancellationId, {
+            include: [
+                {
+                    model: StrangersMeetRequest,
+                    as: 'meet',
+                    attributes: ['id', 'subject', 'eventDateTime'],
+                },
+                {
+                    model: User,
+                    as: 'host',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'upiId', 'accountNumber'],
+                },
+            ],
+        });
+
+        if (!cancellation) throw new Error('Host cancellation request not found.');
+
+        if (cancellation.hostRefundStatus !== HostRefundStatus.HOST_REFUND_PENDING_SETTLEMENT) {
+            throw new Error(`Host refund cannot be settled (current status: ${cancellation.hostRefundStatus}).`);
+        }
+
+        let validAdminId: string | null = null;
+        if (adminId) {
+            const adminUser = await User.findByPk(adminId);
+            if (adminUser) validAdminId = adminUser.id;
+        }
+
+        const method = paymentMethod || cancellation.hostRefundDestination || 'MANUAL';
+
+        await cancellation.update({
+            hostRefundStatus: HostRefundStatus.PAID,
+            hostSettlementTransactionId: paymentReference.trim(),
+            hostSettledAt: new Date(),
+            hostSettledBy: validAdminId,
+            hostSettlementNotes: notes || null,
+        });
+
+        // Mask destination details for privacy
+        const payout = (cancellation.hostPayoutDetails || {}) as any;
+        let destinationDisplay = '';
+        if (payout.upiId) {
+            const parts = payout.upiId.split('@');
+            destinationDisplay = parts[0].length > 4
+                ? `${parts[0].substring(0, 2)}***@${parts[1] || 'upi'}`
+                : `***@${parts[1] || 'upi'}`;
+        } else if (payout.accountNumber) {
+            const acc = String(payout.accountNumber);
+            destinationDisplay = acc.length > 4 ? `••••${acc.slice(-4)}` : acc;
+        }
+
+        // Host settlement notification (Section 16)
+        try {
+            await this.emitNotification({
+                recipientUserId: cancellation.hostUserId,
+                eventType: 'strangers_meet_host_refund_settled',
+                title: '💰 Host Refund Settled',
+                body: `Your refund of ₹${Number(cancellation.hostRefundAmount || 0).toFixed(0)} for Stranger Meet "${(cancellation as any).meet?.subject || 'Meetup'}" has been marked as paid. Reference: ${paymentReference.trim()}.${destinationDisplay ? ` Destination: ${destinationDisplay}` : ''}`,
+                entityId: cancellation.meetId,
+                metadata: {
+                    meetId: cancellation.meetId,
+                    cancellationId: cancellation.id,
+                    hostRefundAmount: cancellation.hostRefundAmount,
+                    paymentReference: paymentReference.trim(),
+                    paymentMethod: method,
+                    destination: destinationDisplay,
+                },
+            });
+        } catch (notifErr: any) {
+            logger.warn('[StrangersMeetService] Failed to notify host of settlement: ' + notifErr.message);
+        }
+
+        // Realtime socket events
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${cancellation.hostUserId}`).emit('live_feed_update', {
+                    meetId: cancellation.meetId,
+                    hostRefundStatus: HostRefundStatus.PAID,
+                    settlementReference: paymentReference.trim(),
+                });
+                io.to(`user_${cancellation.hostUserId}`).emit('strangers_meet_status_update', {
+                    meetId: cancellation.meetId,
+                    status: 'settled',
+                    hostRefundStatus: HostRefundStatus.PAID,
+                });
+            }
+        } catch (socketErr: any) {
+            logger.warn('Socket emission failed in adminSettleHostRefund: ' + socketErr.message);
+        }
+
+        return {
+            success: true,
+            message: 'Host refund settlement recorded successfully.',
+            cancellation,
         };
     }
 

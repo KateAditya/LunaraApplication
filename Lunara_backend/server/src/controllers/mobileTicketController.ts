@@ -1132,7 +1132,7 @@ export class MobileTicketController {
                 const meet = jAny.strangersMeetRequest;
                 if (!meet) continue;
                 const jPayStatus = (j.paymentStatus || '').toLowerCase();
-                const isJPaid = jPayStatus === 'paid' || jPayStatus === 'completed' || jPayStatus === 'settled';
+                const isJPaid = jPayStatus === 'paid' || jPayStatus === 'completed' || jPayStatus === 'settled' || jPayStatus === 'refunded' || (meet.status === 'cancelled' && Number(j.paymentAmount || 0) > 0);
                 if (!isJPaid) continue; // Joiner must pay entry fee before ticket is generated/shown
                 if (seenBookingIds.has(j.id) || seenBookingIds.has(meet.id) || (jAny.ticketCode && seenTicketIds.has(jAny.ticketCode))) continue;
                 seenBookingIds.add(j.id);
@@ -1141,7 +1141,7 @@ export class MobileTicketController {
                 const startAt = parseEventStartDateTime(meet.eventDateTime, null);
                 const expAt = getActualExpiration(startAt, meet.expectedEndAt ? new Date(meet.expectedEndAt) : null);
                 const jStatus = (j.status || '').toLowerCase();
-                const isCancelled = jStatus === 'cancelled' || jStatus === 'rejected';
+                const isCancelled = jStatus === 'cancelled' || jStatus === 'rejected' || meet.status === 'cancelled' || jPayStatus === 'refunded';
                 const isCompleted = meet.status === 'completed' || meet.status === 'settled';
                 const isExpired = meet.status === 'expired' || isCompleted || expAt < now;
                 const ticketCode = jAny.ticketCode || `LUN-${startAt.getFullYear()}-SM-${j.id.substring(0, 6).toUpperCase()}`;
@@ -1229,7 +1229,7 @@ export class MobileTicketController {
             for (const sm of strangersHostMeets) {
                 const smAny = sm as any;
                 const smPayStatus = (sm.paymentStatus || '').toLowerCase();
-                const isSmPaid = smPayStatus === 'paid' || smPayStatus === 'completed' || smPayStatus === 'settled';
+                const isSmPaid = smPayStatus === 'paid' || smPayStatus === 'completed' || smPayStatus === 'settled' || smPayStatus === 'refunded' || ((sm.status || '').toLowerCase() === 'cancelled' && Number(sm.paymentAmount || 0) > 0);
                 if (!isSmPaid) continue; // Host must pay deposit before ticket is generated/shown
                 if (seenBookingIds.has(sm.id) || (smAny.ticketCode && seenTicketIds.has(smAny.ticketCode))) continue;
                 seenBookingIds.add(sm.id);
@@ -1238,7 +1238,7 @@ export class MobileTicketController {
                 const startAt = parseEventStartDateTime(sm.eventDateTime, null);
                 const expAt = getActualExpiration(startAt, sm.expectedEndAt ? new Date(sm.expectedEndAt) : null);
                 const sStatus = (sm.status || '').toLowerCase();
-                const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected';
+                const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected' || smPayStatus === 'refunded';
                 const isCompleted = sStatus === 'completed' || sStatus === 'settled';
                 const isExpired = sStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = smAny.ticketCode || sm.ticketId || `LUN-${startAt.getFullYear()}-SM-${sm.id.substring(0, 6).toUpperCase()}`;

@@ -10,6 +10,11 @@ class StrangersMeetHostCancellationDialog extends StatefulWidget {
   final String venueName;
   final int joinedCount;
   final double collectedAmount;
+  final String? date;
+  final String? time;
+  final int? totalCapacity;
+  final int? paidCount;
+  final double? hostDeposit;
   final VoidCallback? onCancelled;
 
   const StrangersMeetHostCancellationDialog({
@@ -19,6 +24,11 @@ class StrangersMeetHostCancellationDialog extends StatefulWidget {
     required this.venueName,
     required this.joinedCount,
     required this.collectedAmount,
+    this.date,
+    this.time,
+    this.totalCapacity,
+    this.paidCount,
+    this.hostDeposit,
     this.onCancelled,
   });
 
@@ -29,6 +39,11 @@ class StrangersMeetHostCancellationDialog extends StatefulWidget {
     required String venueName,
     required int joinedCount,
     required double collectedAmount,
+    String? date,
+    String? time,
+    int? totalCapacity,
+    int? paidCount,
+    double? hostDeposit,
     VoidCallback? onCancelled,
   }) {
     return showModalBottomSheet<bool>(
@@ -41,6 +56,11 @@ class StrangersMeetHostCancellationDialog extends StatefulWidget {
         venueName: venueName,
         joinedCount: joinedCount,
         collectedAmount: collectedAmount,
+        date: date,
+        time: time,
+        totalCapacity: totalCapacity,
+        paidCount: paidCount,
+        hostDeposit: hostDeposit,
         onCancelled: onCancelled,
       ),
     );
@@ -210,68 +230,41 @@ class _StrangersMeetHostCancellationDialogState
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Venue:',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white60,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        widget.venueName,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                  _buildSummaryRow('Meet:', widget.subject),
+                  const SizedBox(height: 8),
+                  _buildSummaryRow('Venue:', widget.venueName),
+                  if (widget.date != null && widget.date!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildSummaryRow('Date:', widget.date!),
+                  ],
+                  if (widget.time != null && widget.time!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _buildSummaryRow('Time:', widget.time!),
+                  ],
+                  const SizedBox(height: 8),
+                  _buildSummaryRow(
+                    'Joined participants:',
+                    '${widget.joinedCount}${widget.totalCapacity != null ? ' / ${widget.totalCapacity}' : ''}',
+                    valueColor: LunaraTheme.electricViolet,
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Joined Members:',
-                        style: GoogleFonts.outfit(
-                          color: Colors.white60,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        '${widget.joinedCount} people',
-                        style: GoogleFonts.outfit(
-                          color: LunaraTheme.electricViolet,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 8),
+                  _buildSummaryRow(
+                    'Paid participants:',
+                    '${widget.paidCount ?? widget.joinedCount}',
+                    valueColor: Colors.white,
                   ),
-                  if (widget.collectedAmount > 0) ...[
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Total Collected:',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white60,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          '₹${widget.collectedAmount.toStringAsFixed(0)}',
-                          style: GoogleFonts.outfit(
-                            color: const Color(0xFF10B981),
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+                  const SizedBox(height: 8),
+                  _buildSummaryRow(
+                    'Amount collected from participants:',
+                    '₹${widget.collectedAmount.toStringAsFixed(0)}',
+                    valueColor: const Color(0xFF10B981),
+                  ),
+                  if (widget.hostDeposit != null && widget.hostDeposit! > 0) ...[
+                    const SizedBox(height: 8),
+                    _buildSummaryRow(
+                      'Host confirmation/deposit:',
+                      '₹${widget.hostDeposit!.toStringAsFixed(0)}',
+                      valueColor: Colors.amber,
                     ),
                   ],
                 ],
@@ -291,14 +284,16 @@ class _StrangersMeetHostCancellationDialogState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(
-                    Icons.admin_panel_settings_rounded,
+                    Icons.warning_amber_rounded,
                     color: Colors.amber,
                     size: 20,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'This request will be reviewed by Lunara Admin. Cancellation and refunds to joined members will be processed according to the policy after review.',
+                      widget.joinedCount > 0
+                          ? '${widget.joinedCount} participants have already paid for this meet. Cancelling the meet may require refunds to participating users. Are you sure you want to continue?'
+                          : 'No participants have paid yet. Cancelling will close this meet immediately.',
                       style: GoogleFonts.outfit(
                         color: const Color(0xFFFDE68A),
                         fontSize: 12,
@@ -449,7 +444,7 @@ class _StrangersMeetHostCancellationDialogState
 
             const SizedBox(height: 20),
 
-            // Action Buttons
+            // Action Buttons (Section 3: CANCEL REQUEST / KEEP MEET)
             Row(
               children: [
                 Expanded(
@@ -465,11 +460,12 @@ class _StrangersMeetHostCancellationDialogState
                       ),
                     ),
                     child: Text(
-                      'Keep Meet',
+                      'KEEP MEET',
                       style: GoogleFonts.outfit(
                         color: Colors.white70,
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ),
@@ -497,11 +493,12 @@ class _StrangersMeetHostCancellationDialogState
                             ),
                           )
                         : Text(
-                            'Submit Request',
+                            'CANCEL REQUEST',
                             style: GoogleFonts.outfit(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
                             ),
                           ),
                   ),
@@ -511,6 +508,38 @@ class _StrangersMeetHostCancellationDialogState
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value, {Color? valueColor}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 4,
+          child: Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: Colors.white60,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 5,
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: GoogleFonts.outfit(
+              color: valueColor ?? Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

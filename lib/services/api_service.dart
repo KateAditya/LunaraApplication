@@ -4082,6 +4082,7 @@ class ApiService {
     String? mobileNumber,
     String? optionalMobileNumber,
     bool isUpcomingNight = false,
+    String? paymentMode,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -4102,6 +4103,7 @@ class ApiService {
           'mobileNumber': mobileNumber,
           'optionalMobileNumber': optionalMobileNumber,
           'isUpcomingNight': isUpcomingNight,
+          if (paymentMode != null && paymentMode.isNotEmpty) 'paymentMode': paymentMode,
         },
       );
       try {
@@ -4168,8 +4170,19 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return Map<String, dynamic>.from(data['data'] ?? data);
+          final res = Map<String, dynamic>.from(data['data'] is Map ? data['data'] : data);
+          res['success'] = true;
+          return res;
         }
+      }
+      if (response.statusCode == 402) {
+        final data = jsonDecode(response.body);
+        return {
+          'success': false,
+          'insufficientBalance': true,
+          'message': data['message'] ?? 'Insufficient wallet balance',
+          'data': data['data'],
+        };
       }
     } catch (e) {
       debugPrint('payNowBooking error: $e');
@@ -4635,6 +4648,7 @@ class ApiService {
     String? partyRequirement,
     String? partyDescription,
     String? startTime,
+    String? paymentMode,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -4661,6 +4675,8 @@ class ApiService {
             'partyDescription': partyDescription.trim(),
           if (startTime != null && startTime.trim().isNotEmpty)
             'startTime': startTime.trim(),
+          if (paymentMode != null && paymentMode.trim().isNotEmpty)
+            'paymentMode': paymentMode.trim(),
         },
       );
       try {

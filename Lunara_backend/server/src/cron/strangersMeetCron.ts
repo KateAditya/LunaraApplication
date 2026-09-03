@@ -4,6 +4,10 @@ import StrangersMeetRequest, {
     StrangersMeetStatus,
     StrangersMeetPaymentStatus,
 } from '../models/StrangersMeetRequest';
+import StrangersMeetHostCancellationRequest, {
+    HostCancellationStatus,
+} from '../models/StrangersMeetHostCancellationRequest';
+import User from '../models/User';
 import { StrangersMeetService } from '../services/StrangersMeetService';
 import { logger } from '../config/logger';
 import AuditLog from '../models/AuditLog';
@@ -205,6 +209,51 @@ export const startStrangersMeetCron = () => {
                     });
                 } catch (itemErr) {
                     logger.error(`[StrangersMeetCron] Error transitioning meet ${meet.id} to END_CONFIRMATION_PENDING:`, itemErr);
+                }
+            }
+
+            // ─────────────────────────────────────────────────────────────────
+            // 5. Check for 24-Hour Unresolved Host Cancellations & Pending Refunds (Phase 17)
+            // ─────────────────────────────────────────────────────────────────
+            const overdueCancellations = await StrangersMeetHostCancellationRequest.findAll({
+                where: {
+                    status: {
+                        [Op.in]: [
+                            HostCancellationStatus.PENDING_ADMIN_REVIEW,
+                            HostCancellationStatus.REFUND_PROCESSING,
+                        ],
+                    },
+                    createdAt: {
+                        [Op.lte]: twentyFourHoursAgo,
+                    },
+                },
+                include: [
+                    { model: StrangersMeetRequest, as: 'meet' },
+                    { model: User, as: 'host', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] }
+                ],
+                limit: 100,
+            });
+
+            for (const cancelReq of overdueCancellations) {
+                try {
+                    const hostUser = (cancelReq as any).host;
+                    const hostName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'Host';
+                    logger.warn(`[StrangersMeetCron] ⚠️ Strangers Meet Refund Requires Attention: Meet ${cancelReq.meetId}, Host: ${hostName}, Status: ${cancelReq.status}`);
+                    await AuditLog.logAction({
+                        userId: cancelReq.hostUserId,
+                        partyPlanId: cancelReq.meetId,
+                        action: 'Strangers Meet Cancellation Unresolved > 24 Hours',
+                        metadata: {
+                            meetId: cancelReq.meetId,
+                            cancellationId: cancelReq.id,
+                            hostName,
+                            totalCollectedAmount: cancelReq.totalCollectedAmount,
+                            status: cancelReq.status,
+                            reason: cancelReq.reason,
+                        },
+                    });
+                } catch (cErr) {
+                    logger.error(`[StrangersMeetCron] Error escalating overdue cancellation ${cancelReq.id}:`, cErr);
                 }
             }
         } catch (globalErr) {
