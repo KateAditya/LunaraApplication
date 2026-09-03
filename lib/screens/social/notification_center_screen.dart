@@ -2325,10 +2325,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         data['payment_deadline_at'],
                     acceptedAt: data['acceptedAt'] ?? data['accepted_at'],
                     amount: depositAmount,
-                    onTap: () {
+                    onTap: () async {
                       _markAsRead(item);
                       if (requestId.isNotEmpty) {
-                        SmartCheckoutSheet.show(
+                        final bool? sheetSuccess = await SmartCheckoutSheet.show(
                           context: context,
                           title: 'Party Plan Safety Deposit',
                           subtitle:
@@ -2353,16 +2353,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                   'razorpay_signature': 'mock_signature',
                                 },
                               );
-                              if (confirmRes.statusCode == 200 && mounted) {
-                                _fetchNotifications();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      '🎉 Safety Deposit Paid! Booking Confirmed!',
-                                    ),
-                                    backgroundColor: Colors.green,
-                                  ),
-                                );
+                              if (confirmRes.statusCode == 200) {
                                 return true;
                               }
                             }
@@ -2391,6 +2382,28 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             }
                           },
                         );
+
+                        if (sheetSuccess == true && mounted) {
+                          TopNotificationBanner.show(
+                            title: 'Safety Deposit Paid! 🎉',
+                            body: 'Booking confirmed via Smart Wallet for $venueName.',
+                          );
+                          ApiService.notifyFeedNeedsRefresh();
+                          _fetchNotifications();
+                          final planId = data['partyPlanId']?.toString() ?? '';
+                          if (planId.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PartyPlanTicketScreen(
+                                  request: const {},
+                                  plan: {'id': planId, 'venue': {'name': venueName}},
+                                  isHost: false,
+                                ),
+                              ),
+                            );
+                          }
+                        }
                       }
                     },
                   ),
@@ -2645,7 +2658,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ? item['data'] as Map<String, dynamic>
               : <String, dynamic>{});
 
-    final String requestId = (data['requestId'] ?? '').toString();
+    final String requestId = (data['requestId'] ?? data['planId'] ?? data['partyPlanId'] ?? item['entityId'] ?? '').toString();
     final String title = (item['title'] ?? '🎉 Party Plan Invitation')
         .toString();
     final String body =
@@ -2765,10 +2778,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         );
                         if (mounted) {
                           if (res != null && res['success'] == true) {
+                            final bool isSelfPay = res['isSelfPay'] == true || (res['message']?.toString().toLowerCase().contains('host') ?? false);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  '🎉 Invite Accepted! Please pay the safety deposit to confirm.',
+                                  res['message'] ?? (isSelfPay
+                                      ? '🎉 Invite Accepted! (Paid by Host)'
+                                      : '🎉 Invite Accepted! Please pay the safety deposit to confirm.'),
                                 ),
                                 backgroundColor: Colors.green,
                               ),

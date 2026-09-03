@@ -10,6 +10,7 @@ import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
+import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class _VenueImageFallback extends StatelessWidget {
@@ -1558,19 +1559,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       setState(() => _isAcceptingInvite = false);
 
       if (res != null && res['success'] == true) {
+        final bool isSelfPay = res['isSelfPay'] == true || (res['message']?.toString().toLowerCase().contains('host') ?? false);
+        final bool hostPaid = res['hostPaid'] == true;
         setState(() {
-          _requestStatus = 'payment_pending';
+          _requestStatus = isSelfPay ? (hostPaid ? 'confirmed' : 'accepted') : 'payment_pending';
           _alreadyRequested = true;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Invite Accepted! Please pay the safety deposit within 30 minutes.'),
+          SnackBar(
+            content: Text(res['message'] ?? '🎉 Invite Accepted!'),
             backgroundColor: Colors.green,
           ),
         );
         _refreshPlanDetails();
         _checkRequestStatus();
-        _openDepositPaymentSheet();
+        if (!isSelfPay) {
+          _openDepositPaymentSheet();
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1801,16 +1806,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
-  void _openDepositPaymentSheet() {
-    if (_isExpired) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This Party Plan has expired. No actions can be performed.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
+  void _openDepositPaymentSheet() async {
     final reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['activeRequestId']?.toString();
     if (reqId == null || reqId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1825,7 +1821,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
     final venueName = venue['name'] as String? ?? 'Venue';
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Party Plan Safety Deposit',
       subtitle: 'Safety commitment deposit for Party Plan at $venueName',
@@ -1844,31 +1840,22 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             'razorpay_payment_id': 'wallet_$transactionId',
             'razorpay_signature': 'mock_signature',
           });
-          if (confirmRes.statusCode == 200 && mounted) {
-            setState(() {
-              _requestStatus = 'confirmed';
-            });
-            _refreshPlanDetails();
-            _checkRequestStatus();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎉 Safety Deposit Paid! Booking Confirmed!'),
-                backgroundColor: Colors.green,
-              ),
-            );
+          if (confirmRes.statusCode == 200) {
             return true;
-          } else if (mounted) {
+          } else {
             String msg = 'Payment Confirmation Failed';
             try {
               final b = jsonDecode(confirmRes.body);
               msg = b['message'] ?? b['error'] ?? msg;
             } catch (_) {}
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Payment Failed: $msg'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Payment Failed: $msg'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
           }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1884,15 +1871,37 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         _startRazorpayDirectPayment(reqId, venueName);
       },
       onHybridPayment: (shortfall) async {
-        // The shortfall must actually be charged — reuse the same real Razorpay
-        // checkout the "Direct Payment" option uses, just for the shortfall amount,
-        // mirroring how the host's own hybrid payment already works correctly.
         _startRazorpayDirectPayment(reqId, venueName, depositAmount: shortfall > 0 ? shortfall : 99.0);
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Safety Deposit Confirmed! 🎉',
+        body: 'Your commitment deposit was paid via Smart Wallet. Booking confirmed!',
+      );
+      setState(() {
+        _requestStatus = 'confirmed';
+      });
+      ApiService.notifyFeedNeedsRefresh();
+      await _refreshPlanDetails();
+      await _checkRequestStatus();
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PartyPlanTicketScreen(
+              request: const {},
+              plan: widget.plan,
+              isHost: false,
+            ),
+          ),
+        );
+      }
+    }
   }
 
-  void _openHostDepositPaymentSheet() {
+  void _openHostDepositPaymentSheet() async {
     if (_isExpired) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1906,7 +1915,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
     final venueName = venue['name'] as String? ?? 'Venue';
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Host Safety Deposit',
       subtitle: 'Publish & activate your Party Plan at $venueName',
@@ -1925,17 +1934,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             'wallet_$transactionId',
             'mock_signature',
           );
-          if (paymentConfirmed && mounted) {
-            setState(() {
-              widget.plan['hostPaymentStatus'] = 'paid';
-              widget.plan['isLive'] = true;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎉 Host Safety Deposit Paid via Smart Wallet! Plan Published.'),
-                backgroundColor: Colors.green,
-              ),
-            );
+          if (paymentConfirmed) {
             return true;
           }
         } else if (mounted) {
@@ -1955,6 +1954,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         await _launchHostRazorpay(cleanPlanId, venueName, shortfall > 0 ? shortfall : 99.0);
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Plan Activated! 🎉',
+        body: 'Host Safety Deposit paid via Smart Wallet! Your plan is now LIVE.',
+      );
+      setState(() {
+        widget.plan['hostPaymentStatus'] = 'paid';
+        widget.plan['isLive'] = true;
+      });
+      ApiService.notifyFeedNeedsRefresh();
+      await _refreshPlanDetails();
+    }
   }
 
   Future<void> _launchHostRazorpay(String cleanPlanId, String venueName, double depositAmount) async {

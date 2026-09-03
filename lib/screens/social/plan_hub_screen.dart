@@ -24,6 +24,7 @@ import '../../services/google_places_service.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../../widgets/top_notification_banner.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../../widgets/dialogs/user_has_plan_conflict_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
@@ -3985,6 +3986,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         'showHostName': showHostProfile,
                                         'showProfilePhoto': showHostProfile,
                                       },
+                                      timeout: const Duration(seconds: 25),
                                     );
 
                                     if (response.statusCode == 200 ||
@@ -4460,6 +4462,13 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           );
 
                                           if (!mounted) return;
+                                          if (paymentSuccess == true) {
+                                            TopNotificationBanner.show(
+                                              title: 'Party Plan Published! 🎉',
+                                              body: 'Host Safety Deposit verified via Smart Wallet! Your plan is now LIVE in the feed.',
+                                            );
+                                            ApiService.notifyFeedNeedsRefresh();
+                                          }
                                           // Direct host immediately to the Live Feed so they can view their newly created Party Plan Smart Card
                                           Navigator.push(
                                             context,

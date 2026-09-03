@@ -75,6 +75,12 @@ export class EventTimeLockService {
             dateTime: Date;
         }> = [];
 
+        // Calculate search window: proposedTime +/- 5 hours to leverage DB indexes and avoid table scans
+        const windowStart = new Date(proposedTime.getTime() - 5 * 60 * 60 * 1000);
+        const windowEnd = new Date(proposedTime.getTime() + 5 * 60 * 60 * 1000);
+        const windowStartDateStr = windowStart.toISOString().split('T')[0];
+        const windowEndDateStr = windowEnd.toISOString().split('T')[0];
+
         // Parallelize fetching across all event categories (Party Plans, Group Parties, Stranger Meets, Bookings)
         await Promise.all([
             // 1. Party Plans (Host & Partner)
@@ -85,6 +91,7 @@ export class EventTimeLockService {
                             where: {
                                 userId,
                                 status: { [Op.ne]: 'cancelled' },
+                                planDateTime: { [Op.between]: [windowStart, windowEnd] },
                                 [Op.or]: [
                                     { lifecycleStatus: { [Op.eq]: null as any } },
                                     { lifecycleStatus: { [Op.notIn]: ['cancelled', 'expired'] } }
@@ -200,6 +207,7 @@ export class EventTimeLockService {
                         StrangersMeetRequest.findAll({
                             where: {
                                 userId,
+                                eventDateTime: { [Op.between]: [windowStart, windowEnd] },
                                 status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
                             },
                             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
@@ -237,7 +245,10 @@ export class EventTimeLockService {
 
                     if (joinerMeetIds.length > 0) {
                         const strangerMeets = await StrangersMeetRequest.findAll({
-                            where: { id: { [Op.in]: joinerMeetIds } },
+                            where: {
+                                id: { [Op.in]: joinerMeetIds },
+                                eventDateTime: { [Op.between]: [windowStart, windowEnd] },
+                            },
                             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
                             transaction,
                         });
@@ -274,6 +285,7 @@ export class EventTimeLockService {
                         Booking.findAll({
                             where: {
                                 userId,
+                                bookingDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
                                 status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.PENDING, BookingStatus.COMPLETED] },
                             },
                             include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
@@ -302,7 +314,12 @@ export class EventTimeLockService {
                     ]);
 
                     for (const b of bookings) {
-                        if (excludeEventId && b.id === excludeEventId) continue;
+                        if (excludeEventId) {
+                            if (b.id === excludeEventId) continue;
+                            // Exclude booking if it was created for this party plan
+                            if (b.specialRequests && b.specialRequests.includes(excludeEventId)) continue;
+                            if ((b as any).partyEventId && (b as any).partyEventId === excludeEventId) continue;
+                        }
                         if (b.status === BookingStatus.CANCELLED) continue;
 
                         const isLargeParty = b.goingMode === 'party_request' || (b as any).isLargePartyRequest;
@@ -333,7 +350,11 @@ export class EventTimeLockService {
                         const groupBooking = (mb as any).groupBooking;
                         const b = groupBooking?.booking;
                         if (b && b.status !== BookingStatus.CANCELLED) {
-                            if (excludeEventId && (b.id === excludeEventId || mb.id === excludeEventId)) continue;
+                            if (excludeEventId) {
+                                if (b.id === excludeEventId || mb.id === excludeEventId) continue;
+                                if (b.specialRequests && b.specialRequests.includes(excludeEventId)) continue;
+                                if ((b as any).partyEventId && (b as any).partyEventId === excludeEventId) continue;
+                            }
                             const bookingDateTime = parseBookingDateTime(b.bookingDate, b.startTime);
                             const venueName = b.venue?.name;
                             activeEvents.push({

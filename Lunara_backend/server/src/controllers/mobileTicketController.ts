@@ -349,18 +349,22 @@ export class MobileTicketController {
                     } catch (_) {}
                 }
 
-                const startDate = t.eventStartAt ? new Date(t.eventStartAt) : new Date();
+                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan';
+                const partyPlanDt = sourcePartyPlan?.planDateTime ? new Date(sourcePartyPlan.planDateTime) : null;
+                const startDate = (isPartyPlan && partyPlanDt && !isNaN(partyPlanDt.getTime()))
+                    ? partyPlanDt
+                    : (t.eventStartAt ? new Date(t.eventStartAt) : new Date());
                 const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
                 const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
                 const sourceStartTime = sourceGroupParty?.startTime || sourceBooking?.startTime;
                 let startTimeStr = '08:00 PM';
-                if (sourceStartTime) {
+                if (isPartyPlan && partyPlanDt && !isNaN(partyPlanDt.getTime())) {
+                    startTimeStr = formatTime12Hour(partyPlanDt);
+                } else if (sourceStartTime) {
                     startTimeStr = formatTime12Hour(parseEventDateTimeToUTC(t.eventStartAt || new Date(), sourceStartTime));
                 } else if (t.eventStartAt) {
                     startTimeStr = formatTime12Hour(t.eventStartAt);
                 }
-
-                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan';
                 const isStrangersMeet = t.bookingType === 'strangers_meet' || Boolean(sourceStrangersMeet) || Boolean(sourceStrangersJoiner);
                 const isSolo = !isPartyPlan && !isStrangersMeet && (t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo');
                 const isLargeParty = !isPartyPlan && !isStrangersMeet && !isSolo && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
@@ -459,9 +463,9 @@ export class MobileTicketController {
                     bookingType: t.bookingType,
                     category,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
-                    bookingDate: t.eventStartAt,
+                    bookingDate: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     startTime: startTimeStr,
-                    eventStartAt: t.eventStartAt,
+                    eventStartAt: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     eventEndAt: t.eventEndAt || actualExpiresAt,
                     issuedAt: t.issuedAt,
                     expiresAt: actualExpiresAt,
@@ -573,8 +577,19 @@ export class MobileTicketController {
                 seenBookingIds.add(b.id);
                 if (bAny.ticketCode) seenTicketIds.add(bAny.ticketCode);
 
+                const isPlanBooking = b.goingMode === 'plan';
+                let planStartAt: Date | null = null;
+                if (isPlanBooking && b.specialRequests) {
+                    try {
+                        const meta = typeof b.specialRequests === 'string' ? JSON.parse(b.specialRequests) : b.specialRequests;
+                        if (meta.planId) {
+                            const p = partyPlanById.get(meta.planId);
+                            if (p?.planDateTime) planStartAt = new Date(p.planDateTime);
+                        }
+                    } catch (_) {}
+                }
                 const sTime = b.startTime || '00:00';
-                const startAt = parseEventStartDateTime(b.bookingDate, sTime);
+                const startAt = planStartAt || parseEventStartDateTime(b.bookingDate, sTime);
                 const expAt = getActualExpiration(startAt);
                 const bStatus = (b.status || '').toLowerCase();
                 const isCancelled = bStatus === 'cancelled';
@@ -582,7 +597,6 @@ export class MobileTicketController {
                 const isExpired = bStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
-                const isPlanBooking = b.goingMode === 'plan';
                 const isUpcomingNight = Boolean(b.isUpcomingNight);
                 const isSolo = !isPlanBooking && b.goingMode === 'solo';
                 const isLargeParty = !isPlanBooking && !isSolo && Boolean(b.isLargePartyRequest);
@@ -627,8 +641,8 @@ export class MobileTicketController {
                     bookingType: isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : (isEventBooking ? 'event_booking' : 'venue_booking'))),
                     category,
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
-                    bookingDate: b.bookingDate,
-                    startTime: formatTimeTo12Hour(sTime),
+                    bookingDate: planStartAt || b.bookingDate,
+                    startTime: planStartAt ? formatTime12Hour(planStartAt) : formatTimeTo12Hour(sTime),
                     eventStartAt: startAt,
                     eventEndAt: expAt,
                     issuedAt: b.createdAt,

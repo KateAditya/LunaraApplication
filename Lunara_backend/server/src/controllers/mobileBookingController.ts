@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
-import PartyPlan from '../models/PartyPlan';
-import PartyPlanRequest from '../models/PartyPlanRequest';
+import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
+import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
@@ -1084,6 +1084,18 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const synthesized: any[] = [];
 
         for (const plan of hostPlans) {
+            // A newly created, unpaid, or unmatched party plan is NOT a booking.
+            // Only plans with an accepted match and paid host deposit are bookings.
+            if (!plan.matchedRequestId || plan.hostPaymentStatus !== PartyPlanPaymentStatus.PAID) {
+                continue;
+            }
+            const alreadyInBookings = bookings.some(b => {
+                const sr = (b as any).specialRequests || '';
+                return sr.includes(plan.id) || b.id === (plan as any).bookingId;
+            });
+            if (alreadyInBookings) {
+                continue;
+            }
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
             const bookedDate = plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString();
@@ -1107,6 +1119,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
         for (const request of joinerRequests) {
             const plan = (request as any).plan;
             if (!plan) continue;
+            // Only synthesize if joiner request was accepted and paid
+            if (request.status !== PartyPlanRequestStatus.ACCEPTED || request.joinerPaymentStatus !== PartyPlanJoinerPaymentStatus.PAID) {
+                continue;
+            }
+            const alreadyInBookings = bookings.some(b => {
+                const sr = (b as any).specialRequests || '';
+                return sr.includes(plan.id) || b.id === (plan as any).bookingId;
+            });
+            if (alreadyInBookings) {
+                continue;
+            }
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
             const bookedDate = request.createdAt ? new Date(request.createdAt).toISOString() : (plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString());
@@ -1114,7 +1137,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 id: `party_plan_joiner_${request.id}`,
                 bookingId: plan.id,
                 bookingType: 'party_plan',
-                status: request.status === 'cancelled' || request.status === 'rejected' ? 'cancelled' : 'confirmed',
+                status: 'confirmed',
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),

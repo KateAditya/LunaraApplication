@@ -1413,11 +1413,19 @@ class ApiService {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept',
         body: {'userId': userId},
+        timeout: const Duration(seconds: 25),
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        notifyFeedNeedsRefresh();
-        return data['data'];
+      if (response.body.isNotEmpty) {
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map<String, dynamic>) {
+            if (response.statusCode == 200) {
+              notifyFeedNeedsRefresh();
+              return data['data'] is Map<String, dynamic> ? data['data'] : data;
+            }
+            return data;
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('acceptPartyPlanRequest error: $e');
@@ -3789,13 +3797,17 @@ class ApiService {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept-invite',
         body: {'userId': userId},
+        timeout: const Duration(seconds: 25),
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) return data;
+      if (response.body.isNotEmpty) {
+        try {
+          final data = jsonDecode(response.body);
+          if (data is Map<String, dynamic>) return data;
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('acceptPartyPlanInvite error: $e');
+      return {'success': false, 'message': formatUserFriendlyError(e)};
     }
     return null;
   }

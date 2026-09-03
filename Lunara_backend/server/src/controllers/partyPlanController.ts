@@ -28,7 +28,7 @@ import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
 import { EventTimeLockService } from '../services/EventTimeLockService';
-import { formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
+import { formatTime12Hour, formatDateFull, extractDateParts, DEFAULT_TIMEZONE } from '../utils/dateTimeUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
@@ -214,8 +214,9 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
             return existingBooking.id;
         }
 
-        const bookingDate = validDateObj.toISOString().split('T')[0];
-        const startTime = validDateObj.toTimeString().split(' ')[0];
+        const [y, m, d] = extractDateParts(validDateObj, DEFAULT_TIMEZONE);
+        const bookingDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const startTime = formatTime12Hour(validDateObj, DEFAULT_TIMEZONE);
 
         // Ticket code format: PP-XXXXXX (uppercase alphanumeric)
         const ticketCode = 'PP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -2340,6 +2341,15 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         }
 
         if (request.status !== PartyPlanRequestStatus.PENDING && request.status !== PartyPlanRequestStatus.WAITING) {
+            if (request.status === PartyPlanRequestStatus.ACCEPTED || request.status === PartyPlanRequestStatus.PAYMENT_PENDING) {
+                await transaction.commit();
+                res.json({
+                    success: true,
+                    message: 'Request already accepted.',
+                    data: request,
+                });
+                return;
+            }
             await transaction.rollback();
             res.status(400).json({
                 success: false,
@@ -3490,10 +3500,34 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
         const { reqId } = req.params;
         const { userId } = req.body;
 
-        const request = await PartyPlanRequest.findByPk(reqId, { transaction });
+        let request = await PartyPlanRequest.findByPk(reqId, { transaction });
+        let plan: PartyPlan | null = null;
+
         if (!request) {
+            // Check if reqId is actually the planId (from notification or live feed)
+            plan = await PartyPlan.findByPk(reqId, { transaction });
+            if (plan) {
+                request = await PartyPlanRequest.findOne({
+                    where: { planId: plan.id, requesterId: userId },
+                    transaction
+                });
+                if (!request && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(userId)) {
+                    request = await PartyPlanRequest.create({
+                        planId: plan.id,
+                        requesterId: userId,
+                        status: PartyPlanRequestStatus.PENDING,
+                        joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
+                        latLangCheckIn: false,
+                    }, { transaction });
+                }
+            }
+        } else {
+            plan = await PartyPlan.findByPk(request.planId, { transaction });
+        }
+
+        if (!request || !plan) {
             await transaction.rollback();
-            res.status(404).json({ success: false, message: 'Request not found' });
+            res.status(404).json({ success: false, message: 'Invite request or Party Plan not found' });
             return;
         }
 
@@ -3503,20 +3537,32 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             return;
         }
 
-        const plan = await PartyPlan.findByPk(request.planId, { transaction });
-        if (!plan) {
-            await transaction.rollback();
-            res.status(404).json({ success: false, message: 'Party plan not found' });
+        // Idempotency: if request was already accepted by this user, return success!
+        if (request.status === PartyPlanRequestStatus.ACCEPTED || request.status === PartyPlanRequestStatus.PAYMENT_PENDING) {
+            await transaction.commit();
+            res.json({
+                success: true,
+                message: 'Invite already accepted.',
+                data: {
+                    request,
+                    joinerRazorpayOrderId: request.joinerRazorpayOrderId,
+                    paymentDeadlineAt: request.paymentTimeoutAt?.toISOString(),
+                }
+            });
             return;
         }
 
         // Acquire transactional row update lock on the party plan
         await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
 
-        // Enforce state transition checks: plan status must be active
-        if (plan.status !== PartyPlanStatus.ACTIVE) {
+        // Enforce state transition checks: plan must not be cancelled or expired
+        if (
+            plan.status === PartyPlanStatus.CANCELLED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.CANCELLED ||
+            (plan.planDateTime && new Date(plan.planDateTime).getTime() < Date.now())
+        ) {
             await transaction.rollback();
-            res.status(400).json({ success: false, message: 'This plan is not active or has already been completed/cancelled.' });
+            res.status(400).json({ success: false, message: 'This plan is no longer active or has already been cancelled/expired.' });
             return;
         }
 
@@ -3610,7 +3656,13 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                     logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
                 }
 
-                res.json({ success: true, message: 'Joined party plan successfully! (Paid by Host) 🎉', data: request });
+                res.json({
+                    success: true,
+                    isSelfPay: true,
+                    hostPaid: true,
+                    message: 'Joined party plan successfully! (Paid by Host) 🎉',
+                    data: request
+                });
             } else {
                 await request.update({
                     status: PartyPlanRequestStatus.ACCEPTED,
@@ -3672,7 +3724,13 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                     logger.warn('Socket emission failed for acceptPartyPlanInvite:', socketErr);
                 }
 
-                res.json({ success: true, message: 'Join confirmed. Waiting for host to complete their payment. ⏳', data: request });
+                res.json({
+                    success: true,
+                    isSelfPay: true,
+                    hostPaid: false,
+                    message: 'Join confirmed. Waiting for host to complete their payment. ⏳',
+                    data: request
+                });
             }
         } else {
             // SPLIT PAY
@@ -3759,6 +3817,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
 
             res.json({
                 success: true,
+                isSelfPay: false,
                 message: 'Invite accepted! You have 30 minutes to pay the deposit.',
                 data: {
                     request,

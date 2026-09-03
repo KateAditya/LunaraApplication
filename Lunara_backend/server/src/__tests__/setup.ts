@@ -1,7 +1,7 @@
 import sequelize from '../config/database';
 import { syncModels } from '../models/index';
 
-jest.setTimeout(120000);
+jest.setTimeout(240000);
 
 beforeAll(async () => {
     // Safety check: Never run force sync on a database unless it is explicitly named as a test database

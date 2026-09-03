@@ -19,6 +19,7 @@ import '../../widgets/top_notification_banner.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'party_plan_ticket_screen.dart';
 import '../discovery/digital_ticket_screen.dart';
+import '../post_booking/ticket_pocket_screen.dart';
 import '../../widgets/booking_cancellation_dialog.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_profile_image.dart';
@@ -690,7 +691,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final rawAmount = booking['totalAmount'] ?? booking['adminPaymentAmount'] ?? booking['amount'] ?? booking['price'] ?? 1999.0;
     final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Group Party Booking',
       subtitle: 'Deposit payment for Group Party at $venueName',
@@ -709,15 +710,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             razorpayPaymentId: 'wallet_$transactionId',
             razorpaySignature: 'mock_signature',
           );
-          if (confirmRes && mounted) {
-            await _loadGroupPartyBookings();
-            _loadFeed(showLoader: false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎉 Group Party Paid via Smart Credit Wallet!'),
-                backgroundColor: Colors.green,
-              ),
-            );
+          if (confirmRes) {
             return true;
           }
         }
@@ -933,6 +926,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Group Party Confirmed! 🎉',
+        body: 'Your group party booking was paid via Smart Wallet. Ticket generated!',
+        data: {'type': 'group_party_confirmed', 'partyId': bookingId},
+      );
+      ApiService.notifyFeedNeedsRefresh();
+      await _loadGroupPartyBookings();
+      _loadFeed(showLoader: false);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LargePartyTicketScreen(
+              booking: booking,
+              venue: booking['venue'] is Map ? booking['venue'] : {},
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _initiatePendingBookingPayment(Map<String, dynamic> payPayload) async {
@@ -964,7 +979,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (cleanBookingId.isEmpty) return;
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Complete Booking Payment',
       subtitle: 'Reservation at $venueName',
@@ -982,18 +997,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             paymentMethod: 'wallet',
             transactionId: transactionId,
           );
-          if (confirmRes != null && mounted) {
-            _loadFeed(showLoader: false);
-            TopNotificationBanner.show(
-              title: 'Booking Confirmed! 🎉',
-              body: 'Your booking at $venueName is paid and confirmed.',
-            );
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎉 Booking Paid via Smart Credit Wallet!'),
-                backgroundColor: Colors.green,
-              ),
-            );
+          if (confirmRes != null) {
             return true;
           }
         }
@@ -1044,6 +1048,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Booking Confirmed! 🎉',
+        body: 'Your booking at $venueName was paid via Smart Wallet. Ticket is ready in Ticket Pocket!',
+      );
+      ApiService.notifyFeedNeedsRefresh();
+      _loadFeed(showLoader: false);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const TicketPocketScreen(),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _launchRazorpayForPendingBooking({
@@ -2221,6 +2242,80 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   // Unified Item Builders & Mapping (1 PLAN / 1 MEET = 1 SMART CARD)
   // ─────────────────────────────────────────────────────────────────────────────
+  static bool _isPartyPlanItem(dynamic item) {
+    if (item == null || item is! Map) return false;
+    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+
+    if (map['isPartyPlan'] == true) return true;
+    if (map['partyPlanId'] != null || map['partyEventId'] != null || map['planId'] != null) return true;
+    if (map['planDateTime'] != null || map['hostPaymentStatus'] != null) return true;
+
+    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
+    if (cat.contains('party_plan') || cat == 'plan') return true;
+
+    final goingMode = (map['goingMode'] ?? map['booking']?['goingMode'] ?? map['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+    if (goingMode == 'plan') return true;
+
+    final partySubject = (map['partySubject'] ?? map['booking']?['partySubject'] ?? map['metadata']?['partySubject'] ?? '').toString().toLowerCase();
+    if (partySubject.contains('party plan')) return true;
+
+    final tablePackage = (map['tablePackage'] ?? map['booking']?['tablePackage'] ?? map['metadata']?['tablePackage'] ?? '').toString().toLowerCase();
+    if (tablePackage.contains('party plan')) return true;
+
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
+    if (rawId.startsWith('party_plan') || rawId.startsWith('pp_')) return true;
+
+    if (map['booking'] is Map) {
+      if (_isPartyPlanItem(map['booking'])) return true;
+    }
+    if (map['data'] is Map) {
+      if (_isPartyPlanItem(map['data'])) return true;
+    }
+    if (map['metadata'] is Map) {
+      if (_isPartyPlanItem(map['metadata'])) return true;
+    }
+    if (map['specialRequests'] != null && map['specialRequests'].toString().contains('planId')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  static bool _isStrangerMeetItem(dynamic item) {
+    if (item == null || item is! Map) return false;
+    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+
+    if (map['isStrangersMeet'] == true) return true;
+    if (map['strangersMeetId'] != null || map['meetId'] != null || map['strangersMeetRequestId'] != null) return true;
+
+    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
+    if (cat.contains('stranger') || cat.contains('meet')) return true;
+
+    final goingMode = (map['goingMode'] ?? map['booking']?['goingMode'] ?? map['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+    if (goingMode.contains('stranger')) return true;
+
+    final partySubject = (map['partySubject'] ?? map['booking']?['partySubject'] ?? map['metadata']?['partySubject'] ?? '').toString().toLowerCase();
+    if (partySubject.contains('stranger')) return true;
+
+    final tablePackage = (map['tablePackage'] ?? map['booking']?['tablePackage'] ?? map['metadata']?['tablePackage'] ?? '').toString().toLowerCase();
+    if (tablePackage.contains('stranger')) return true;
+
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
+    if (rawId.startsWith('strangers_meet') || rawId.startsWith('sm_')) return true;
+
+    if (map['booking'] is Map) {
+      if (_isStrangerMeetItem(map['booking'])) return true;
+    }
+    if (map['data'] is Map) {
+      if (_isStrangerMeetItem(map['data'])) return true;
+    }
+    if (map['metadata'] is Map) {
+      if (_isStrangerMeetItem(map['metadata'])) return true;
+    }
+
+    return false;
+  }
+
   String? _extractPartyPlanId(Map<String, dynamic> item) {
     if (item['data'] is Map && item['data']['partyPlanId'] != null) {
       final id = item['data']['partyPlanId'].toString().trim();
@@ -2490,15 +2585,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Helper to extract Solo and standard venue booking ID
   String? _extractSoloBookingId(dynamic item) {
     if (item == null || item is! Map) return null;
-    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
+    if (_isPartyPlanItem(item) || _isStrangerMeetItem(item)) {
+      return null;
+    }
+
+    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? item['bookingType'] ?? '').toString().toLowerCase();
     final goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? item['metadata']?['goingMode'] ?? '').toString().toLowerCase();
     final isLargeOrGroup = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? 0) > 20 ||
         item['isLargePartyRequest'] == true ||
+        item['isGroupParty'] == true ||
         cat.contains('group_party') ||
         cat.contains('large_party') ||
         goingMode == 'party_request';
 
-    if (isLargeOrGroup || goingMode == 'plan' || cat.contains('party_plan') || cat.contains('stranger')) {
+    if (isLargeOrGroup) {
       return null;
     }
 
@@ -2525,6 +2625,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final cleanId = ApiService.cleanBookingId(rawId);
       if (cleanId.isNotEmpty) return cleanId;
     } else if (rawId.isNotEmpty && (item['venueId'] != null || item['venue'] != null || item['bookingDate'] != null)) {
+      if (rawId.startsWith('party_plan_') || rawId.startsWith('pp_') || rawId.startsWith('strangers_meet_') || rawId.startsWith('sm_') || rawId.startsWith('group_party_') || rawId.startsWith('gp_')) {
+        return null;
+      }
       return rawId.trim();
     }
 
@@ -2582,17 +2685,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _userBookings) {
+      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
+        continue; // Never render party plans or stranger meets as solo/table bookings!
+      }
       final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
           booking['isLargePartyRequest'] == true ||
           (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
           (booking['isSmallGroupParty'] == true);
       if (isLargeOrGroup) {
-        final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        final gpId = _extractGroupPartyId(booking);
         if (gpId != null && gpId.isNotEmpty) {
           groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
         }
       } else {
-        final soloId = _extractSoloBookingId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        final soloId = _extractSoloBookingId(booking);
         if (soloId != null && soloId.isNotEmpty) {
           soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
         }
@@ -2600,17 +2706,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _largePartyBookings) {
+      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
+        continue;
+      }
       final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
           booking['isLargePartyRequest'] == true ||
           (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
           (booking['isSmallGroupParty'] == true);
       if (isLargeOrGroup) {
-        final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        final gpId = _extractGroupPartyId(booking);
         if (gpId != null && gpId.isNotEmpty) {
           groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
         }
       } else {
-        final soloId = _extractSoloBookingId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+        final soloId = _extractSoloBookingId(booking);
         if (soloId != null && soloId.isNotEmpty) {
           soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
         }
@@ -2688,7 +2797,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final String bodyLower = (n['body'] ?? '').toString().toLowerCase();
 
       // Skip party plan & stranger meet confirmation/reminders — consolidated into their dedicated cards
-      if (goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
+      if (_isPartyPlanItem(n) || _isStrangerMeetItem(n) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
           goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
         continue;
       }
@@ -2839,7 +2948,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final String bodyLower = (fi['body'] ?? '').toString().toLowerCase();
 
       // Skip party plans & stranger meets — they are already rendered in their authoritative smart card
-      if (goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') ||
+      if (_isPartyPlanItem(fi) || _isStrangerMeetItem(fi) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') ||
           goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
         continue;
       }
@@ -3290,6 +3399,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String currentUserId,
   ) {
     if (entries.isEmpty) return null;
+    final cleanBId = bookingId.toLowerCase();
+    if (cleanBId.startsWith('party_plan') ||
+        cleanBId.startsWith('pp_') ||
+        cleanBId.startsWith('strangers_meet') ||
+        cleanBId.startsWith('sm_') ||
+        cleanBId.startsWith('group_party') ||
+        cleanBId.startsWith('gp_')) {
+      return null;
+    }
+    for (final e in entries) {
+      if (_isPartyPlanItem(e) || _isStrangerMeetItem(e)) return null;
+    }
 
     Map<String, dynamic> bookingMap = {};
     for (final e in entries) {
@@ -6593,7 +6714,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final double price = depositAmount > 0 ? depositAmount : 99.0;
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Host Safety Deposit',
       subtitle: 'Publish & activate your Party Plan at $venueName',
@@ -6612,14 +6733,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             'wallet_$transactionId',
             'mock_signature',
           );
-          if (paymentConfirmed && mounted) {
-            await onSuccess();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎉 Host Safety Deposit Paid via Smart Wallet! Plan Published.'),
-                backgroundColor: Colors.green,
-              ),
-            );
+          if (paymentConfirmed) {
             return true;
           }
         } else if (mounted) {
@@ -6649,6 +6763,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Plan Activated! 🎉',
+        body: 'Host Safety Deposit paid via Smart Wallet! Your plan is now LIVE in the feed.',
+      );
+      ApiService.notifyFeedNeedsRefresh();
+      await onSuccess();
+      _loadFeed(showLoader: false);
+    }
   }
 
   Future<void> _launchRazorpayForHostPayment({

@@ -55,6 +55,7 @@ class SmartCheckoutSheet extends StatefulWidget {
 class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
   bool _isLoadingWallet = true;
   bool _isProcessing = false;
+  bool _allowPop = false;
   double _availableBalance = 0.0;
 
   @override
@@ -84,7 +85,7 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
     final shortfall = (widget.itemPrice - _availableBalance).clamp(0.0, double.infinity);
 
     return PopScope(
-      canPop: !_isProcessing,
+      canPop: !_isProcessing || _allowPop,
       child: Container(
         padding: EdgeInsets.only(
           top: 20,
@@ -273,22 +274,50 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final navigator = Navigator.of(context);
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
                   setState(() => _isProcessing = true);
-                  if (hasEnoughBalance) {
-                    final success = await widget.onWalletPayment();
-                    if (mounted) {
-                      setState(() => _isProcessing = false);
-                      if (success) navigator.pop(true);
-                    }
-                  } else {
-                    final dynamic res = await widget.onHybridPayment(shortfall);
-                    if (mounted) {
-                      setState(() => _isProcessing = false);
-                      if (res == true) {
-                        navigator.pop(true);
-                      } else if (res != false && res != null) {
-                        navigator.pop(res);
+                  try {
+                    if (hasEnoughBalance) {
+                      final success = await widget.onWalletPayment();
+                      if (mounted) {
+                        setState(() {
+                          _isProcessing = false;
+                          if (success) _allowPop = true;
+                        });
+                        if (success) {
+                          navigator.pop(true);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && navigator.canPop()) {
+                              navigator.pop(true);
+                            }
+                          });
+                        }
                       }
+                    } else {
+                      final dynamic res = await widget.onHybridPayment(shortfall);
+                      if (mounted) {
+                        final willPop = res == true || (res != false && res != null);
+                        setState(() {
+                          _isProcessing = false;
+                          if (willPop) _allowPop = true;
+                        });
+                        if (res == true) {
+                          navigator.pop(true);
+                        } else if (res != false && res != null) {
+                          navigator.pop(res);
+                        }
+                      }
+                    }
+                  } catch (e, stack) {
+                    debugPrint('SmartCheckoutSheet onWalletPayment error: $e\n$stack');
+                    if (mounted) {
+                      setState(() => _isProcessing = false);
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Payment error: ${e.toString().replaceAll("Exception: ", "")}'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
                     }
                   }
                 },
@@ -322,7 +351,11 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                   try {
                     final dynamic res = await widget.onDirectPayment();
                     if (mounted) {
-                      setState(() => _isProcessing = false);
+                      final willPop = res == true || (res != false && res != null);
+                      setState(() {
+                        _isProcessing = false;
+                        if (willPop) _allowPop = true;
+                      });
                       if (res == true) {
                         navigator.pop(true);
                       } else if (res == false) {

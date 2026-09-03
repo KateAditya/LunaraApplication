@@ -12,6 +12,7 @@ import '../../core/theme.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/lunara_ticket_widget.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/top_notification_banner.dart';
 import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
@@ -413,7 +414,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     final amount = _amountDue ?? 0.0;
     if (amount <= 0) return;
 
-    SmartCheckoutSheet.show(
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Group Party Payment',
       subtitle: 'Complete payment for your party at $venueName',
@@ -428,11 +429,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             razorpayPaymentId: 'wallet_$transactionId',
             razorpaySignature: 'mock_signature',
           );
-          if (confirmed && mounted) {
-            await _fetchTicketData();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('🎉 Paid via Smart Credit Wallet! Your ticket is ready.'), backgroundColor: Colors.green),
-            );
+          if (confirmed) {
             return true;
           }
         }
@@ -621,6 +618,15 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
         }
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Payment Successful! 🎉',
+        body: 'Group party payment was verified via Smart Wallet. Ticket is active!',
+      );
+      ApiService.notifyFeedNeedsRefresh();
+      await _fetchTicketData();
+    }
   }
 
   Future<void> _onPaymentSuccess(PaymentSuccessResponse response) async {

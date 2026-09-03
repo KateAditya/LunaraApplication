@@ -274,16 +274,24 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   DateTime? _extractEventStartDateTime(Map<String, dynamic> booking) {
-    final dateStr = booking['bookingDate']?.toString() ??
-        booking['partyDate']?.toString() ??
+    final innerPlan = booking['plan'] is Map ? booking['plan'] : (booking['rawRequest'] is Map ? booking['rawRequest'] : null);
+    final dateStr = booking['planDateTime']?.toString() ??
+        innerPlan?['planDateTime']?.toString() ??
         booking['eventStartAt']?.toString() ??
         booking['eventDateTime']?.toString() ??
-        booking['planDateTime']?.toString() ??
+        booking['bookingDate']?.toString() ??
+        booking['partyDate']?.toString() ??
         booking['date']?.toString();
     final startTimeStr = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
-        booking['time']?.toString();
-    return LunaraDateFormatter.parseToLocal(dateStr, explicitTime: startTimeStr);
+        booking['time']?.toString() ??
+        innerPlan?['startTime']?.toString() ??
+        innerPlan?['time']?.toString();
+    final bool hasIsoTime = dateStr != null && (dateStr.contains('T') || dateStr.contains('Z'));
+    return LunaraDateFormatter.parseToLocal(
+      dateStr,
+      explicitTime: hasIsoTime ? null : startTimeStr,
+    );
   }
 
   DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
@@ -292,15 +300,15 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
 
     if (booking['expiresAt'] != null) {
       final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now)) return dt;
+      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
     }
     if (booking['ticketExpiresAt'] != null) {
       final dt = DateTime.tryParse(booking['ticketExpiresAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now)) return dt;
+      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
     }
     if (booking['eventEndAt'] != null) {
       final dt = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now)) return dt;
+      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
     }
 
     return defaultExp;
@@ -464,13 +472,20 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
-    final dt = LunaraDateFormatter.parseToLocal(bookingDateStr, explicitTime: startTimeStr);
+    final bool hasIsoTime = bookingDateStr.contains('T') || bookingDateStr.contains('Z');
+    final dt = LunaraDateFormatter.parseToLocal(
+      bookingDateStr,
+      explicitTime: hasIsoTime ? null : startTimeStr,
+    );
     if (dt == null) {
       final cleanTime = LunaraDateFormatter.normalizeTimeTo12Hour(startTimeStr);
       return cleanTime.isNotEmpty ? '$bookingDateStr • $cleanTime' : bookingDateStr;
     }
     final formattedDate = LunaraDateFormatter.formatEventDate(dt, pattern: 'MMM d, yyyy').toUpperCase();
-    final formattedTime = LunaraDateFormatter.formatEventTime(dt, explicitTime: startTimeStr);
+    final formattedTime = LunaraDateFormatter.formatEventTime(
+      dt,
+      explicitTime: hasIsoTime ? null : startTimeStr,
+    );
     return '$formattedDate • $formattedTime';
   }
 

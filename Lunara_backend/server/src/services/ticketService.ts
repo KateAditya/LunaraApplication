@@ -678,7 +678,19 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
         // defaults to midnight, so a 12h expiry window from there could
         // already have elapsed by the time the party actually starts in the
         // evening, showing the ticket as EXPIRED before the event even began.
-        const eventStartAt = parseBookingDateTimeRobust(booking.bookingDate, booking.startTime);
+        let eventStartAt = parseBookingDateTimeRobust(booking.bookingDate, booking.startTime);
+        if (bookingType === 'party_plan' && booking.specialRequests) {
+            try {
+                const meta = typeof booking.specialRequests === 'string' ? JSON.parse(booking.specialRequests) : booking.specialRequests;
+                if (meta.planId) {
+                    const PartyPlanModel = (await import('../models/PartyPlan')).default;
+                    const pPlan = await PartyPlanModel.findByPk(meta.planId);
+                    if (pPlan && pPlan.planDateTime) {
+                        eventStartAt = new Date(pPlan.planDateTime);
+                    }
+                }
+            } catch (_) {}
+        }
         const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
@@ -710,7 +722,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
             venueImageUrl: venueCoverPath || null,
             numberOfGuests: booking.numberOfGuests,
             eventDate: booking.bookingDate,
-            startTime: booking.startTime,
+            startTime: formatTime12Hour(eventStartAt),
             paymentAmount: Number(booking.totalAmount),
             paymentStatus: booking.paymentStatus,
         });
