@@ -40,6 +40,8 @@ class DiscoveryScreen extends StatefulWidget {
 
 class _DiscoveryScreenState extends State<DiscoveryScreen> {
   List<Venue> _allVenues = [];
+  Map<String, Venue> _venueMapById = {};
+  Map<String, Venue> _venueMapByNameLower = {};
   bool _isLoading = true;
   User? _currentUser;
   Position? _currentPosition;
@@ -307,25 +309,25 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       setState(() => _isLoading = true);
     }
     try {
+      // ── Phase 1: Critical data (venues, profile, ads) ─────────────────────
+      // Fire 4 concurrent requests — these render the visible UI immediately.
       final results = await Future.wait([
         ApiService.fetchVenues(city: ApiService.selectedCity),
         ApiService.fetchProfile(),
-        ApiService.fetchCustomers(),
-        ApiService.fetchPartyPlans(status: 'active', page: 1, limit: 20),
         ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Ads'),
         ApiService.fetchActiveAds(city: ApiService.selectedCity, type: 'Party'),
-        ApiService.fetchStrangersMeetFeed(page: 1, limit: 20),
       ]);
 
       if (mounted) {
         setState(() {
           _allVenues = results[0] as List<Venue>;
+          _venueMapById = { for (final v in _allVenues) v.id: v };
+          _venueMapByNameLower = { for (final v in _allVenues) v.name.toLowerCase().trim(): v };
           _currentUser = results[1] as User?;
-          _allUsers = results[2] as List<Map<String, dynamic>>;
-          _activeAds = results[4] as List<Map<String, dynamic>>;
+          _activeAds = results[2] as List<Map<String, dynamic>>;
           _currentAdIndex = 0;
 
-          final dynamicPartyAds = results[5] as List<Map<String, dynamic>>;
+          final dynamicPartyAds = results[3] as List<Map<String, dynamic>>;
           if (dynamicPartyAds.isNotEmpty) {
             _upcomingNights = dynamicPartyAds.map((ad) {
               final venue = ad['venue'] as Map<String, dynamic>? ?? {};
@@ -389,7 +391,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           if (!_hasShownAdPopup) {
             _hasShownAdPopup = true;
-            final popupAds = [...dynamicPartyAds];
+            final popupAds = [...(results[3] as List<Map<String, dynamic>>)];
             if (popupAds.isNotEmpty) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
@@ -398,279 +400,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               });
             }
           }
-
-          final rawPartyPlans = results[3] as List<Map<String, dynamic>>;
-          final rawStrangersMeet = results[6] as List<Map<String, dynamic>>;
-
-          List<Map<String, dynamic>> combinedPosts = [];
-
-          if (rawPartyPlans.isNotEmpty) {
-            combinedPosts.addAll(
-              rawPartyPlans.map((plan) {
-                final user =
-                    (plan['user'] ?? plan['creator'] ?? plan['host'])
-                        as Map<String, dynamic>? ??
-                    {};
-                final venue =
-                    (plan['venue'] ?? plan['venueMap'])
-                        as Map<String, dynamic>? ??
-                    {};
-
-                String timeStr =
-                    plan['planDateTime'] ?? plan['createdAt'] ?? '';
-                if (timeStr.isNotEmpty) {
-                  try {
-                    final dt = DateTime.parse(timeStr).toLocal();
-                    timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
-                  } catch (_) {}
-                }
-
-                final targetVenueId =
-                    (plan['venueId'] ?? venue['id'])?.toString() ?? '';
-                final bool isSecretVenuePost = venue['isSecret'] == true ||
-                    plan['showVenueDetails'] == false ||
-                    plan['isSecret'] == true ||
-                    venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
-
-                // Resolve venue cover image from multiple possible fields
-                dynamic rawImg =
-                    venue['coverImageUrl'] ??
-                    venue['imageUrl'] ??
-                    venue['image'] ??
-                    (venue['coverImage'] is Map
-                        ? venue['coverImage']['url'] ??
-                              venue['coverImage']['filePath']
-                        : null) ??
-                    (venue['images'] is List &&
-                            (venue['images'] as List).isNotEmpty
-                        ? ((venue['images'] as List).first is Map
-                              ? (venue['images'] as List).first['url'] ??
-                                    (venue['images'] as List).first['filePath']
-                              : (venue['images'] as List).first)
-                        : null);
-
-                // A secret-venue post still carries the venue's real id (the
-                // backend needs it for e.g. distance/city grouping) even
-                // though name/image are masked — never use that id to look
-                // up the real cover photo from the full venue directory, or
-                // the masking is trivially bypassed.
-                if ((rawImg == null ||
-                        rawImg.toString().isEmpty ||
-                        rawImg.toString().startsWith('Instance of')) &&
-                    targetVenueId.isNotEmpty &&
-                    !isSecretVenuePost) {
-                  try {
-                    final matchedV = _allVenues.firstWhere(
-                      (v) => v.id == targetVenueId,
-                    );
-                    rawImg = matchedV.imageUrl;
-                  } catch (_) {}
-                }
-
-                final String? photoUrl =
-                    (user['profilePhotoUrl'] ??
-                            user['photoUrl'] ??
-                            user['profilePhoto'] ??
-                            user['image'])
-                        ?.toString();
-
-                return {
-                  'id': plan['id'],
-                  'type': 'party_plan',
-                  'firstName': user['firstName'] ?? 'User',
-                  'lastName': user['lastName'] ?? '',
-                  'profilePhotoUrl': photoUrl,
-                  'profilePhoto': photoUrl,
-                  'city': venue['city'] ?? user['city'] ?? 'Unknown',
-                  'bio': user['bio'] ?? '',
-                  'gender': user['gender'] ?? 'Unknown',
-                  'venue': isSecretVenuePost ? 'Secret Venue 🔒' : (venue['name'] ?? 'Venue'),
-                  'venueId': targetVenueId,
-                  'content': plan['message'] ?? '',
-                  'time': timeStr,
-                  'coverImageUrl':
-                      (rawImg != null &&
-                          !rawImg.toString().startsWith('Instance of'))
-                      ? rawImg.toString()
-                      : '',
-                  'userId': user['id'] ?? plan['userId'],
-                  'user': user,
-                  'venueMap': isSecretVenuePost
-                      ? {
-                          'id': targetVenueId,
-                          'name': 'Secret Venue 🔒',
-                          'isSecret': true,
-                          'showVenueDetails': false,
-                          'city': venue['city'] ?? user['city'] ?? 'Pune',
-                          'area': venue['area'] ?? 'Secret Location',
-                          'latitude': venue['latitude'] ?? venue['lat'],
-                          'longitude': venue['longitude'] ?? venue['lng'],
-                        }
-                      : venue,
-                  'createdAt': plan['createdAt'],
-                  'showVenueDetails': isSecretVenuePost ? false : (plan['showVenueDetails'] ?? true),
-                  'isSecret': isSecretVenuePost,
-                  'canSeeVenue': plan['canSeeVenue'] == true,
-                };
-              }),
-            );
-          }
-
-          if (rawStrangersMeet.isNotEmpty) {
-            final now = DateTime.now();
-            final activeStrangersMeets = rawStrangersMeet.where((meet) {
-              final status = meet['status']?.toString().toLowerCase();
-              final payStatus = (meet['paymentStatus'] ?? meet['payment_status'])?.toString().toLowerCase();
-
-              // Require approved status AND paid host deposit
-              if (status != 'approved') return false;
-              if (payStatus != 'paid') return false;
-
-              final dtStr = (meet['eventDateTime'] ?? meet['event_date_time'])?.toString();
-              if (dtStr != null && dtStr.isNotEmpty) {
-                final dt = DateTime.tryParse(dtStr)?.toLocal();
-                if (dt != null) {
-                  final eventEndTime = dt.add(const Duration(hours: 6));
-                  if (eventEndTime.isBefore(now)) {
-                    return false;
-                  }
-                }
-              }
-              return true;
-            }).toList();
-
-            combinedPosts.addAll(
-              activeStrangersMeets.map((meet) {
-                final user =
-                    (meet['user'] ?? meet['host']) as Map<String, dynamic>? ??
-                    {};
-                final venue =
-                    (meet['venue'] ?? meet['venueMap'])
-                        as Map<String, dynamic>? ??
-                    {};
-
-                String timeStr =
-                    meet['eventDateTime'] ?? meet['createdAt'] ?? '';
-                if (timeStr.isNotEmpty) {
-                  try {
-                    final dt = DateTime.parse(timeStr).toLocal();
-                    timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
-                  } catch (_) {}
-                }
-
-                final String extractedVenueId =
-                    (meet['venueId'] ??
-                            venue['id'] ??
-                            (meet['venue'] is Map
-                                ? meet['venue']['id']
-                                : null) ??
-                            (meet['venue'] is String ? meet['venue'] : ''))
-                        ?.toString() ??
-                    '';
-
-                // Resolve venue cover image from multiple possible fields
-                dynamic rawImg =
-                    venue['coverImageUrl'] ??
-                    venue['imageUrl'] ??
-                    venue['image'] ??
-                    meet['coverImageUrl'] ??
-                    meet['venueImageUrl'] ??
-                    meet['venueImage'] ??
-                    meet['bannerUrl'] ??
-                    meet['bannerImage'] ??
-                    (venue['coverImage'] is Map
-                        ? venue['coverImage']['url'] ??
-                              venue['coverImage']['filePath']
-                        : null) ??
-                    (venue['images'] is List &&
-                            (venue['images'] as List).isNotEmpty
-                        ? ((venue['images'] as List).first is Map
-                              ? (venue['images'] as List).first['url'] ??
-                                    (venue['images'] as List).first['filePath']
-                              : (venue['images'] as List).first)
-                        : null);
-
-                final bool isSecretMeet = venue['isSecret'] == true ||
-                    meet['showVenueDetails'] == false ||
-                    meet['isSecret'] == true ||
-                    venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
-                    meet['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true;
-
-                if ((rawImg == null ||
-                        rawImg.toString().isEmpty ||
-                        rawImg.toString().startsWith('Instance of')) &&
-                    extractedVenueId.isNotEmpty &&
-                    !isSecretMeet) {
-                  try {
-                    final matchedV = _allVenues.firstWhere(
-                      (v) => v.id == extractedVenueId,
-                    );
-                    rawImg = matchedV.imageUrl;
-                  } catch (_) {}
-                }
-
-                final String? photoUrl =
-                    (user['photoUrl'] ??
-                            user['profilePhotoUrl'] ??
-                            user['profilePhoto'] ??
-                            user['image'])
-                        ?.toString();
-
-                return {
-                  'id': meet['id'],
-                  'type': 'strangers_meet',
-                  'firstName': user['firstName'] ?? 'User',
-                  'lastName': user['lastName'] ?? '',
-                  'profilePhotoUrl': photoUrl,
-                  'profilePhoto': photoUrl,
-                  'city': venue['city'] ?? user['city'] ?? 'Unknown',
-                  'bio': user['bio'] ?? '',
-                  'gender': user['gender'] ?? 'Unknown',
-                  'venue': isSecretMeet
-                      ? 'Secret Venue 🔒'
-                      : (venue['name'] ??
-                          meet['venueName'] ??
-                          (meet['venue'] is String ? meet['venue'] : null) ??
-                          'Venue'),
-                  'venueId': extractedVenueId,
-                  'venueMap': isSecretMeet
-                      ? {
-                          'id': extractedVenueId,
-                          'name': 'Secret Venue 🔒',
-                          'isSecret': true,
-                          'showVenueDetails': false,
-                          'city': venue['city'] ?? user['city'] ?? 'Pune',
-                          'area': venue['area'] ?? 'Secret Location',
-                        }
-                      : venue,
-                  'content': meet['tagline'] ?? meet['subject'] ?? '',
-                  'time': timeStr,
-                  'coverImageUrl':
-                      (rawImg != null &&
-                          !rawImg.toString().startsWith('Instance of'))
-                      ? rawImg.toString()
-                      : '',
-                  'userId': user['id'] ?? meet['userId'],
-                  'user': user,
-                  'createdAt': meet['createdAt'],
-                  'showVenueDetails': isSecretMeet ? false : (meet['showVenueDetails'] ?? true),
-                  'isSecret': isSecretMeet,
-                  'canSeeVenue': meet['canSeeVenue'] == true,
-                };
-              }),
-            );
-          }
-
-          // Sort combined posts by time descending
-          combinedPosts.sort((a, b) {
-            final dateA =
-                DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime.now();
-            final dateB =
-                DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime.now();
-            return dateB.compareTo(dateA);
-          });
-
-          _partyPlans = combinedPosts;
 
           final fetchedCities = _allVenues.map((v) => v.city).toSet().toList();
           final fallbackCities = ['Pune'];
@@ -709,9 +438,303 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         _fetchGoogleRatingsForVenues(_allVenues);
         _prefetchRoadDistances(_allVenues);
       }
+
+      // ── Phase 2: Secondary social feeds (staggered to avoid burst load) ───
+      // Load after the main UI is painted; failures here don't block the screen.
+      _loadSocialFeedsDeferred();
     } catch (e) {
       debugPrint('Error in _loadVenues: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Loads party plans, customers, and strangers meet feed independently after
+  /// the primary screen content has rendered. The 600ms delay staggers the DB
+  /// queries on Azure so the server isn't hit with 7 concurrent connections.
+  Future<void> _loadSocialFeedsDeferred() async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    try {
+      final socialResults = await Future.wait([
+        ApiService.fetchCustomers(),
+        ApiService.fetchPartyPlans(status: 'active', page: 1, limit: 20),
+        ApiService.fetchStrangersMeetFeed(page: 1, limit: 20),
+      ]);
+
+      if (!mounted) return;
+
+      final allUsersData = socialResults[0] as List<Map<String, dynamic>>;
+      final rawPartyPlans = socialResults[1] as List<Map<String, dynamic>>;
+      final rawStrangersMeet = socialResults[2] as List<Map<String, dynamic>>;
+
+      List<Map<String, dynamic>> combinedPosts = [];
+
+      if (rawPartyPlans.isNotEmpty) {
+        combinedPosts.addAll(
+          rawPartyPlans.map((plan) {
+            final user =
+                (plan['user'] ?? plan['creator'] ?? plan['host'])
+                    as Map<String, dynamic>? ??
+                {};
+            final venue =
+                (plan['venue'] ?? plan['venueMap'])
+                    as Map<String, dynamic>? ??
+                {};
+
+            String timeStr =
+                plan['planDateTime'] ?? plan['createdAt'] ?? '';
+            if (timeStr.isNotEmpty) {
+              try {
+                final dt = DateTime.parse(timeStr).toLocal();
+                timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
+              } catch (_) {}
+            }
+
+            final targetVenueId =
+                (plan['venueId'] ?? venue['id'])?.toString() ?? '';
+            final bool isSecretVenuePost = venue['isSecret'] == true ||
+                plan['showVenueDetails'] == false ||
+                plan['isSecret'] == true ||
+                venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+
+            // Resolve venue cover image from multiple possible fields
+            dynamic rawImg =
+                venue['coverImageUrl'] ??
+                venue['imageUrl'] ??
+                venue['image'] ??
+                (venue['coverImage'] is Map
+                    ? venue['coverImage']['url'] ??
+                          venue['coverImage']['filePath']
+                    : null) ??
+                (venue['images'] is List &&
+                        (venue['images'] as List).isNotEmpty
+                    ? ((venue['images'] as List).first is Map
+                          ? (venue['images'] as List).first['url'] ??
+                                (venue['images'] as List).first['filePath']
+                          : (venue['images'] as List).first)
+                    : null);
+
+            if ((rawImg == null ||
+                    rawImg.toString().isEmpty ||
+                    rawImg.toString().startsWith('Instance of')) &&
+                targetVenueId.isNotEmpty &&
+                !isSecretVenuePost) {
+              final matchedV = _venueMapById[targetVenueId];
+              if (matchedV != null) {
+                rawImg = matchedV.imageUrl;
+              }
+            }
+
+            final String? photoUrl =
+                (user['profilePhotoUrl'] ??
+                        user['photoUrl'] ??
+                        user['profilePhoto'] ??
+                        user['image'])
+                    ?.toString();
+
+            return {
+              'id': plan['id'],
+              'type': 'party_plan',
+              'firstName': user['firstName'] ?? 'User',
+              'lastName': user['lastName'] ?? '',
+              'profilePhotoUrl': photoUrl,
+              'profilePhoto': photoUrl,
+              'city': venue['city'] ?? user['city'] ?? 'Unknown',
+              'bio': user['bio'] ?? '',
+              'gender': user['gender'] ?? 'Unknown',
+              'venue': isSecretVenuePost ? 'Secret Venue 🔒' : (venue['name'] ?? 'Venue'),
+              'venueId': targetVenueId,
+              'content': plan['message'] ?? '',
+              'time': timeStr,
+              'coverImageUrl':
+                  (rawImg != null &&
+                      !rawImg.toString().startsWith('Instance of'))
+                  ? rawImg.toString()
+                  : '',
+              'userId': user['id'] ?? plan['userId'],
+              'user': user,
+              'venueMap': isSecretVenuePost
+                  ? {
+                      'id': targetVenueId,
+                      'name': 'Secret Venue 🔒',
+                      'isSecret': true,
+                      'showVenueDetails': false,
+                      'city': venue['city'] ?? user['city'] ?? 'Pune',
+                      'area': venue['area'] ?? 'Secret Location',
+                      'latitude': venue['latitude'] ?? venue['lat'],
+                      'longitude': venue['longitude'] ?? venue['lng'],
+                    }
+                  : venue,
+              'createdAt': plan['createdAt'],
+              'showVenueDetails': isSecretVenuePost ? false : (plan['showVenueDetails'] ?? true),
+              'isSecret': isSecretVenuePost,
+              'canSeeVenue': plan['canSeeVenue'] == true,
+            };
+          }),
+        );
+      }
+
+      if (rawStrangersMeet.isNotEmpty) {
+        final now = DateTime.now();
+        final activeStrangersMeets = rawStrangersMeet.where((meet) {
+          final status = meet['status']?.toString().toLowerCase();
+          final payStatus = (meet['paymentStatus'] ?? meet['payment_status'])?.toString().toLowerCase();
+
+          // Require approved status AND paid host deposit
+          if (status != 'approved') return false;
+          if (payStatus != 'paid') return false;
+
+          final dtStr = (meet['eventDateTime'] ?? meet['event_date_time'])?.toString();
+          if (dtStr != null && dtStr.isNotEmpty) {
+            final dt = DateTime.tryParse(dtStr)?.toLocal();
+            if (dt != null) {
+              final eventEndTime = dt.add(const Duration(hours: 6));
+              if (eventEndTime.isBefore(now)) {
+                return false;
+              }
+            }
+          }
+          return true;
+        }).toList();
+
+        combinedPosts.addAll(
+          activeStrangersMeets.map((meet) {
+            final user =
+                (meet['user'] ?? meet['host']) as Map<String, dynamic>? ??
+                {};
+            final venue =
+                (meet['venue'] ?? meet['venueMap'])
+                    as Map<String, dynamic>? ??
+                {};
+
+            String timeStr =
+                meet['eventDateTime'] ?? meet['createdAt'] ?? '';
+            if (timeStr.isNotEmpty) {
+              try {
+                final dt = DateTime.parse(timeStr).toLocal();
+                timeStr = DateFormat('MMM dd, hh:mm a').format(dt);
+              } catch (_) {}
+            }
+
+            final String extractedVenueId =
+                (meet['venueId'] ??
+                        venue['id'] ??
+                        (meet['venue'] is Map
+                            ? meet['venue']['id']
+                            : null) ??
+                        (meet['venue'] is String ? meet['venue'] : ''))
+                    ?.toString() ??
+                '';
+
+            // Resolve venue cover image from multiple possible fields
+            dynamic rawImg =
+                venue['coverImageUrl'] ??
+                venue['imageUrl'] ??
+                venue['image'] ??
+                meet['coverImageUrl'] ??
+                meet['venueImageUrl'] ??
+                meet['venueImage'] ??
+                meet['bannerUrl'] ??
+                meet['bannerImage'] ??
+                (venue['coverImage'] is Map
+                    ? venue['coverImage']['url'] ??
+                          venue['coverImage']['filePath']
+                    : null) ??
+                (venue['images'] is List &&
+                        (venue['images'] as List).isNotEmpty
+                    ? ((venue['images'] as List).first is Map
+                          ? (venue['images'] as List).first['url'] ??
+                                (venue['images'] as List).first['filePath']
+                          : (venue['images'] as List).first)
+                    : null);
+
+            final bool isSecretMeet = venue['isSecret'] == true ||
+                meet['showVenueDetails'] == false ||
+                meet['isSecret'] == true ||
+                venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
+                meet['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+
+            if ((rawImg == null ||
+                    rawImg.toString().isEmpty ||
+                    rawImg.toString().startsWith('Instance of')) &&
+                extractedVenueId.isNotEmpty &&
+                !isSecretMeet) {
+              final matchedV = _venueMapById[extractedVenueId];
+              if (matchedV != null) {
+                rawImg = matchedV.imageUrl;
+              }
+            }
+
+            final String? photoUrl =
+                (user['photoUrl'] ??
+                        user['profilePhotoUrl'] ??
+                        user['profilePhoto'] ??
+                        user['image'])
+                    ?.toString();
+
+            return {
+              'id': meet['id'],
+              'type': 'strangers_meet',
+              'firstName': user['firstName'] ?? 'User',
+              'lastName': user['lastName'] ?? '',
+              'profilePhotoUrl': photoUrl,
+              'profilePhoto': photoUrl,
+              'city': venue['city'] ?? user['city'] ?? 'Unknown',
+              'bio': user['bio'] ?? '',
+              'gender': user['gender'] ?? 'Unknown',
+              'venue': isSecretMeet
+                  ? 'Secret Venue 🔒'
+                  : (venue['name'] ??
+                      meet['venueName'] ??
+                      (meet['venue'] is String ? meet['venue'] : null) ??
+                      'Venue'),
+              'venueId': extractedVenueId,
+              'venueMap': isSecretMeet
+                  ? {
+                      'id': extractedVenueId,
+                      'name': 'Secret Venue 🔒',
+                      'isSecret': true,
+                      'showVenueDetails': false,
+                      'city': venue['city'] ?? user['city'] ?? 'Pune',
+                      'area': venue['area'] ?? 'Secret Location',
+                    }
+                  : venue,
+              'content': meet['tagline'] ?? meet['subject'] ?? '',
+              'time': timeStr,
+              'coverImageUrl':
+                  (rawImg != null &&
+                      !rawImg.toString().startsWith('Instance of'))
+                  ? rawImg.toString()
+                  : '',
+              'userId': user['id'] ?? meet['userId'],
+              'user': user,
+              'createdAt': meet['createdAt'],
+              'showVenueDetails': isSecretMeet ? false : (meet['showVenueDetails'] ?? true),
+              'isSecret': isSecretMeet,
+              'canSeeVenue': meet['canSeeVenue'] == true,
+            };
+          }),
+        );
+      }
+
+      // Sort combined posts by time descending
+      combinedPosts.sort((a, b) {
+        final dateA =
+            DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime.now();
+        final dateB =
+            DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime.now();
+        return dateB.compareTo(dateA);
+      });
+
+      if (mounted) {
+        setState(() {
+          _allUsers = allUsersData;
+          _partyPlans = combinedPosts;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error in _loadSocialFeedsDeferred: $e');
+      // Social feed failures are non-critical; screen remains functional.
     }
   }
 
@@ -756,22 +779,26 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
     // Sort by distance if enabled and position is available
     if (_sortByDistance && _currentPosition != null) {
+      final curLat = _currentPosition!.latitude;
+      final curLng = _currentPosition!.longitude;
+      // DSA Memoization: precompute distance once per venue O(N) instead of O(N log N) inside comparator
+      final distMap = <String, double>{};
+      for (final v in liveVenues) {
+        if (v.latitude != null && v.longitude != null) {
+          distMap[v.id] = GooglePlacesService.calculateRoadDistanceInMeters(
+            curLat,
+            curLng,
+            v.latitude!,
+            v.longitude!,
+          );
+        }
+      }
       liveVenues.sort((a, b) {
-        if (a.latitude == null || a.longitude == null) return 1;
-        if (b.latitude == null || b.longitude == null) return -1;
-        double distA = GooglePlacesService.calculateRoadDistanceInMeters(
-          _currentPosition!.latitude,
-          _currentPosition!.longitude,
-          a.latitude!,
-          a.longitude!,
-        );
-        double distB = GooglePlacesService.calculateRoadDistanceInMeters(
-          _currentPosition!.latitude,
-          _currentPosition!.longitude,
-          b.latitude!,
-          b.longitude!,
-        );
-        return distA.compareTo(distB);
+        final dA = distMap[a.id];
+        final dB = distMap[b.id];
+        if (dA == null) return 1;
+        if (dB == null) return -1;
+        return dA.compareTo(dB);
       });
     }
 
@@ -2560,25 +2587,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     ?.toString();
           }
 
-          // Search in _allVenues by ID first, then by Name
+          // Search in _allVenues by ID first, then by Name (O(1) lookups)
           if (rawCover == null || rawCover.toString().isEmpty) {
             Venue? matchedVenue;
             if (targetVenueId.isNotEmpty) {
-              try {
-                matchedVenue = _allVenues.firstWhere(
-                  (v) => v.id == targetVenueId,
-                );
-              } catch (_) {}
+              matchedVenue = _venueMapById[targetVenueId];
             }
             if (matchedVenue == null && venueName.isNotEmpty) {
               final vNameLower = venueName.toLowerCase().trim();
-              for (final v in _allVenues) {
-                final nameLower = v.name.toLowerCase().trim();
-                if (nameLower == vNameLower ||
-                    nameLower.contains(vNameLower) ||
-                    vNameLower.contains(nameLower)) {
-                  matchedVenue = v;
-                  break;
+              matchedVenue = _venueMapByNameLower[vNameLower];
+              if (matchedVenue == null) {
+                for (final v in _allVenues) {
+                  final nameLower = v.name.toLowerCase().trim();
+                  if (nameLower.contains(vNameLower) ||
+                      vNameLower.contains(nameLower)) {
+                    matchedVenue = v;
+                    break;
+                  }
                 }
               }
             }
@@ -2699,19 +2724,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               };
                             }
                           } else {
-                            final venue = _allVenues.firstWhere(
-                              (v) =>
-                                  v.name.toLowerCase() == venueName.toLowerCase(),
-                              orElse: () => _allVenues.isNotEmpty
-                                  ? _allVenues.first
-                                  : Venue(
-                                      id: '0',
-                                      name: venueName,
-                                      city: 'Pune',
-                                      addressLine1: 'Pune',
-                                      averageRating: 0.0,
-                                    ),
-                            );
+                            final Venue venue = _venueMapByNameLower[venueName.toLowerCase().trim()] ??
+                                (_allVenues.isNotEmpty
+                                    ? _allVenues.first
+                                    : Venue(
+                                        id: '0',
+                                        name: venueName,
+                                        city: 'Pune',
+                                        addressLine1: 'Pune',
+                                        averageRating: 0.0,
+                                      ));
                             resolvedVenue = venue.toMap();
                           }
 

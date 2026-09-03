@@ -67,56 +67,67 @@ SubscriptionPackage.init(
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 3, // Default for free
+            field: 'daily_match_requests',
         },
         dailyLikes: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 7, // Default for free
+            field: 'daily_likes',
         },
         dailyPosts: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 5, // Arbitrary limit for free
+            field: 'daily_posts',
         },
         superlikesPerCycle: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+            field: 'superlikes_per_cycle',
         },
         boostsPerCycle: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+            field: 'boosts_per_cycle',
         },
         backtrackLimit: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 3,
+            field: 'backtrack_limit',
         },
         hasHideProfile: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'has_hide_profile',
         },
         hasPriorityVisibility: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'has_priority_visibility',
         },
         hasTrustBadge: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'has_trust_badge',
         },
         hasEliteBadge: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'has_elite_badge',
         },
         canSeeWhoLiked: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
+            field: 'can_see_who_liked',
         },
         isActive: {
             type: DataTypes.BOOLEAN,

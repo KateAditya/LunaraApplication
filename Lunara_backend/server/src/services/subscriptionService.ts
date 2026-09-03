@@ -11,6 +11,7 @@
  */
 
 import { Op, Transaction } from 'sequelize';
+import sequelize from '../config/database';
 import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
@@ -195,6 +196,24 @@ export class SubscriptionService {
                 features.set('stranger_meet', { enabled: true, value: 'unlimited' });
                 features.set('party_creation', { enabled: true, value: 'unlimited' });
             }
+
+            // Guarantee PDF subscription rules for VIP users
+            if ((plan.tier as any) !== PackageTier.FREE && (plan.tier as any) !== 'FREE') {
+                features.set('daily_likes', { enabled: true, value: 'unlimited' });
+                features.set('daily_match_requests', { enabled: true, value: 'unlimited' });
+                features.set('daily_posts', { enabled: true, value: 'unlimited' });
+
+                if ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE') {
+                    features.set('super_likes', { enabled: true, value: 'unlimited' });
+                    features.set('superlike', { enabled: true, value: 'unlimited' });
+                    features.set('boosts', { enabled: true, value: 'unlimited' });
+                    features.set('boost', { enabled: true, value: 'unlimited' });
+                    features.set('profile_boost', { enabled: true, value: 'unlimited' });
+                    features.set('daily_backtracks', { enabled: true, value: 'unlimited' });
+                    features.set('backtrack', { enabled: true, value: 'unlimited' });
+                    features.set('party_creation', { enabled: true, value: 'unlimited' });
+                }
+            }
         } else {
             // Unsubscribed users: use the admin-configured FREE tier package
             // as the source of truth, falling back to hardcoded defaults only
@@ -286,6 +305,33 @@ export class SubscriptionService {
                 });
 
                 if (monthlyUsed >= freeMonthlyLimit) {
+                    // Check if user has active party_creation add-on credits
+                    try {
+                        const UserAddonModel = (await import('../models/UserAddon')).default;
+                        const activeAddon = await UserAddonModel.findOne({
+                            where: {
+                                userId,
+                                featureKey: 'party_creation',
+                                status: 'ACTIVE',
+                                remainingQuantity: { [Op.gt]: 0 },
+                            },
+                            transaction: options?.transaction,
+                        });
+
+                        if (activeAddon && activeAddon.remainingQuantity > 0) {
+                            return {
+                                allowed: true,
+                                tier: 'FREE (Add-on Active)',
+                                limit: freeMonthlyLimit + activeAddon.remainingQuantity,
+                                used: monthlyUsed,
+                                remaining: activeAddon.remainingQuantity,
+                                resetAt: resetAtMonth,
+                            };
+                        }
+                    } catch (addonErr) {
+                        logger.warn('[checkPartyPlanLimit] Error checking party add-on:', addonErr);
+                    }
+
                     return {
                         allowed: false,
                         tier: 'FREE',
@@ -308,7 +354,28 @@ export class SubscriptionService {
                 };
             }
 
-            // ── 2. Paid VIP Tier Check (Maximum 3 Party Plans per calendar day) ──
+            // ── 2. Elite Tier Check (Unlimited Party Plans) ─────────────────
+            if (tier === 'ELITE') {
+                const dailyUsed = await PartyPlan.count({
+                    where: {
+                        userId,
+                        createdAt: { [Op.between]: [startOfDay, endOfDay] },
+                        status: { [Op.ne]: 'cancelled' },
+                    },
+                    transaction: options?.transaction,
+                });
+
+                return {
+                    allowed: true,
+                    tier: 'ELITE',
+                    limit: UNLIMITED,
+                    used: dailyUsed,
+                    remaining: UNLIMITED,
+                    resetAt: resetAtDay,
+                };
+            }
+
+            // ── 3. Paid VIP Tier Check (Maximum 3 Party Plans per calendar day) ──
             let vipDailyLimit: number = 3;
             const planFeature = await SubscriptionPlanFeature.findOne({
                 where: { packageId: plan.id, isEnabled: true },
@@ -338,6 +405,33 @@ export class SubscriptionService {
             });
 
             if (dailyUsed >= vipDailyLimit) {
+                // Check if user has active party_creation add-on credits
+                try {
+                    const UserAddonModel = (await import('../models/UserAddon')).default;
+                    const activeAddon = await UserAddonModel.findOne({
+                        where: {
+                            userId,
+                            featureKey: 'party_creation',
+                            status: 'ACTIVE',
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: options?.transaction,
+                    });
+
+                    if (activeAddon && activeAddon.remainingQuantity > 0) {
+                        return {
+                            allowed: true,
+                            tier: `${tier} (Add-on Active)`,
+                            limit: vipDailyLimit + activeAddon.remainingQuantity,
+                            used: dailyUsed,
+                            remaining: activeAddon.remainingQuantity,
+                            resetAt: resetAtDay,
+                        };
+                    }
+                } catch (addonErr) {
+                    logger.warn('[checkPartyPlanLimit] Error checking party add-on:', addonErr);
+                }
+
                 return {
                     allowed: false,
                     tier,
@@ -421,6 +515,21 @@ export class SubscriptionService {
     static async getLimit(userId: string, featureKey: string): Promise<FeatureLimit> {
         try {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const plan = entry.plan;
+
+            if (plan && (plan.tier as any) !== PackageTier.FREE && (plan.tier as any) !== 'FREE') {
+                // All VIP plans have unlimited likes, match requests, and posts
+                if (featureKey === 'daily_likes' || featureKey === 'daily_match_requests' || featureKey === 'daily_posts') {
+                    return UNLIMITED;
+                }
+                // Elite tier has unlimited superlikes, boosts, backtracks, and party plans
+                if ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE') {
+                    if (['super_likes', 'superlike', 'boosts', 'boost', 'profile_boost', 'daily_backtracks', 'backtrack', 'party_creation', 'party_plan'].includes(featureKey)) {
+                        return UNLIMITED;
+                    }
+                }
+            }
+
             const featureValue = entry.features.get(featureKey);
             if (!featureValue || !featureValue.enabled) return 0;
             if (featureValue.value === 'unlimited') return UNLIMITED;
@@ -470,34 +579,54 @@ export class SubscriptionService {
             }
 
             if (limit === UNLIMITED) {
-                // Still track usage for analytics, but always allow
-                await this.incrementUsage(userId, featureKey, period, amount);
+                // Concurrency-safe atomic usage increment with date check
+                const currentUsed = await this.incrementUsage(userId, featureKey, period, amount);
                 return {
                     success: true,
                     remaining: UNLIMITED,
-                    used: amount,
+                    used: currentUsed,
                     limit: UNLIMITED,
                 };
             }
 
             const usage = await this.getOrResetUsage(userId, featureKey, period);
-            const newUsed = usage.used + amount;
-
-            if (newUsed > (limit as number)) {
+            if (usage.used + amount > (limit as number)) {
                 return {
                     success: false,
                     remaining: Math.max(0, (limit as number) - usage.used),
                     used: usage.used,
                     limit,
-                    message: `Daily limit reached. You've used ${usage.used} of ${limit} ${featureKey.replace(/_/g, ' ')}.`,
+                    message: `Daily limit reached. You've used ${usage.used} of ${limit} ${featureKey.replace(/_/g, ' ')}. Upgrade to Lunara VIP for unlimited access!`,
                 };
             }
 
-            await usage.update({ used: newUsed });
+            // Atomic conditional update: prevents race condition if multiple requests arrive simultaneously
+            const [affected] = await SubscriptionUsage.update(
+                { used: sequelize.literal(`used + ${amount}`) },
+                {
+                    where: {
+                        id: usage.id,
+                        used: { [Op.lte]: (limit as number) - amount },
+                    },
+                }
+            );
 
+            if (affected === 0) {
+                const refreshed = await SubscriptionUsage.findByPk(usage.id);
+                const currUsed = refreshed?.used ?? (limit as number);
+                return {
+                    success: false,
+                    remaining: Math.max(0, (limit as number) - currUsed),
+                    used: currUsed,
+                    limit,
+                    message: `Daily limit reached. You've used ${currUsed} of ${limit} ${featureKey.replace(/_/g, ' ')}.`,
+                };
+            }
+
+            const newUsed = usage.used + amount;
             return {
                 success: true,
-                remaining: (limit as number) - newUsed,
+                remaining: Math.max(0, (limit as number) - newUsed),
                 used: newUsed,
                 limit,
             };
@@ -716,22 +845,22 @@ export class SubscriptionService {
                 isExpiringSoon,
                 isExpired,
                 expirationAlert,
-                superlikesRemaining: subscription?.superlikesRemaining ?? 0,
-                superlikesPerCycle: plan?.superlikesPerCycle ?? 0,
-                boostsRemaining: subscription?.boostsRemaining ?? 0,
-                boostsPerCycle: plan?.boostsPerCycle ?? 0,
-                hasPriorityVisibility: plan?.hasPriorityVisibility ?? false,
-                hasTrustBadge: plan?.hasTrustBadge ?? false,
-                hasEliteBadge: plan?.hasEliteBadge ?? false,
-                canSeeWhoLiked: plan?.canSeeWhoLiked ?? false,
+                superlikesRemaining: (tier === 'ELITE') ? 9999 : (subscription?.superlikesRemaining ?? 0),
+                superlikesPerCycle: (tier === 'ELITE') ? 9999 : (plan?.superlikesPerCycle ?? 0),
+                boostsRemaining: (tier === 'ELITE') ? 9999 : (subscription?.boostsRemaining ?? 0),
+                boostsPerCycle: (tier === 'ELITE') ? 9999 : (plan?.boostsPerCycle ?? 0),
+                hasPriorityVisibility: plan?.hasPriorityVisibility ?? (['PRO', 'ELITE'].includes(tier)),
+                hasTrustBadge: plan?.hasTrustBadge ?? (['PRO', 'ELITE'].includes(tier)),
+                hasEliteBadge: plan?.hasEliteBadge ?? (tier === 'ELITE'),
+                canSeeWhoLiked: plan?.canSeeWhoLiked ?? (['CORE', 'PLUS', 'PRO', 'ELITE'].includes(tier)),
                 hasHideProfile: plan?.hasHideProfile ?? (['PLUS', 'PRO', 'ELITE'].includes(tier)),
-                dailyLikesLimit: featuresOut['daily_likes']?.limit ?? 7,
+                dailyLikesLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_likes']?.limit ?? 7),
                 dailyLikesUsed: usageMap['daily_likes'] ?? 0,
-                dailyMatchRequestsLimit: featuresOut['daily_match_requests']?.limit ?? 3,
+                dailyMatchRequestsLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_match_requests']?.limit ?? 3),
                 dailyMatchRequestsUsed: usageMap['daily_match_requests'] ?? 0,
-                dailyPostsLimit: featuresOut['daily_posts']?.limit ?? 5,
+                dailyPostsLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_posts']?.limit ?? 5),
                 dailyPostsUsed: usageMap['daily_posts'] ?? 0,
-                dailyBacktrackLimit: featuresOut['daily_backtracks']?.limit ?? 3,
+                dailyBacktrackLimit: (tier === 'ELITE') ? 'unlimited' : (featuresOut['daily_backtracks']?.limit ?? 3),
                 dailyBacktrackUsed: usageMap['daily_backtracks'] ?? 0,
                 features: featuresOut,
                 usage: usageMap,
@@ -780,12 +909,31 @@ export class SubscriptionService {
         return usage;
     }
 
-    private static async incrementUsage(userId: string, featureKey: string, period: UsagePeriod, amount: number): Promise<void> {
-        const [usage] = await SubscriptionUsage.findOrCreate({
+    private static async incrementUsage(userId: string, featureKey: string, period: UsagePeriod, amount: number): Promise<number> {
+        let usage = await SubscriptionUsage.findOne({
             where: { userId, featureKey, period },
-            defaults: { used: 0, resetAt: this.nextResetDate(period) },
         });
+
+        if (!usage) {
+            usage = await SubscriptionUsage.create({
+                userId,
+                featureKey,
+                period,
+                used: amount,
+                resetAt: this.nextResetDate(period),
+            });
+            return amount;
+        }
+
+        const now = new Date();
+        if (usage.resetAt && now > usage.resetAt) {
+            await usage.update({ used: amount, resetAt: this.nextResetDate(period) });
+            return amount;
+        }
+
         await usage.increment('used', { by: amount });
+        await usage.reload();
+        return usage.used;
     }
 
     private static nextResetDate(period: UsagePeriod): Date {

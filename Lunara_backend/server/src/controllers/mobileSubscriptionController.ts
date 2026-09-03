@@ -1017,3 +1017,16 @@ export const payAddonWithWallet = async (req: Request, res: Response): Promise<v
     }
 };
 
+// @route GET /api/mobile/subscriptions/party-plan-limit
+export const checkPartyPlanLimit = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const targetDate = req.query.date ? new Date(req.query.date as string) : new Date();
+        const limitResult = await SubscriptionService.checkPartyPlanLimit(userId, targetDate);
+        res.status(200).json({ success: true, data: limitResult });
+    } catch (err: any) {
+        logger.error('[checkPartyPlanLimit] Error:', err);
+        res.status(500).json({ success: false, message: 'Server error checking party plan limit' });
+    }
+};
+

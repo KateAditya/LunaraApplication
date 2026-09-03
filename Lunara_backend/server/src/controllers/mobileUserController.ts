@@ -397,8 +397,22 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             uploadedAt: p.uploadedAt,
         }));
 
-        // Fetch actual superLikesCount (from UserMatch + UserLike) and plansCount
-        const [superLikesFromMatches, superLikesFromLikes] = await Promise.all([
+        // Fetch all profile metrics, superlikes, subscription, and requester like/superlike status in a single parallel batch
+        const requesterUserId = req.user?.id || (req.query.currentUserId as string);
+        const shouldCheckRequester = !!(requesterUserId && requesterUserId !== userId);
+
+        const [
+            superLikesFromMatches,
+            superLikesFromLikes,
+            partyPlansCnt,
+            strangersMeetCnt,
+            groupPartyCnt,
+            bookingsCount,
+            matchesCount,
+            activeSub,
+            existingSwipe,
+            existingUserLike,
+        ] = await Promise.all([
             UserMatch.count({
                 where: {
                     user2Id: userId,
@@ -411,11 +425,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     targetUserId: userId,
                     actionType: 'superlike'
                 }
-            })
-        ]);
-        const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
-
-        const [partyPlansCnt, strangersMeetCnt, groupPartyCnt] = await Promise.all([
+            }),
             PartyPlan.count({
                 where: {
                     userId,
@@ -433,29 +443,19 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     userId,
                     status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] }
                 }
-            })
-        ]);
-        const plansCount = partyPlansCnt + strangersMeetCnt + groupPartyCnt;
-
-        const bookingsCount = await Booking.count({
-            where: { userId }
-        });
-
-        const matchesCount = await UserMatch.count({
-            where: {
-                [Op.or]: [
-                    { user1Id: userId, status: 'connected' },
-                    { user2Id: userId, status: 'connected' }
-                ]
-            }
-        });
-
-        const pointsCount = 1000 + (bookingsCount * 250) + (matchesCount * 50);
-
-        // Fetch active subscription tier for golden ring / badge rendering
-        let subscriptionTier: string = 'FREE';
-        try {
-            const activeSub = await UserSubscription.findOne({
+            }),
+            Booking.count({
+                where: { userId }
+            }),
+            UserMatch.count({
+                where: {
+                    [Op.or]: [
+                        { user1Id: userId, status: 'connected' },
+                        { user2Id: userId, status: 'connected' }
+                    ]
+                }
+            }),
+            UserSubscription.findOne({
                 where: {
                     userId,
                     status: SubscriptionStatus.ACTIVE,
@@ -463,11 +463,30 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 },
                 include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
                 order: [['createdAt', 'DESC']],
-            });
-            subscriptionTier = (activeSub as any)?.package?.tier ?? 'FREE';
-        } catch (subErr) {
-            logger.warn(`[MobileUser] Subscription lookup failed for user ${userId}:`, subErr);
-        }
+            }).catch(() => null),
+            shouldCheckRequester
+                ? UserMatch.findOne({
+                    where: {
+                        user1Id: requesterUserId,
+                        user2Id: userId
+                    }
+                }).catch(() => null)
+                : Promise.resolve(null),
+            shouldCheckRequester
+                ? UserLike.findOne({
+                    where: {
+                        userId: requesterUserId,
+                        targetUserId: userId
+                    }
+                }).catch(() => null)
+                : Promise.resolve(null),
+        ]);
+
+        const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
+        const plansCount = partyPlansCnt + strangersMeetCnt + groupPartyCnt;
+        const pointsCount = 1000 + (bookingsCount * 250) + (matchesCount * 50);
+
+        const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
         const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
         const planSuperlikesBase = planSuperlikesMap[subscriptionTier] ?? 0;
         const superLikesCount = receivedSuperLikes + planSuperlikesBase;
@@ -476,23 +495,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         let isLiked = false;
         let isSuperLiked = false;
         let swipeStatus: string | null = null;
-        const requesterUserId = req.user?.id || (req.query.currentUserId as string);
-        if (requesterUserId && requesterUserId !== userId) {
-            const [existingSwipe, existingUserLike] = await Promise.all([
-                UserMatch.findOne({
-                    where: {
-                        user1Id: requesterUserId,
-                        user2Id: userId
-                    }
-                }),
-                UserLike.findOne({
-                    where: {
-                        userId: requesterUserId,
-                        targetUserId: userId
-                    }
-                })
-            ]);
-
+        if (shouldCheckRequester) {
             const userLikeAction = existingUserLike?.actionType;
             if (userLikeAction === 'superlike') {
                 isLiked = true;
@@ -1267,48 +1270,44 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             return res.status(400).json({ success: false, message: 'Invalid action. Must be like, superlike, or nope' });
         }
 
-        // 0. Block validation: check if either user blocked the other
-        try {
-            const isBlocked = await SocialConnection.findOne({
+        // 0. Parallel initial lookups: Block validation, permanent like record, and existing swipe lookups
+        const [isBlocked, existingMySwipe, existingOppositeSwipe] = await Promise.all([
+            SocialConnection.findOne({
                 where: {
                     [Op.or]: [
                         { requesterId: userId, receiverId: targetUserId, status: ConnectionStatus.BLOCKED },
                         { requesterId: targetUserId, receiverId: userId, status: ConnectionStatus.BLOCKED },
                     ]
                 }
-            });
-            if (isBlocked) {
-                return res.status(403).json({ success: false, message: 'Cannot interact with this user.' });
-            }
-        } catch (blockErr) {
-            logger.warn('[swipeUser] Failed to check block status:', blockErr);
+            }).catch(blockErr => {
+                logger.warn('[swipeUser] Failed to check block status:', blockErr);
+                return null;
+            }),
+            UserMatch.findOne({
+                where: {
+                    user1Id: userId,
+                    user2Id: targetUserId,
+                }
+            }),
+            UserMatch.findOne({
+                where: {
+                    user1Id: targetUserId,
+                    user2Id: userId,
+                }
+            }),
+        ]);
+
+        if (isBlocked) {
+            return res.status(403).json({ success: false, message: 'Cannot interact with this user.' });
         }
 
-        // 0.5 Save permanent profile like/superlike record in UserLike table
-        try {
-            await UserLike.upsert({
-                userId,
-                targetUserId,
-                actionType: action,
-            });
-        } catch (dbErr) {
+        // 0.5 Save permanent profile like/superlike record in UserLike table asynchronously
+        UserLike.upsert({
+            userId,
+            targetUserId,
+            actionType: action,
+        }).catch(dbErr => {
             logger.warn('[swipeUser] Failed to upsert UserLike:', dbErr);
-        }
-
-        // Check if there is already a swipe from this user to target
-        const existingMySwipe = await UserMatch.findOne({
-            where: {
-                user1Id: userId,
-                user2Id: targetUserId,
-            }
-        });
-
-        // Check if there is already a swipe from the target user back to this user
-        const existingOppositeSwipe = await UserMatch.findOne({
-            where: {
-                user1Id: targetUserId,
-                user2Id: userId,
-            }
         });
 
         // Helper to check swipe types
@@ -1346,56 +1345,62 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 
         if (action === 'like') {
             const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-            const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
-            if (!consume.success) {
-                return res.status(403).json({
-                    success: false,
-                    code: 'LIMIT_REACHED',
-                    limitReached: true,
-                    message: consume.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!'
-                });
-            }
+            const isUnlimitedLikes = (await SubscriptionService.getLimit(userId, 'daily_likes')) === 'unlimited';
+            if (isUnlimitedLikes) {
+                // Unlimited VIP like: background tracking, zero limits, zero warnings
+                SubscriptionService.incrementUsage(userId, 'daily_likes', 'DAILY', 1).catch(() => {});
+            } else {
+                const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
+                if (!consume.success) {
+                    return res.status(403).json({
+                        success: false,
+                        code: 'LIMIT_REACHED',
+                        limitReached: true,
+                        message: consume.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!'
+                    });
+                }
 
-            if (typeof consume.limit === 'number' && consume.limit > 0) {
-                const used = consume.used;
-                const limit = consume.limit;
-                const remaining = typeof consume.remaining === 'number' ? consume.remaining : limit - used;
-                const percentage = Math.round((used / limit) * 100);
+                if (typeof consume.limit === 'number' && consume.limit > 0 && consume.limit < 9999) {
+                    const used = consume.used;
+                    const limit = consume.limit;
+                    const remaining = typeof consume.remaining === 'number' ? consume.remaining : limit - used;
+                    const percentage = Math.round((used / limit) * 100);
 
-                // If user has used >= 70% of daily likes (e.g. 5 of 7 is 71.4%):
-                if (percentage >= 70 && remaining > 0) {
-                    usageWarning = {
-                        triggered: true,
-                        feature: 'daily_likes',
-                        used,
-                        limit,
-                        remaining,
-                        percentage,
-                        message: `You've used ${used} of ${limit} Daily Likes today. Only ${remaining} remaining!`,
-                    };
+                    // If user has used >= 70% of daily likes (e.g. 5 of 7 is 71.4%):
+                    if (percentage >= 70 && remaining > 0) {
+                        usageWarning = {
+                            triggered: true,
+                            feature: 'daily_likes',
+                            used,
+                            limit,
+                            remaining,
+                            percentage,
+                            message: `You've used ${used} of ${limit} Daily Likes today. Only ${remaining} remaining!`,
+                        };
 
-                    // Persist In-App Notification (throttled once per day)
-                    try {
-                        const NotificationModel = (await import('../models/Notification')).default;
-                        const todayStr = new Date().toISOString().split('T')[0];
-                        const idempotencyKey = `limit_warn_like_${userId}_${todayStr}`;
-                        const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey } });
-                        if (!existingNotif) {
-                            await NotificationModel.create({
-                                recipientUserId: userId,
-                                eventType: 'LIMIT_WARNING',
-                                category: 'system' as any,
-                                title: '❤️ Daily Likes Warning',
-                                body: `You've used ${used} of ${limit} daily likes today. Upgrade to Lunara VIP for unlimited likes!`,
-                                actionType: 'open_vip_upgrade',
-                                deepLink: '/vip-membership',
-                                isRead: false,
-                                priority: 'NORMAL' as any,
-                                idempotencyKey,
-                            });
+                        // Persist In-App Notification (throttled once per day)
+                        try {
+                            const NotificationModel = (await import('../models/Notification')).default;
+                            const todayStr = new Date().toISOString().split('T')[0];
+                            const idempotencyKey = `limit_warn_like_${userId}_${todayStr}`;
+                            const existingNotif = await NotificationModel.findOne({ where: { idempotencyKey } });
+                            if (!existingNotif) {
+                                await NotificationModel.create({
+                                    recipientUserId: userId,
+                                    eventType: 'LIMIT_WARNING',
+                                    category: 'system' as any,
+                                    title: '❤️ Daily Likes Warning',
+                                    body: `You've used ${used} of ${limit} daily likes today. Upgrade to Lunara VIP for unlimited likes!`,
+                                    actionType: 'open_vip_upgrade',
+                                    deepLink: '/vip-membership',
+                                    isRead: false,
+                                    priority: 'NORMAL' as any,
+                                    idempotencyKey,
+                                });
+                            }
+                        } catch (notifErr) {
+                            logger.warn('[swipeUser] Failed to create like limit notification:', notifErr);
                         }
-                    } catch (notifErr) {
-                        logger.warn('[swipeUser] Failed to create like limit notification:', notifErr);
                     }
                 }
             }
@@ -1425,10 +1430,11 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 order: [['createdAt', 'DESC']],
             });
 
+            const isEliteTier = (activeSub as any)?.package?.tier === 'ELITE' || consumption.totalRemaining === 9999;
             const totalGranted = (activeSub as any)?.package?.superlikesPerCycle || 0;
             const remaining = consumption.totalRemaining ?? 0;
 
-            if (totalGranted > 0 && totalGranted < 9999) {
+            if (!isEliteTier && totalGranted > 0 && totalGranted < 9999) {
                 const used = Math.max(0, totalGranted - remaining);
                 const percentage = Math.round((used / totalGranted) * 100);
 

@@ -213,21 +213,28 @@ export class EntitlementService {
         });
 
         // 5. Construct Limited Features (Plan Benefits)
+        const isSuperlikesUnlimited = tier === PackageTier.ELITE || (pkg?.superlikesPerCycle || 0) >= 9999 || (pkg?.superlikesPerCycle || 0) === -1;
+        const isBoostsUnlimited = tier === PackageTier.ELITE || (pkg?.boostsPerCycle || 0) >= 9999 || (pkg?.boostsPerCycle || 0) === -1;
+
         // Super Likes
-        const superlikesIncluded = pkg?.superlikesPerCycle || 0;
-        const superlikesRemaining = activeSub ? (activeSub.superlikesRemaining || 0) : 0;
-        const superlikesUsed = Math.max(0, superlikesIncluded - superlikesRemaining);
-        const superlikesProgress = superlikesIncluded > 0
-            ? Math.min(100, Math.round((superlikesUsed / superlikesIncluded) * 100))
-            : (superlikesRemaining > 0 ? 0 : 100);
+        const superlikesIncluded = isSuperlikesUnlimited ? -1 : (pkg?.superlikesPerCycle || 0);
+        const superlikesRemaining = isSuperlikesUnlimited ? 9999 : (activeSub ? (activeSub.superlikesRemaining || 0) : 0);
+        const superlikesUsed = isSuperlikesUnlimited ? 0 : Math.max(0, (pkg?.superlikesPerCycle || 0) - superlikesRemaining);
+        const superlikesProgress = isSuperlikesUnlimited
+            ? 0
+            : (superlikesIncluded > 0
+                ? Math.min(100, Math.round((superlikesUsed / superlikesIncluded) * 100))
+                : (superlikesRemaining > 0 ? 0 : 100));
 
         // Profile Boosts
-        const boostsIncluded = pkg?.boostsPerCycle || 0;
-        const boostsRemaining = activeSub ? (activeSub.boostsRemaining || 0) : 0;
-        const boostsUsed = Math.max(0, boostsIncluded - boostsRemaining);
-        const boostsProgress = boostsIncluded > 0
-            ? Math.min(100, Math.round((boostsUsed / boostsIncluded) * 100))
-            : (boostsRemaining > 0 ? 0 : 100);
+        const boostsIncluded = isBoostsUnlimited ? -1 : (pkg?.boostsPerCycle || 0);
+        const boostsRemaining = isBoostsUnlimited ? 9999 : (activeSub ? (activeSub.boostsRemaining || 0) : 0);
+        const boostsUsed = isBoostsUnlimited ? 0 : Math.max(0, (pkg?.boostsPerCycle || 0) - boostsRemaining);
+        const boostsProgress = isBoostsUnlimited
+            ? 0
+            : (boostsIncluded > 0
+                ? Math.min(100, Math.round((boostsUsed / boostsIncluded) * 100))
+                : (boostsRemaining > 0 ? 0 : 100));
 
         // Party Plans Limit
         let partyPlansIncluded = 1; // Free tier default
@@ -246,7 +253,7 @@ export class EntitlementService {
 
         // Daily Likes
         const dailyLikesIncluded = pkg?.dailyLikes || 7;
-        const isDailyLikesUnlimited = dailyLikesIncluded >= 9999 || dailyLikesIncluded === -1;
+        const isDailyLikesUnlimited = tier !== PackageTier.FREE || dailyLikesIncluded >= 9999 || dailyLikesIncluded === -1;
         const dailyLikesUsed = usageMap['daily_likes_daily'] || 0;
         const dailyLikesRemaining = isDailyLikesUnlimited
             ? 9999
@@ -257,7 +264,7 @@ export class EntitlementService {
 
         // Backtracks
         const backtracksIncluded = pkg?.backtrackLimit || 3;
-        const isBacktracksUnlimited = backtracksIncluded >= 9999 || backtracksIncluded === -1;
+        const isBacktracksUnlimited = tier === PackageTier.ELITE || backtracksIncluded >= 9999 || backtracksIncluded === -1;
         const backtracksUsed = usageMap['daily_backtracks_daily'] || 0;
         const backtracksRemaining = isBacktracksUnlimited
             ? 9999
@@ -275,9 +282,9 @@ export class EntitlementService {
                 usedQuantity: superlikesUsed,
                 remainingQuantity: superlikesRemaining,
                 progressPercentage: superlikesProgress,
-                isUnlimited: false,
+                isUnlimited: isSuperlikesUnlimited,
                 unit: 'per cycle',
-                isLow: superlikesRemaining <= 1,
+                isLow: !isSuperlikesUnlimited && superlikesRemaining <= 1,
             },
             {
                 featureKey: 'profile_boost',
@@ -287,9 +294,9 @@ export class EntitlementService {
                 usedQuantity: boostsUsed,
                 remainingQuantity: boostsRemaining,
                 progressPercentage: boostsProgress,
-                isUnlimited: false,
+                isUnlimited: isBoostsUnlimited,
                 unit: 'per cycle',
-                isLow: boostsRemaining === 0,
+                isLow: !isBoostsUnlimited && boostsRemaining === 0,
             },
             {
                 featureKey: 'party_creation',
@@ -411,8 +418,8 @@ export class EntitlementService {
         const addonBoosts = addonAggregates['profile_boost']?.remaining || 0;
         const addonPartyPlans = addonAggregates['party_creation']?.remaining || 0;
 
-        const totalSuperlikesAvailable = superlikesRemaining + addonSuperlikes;
-        const totalBoostsAvailable = boostsRemaining + addonBoosts;
+        const totalSuperlikesAvailable = isSuperlikesUnlimited ? 9999 : (superlikesRemaining + addonSuperlikes);
+        const totalBoostsAvailable = isBoostsUnlimited ? 9999 : (boostsRemaining + addonBoosts);
         const totalPartyPlansAvailable = isPartyPlansUnlimited
             ? 'unlimited'
             : partyPlansRemaining + addonPartyPlans;
@@ -427,7 +434,7 @@ export class EntitlementService {
             addonPackageId?: string;
         }> = [];
 
-        if (totalSuperlikesAvailable === 0) {
+        if (!isSuperlikesUnlimited && totalSuperlikesAvailable === 0) {
             const superAddon = await SubscriptionAddonPackage.findOne({
                 where: { featureKey: 'superlike', isActive: true },
                 order: [['displayOrder', 'ASC']],
@@ -441,7 +448,7 @@ export class EntitlementService {
             });
         }
 
-        if (totalBoostsAvailable === 0) {
+        if (!isBoostsUnlimited && totalBoostsAvailable === 0) {
             const boostAddon = await SubscriptionAddonPackage.findOne({
                 where: { featureKey: 'profile_boost', isActive: true },
                 order: [['displayOrder', 'ASC']],
@@ -502,32 +509,115 @@ export class EntitlementService {
         userId: string,
         featureKey: string,
         amount: number = 1,
-        options: { requestId?: string; metadata?: Record<string, any> } = {}
+        options: { requestId?: string; metadata?: any } = {}
     ): Promise<{
         success: boolean;
         source?: 'PLAN' | 'ADDON';
-        code?: string;
         consumed?: number;
         planRemaining?: number;
         addonRemaining?: number;
         totalRemaining?: number;
+        code?: string;
         message?: string;
         availableAddons?: any[];
     }> {
+        const normalizedKey = (featureKey === 'super_likes') ? 'superlike'
+            : (featureKey === 'boost' || featureKey === 'boosts') ? 'profile_boost'
+            : featureKey;
+
         const t = await sequelize.transaction();
         try {
             // ─── STEP 1: Check Active Subscription Plan Entitlement ─────────
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: SubscriptionStatus.ACTIVE,
+                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
                     endDate: { [Op.gt]: new Date() },
                 },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
                 transaction: t,
                 lock: t.LOCK.UPDATE,
             });
 
-            if (featureKey === 'superlike' && activeSub && activeSub.superlikesRemaining > 0) {
+            const activePkg = (activeSub as any)?.package;
+            const isElite = activePkg && (activePkg.tier === PackageTier.ELITE || activePkg.tier === 'ELITE');
+            const isUnlimitedSuperlikes = isElite || (activePkg && (activePkg.superlikesPerCycle === -1 || activePkg.superlikesPerCycle >= 9999)) || (activeSub && (activeSub.superlikesRemaining === -1 || activeSub.superlikesRemaining >= 9999));
+            const isUnlimitedBoosts = isElite || (activePkg && (activePkg.boostsPerCycle === -1 || activePkg.boostsPerCycle >= 9999)) || (activeSub && (activeSub.boostsRemaining === -1 || activeSub.boostsRemaining >= 9999));
+
+            // Elite / Unlimited Plan Superlikes
+            if (normalizedKey === 'superlike' && isUnlimitedSuperlikes) {
+                if (activeSub) {
+                    await EntitlementAuditLog.create({
+                        userId,
+                        subscriptionId: activeSub.id,
+                        feature: 'superlike',
+                        action: 'ELITE_UNLIMITED_CONSUMED',
+                        source: 'PLAN',
+                        quantity: -amount,
+                        oldValue: { unlimited: true },
+                        newValue: { unlimited: true },
+                        requestId: options.requestId,
+                        metadata: options.metadata,
+                    }, { transaction: t });
+                }
+
+                await t.commit();
+                RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                    featureKey: 'superlike',
+                    source: 'PLAN',
+                    remaining: 9999,
+                    isUnlimited: true,
+                });
+
+                return {
+                    success: true,
+                    source: 'PLAN',
+                    consumed: amount,
+                    planRemaining: 9999,
+                    totalRemaining: 9999,
+                };
+            }
+
+            // Elite / Unlimited Plan Boosts
+            if (normalizedKey === 'profile_boost' && isUnlimitedBoosts) {
+                if (activeSub) {
+                    await EntitlementAuditLog.create({
+                        userId,
+                        subscriptionId: activeSub.id,
+                        feature: 'profile_boost',
+                        action: 'ELITE_UNLIMITED_CONSUMED',
+                        source: 'PLAN',
+                        quantity: -amount,
+                        oldValue: { unlimited: true },
+                        newValue: { unlimited: true },
+                        requestId: options.requestId,
+                        metadata: options.metadata,
+                    }, { transaction: t });
+                }
+
+                await t.commit();
+                RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                    featureKey: 'profile_boost',
+                    source: 'PLAN',
+                    remaining: 9999,
+                    isUnlimited: true,
+                });
+
+                return {
+                    success: true,
+                    source: 'PLAN',
+                    consumed: amount,
+                    planRemaining: 9999,
+                    totalRemaining: 9999,
+                };
+            }
+
+            // Regular Plan Quota: Superlikes
+            let currentSuperlikes = activeSub ? activeSub.superlikesRemaining : 0;
+            if (activeSub && (currentSuperlikes == null || currentSuperlikes === undefined)) {
+                currentSuperlikes = activePkg?.superlikesPerCycle || 0;
+            }
+            if (normalizedKey === 'superlike' && activeSub && currentSuperlikes > 0) {
                 const [affected] = await UserSubscription.update(
                     { superlikesRemaining: sequelize.literal(`superlikes_remaining - ${amount}`) },
                     {
@@ -571,7 +661,8 @@ export class EntitlementService {
                 }
             }
 
-            if (featureKey === 'profile_boost' && activeSub && activeSub.boostsRemaining > 0) {
+            // Regular Plan Quota: Profile Boosts
+            if (normalizedKey === 'profile_boost' && activeSub && activeSub.boostsRemaining > 0) {
                 const [affected] = await UserSubscription.update(
                     { boostsRemaining: sequelize.literal(`boosts_remaining - ${amount}`) },
                     {
@@ -619,7 +710,7 @@ export class EntitlementService {
             const availableAddon = await UserAddon.findOne({
                 where: {
                     userId,
-                    featureKey,
+                    featureKey: normalizedKey,
                     status: UserAddonStatus.ACTIVE,
                     remainingQuantity: { [Op.gte]: amount },
                 },
@@ -655,7 +746,7 @@ export class EntitlementService {
                     await EntitlementAuditLog.create({
                         userId,
                         addonId: availableAddon.id,
-                        feature: featureKey,
+                        feature: normalizedKey,
                         action: 'ADDON_ENTITLEMENT_CONSUMED',
                         source: 'ADDON',
                         quantity: -amount,
@@ -667,7 +758,7 @@ export class EntitlementService {
 
                     await t.commit();
                     RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
-                        featureKey,
+                        featureKey: normalizedKey,
                         source: 'ADDON',
                         remaining: newRemaining,
                     });
@@ -686,14 +777,14 @@ export class EntitlementService {
 
             // ─── STEP 3: Entitlement Exhausted -> Fetch Addons & Return ADDON_REQUIRED ───
             const availableAddons = await SubscriptionAddonPackage.findAll({
-                where: { featureKey, isActive: true },
+                where: { featureKey: normalizedKey, isActive: true },
                 order: [['displayOrder', 'ASC'], ['price', 'ASC']],
             });
 
             return {
                 success: false,
                 code: 'ADDON_REQUIRED',
-                message: `You have no ${featureKey.replace(/_/g, ' ')} remaining. Purchase an Add-on or upgrade your plan to continue.`,
+                message: `You have no ${normalizedKey.replace(/_/g, ' ')} remaining. Purchase an Add-on or upgrade your plan to continue.`,
                 availableAddons: availableAddons.map(a => a.toJSON()),
             };
         } catch (error: any) {

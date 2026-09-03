@@ -33,6 +33,7 @@ router.get('/plans', ctrl.getUserSubscriptions);
 
 // ── Feature Access Check ───────────────────────────────────────────────────────
 router.get('/check/:featureKey', ctrl.checkFeatureAccess);
+router.get('/party-plan-limit', ctrl.checkPartyPlanLimit);
 
 // ── Entitlements & Usage Breakdown ───────────────────────────────────────────
 router.get('/entitlements', ctrl.getEntitlementsSummary);

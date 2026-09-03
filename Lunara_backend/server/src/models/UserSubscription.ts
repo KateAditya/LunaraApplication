@@ -76,11 +76,13 @@ UserSubscription.init(
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+            field: 'superlikes_remaining',
         },
         boostsRemaining: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
+            field: 'boosts_remaining',
         },
         expirationAlertSent: {
             type: DataTypes.BOOLEAN,

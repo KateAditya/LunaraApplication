@@ -48,7 +48,7 @@ async function downloadImage(url: string): Promise<Buffer | null> {
         if (fetchUrl.startsWith('https//')) fetchUrl = fetchUrl.replace('https//', 'https://');
         if (fetchUrl.startsWith('http//')) fetchUrl = fetchUrl.replace('http//', 'http://');
 
-        const response = await fetch(fetchUrl);
+        const response = await fetch(fetchUrl, { signal: AbortSignal.timeout(4000) });
         if (!response.ok) return null;
         const arrayBuffer = await response.arrayBuffer();
         return Buffer.from(arrayBuffer);

@@ -17,6 +17,35 @@ import 'api_service.dart';
 import 'notification_navigator.dart';
 import 'realtime_sync_manager.dart';
 
+enum VipAction {
+  like,
+  superlike,
+  boost,
+  partyPlan,
+  backtrack,
+  matchRequest,
+}
+
+class VipActionValidation {
+  final bool allowed;
+  final VipAction action;
+  final String? message;
+  final String? code;
+  final dynamic limit;
+  final dynamic remaining;
+  final bool isUnlimited;
+
+  const VipActionValidation({
+    required this.allowed,
+    required this.action,
+    this.message,
+    this.code,
+    this.limit,
+    this.remaining,
+    this.isUnlimited = false,
+  });
+}
+
 enum VipFeature {
   hideProfile,
   priorityVisibility,
@@ -53,6 +82,11 @@ class SubscriptionProvider extends ChangeNotifier {
   DateTime? _lastFetched;
   static const _cacheDuration = Duration(minutes: 3);
 
+  int _optimisticLikesOffset = 0;
+  int _optimisticSuperlikesOffset = 0;
+  int _optimisticBoostsOffset = 0;
+  int _optimisticBacktracksOffset = 0;
+
   PlanStatus get status => _status;
   EntitlementsSummaryModel? get entitlementsSummary => _entitlementsSummary;
   List<SubscriptionAddonPackageModel> get availableAddons => _availableAddons;
@@ -65,15 +99,249 @@ class SubscriptionProvider extends ChangeNotifier {
   int get tierRank => _status.tierRank;
   bool get isFree => _status.isFree;
   bool get isPaid => _status.isPaid;
-  int get superlikesRemaining => (_entitlementsSummary != null)
-      ? _entitlementsSummary!.superlikesAvailable
-      : _status.superlikesRemaining;
-  int get boostsRemaining => (_entitlementsSummary != null)
-      ? _entitlementsSummary!.boostsAvailable
-      : _status.boostsRemaining;
-  int get dailyLikesRemaining => _status.dailyLikesRemaining;
-  bool get canSuperLike => superlikesRemaining > 0;
-  bool get canBoost => boostsRemaining > 0;
+  bool get isElite => _status.isElite;
+
+  int get superlikesRemaining => (isElite || _status.isUnlimitedSuperlikes)
+      ? 9999
+      : (((_entitlementsSummary != null && _entitlementsSummary!.superlikesAvailable > 0)
+              ? _entitlementsSummary!.superlikesAvailable
+              : _status.superlikesRemaining) - _optimisticSuperlikesOffset).clamp(0, 9999);
+
+  int get boostsRemaining => (isElite || _status.isUnlimitedBoosts)
+      ? 9999
+      : (((_entitlementsSummary != null && _entitlementsSummary!.boostsAvailable > 0)
+              ? _entitlementsSummary!.boostsAvailable
+              : _status.boostsRemaining) - _optimisticBoostsOffset).clamp(0, 9999);
+
+  int get dailyLikesRemaining => _status.hasUnlimitedLikes
+      ? 9999
+      : (_status.dailyLikesRemaining - _optimisticLikesOffset).clamp(0, 9999);
+
+  int get dailyBacktrackRemaining => _status.hasUnlimitedBacktracks
+      ? 9999
+      : (_status.dailyBacktrackRemaining - _optimisticBacktracksOffset).clamp(0, 9999);
+
+  bool get canLike => isPaid || _status.hasUnlimitedLikes || dailyLikesRemaining > 0;
+  bool get canSuperLike => isElite || _status.isUnlimitedSuperlikes || superlikesRemaining > 0;
+  bool get canBoost => isElite || _status.isUnlimitedBoosts || boostsRemaining > 0;
+  bool get canBacktrack => _status.hasUnlimitedBacktracks || dailyBacktrackRemaining > 0;
+  bool get canCreatePartyPlan => true;
+
+  // ── Optimistic State Modifiers ───────────────────────────────────────────
+
+  void optimisticConsume(VipAction action) {
+    if (isElite || _status.isElite) return;
+    switch (action) {
+      case VipAction.like:
+        if (!_status.hasUnlimitedLikes && !isPaid) {
+          _optimisticLikesOffset++;
+          notifyListeners();
+        }
+        break;
+      case VipAction.superlike:
+        if (!_status.isUnlimitedSuperlikes) {
+          _optimisticSuperlikesOffset++;
+          notifyListeners();
+        }
+        break;
+      case VipAction.boost:
+        if (!_status.isUnlimitedBoosts) {
+          _optimisticBoostsOffset++;
+          notifyListeners();
+        }
+        break;
+      case VipAction.backtrack:
+        if (!_status.hasUnlimitedBacktracks) {
+          _optimisticBacktracksOffset++;
+          notifyListeners();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  void rollbackConsume(VipAction action) {
+    if (isElite || _status.isElite) return;
+    switch (action) {
+      case VipAction.like:
+        if (_optimisticLikesOffset > 0) {
+          _optimisticLikesOffset--;
+          notifyListeners();
+        }
+        break;
+      case VipAction.superlike:
+        if (_optimisticSuperlikesOffset > 0) {
+          _optimisticSuperlikesOffset--;
+          notifyListeners();
+        }
+        break;
+      case VipAction.boost:
+        if (_optimisticBoostsOffset > 0) {
+          _optimisticBoostsOffset--;
+          notifyListeners();
+        }
+        break;
+      case VipAction.backtrack:
+        if (_optimisticBacktracksOffset > 0) {
+          _optimisticBacktracksOffset--;
+          notifyListeners();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// O(1) in-memory synchronous Quota Validation
+  VipActionValidation validateAction(VipAction action) {
+    if (isElite || _status.isElite) {
+      return VipActionValidation(
+        allowed: true,
+        action: action,
+        isUnlimited: true,
+        limit: 'unlimited',
+        remaining: 'unlimited',
+      );
+    }
+
+    switch (action) {
+      case VipAction.like:
+        if (isPaid || _status.hasUnlimitedLikes) {
+          return const VipActionValidation(
+            allowed: true,
+            action: VipAction.like,
+            isUnlimited: true,
+            limit: 'unlimited',
+            remaining: 'unlimited',
+          );
+        }
+        final rem = dailyLikesRemaining;
+        if (rem <= 0) {
+          return VipActionValidation(
+            allowed: false,
+            action: VipAction.like,
+            code: 'DAILY_LIKES_LIMIT_REACHED',
+            limit: _status.dailyLikesLimitInt,
+            remaining: 0,
+            message: "You've used all your daily likes (${_status.dailyLikesLimitInt}/${_status.dailyLikesLimitInt}). Upgrade to Lunara VIP for unlimited likes!",
+          );
+        }
+        return VipActionValidation(
+          allowed: true,
+          action: VipAction.like,
+          limit: _status.dailyLikesLimitInt,
+          remaining: rem,
+        );
+
+      case VipAction.superlike:
+        if (isElite || _status.isUnlimitedSuperlikes || superlikesRemaining >= 9999) {
+          return const VipActionValidation(
+            allowed: true,
+            action: VipAction.superlike,
+            isUnlimited: true,
+            limit: 'unlimited',
+            remaining: 'unlimited',
+          );
+        }
+        final rem = superlikesRemaining;
+        if (rem <= 0) {
+          return VipActionValidation(
+            allowed: false,
+            action: VipAction.superlike,
+            code: 'SUPERLIKE_LIMIT_REACHED',
+            limit: 0,
+            remaining: 0,
+            message: isPaid
+                ? "You've used all your Super Likes for this cycle. Top up with an Add-on pack!"
+                : "You don't have any Super Likes remaining. Upgrade to VIP or get an Add-on pack!",
+          );
+        }
+        return VipActionValidation(
+          allowed: true,
+          action: VipAction.superlike,
+          limit: rem,
+          remaining: rem,
+        );
+
+      case VipAction.boost:
+        if (isElite || _status.isUnlimitedBoosts || boostsRemaining >= 9999) {
+          return const VipActionValidation(
+            allowed: true,
+            action: VipAction.boost,
+            isUnlimited: true,
+            limit: 'unlimited',
+            remaining: 'unlimited',
+          );
+        }
+        final rem = boostsRemaining;
+        if (rem <= 0) {
+          return VipActionValidation(
+            allowed: false,
+            action: VipAction.boost,
+            code: 'BOOST_LIMIT_REACHED',
+            limit: 0,
+            remaining: 0,
+            message: isPaid
+                ? "You've used all your Profile Boosts for this cycle. Purchase a Boost pack to get spotlighted!"
+                : "Profile Boosts are a VIP feature. Upgrade your plan or purchase a Boost pack!",
+          );
+        }
+        return VipActionValidation(
+          allowed: true,
+          action: VipAction.boost,
+          limit: rem,
+          remaining: rem,
+        );
+
+      case VipAction.backtrack:
+        final rem = dailyBacktrackRemaining;
+        if (rem <= 0 && !_status.hasUnlimitedBacktracks) {
+          return VipActionValidation(
+            allowed: false,
+            action: VipAction.backtrack,
+            code: 'BACKTRACK_LIMIT_REACHED',
+            limit: _status.dailyBacktrackLimitInt,
+            remaining: 0,
+            message: "You've used all your backtracks for today. Upgrade to VIP for more!",
+          );
+        }
+        return VipActionValidation(
+          allowed: true,
+          action: VipAction.backtrack,
+          isUnlimited: _status.hasUnlimitedBacktracks,
+          limit: _status.dailyBacktrackLimitInt,
+          remaining: rem,
+        );
+
+      case VipAction.partyPlan:
+        return VipActionValidation(
+          allowed: true,
+          action: VipAction.partyPlan,
+          isUnlimited: isElite,
+          limit: isElite ? 'unlimited' : (_status.isPaid ? 3 : 1),
+          remaining: isElite ? 'unlimited' : 1,
+        );
+
+      case VipAction.matchRequest:
+        if (_status.isPaid || _status.dailyMatchRequestsLimit == 'unlimited') {
+          return const VipActionValidation(
+            allowed: true,
+            action: VipAction.matchRequest,
+            isUnlimited: true,
+            limit: 'unlimited',
+            remaining: 'unlimited',
+          );
+        }
+        final rem = (_status.dailyMatchRequestsLimitInt - _status.dailyMatchRequestsUsed).clamp(0, 9999);
+        return VipActionValidation(
+          allowed: rem > 0,
+          action: VipAction.matchRequest,
+          limit: _status.dailyMatchRequestsLimit,
+          remaining: rem,
+        );
+    }
+  }
 
   String? _lastShownAlertKey;
 
@@ -107,6 +375,10 @@ class SubscriptionProvider extends ChangeNotifier {
       if (data.isNotEmpty) {
         _status = PlanStatus.fromJson(data);
         _lastFetched = DateTime.now();
+        _optimisticLikesOffset = 0;
+        _optimisticSuperlikesOffset = 0;
+        _optimisticBoostsOffset = 0;
+        _optimisticBacktracksOffset = 0;
         _checkAndDispatchExpirationAlert();
       }
     } catch (e) {
@@ -126,6 +398,8 @@ class SubscriptionProvider extends ChangeNotifier {
       final data = await ApiService.fetchEntitlementsSummary();
       if (data.isNotEmpty) {
         _entitlementsSummary = EntitlementsSummaryModel.fromJson(data);
+        _optimisticSuperlikesOffset = 0;
+        _optimisticBoostsOffset = 0;
       }
     } catch (e) {
       debugPrint('[SubscriptionProvider] fetchEntitlementsSummary error: $e');

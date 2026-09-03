@@ -86,7 +86,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   void _startMessagePolling() {
     _messagePollingTimer?.cancel();
-    _messagePollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _messagePollingTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (mounted && _conversationId != null && !_isLoadingMore) {
         _fetchMessages(isBackgroundRefresh: true, markRead: true);
       }

@@ -5,6 +5,7 @@ import 'match_settings_screen.dart';
 import 'matched_profiles_screen.dart';
 import '../../models/user.dart';
 import '../../services/api_service.dart';
+import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../profile/vip_membership_screen.dart';
 
@@ -21,6 +22,7 @@ class _MatchScreenState extends State<MatchScreen>
   final List<Map<String, dynamic>> _likedProfiles = [];
   final List<Map<String, dynamic>> _superLikedProfiles = [];
   final List<Map<String, dynamic>> _matchedProfiles = [];
+  final List<Map<String, dynamic>> _swipedHistory = [];
   bool _isLoading = true;
   String _swipeAction = 'like';
 
@@ -51,28 +53,38 @@ class _MatchScreenState extends State<MatchScreen>
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      await ApiService.fetchProfile();
+      if (ApiService.currentUserId == null) {
+        await ApiService.fetchProfile();
+      }
       final myId = ApiService.currentUserId;
       final selectedCity = ApiService.selectedCity;
 
-      // 1. Fetch all raw customers
-      final rawCustomers = await ApiService.fetchCustomers();
+      // Fetch customers and existing likes/matches in parallel
+      final results = await Future.wait([
+        ApiService.fetchCustomers(),
+        ApiService.fetchMyLikesAndMatches(),
+      ]);
 
-      // 2. Fetch all likes and matches
-      final mySwipes = await ApiService.fetchMyLikesAndMatches();
+      final rawCustomers = results[0] as List<dynamic>;
+      final mySwipes = results[1] as List<dynamic>;
 
       final Set<String> swipedUserIds = {};
+      final Map<String, dynamic> outgoingByTargetId = {};
+      final Map<String, dynamic> incomingBySenderId = {};
       final List<Map<String, dynamic>> resolvedLiked = [];
       final List<Map<String, dynamic>> resolvedSuperLiked = [];
       final List<Map<String, dynamic>> resolvedMatched = [];
 
+      // O(M) single-pass indexing into HashMaps
       for (var swipe in mySwipes) {
         final u1 = swipe['user1Id']?.toString();
         final u2 = swipe['user2Id']?.toString();
-        if (u1 == myId) {
-          if (u2 != null) {
-            swipedUserIds.add(u2);
-          }
+        if (u1 == myId && u2 != null) {
+          swipedUserIds.add(u2);
+          outgoingByTargetId[u2] = swipe;
+        }
+        if (u2 == myId && u1 != null) {
+          incomingBySenderId[u1] = swipe;
         }
       }
 
@@ -108,28 +120,9 @@ class _MatchScreenState extends State<MatchScreen>
             'matchChance': matchPct / 100.0,
           };
 
-          // Find swipes
-          final outgoingSwipes = mySwipes
-              .where(
-                (s) =>
-                    s['user1Id']?.toString() == myId &&
-                    s['user2Id']?.toString() == u.id,
-              )
-              .toList();
-          final outgoingSwipe = outgoingSwipes.isNotEmpty
-              ? outgoingSwipes.first
-              : null;
-
-          final incomingSwipes = mySwipes
-              .where(
-                (s) =>
-                    s['user2Id']?.toString() == myId &&
-                    s['user1Id']?.toString() == u.id,
-              )
-              .toList();
-          final incomingSwipe = incomingSwipes.isNotEmpty
-              ? incomingSwipes.first
-              : null;
+          // O(1) instantaneous lookup via HashMap (eliminates O(N*M) nested scans)
+          final outgoingSwipe = outgoingByTargetId[u.id];
+          final incomingSwipe = incomingBySenderId[u.id];
 
           bool isLiked = false;
           bool isSuperLiked = false;
@@ -209,8 +202,9 @@ class _MatchScreenState extends State<MatchScreen>
     if (_profiles.isEmpty) return;
 
     final swiped = _profiles.removeAt(0);
+    _swipedHistory.add(swiped);
     final swipedRight = _dragX > 0;
-    final action = swipedRight ? _swipeAction : 'nope';
+    final action = _swipeAction;
 
     // Reset default swipe action
     _swipeAction = 'like';
@@ -228,17 +222,35 @@ class _MatchScreenState extends State<MatchScreen>
     ) {
       if (res != null) {
         if (res['limitReached'] == true) {
-          if (mounted) {
-            setState(() {
-              _profiles.insert(0, swiped);
-            });
-            showSubscriptionLimitDialog(
-              context,
-              feature: action == 'superlike' ? SubLimitFeature.superLike : SubLimitFeature.dailyLikes,
-              customMessage: res['message'],
-            );
+          final isElite = SubscriptionProvider.instance.isElite;
+          final isPaid = SubscriptionProvider.instance.isPaid;
+
+          // Top tier (Elite) users have unlimited likes & superlikes.
+          // All VIP users have unlimited likes.
+          // Suppress any errant limitReached responses.
+          if (isElite || (action == 'like' && isPaid)) {
+            debugPrint('[MatchScreen] Suppressed limitReached for top-tier/VIP user: action=$action');
+          } else {
+            // Revert optimistic consumption
+            if (action == 'superlike') {
+              SubscriptionProvider.instance.rollbackConsume(VipAction.superlike);
+            } else if (action == 'like') {
+              SubscriptionProvider.instance.rollbackConsume(VipAction.like);
+            }
+            if (_swipedHistory.isNotEmpty) _swipedHistory.removeLast();
+
+            if (mounted) {
+              setState(() {
+                _profiles.insert(0, swiped);
+              });
+              showSubscriptionLimitDialog(
+                context,
+                feature: action == 'superlike' ? SubLimitFeature.superLike : SubLimitFeature.dailyLikes,
+                customMessage: res['message'],
+              );
+            }
+            return;
           }
-          return;
         }
 
         final bool matched = res['matched'] == true;
@@ -262,57 +274,107 @@ class _MatchScreenState extends State<MatchScreen>
 
         // 75% Limit Usage Warning notification & alert
         if (res['usageWarning'] != null && res['usageWarning']['triggered'] == true && mounted) {
-          final warnMsg = res['usageWarning']['message']?.toString() ?? 'Limit warning';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      warnMsg,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.amberAccent,
-                        borderRadius: BorderRadius.circular(8),
+          final isElite = SubscriptionProvider.instance.isElite;
+          final isPaid = SubscriptionProvider.instance.isPaid;
+          final feature = res['usageWarning']['feature']?.toString() ?? '';
+
+          // Never show upgrade prompt to top tier (Elite) or for daily likes to VIP users
+          if (!isElite && !(isPaid && feature == 'daily_likes')) {
+            final warnMsg = res['usageWarning']['message']?.toString() ?? 'Limit warning';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        warnMsg,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                       ),
-                      child: const Text(
-                        'UPGRADE',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => VIPMembershipScreen(initialTabIndex: isPaid ? 1 : 0),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.amberAccent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          isPaid ? 'TOP UP' : 'UPGRADE',
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                backgroundColor: const Color(0xFF7F00FF),
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              backgroundColor: const Color(0xFF7F00FF),
-              duration: const Duration(seconds: 4),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          );
+            );
+          }
         }
       }
     });
   }
 
-  void _swipeCard(bool liked) {
+  void _swipeCard(bool liked, {String? customAction}) {
     if (_profiles.isEmpty || _isAnimating) return;
+
+    final action = customAction ?? (liked ? _swipeAction : 'nope');
+
+    // ── Instant O(1) in-memory quota guard ──
+    if (action == 'like') {
+      final validation = SubscriptionProvider.instance.validateAction(VipAction.like);
+      if (!validation.allowed) {
+        setState(() {
+          _dragX = 0;
+          _dragY = 0;
+          _dragAngle = 0;
+          _isDragging = false;
+        });
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.dailyLikes,
+          customMessage: validation.message,
+        );
+        return;
+      }
+      SubscriptionProvider.instance.optimisticConsume(VipAction.like);
+    } else if (action == 'superlike') {
+      final validation = SubscriptionProvider.instance.validateAction(VipAction.superlike);
+      if (!validation.allowed) {
+        setState(() {
+          _dragX = 0;
+          _dragY = 0;
+          _dragAngle = 0;
+          _isDragging = false;
+        });
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.superLike,
+          customMessage: validation.message,
+        );
+        return;
+      }
+      SubscriptionProvider.instance.optimisticConsume(VipAction.superlike);
+    }
+
+    _swipeAction = action;
 
     setState(() {
       _isAnimating = true;
@@ -322,9 +384,112 @@ class _MatchScreenState extends State<MatchScreen>
     });
 
     // Wait for card fly-out animation to complete before processing
-    Future.delayed(const Duration(milliseconds: 400), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       _onSwipeComplete();
     });
+  }
+
+  void _rewindLastSwipe() {
+    if (_swipedHistory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No previous swipe to rewind'),
+          duration: Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final validation = SubscriptionProvider.instance.validateAction(VipAction.backtrack);
+    if (!validation.allowed) {
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.backtrack,
+        customMessage: validation.message,
+      );
+      return;
+    }
+
+    SubscriptionProvider.instance.optimisticConsume(VipAction.backtrack);
+    final restored = _swipedHistory.removeLast();
+    setState(() {
+      _profiles.insert(0, restored);
+    });
+  }
+
+  void _onBoostTap() {
+    final provider = SubscriptionProvider.instance;
+    final validation = provider.validateAction(VipAction.boost);
+    if (!validation.allowed) {
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.boost,
+        customMessage: validation.message,
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161622),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Text('⚡', style: TextStyle(fontSize: 24)),
+            SizedBox(width: 8),
+            Text('Activate Boost?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          provider.isElite
+              ? 'As an Elite VIP, you have unlimited Profile Boosts! Boost your profile for 30 minutes?'
+              : 'Boost puts your profile at the top of discover for 30 minutes! (${provider.boostsRemaining} remaining)',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFB703),
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              provider.optimisticConsume(VipAction.boost);
+              final res = await ApiService.useBoost();
+              if (res != null && res['success'] == true) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('⚡ Boost activated! Your profile is in the spotlight for 30 minutes!'),
+                      backgroundColor: Color(0xFF7F00FF),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                provider.refresh();
+              } else {
+                provider.rollbackConsume(VipAction.boost);
+                if (mounted) {
+                  showSubscriptionLimitDialog(
+                    context,
+                    feature: SubLimitFeature.boost,
+                    customMessage: res?['message'],
+                  );
+                }
+              }
+            },
+            child: const Text('ACTIVATE', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -668,16 +833,21 @@ class _MatchScreenState extends State<MatchScreen>
 
   Widget _buildActionButtons() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _interactionButton(
+            icon: Icons.replay,
+            color: const Color(0xFFFFB703),
+            onTap: _rewindLastSwipe,
+            label: 'REWIND',
+          ),
+          _interactionButton(
             icon: Icons.close,
             color: LunaraTheme.primaryDeep,
             onTap: () {
-              _swipeAction = 'nope';
-              _swipeCard(false);
+              _swipeCard(false, customAction: 'nope');
             },
             label: 'NOPE',
           ),
@@ -685,8 +855,7 @@ class _MatchScreenState extends State<MatchScreen>
             icon: Icons.favorite,
             color: LunaraTheme.accentVivid,
             onTap: () {
-              _swipeAction = 'like';
-              _swipeCard(true);
+              _swipeCard(true, customAction: 'like');
             },
             isLarge: true,
             label: 'LIKE',
@@ -695,10 +864,15 @@ class _MatchScreenState extends State<MatchScreen>
             icon: Icons.star,
             color: LunaraTheme.primaryRich,
             onTap: () {
-              _swipeAction = 'superlike';
-              _swipeCard(true);
+              _swipeCard(true, customAction: 'superlike');
             },
             label: 'SUPER',
+          ),
+          _interactionButton(
+            icon: Icons.bolt,
+            color: const Color(0xFF00E5FF),
+            onTap: _onBoostTap,
+            label: 'BOOST',
           ),
         ],
       ),
@@ -712,7 +886,7 @@ class _MatchScreenState extends State<MatchScreen>
     bool isLarge = false,
     required String label,
   }) {
-    final double size = isLarge ? 80 : 60;
+    final double size = isLarge ? 74 : 54;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -728,20 +902,20 @@ class _MatchScreenState extends State<MatchScreen>
               border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.2),
+                  color: color.withValues(alpha: 0.25),
                   blurRadius: 15,
                   spreadRadius: 2,
                 ),
               ],
             ),
-            child: Icon(icon, color: color, size: isLarge ? 32 : 24),
+            child: Icon(icon, color: color, size: isLarge ? 30 : 22),
           ),
         ),
         const SizedBox(height: 6),
         Text(
           label,
           style: TextStyle(
-            color: color.withValues(alpha: 0.7),
+            color: color.withValues(alpha: 0.8),
             fontSize: 9,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,

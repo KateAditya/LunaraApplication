@@ -12,8 +12,8 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
-        min: parseInt(process.env.DB_POOL_MIN || '4'),
-        max: parseInt(process.env.DB_POOL_MAX || '25'),
+        min: parseInt(process.env.DB_POOL_MIN || '10'),
+        max: parseInt(process.env.DB_POOL_MAX || '60'),
         acquire: 30000,
         idle: 10000,
         evict: 5000,
@@ -25,7 +25,7 @@ const sequelize = new Sequelize({
         } : false,
         keepAlive: true,
         keepAliveInitialDelayMillis: 10000,
-        statement_timeout: 60000,
+        statement_timeout: 20000,
     },
     retry: {
         match: [
@@ -139,10 +139,148 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='superlikes_remaining') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN superlikes_remaining INTEGER DEFAULT 0; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='boosts_remaining') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN boosts_remaining INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='reminder1_day_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN reminder1_day_sent BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='reminder8_hour_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN reminder8_hour_sent BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='reminder5_hour_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN reminder5_hour_sent BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='reminder2_hour_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN reminder2_hour_sent BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='reminder1_hour_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN reminder1_hour_sent BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiry_notified') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiry_notified BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='last_notified_at') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN last_notified_at TIMESTAMP WITH TIME ZONE; END IF;
 
                     -- SubscriptionPackages columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='superlikes_per_cycle') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN superlikes_per_cycle INTEGER DEFAULT 0; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='boosts_per_cycle') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN boosts_per_cycle INTEGER DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_likes') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_likes INTEGER DEFAULT 7; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_match_requests') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_match_requests INTEGER DEFAULT 3; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_posts') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_posts INTEGER DEFAULT 5; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_hide_profile') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_hide_profile BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_priority_visibility') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_priority_visibility BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_trust_badge') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_trust_badge BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_elite_badge') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_elite_badge BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='can_see_who_liked') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN can_see_who_liked BOOLEAN DEFAULT false; END IF;
+
+                    -- profile_boosts table
+                    CREATE TABLE IF NOT EXISTS profile_boosts (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                        duration_minutes INTEGER NOT NULL DEFAULT 30,
+                        transaction_id UUID,
+                        metadata JSONB,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+
+                    -- SubscriptionUsage table
+                    CREATE TABLE IF NOT EXISTS "SubscriptionUsage" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        feature_key VARCHAR(100) NOT NULL,
+                        period VARCHAR(20) NOT NULL,
+                        used INTEGER NOT NULL DEFAULT 0,
+                        reset_at TIMESTAMP WITH TIME ZONE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        CONSTRAINT unique_user_feature_period UNIQUE (user_id, feature_key, period)
+                    );
+
+                    -- SubscriptionFeatures table
+                    CREATE TABLE IF NOT EXISTS "SubscriptionFeatures" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        key VARCHAR(100) UNIQUE NOT NULL,
+                        name VARCHAR(200) NOT NULL,
+                        description TEXT,
+                        category VARCHAR(50) NOT NULL DEFAULT 'general',
+                        value_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
+                        display_order INTEGER NOT NULL DEFAULT 0,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        icon VARCHAR(100),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
+
+                    -- SubscriptionPlanFeatures table
+                    CREATE TABLE IF NOT EXISTS "SubscriptionPlanFeatures" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        package_id UUID NOT NULL REFERENCES "SubscriptionPackages"(id) ON DELETE CASCADE,
+                        feature_id UUID NOT NULL REFERENCES "SubscriptionFeatures"(id) ON DELETE CASCADE,
+                        value JSONB NOT NULL DEFAULT '{"enabled": false}',
+                        is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        UNIQUE (package_id, feature_id)
+                    );
+
+                    -- SubscriptionTransactions table
+                    CREATE TABLE IF NOT EXISTS "SubscriptionTransactions" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        package_id UUID REFERENCES "SubscriptionPackages"(id),
+                        type VARCHAR(30) NOT NULL,
+                        amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        currency VARCHAR(5) NOT NULL DEFAULT 'INR',
+                        payment_method VARCHAR(50),
+                        payment_gateway VARCHAR(50) NOT NULL DEFAULT 'razorpay',
+                        gateway_order_id VARCHAR(200),
+                        gateway_payment_id VARCHAR(200),
+                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        invoice_number VARCHAR(50) UNIQUE,
+                        refund_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        refunded_at TIMESTAMP WITH TIME ZONE,
+                        metadata JSONB,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
+
+                    -- SubscriptionAddonPackages table
+                    CREATE TABLE IF NOT EXISTS "SubscriptionAddonPackages" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        name VARCHAR(150) NOT NULL,
+                        feature_key VARCHAR(50) NOT NULL,
+                        quantity INTEGER NOT NULL DEFAULT 1,
+                        price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                        badge VARCHAR(50),
+                        description TEXT,
+                        display_order INTEGER NOT NULL DEFAULT 0,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
+
+                    -- UserAddons table
+                    CREATE TABLE IF NOT EXISTS "UserAddons" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        addon_package_id UUID REFERENCES "SubscriptionAddonPackages"(id),
+                        feature_key VARCHAR(50) NOT NULL,
+                        purchased_quantity INTEGER NOT NULL,
+                        used_quantity INTEGER NOT NULL DEFAULT 0,
+                        remaining_quantity INTEGER NOT NULL,
+                        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                        expires_at TIMESTAMP WITH TIME ZONE,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
+
+                    -- EntitlementAuditLogs table
+                    CREATE TABLE IF NOT EXISTS "EntitlementAuditLogs" (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        subscription_id UUID,
+                        addon_id UUID,
+                        feature VARCHAR(50) NOT NULL,
+                        action VARCHAR(50) NOT NULL,
+                        source VARCHAR(20) NOT NULL,
+                        quantity INTEGER NOT NULL,
+                        old_value JSONB,
+                        new_value JSONB,
+                        request_id VARCHAR(100),
+                        metadata JSONB,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    );
 
                     -- user_likes table
                     CREATE TABLE IF NOT EXISTS user_likes (
@@ -368,10 +506,25 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
                 CREATE INDEX IF NOT EXISTS idx_payments_user_status ON payments(user_id, status);
                 CREATE INDEX IF NOT EXISTS idx_conv_part1_part2 ON conversations(participant_one, participant_two);
+                CREATE INDEX IF NOT EXISTS idx_conv_part2_part1 ON conversations(participant_two, participant_one);
+                CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_user_likes_target ON user_likes(target_user_id, action_type);
+                CREATE INDEX IF NOT EXISTS idx_user_likes_user_target ON user_likes(user_id, target_user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u1_u2 ON user_matches(user1_id, user2_id);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u2_reason_status ON user_matches(user2_id, match_reason, status);
+                CREATE INDEX IF NOT EXISTS idx_bookings_user_created ON bookings(user_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_pp_canc_req_plan ON party_plan_cancellation_requests(plan_id);
                 CREATE INDEX IF NOT EXISTS idx_pp_canc_req_status ON party_plan_cancellation_requests(status);
                 CREATE INDEX IF NOT EXISTS idx_pp_canc_req_req_by ON party_plan_cancellation_requests(requested_by_id);
                 CREATE INDEX IF NOT EXISTS idx_pp_canc_req_rec_id ON party_plan_cancellation_requests(recipient_user_id);
+                CREATE INDEX IF NOT EXISTS idx_sub_usage_user_feature_period ON "SubscriptionUsage"(user_id, feature_key, period);
+                CREATE INDEX IF NOT EXISTS idx_sub_usage_user ON "SubscriptionUsage"(user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_subs_user_status_end ON "UserSubscriptions"(user_id, status, end_date);
+                CREATE INDEX IF NOT EXISTS idx_profile_boosts_user_status_exp ON profile_boosts(user_id, status, expires_at);
+                CREATE INDEX IF NOT EXISTS idx_profile_boosts_status_exp ON profile_boosts(status, expires_at);
+                CREATE INDEX IF NOT EXISTS idx_user_addons_user_feat_status ON "UserAddons"(user_id, feature_key, status);
+                CREATE INDEX IF NOT EXISTS idx_sub_txn_user ON "SubscriptionTransactions"(user_id);
             `);
 
             logger.info('Database schema and performance indexes verified successfully.');
@@ -607,10 +760,27 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 CREATE INDEX IF NOT EXISTS idx_strangers_meet_user_date ON strangers_meet_requests(user_id, event_date_time DESC);
                 CREATE INDEX IF NOT EXISTS idx_plans_user_date ON plans(user_id, plan_date DESC);
                 CREATE INDEX IF NOT EXISTS idx_plan_join_requests_user_status ON plan_join_requests(requester_id, status);
+
+                -- High-Performance Chat & Messaging Indexes (1000+ Concurrent Users)
+                CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages(conversation_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_conv_client ON messages(conversation_id, client_message_id);
+                CREATE INDEX IF NOT EXISTS idx_messages_sender_status ON messages(sender_id, status);
+                CREATE INDEX IF NOT EXISTS idx_conversations_p1_p2 ON conversations(participant_one, participant_two);
+                CREATE INDEX IF NOT EXISTS idx_conversations_p1_last ON conversations(participant_one, last_message_at DESC NULLS LAST);
+                CREATE INDEX IF NOT EXISTS idx_conversations_p2_last ON conversations(participant_two, last_message_at DESC NULLS LAST);
+                CREATE INDEX IF NOT EXISTS idx_social_conn_pair_status ON social_connections(requester_id, receiver_id, status);
+
+                -- High-Performance Profile, Swipe & Match Indexes
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u1_u2 ON user_matches(user1_id, user2_id, status);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_u2_u1 ON user_matches(user2_id, user1_id, status);
+                CREATE INDEX IF NOT EXISTS idx_user_matches_created ON user_matches(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_user_likes_user_target ON user_likes(user_id, target_user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_photos_user_primary ON user_photos(user_id, is_primary);
+                CREATE INDEX IF NOT EXISTS idx_users_city_active ON users(city, is_active);
             `);
-            logger.info('Ticket Dashboard performance indexes verified successfully.');
+            logger.info('High-performance messaging, matching, and ticket indexes verified successfully.');
         } catch (idxErr: any) {
-            logger.warn('Failed to verify Ticket Dashboard indexes: ' + idxErr.message);
+            logger.warn('Failed to verify high-performance indexes: ' + idxErr.message);
         }
 
         if (process.env.NODE_ENV === 'development') {

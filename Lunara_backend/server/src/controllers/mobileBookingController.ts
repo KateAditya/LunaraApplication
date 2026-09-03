@@ -1094,17 +1094,28 @@ export const listMyBookings = async (req: Request, res: Response) => {
 
         const synthesized: any[] = [];
 
+        // Precompute booking references into Sets for O(1) membership checks
+        const existingBookingIds = new Set<string>();
+        const existingSpecialRequests: string[] = [];
+        for (const b of bookings) {
+            const bId = (b as any).id;
+            if (bId) existingBookingIds.add(String(bId));
+            const sr = (b as any).specialRequests;
+            if (sr) existingSpecialRequests.push(String(sr));
+        }
+        const isPlanInBookings = (planId: string, bookingId?: string) => {
+            if (bookingId && existingBookingIds.has(String(bookingId))) return true;
+            if (planId && existingBookingIds.has(String(planId))) return true;
+            return existingSpecialRequests.some(sr => sr.includes(planId));
+        };
+
         for (const plan of hostPlans) {
             // A newly created, unpaid, or unmatched party plan is NOT a booking.
             // Only plans with an accepted match and paid host deposit are bookings.
             if (!plan.matchedRequestId || plan.hostPaymentStatus !== PartyPlanPaymentStatus.PAID) {
                 continue;
             }
-            const alreadyInBookings = bookings.some(b => {
-                const sr = (b as any).specialRequests || '';
-                return sr.includes(plan.id) || b.id === (plan as any).bookingId;
-            });
-            if (alreadyInBookings) {
+            if (isPlanInBookings(plan.id, (plan as any).bookingId)) {
                 continue;
             }
             const venue = (plan as any).venue;
@@ -1134,11 +1145,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
             if (request.status !== PartyPlanRequestStatus.ACCEPTED || request.joinerPaymentStatus !== PartyPlanJoinerPaymentStatus.PAID) {
                 continue;
             }
-            const alreadyInBookings = bookings.some(b => {
-                const sr = (b as any).specialRequests || '';
-                return sr.includes(plan.id) || b.id === (plan as any).bookingId;
-            });
-            if (alreadyInBookings) {
+            if (isPlanInBookings(plan.id, (plan as any).bookingId)) {
                 continue;
             }
             const venue = (plan as any).venue;
@@ -1344,15 +1351,17 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const key = `${item.bookingType || 'normal'}_${item.bookingId || item.id}`;
             if (!seenKeys.has(key)) {
                 seenKeys.add(key);
+                const dateStr = item.bookedAt || item.createdAt || item.bookingDate;
+                item._sortTime = dateStr ? new Date(dateStr).getTime() : 0;
                 combined.push(item);
             }
         }
 
-        combined.sort((a, b) => {
-            const timeB = new Date(b.bookedAt || b.createdAt || b.bookingDate).getTime();
-            const timeA = new Date(a.bookedAt || a.createdAt || a.bookingDate).getTime();
-            return timeB - timeA;
-        });
+        combined.sort((a, b) => b._sortTime - a._sortTime);
+
+        for (const item of combined) {
+            delete item._sortTime;
+        }
 
         return res.json({ success: true, data: combined });
     } catch (err: any) {

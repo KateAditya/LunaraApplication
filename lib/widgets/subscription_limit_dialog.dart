@@ -1,11 +1,13 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../screens/profile/vip_membership_screen.dart';
+import '../services/subscription_provider.dart';
 
 /// Feature context for the limit dialog — determines messaging and icon.
 enum SubLimitFeature {
   dailyLikes,
   superLike,
+  boost,
   backtrack,
   strangerMeet,
   partyCreation,
@@ -60,6 +62,20 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
       "✨ Renews every cycle",
     ],
     gradientColors: [Color(0xFF7B2FFF), Color(0xFFB44FFF)],
+  ),
+  SubLimitFeature.boost: _FeatureConfig(
+    emoji: '⚡',
+    title: "No Profile Boosts\nRemaining",
+    subtitle: "Profile Boost puts you in the spotlight for 30 minutes! Get more with Plus, Pro, Elite, or buy a Boost pack.",
+    benefitHeader: "Boosts by plan:",
+    benefits: [
+      "💜 Plus: 2 free boosts per cycle",
+      "🔮 Pro: 4 free boosts per cycle",
+      "👑 Elite: Unlimited boosts",
+      "⚡ In-App Boost packs from ₹49",
+      "🚀 10x more profile views & matches",
+    ],
+    gradientColors: [Color(0xFFFFB703), Color(0xFF7F00FF)],
   ),
   SubLimitFeature.backtrack: _FeatureConfig(
     emoji: '⏪',
@@ -139,6 +155,20 @@ Future<void> showSubscriptionLimitDialog(
   SubLimitFeature feature = SubLimitFeature.generic,
   String? customMessage,
 }) {
+  final provider = SubscriptionProvider.instance;
+
+  // ── Top tier (Elite) users have unlimited everything. Suppress all limit popups.
+  if (provider.isElite) {
+    debugPrint('[SubscriptionLimitDialog] Suppressed limit dialog for Elite VIP user.');
+    return Future.value();
+  }
+
+  // ── All VIP tiers (Core, Plus, Pro, Elite) have unlimited likes. Suppress dailyLikes popup.
+  if (provider.isPaid && feature == SubLimitFeature.dailyLikes) {
+    debugPrint('[SubscriptionLimitDialog] Suppressed dailyLikes dialog for VIP user.');
+    return Future.value();
+  }
+
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -177,6 +207,7 @@ SubLimitFeature featureFromActionOrCode({String? action, String? code}) {
   }
   if (action == 'superlike') return SubLimitFeature.superLike;
   if (action == 'like') return SubLimitFeature.dailyLikes;
+  if (action == 'boost' || action == 'profile_boost') return SubLimitFeature.boost;
   if (action == 'backtrack') return SubLimitFeature.backtrack;
   if (code == 'SUBSCRIPTION_REQUIRED') return SubLimitFeature.generic;
   return SubLimitFeature.generic;
@@ -382,15 +413,15 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
+                            children: [
                               Text(
-                                '👑',
-                                style: TextStyle(fontSize: 20),
+                                SubscriptionProvider.instance.isPaid ? '⚡' : '👑',
+                                style: const TextStyle(fontSize: 20),
                               ),
-                              SizedBox(width: 10),
+                              const SizedBox(width: 10),
                               Text(
-                                'UPGRADE TO VIP',
-                                style: TextStyle(
+                                SubscriptionProvider.instance.isPaid ? 'GET ADD-ON PACK' : 'UPGRADE TO VIP',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,
                                   fontSize: 16,

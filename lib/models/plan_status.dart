@@ -78,29 +78,52 @@ class PlanStatus {
 
   // ── Convenience getters ───────────────────────────────────────────────────
 
-  bool get isFree => tier == 'FREE';
-  bool get isCore => tier == 'CORE';
-  bool get isPlus => tier == 'PLUS';
-  bool get isPro => tier == 'PRO';
-  bool get isElite => tier == 'ELITE';
-  bool get isPaid => tierRank > 0;
+  bool get isFree => tier.toUpperCase() == 'FREE';
+  bool get isCore => tier.toUpperCase() == 'CORE';
+  bool get isPlus => tier.toUpperCase() == 'PLUS';
+  bool get isPro => tier.toUpperCase() == 'PRO';
+  bool get isElite => tier.toUpperCase() == 'ELITE';
+  bool get isPaid => isElite || isPro || isPlus || isCore || (tierRank > 0 && !isFree) || isActive;
 
   int get dailyLikesLimitInt {
-    if (dailyLikesLimit == 'unlimited') return 9999;
+    if (isPaid || dailyLikesLimit == 'unlimited') return 9999;
     return int.tryParse(dailyLikesLimit.toString()) ?? 7;
   }
 
-  bool get hasUnlimitedLikes => dailyLikesLimit == 'unlimited';
+  bool get hasUnlimitedLikes => isPaid || dailyLikesLimit == 'unlimited' || isElite || isPro || isPlus || isCore;
   int get dailyLikesRemaining =>
       hasUnlimitedLikes ? 9999 : (dailyLikesLimitInt - dailyLikesUsed).clamp(0, 9999);
 
-  bool get canSuperLike => superlikesRemaining > 0;
-  bool get canBoost => boostsRemaining > 0;
+  bool get canLike => isPaid || hasUnlimitedLikes || dailyLikesRemaining > 0;
+  bool get isUnlimitedSuperlikes => isElite || superlikesRemaining >= 9999 || superlikesPerCycle >= 9999;
+  bool get canSuperLike => isElite || isUnlimitedSuperlikes || superlikesRemaining > 0;
+  bool get isUnlimitedBoosts => isElite || boostsRemaining >= 9999 || boostsPerCycle >= 9999;
+  bool get canBoost => isElite || isUnlimitedBoosts || boostsRemaining > 0;
+  bool get isUnlimitedPartyPlans => isElite;
+
+  int get dailyBacktrackLimitInt {
+    if (isElite || dailyBacktrackLimit == 'unlimited') return 9999;
+    return int.tryParse(dailyBacktrackLimit.toString()) ?? (isElite ? 9999 : (isPro ? 15 : (isPlus ? 10 : (isCore ? 5 : 3))));
+  }
+
+  bool get hasUnlimitedBacktracks => isElite || dailyBacktrackLimit == 'unlimited';
+  int get dailyBacktrackRemaining =>
+      hasUnlimitedBacktracks ? 9999 : (dailyBacktrackLimitInt - dailyBacktrackUsed).clamp(0, 9999);
+  bool get canBacktrack => hasUnlimitedBacktracks || dailyBacktrackRemaining > 0;
+
+  int get dailyMatchRequestsLimitInt {
+    if (isPaid || dailyMatchRequestsLimit == 'unlimited') return 9999;
+    return int.tryParse(dailyMatchRequestsLimit.toString()) ?? (isPaid ? 9999 : 3);
+  }
+
+  bool get hasUnlimitedMatchRequests => isPaid || dailyMatchRequestsLimit == 'unlimited';
+  int get dailyMatchRequestsRemaining =>
+      hasUnlimitedMatchRequests ? 9999 : (dailyMatchRequestsLimitInt - dailyMatchRequestsUsed).clamp(0, 9999);
 
   // ── Tier display helpers ──────────────────────────────────────────────────
 
   String get tierLabel {
-    switch (tier) {
+    switch (tier.toUpperCase()) {
       case 'ELITE': return '👑 Elite';
       case 'PRO':   return '🔮 Pro';
       case 'PLUS':  return '💜 Plus';
@@ -111,7 +134,7 @@ class PlanStatus {
 
   /// Hex color for tier ring/badge
   String get tierHexColor {
-    switch (tier) {
+    switch (tier.toUpperCase()) {
       case 'ELITE': return '#FFB703';
       case 'PRO':   return '#E100FF';
       case 'PLUS':  return '#7F00FF';
@@ -125,11 +148,15 @@ class PlanStatus {
   static const PlanStatus free = PlanStatus();
 
   factory PlanStatus.fromJson(Map<String, dynamic> json) {
+    final rawTier = (json['tier']?.toString() ?? 'FREE').toUpperCase();
+    final isEliteTier = rawTier == 'ELITE';
+    final isVip = isEliteTier || rawTier == 'PRO' || rawTier == 'PLUS' || rawTier == 'CORE' || json['isActive'] == true;
+
     return PlanStatus(
-      isActive: json['isActive'] == true,
-      tier: json['tier']?.toString() ?? 'FREE',
-      tierRank: _parseInt(json['tierRank'], 0),
-      planName: json['planName']?.toString() ?? 'Free',
+      isActive: isVip,
+      tier: rawTier,
+      tierRank: _parseInt(json['tierRank'], isEliteTier ? 4 : (rawTier == 'PRO' ? 3 : (rawTier == 'PLUS' ? 2 : (rawTier == 'CORE' ? 1 : 0)))),
+      planName: json['planName']?.toString() ?? (isEliteTier ? 'Elite' : rawTier),
       packageId: json['packageId']?.toString(),
       remainingDays: _parseInt(json['remainingDays'], 0),
       remainingHours: _parseInt(json['remainingHours'], 0),
@@ -137,23 +164,23 @@ class PlanStatus {
       isExpiringSoon: json['isExpiringSoon'] == true,
       isExpired: json['isExpired'] == true,
       expirationAlert: json['expirationAlert'] is Map ? Map<String, dynamic>.from(json['expirationAlert']) : null,
-      superlikesRemaining: _parseInt(json['superlikesRemaining'], 0),
-      superlikesPerCycle: _parseInt(json['superlikesPerCycle'], 0),
-      boostsRemaining: _parseInt(json['boostsRemaining'], 0),
-      boostsPerCycle: _parseInt(json['boostsPerCycle'], 0),
-      dailyLikesLimit: _parseLimit(json['dailyLikesLimit'], 7),
+      superlikesRemaining: isEliteTier ? 9999 : _parseInt(json['superlikesRemaining'], 0),
+      superlikesPerCycle: isEliteTier ? 9999 : _parseInt(json['superlikesPerCycle'], 0),
+      boostsRemaining: isEliteTier ? 9999 : _parseInt(json['boostsRemaining'], 0),
+      boostsPerCycle: isEliteTier ? 9999 : _parseInt(json['boostsPerCycle'], 0),
+      dailyLikesLimit: isVip ? 'unlimited' : _parseLimit(json['dailyLikesLimit'], 7),
       dailyLikesUsed: _parseInt(json['dailyLikesUsed'], 0),
-      dailyMatchRequestsLimit: _parseLimit(json['dailyMatchRequestsLimit'], 3),
+      dailyMatchRequestsLimit: isVip ? 'unlimited' : _parseLimit(json['dailyMatchRequestsLimit'], 3),
       dailyMatchRequestsUsed: _parseInt(json['dailyMatchRequestsUsed'], 0),
-      dailyPostsLimit: _parseLimit(json['dailyPostsLimit'], 5),
+      dailyPostsLimit: isVip ? 'unlimited' : _parseLimit(json['dailyPostsLimit'], 5),
       dailyPostsUsed: _parseInt(json['dailyPostsUsed'], 0),
-      dailyBacktrackLimit: _parseLimit(json['dailyBacktrackLimit'], 3),
+      dailyBacktrackLimit: isEliteTier ? 'unlimited' : _parseLimit(json['dailyBacktrackLimit'], 3),
       dailyBacktrackUsed: _parseInt(json['dailyBacktrackUsed'], 0),
-      hasPriorityVisibility: json['hasPriorityVisibility'] == true,
-      hasTrustBadge: json['hasTrustBadge'] == true,
-      hasEliteBadge: json['hasEliteBadge'] == true,
-      canSeeWhoLiked: json['canSeeWhoLiked'] == true,
-      hasHideProfile: json['hasHideProfile'] == true || json['features']?['hide_profile']?['enabled'] == true,
+      hasPriorityVisibility: json['hasPriorityVisibility'] == true || ['PLUS', 'PRO', 'ELITE'].contains(rawTier),
+      hasTrustBadge: json['hasTrustBadge'] == true || ['PRO', 'ELITE'].contains(rawTier),
+      hasEliteBadge: json['hasEliteBadge'] == true || isEliteTier,
+      canSeeWhoLiked: json['canSeeWhoLiked'] == true || isVip,
+      hasHideProfile: json['hasHideProfile'] == true || ['PLUS', 'PRO', 'ELITE'].contains(rawTier),
       features: Map<String, dynamic>.from(json['features'] ?? {}),
       usage: Map<String, dynamic>.from(json['usage'] ?? {}),
     );

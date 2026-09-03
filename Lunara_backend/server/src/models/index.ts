@@ -38,6 +38,10 @@ import Area from './Area';
 import ChatSubscription from './ChatSubscription';
 import SubscriptionPackage from './SubscriptionPackage';
 import UserSubscription from './UserSubscription';
+import SubscriptionUsage from './SubscriptionUsage';
+import SubscriptionFeature from './SubscriptionFeature';
+import SubscriptionPlanFeature from './SubscriptionPlanFeature';
+import SubscriptionTransaction from './SubscriptionTransaction';
 import SubscriptionAddonPackage from './SubscriptionAddonPackage';
 import UserAddon from './UserAddon';
 import EntitlementAuditLog from './EntitlementAuditLog';
@@ -691,6 +695,10 @@ export {
     ChatSubscription,
     SubscriptionPackage,
     UserSubscription,
+    SubscriptionUsage,
+    SubscriptionFeature,
+    SubscriptionPlanFeature,
+    SubscriptionTransaction,
     SubscriptionAddonPackage,
     UserAddon,
     EntitlementAuditLog,
@@ -986,6 +994,10 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             SmartWalletConfig,
             WalletPromotionalCampaign,
             AuditLog,
+            SubscriptionUsage,
+            SubscriptionFeature,
+            SubscriptionPlanFeature,
+            SubscriptionTransaction,
             SubscriptionAddonPackage,
             UserAddon,
             EntitlementAuditLog,
