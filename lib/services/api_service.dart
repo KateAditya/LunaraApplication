@@ -28,8 +28,12 @@ class ApiService {
   /// Reusable HTTP client instance for connection pooling & Keep-Alive
   static final http.Client _httpClient = http.Client();
 
-  /// Default network timeout to prevent hanging on flaky connections
-  static const Duration defaultTimeout = Duration(seconds: 12);
+  /// Default network timeout to prevent hanging on flaky connections while allowing
+  /// cloud services (Azure App Service / Postgres) sufficient time to respond under load.
+  static const Duration defaultTimeout = Duration(seconds: 35);
+
+  /// Extended timeout for transactional operations (booking creation, payment verification, refunds)
+  static const Duration transactionalTimeout = Duration(seconds: 45);
 
   /// Concurrent in-flight GET request deduplication pool to prevent duplicate network calls
   static final Map<String, Future<http.Response>> _inFlightGets = {};
@@ -765,6 +769,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/bookings',
+        timeout: transactionalTimeout,
         body: {
           'userId': userId,
           'venueId': venueId,
@@ -1413,7 +1418,7 @@ class ApiService {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept',
         body: {'userId': userId},
-        timeout: const Duration(seconds: 25),
+        timeout: transactionalTimeout,
       );
       if (response.body.isNotEmpty) {
         try {
@@ -1839,6 +1844,7 @@ class ApiService {
       final cleanPid = planId != null ? cleanBookingId(planId) : null;
       final response = await post(
         '/api/mobile/wallet/pay-with-wallet',
+        timeout: transactionalTimeout,
         body: {
           'userId': userId,
           'amount': amount,
@@ -2738,9 +2744,21 @@ class ApiService {
     }
 
     final future = () async {
-      final res = await _httpClient.get(uri, headers: headers).timeout(timeout ?? defaultTimeout);
-      _checkAutoblockedResponse(res);
-      return res;
+      int attempts = 0;
+      while (true) {
+        attempts++;
+        try {
+          final res = await _httpClient.get(uri, headers: headers).timeout(timeout ?? defaultTimeout);
+          _checkAutoblockedResponse(res);
+          return res;
+        } on TimeoutException {
+          if (attempts >= 2) rethrow;
+          debugPrint('[ApiService] GET $uri timed out on attempt $attempts, retrying once...');
+          await Future.delayed(const Duration(milliseconds: 500));
+        } catch (e) {
+          rethrow;
+        }
+      }
     }();
 
     _inFlightGets[inFlightKey] = future;
@@ -3804,7 +3822,7 @@ class ApiService {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept-invite',
         body: {'userId': userId},
-        timeout: const Duration(seconds: 25),
+        timeout: transactionalTimeout,
       );
       if (response.body.isNotEmpty) {
         try {
@@ -4025,6 +4043,7 @@ class ApiService {
       final userId = currentUserId; // fallback for auth extraction on backend
       final response = await post(
         '/api/mobile/bookings/$cleanId/initiate-large-party-payment',
+        timeout: transactionalTimeout,
         body: {
           'paymentMethod': 'razorpay',
           if (userId != null && userId.isNotEmpty) 'userId': userId,
@@ -4060,6 +4079,7 @@ class ApiService {
       final cleanId = cleanBookingId(bookingId);
       final response = await post(
         '/api/mobile/bookings/$cleanId/verify-large-party-payment',
+        timeout: transactionalTimeout,
         body: {
           'razorpay_order_id': razorpayOrderId,
           'razorpay_payment_id': razorpayPaymentId,
@@ -4165,6 +4185,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/bookings/$bookingId/pay-now',
+        timeout: transactionalTimeout,
         body: {
           'userId': userId,
           ...?paymentMethod == null ? null : {'paymentMethod': paymentMethod},
@@ -4662,6 +4683,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/group-parties',
+        timeout: transactionalTimeout,
         body: {
           'userId': userId,
           'venueId': venueId,
@@ -4707,6 +4729,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/group-parties/verify',
+        timeout: transactionalTimeout,
         body: {
           'razorpay_order_id': razorpayOrderId,
           'razorpay_payment_id': razorpayPaymentId,

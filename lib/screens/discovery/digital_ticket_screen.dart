@@ -617,11 +617,16 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         children: [
           IconButton(
             icon: Icon(Icons.close, color: color),
-            onPressed: () => Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const Dashboard()),
-              (route) => false,
-            ),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              } else {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const Dashboard()),
+                );
+              }
+            },
           ),
           Text(
             'DIGITAL TICKET',
@@ -1474,7 +1479,6 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   }
 
   Widget _buildFooter(BuildContext context) {
-    final hasPdf = widget.ticketUrl != null && widget.ticketUrl!.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(
@@ -1489,31 +1493,6 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                   text: 'DOWNLOAD TICKET',
                   onPressed: () => _downloadLocalTicket(context),
                 ),
-          const SizedBox(height: 12),
-          if (hasPdf) ...[
-            LunaraActionButton(
-              text: 'VIEW TICKET LINK',
-              onPressed: () async {
-                final pdfUri = Uri.parse(widget.ticketUrl!);
-                if (await canLaunchUrl(pdfUri)) {
-                  await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
-                } else if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Could not open the PDF URL.')),
-                  );
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-          ],
-          LunaraActionButton(
-            text: 'GO TO DASHBOARD',
-            onPressed: () => Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const Dashboard()),
-              (route) => false,
-            ),
-          ),
           Builder(
             builder: (ctx) {
               final String currentStatus = (widget.status ?? widget.booking?['status']?.toString() ?? '').toUpperCase();

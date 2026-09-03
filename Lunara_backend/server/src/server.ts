@@ -59,6 +59,7 @@ app.use(cors({
     origin: true,
     credentials: true,
 }));
+app.options('*', cors({ origin: true, credentials: true }));
 app.use(compression({ threshold: 256, level: 6 })); // High-speed gzip compression
 
 // Performance: Cache headers for read-heavy public endpoints (stale-while-revalidate)
