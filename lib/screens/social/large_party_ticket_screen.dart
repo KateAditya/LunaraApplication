@@ -485,7 +485,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                     const SnackBar(content: Text('🎉 Payment verified successfully! Your ticket is confirmed.'), backgroundColor: Colors.green),
                   );
                 }
+                return true;
               }
+              return false;
             } else {
               if (mounted) setState(() => _isPaying = false);
               if (mounted) {
@@ -493,13 +495,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                   const SnackBar(content: Text('Payment cancelled.'), backgroundColor: Colors.black87),
                 );
               }
+              return false;
             }
-            return;
           }
 
+          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
           final options = {
-            'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_123',
-            'order_id': orderId,
+            'key': effectiveKey,
+            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
             'amount': amountInPaise,
             'name': 'Lunara – Group Party',
             'description': 'Group Party at $venueName',
@@ -512,6 +515,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
           try {
             _razorpay?.open(options);
+            return 'gateway_launched';
           } catch (e) {
             debugPrint('Razorpay open error: $e');
             if (mounted) {
@@ -520,6 +524,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                 SnackBar(content: Text('Could not open payment gateway: $e'), backgroundColor: Colors.redAccent),
               );
             }
+            return false;
           }
         } else if (mounted) {
           setState(() => _isPaying = false);
@@ -529,7 +534,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
               backgroundColor: Colors.redAccent,
             ),
           );
+          return false;
         }
+        return false;
       },
       onHybridPayment: (shortfall) async {
         setState(() => _isPaying = true);
@@ -577,7 +584,9 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                     const SnackBar(content: Text('🎉 Payment verified successfully! Your ticket is confirmed.'), backgroundColor: Colors.green),
                   );
                 }
+                return true;
               }
+              return false;
             } else {
               if (mounted) setState(() => _isPaying = false);
               if (mounted) {
@@ -585,13 +594,14 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                   const SnackBar(content: Text('Payment cancelled.'), backgroundColor: Colors.black87),
                 );
               }
+              return false;
             }
-            return;
           }
 
+          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
           final options = {
-            'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_123',
-            'order_id': orderId,
+            'key': effectiveKey,
+            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
             'amount': shortfallPaise,
             'name': 'Lunara – Group Party Shortfall',
             'description': 'Group Party Shortfall at $venueName',
@@ -604,6 +614,7 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
           try {
             _razorpay?.open(options);
+            return 'gateway_launched';
           } catch (e) {
             debugPrint('Razorpay open error: $e');
             if (mounted) {
@@ -612,10 +623,13 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                 SnackBar(content: Text('Could not open payment gateway: $e'), backgroundColor: Colors.redAccent),
               );
             }
+            return false;
           }
         } else if (mounted) {
           setState(() => _isPaying = false);
+          return false;
         }
+        return false;
       },
     );
 

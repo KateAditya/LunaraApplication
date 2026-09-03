@@ -1918,6 +1918,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                         Navigator.pop(context); // Close the booking parameters bottom sheet
 
                         String? createdGroupPartyId;
+                        bool isWalletPaymentCompleted = false;
                         final rootContext = widget.rootContext;
 
                         final bool? sheetSuccess = await SmartCheckoutSheet.show(
@@ -1985,6 +1986,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                               );
 
                               if (verifySuccess) {
+                                isWalletPaymentCompleted = true;
                                 return true;
                               }
                             }
@@ -2126,28 +2128,33 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                     body: 'Your payment was verified successfully. Digital ticket generated!',
                                     data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
                                   );
-                                  if (rootContext.mounted) {
-                                    Navigator.push(
-                                      rootContext,
-                                      MaterialPageRoute(
-                                        builder: (_) => LargePartyTicketScreen(
-                                          booking: {
-                                            'id': createdGroupPartyId,
-                                            'bookingId': createdGroupPartyId,
-                                            'bookingDate': partyDateStr,
-                                            'partyDate': partyDateStr,
-                                            'startTime': formattedTime,
-                                            'status': 'confirmed',
-                                            'paymentStatus': 'paid',
-                                            'venue': widget.venue.toMap(),
-                                            'venueName': widget.venue.name,
-                                            'numberOfGuests': parsed,
-                                            'partySubject': 'Group Party',
-                                            'totalAmount': totalPrice,
-                                          },
-                                          venue: widget.venue.toMap(),
-                                        ),
-                                      ),
+                                  final navContext = rootContext.mounted ? rootContext : (NotificationNavigator.navigatorKey.currentContext ?? rootContext);
+                                  final partyTicketScreen = LargePartyTicketScreen(
+                                    booking: {
+                                      'id': createdGroupPartyId,
+                                      'bookingId': createdGroupPartyId,
+                                      'bookingDate': partyDateStr,
+                                      'partyDate': partyDateStr,
+                                      'startTime': formattedTime,
+                                      'status': 'confirmed',
+                                      'paymentStatus': 'paid',
+                                      'paymentMethod': 'UPI / Net Banking',
+                                      'venue': widget.venue.toMap(),
+                                      'venueName': widget.venue.name,
+                                      'numberOfGuests': parsed,
+                                      'partySubject': 'Group Party',
+                                      'totalAmount': totalPrice,
+                                    },
+                                    venue: widget.venue.toMap(),
+                                  );
+                                  if (navContext.mounted) {
+                                    Navigator.pushReplacement(
+                                      navContext,
+                                      MaterialPageRoute(builder: (_) => partyTicketScreen),
+                                    );
+                                  } else if (NotificationNavigator.navigatorKey.currentState != null) {
+                                    NotificationNavigator.navigatorKey.currentState!.pushReplacement(
+                                      MaterialPageRoute(builder: (_) => partyTicketScreen),
                                     );
                                   }
                                 } else {
@@ -2222,7 +2229,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
                             try {
                               rzp.open(options);
-                              return true;
+                              return 'gateway_launched';
                             } catch (e) {
                               debugPrint('Razorpay open error: $e');
                               if (createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
@@ -2392,28 +2399,33 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                                       body: 'Your payment was verified successfully. Digital ticket generated!',
                                       data: {'type': 'group_party_confirmed', 'partyId': createdGroupPartyId},
                                     );
-                                    if (rootContext.mounted) {
-                                      Navigator.push(
-                                        rootContext,
-                                        MaterialPageRoute(
-                                          builder: (_) => LargePartyTicketScreen(
-                                            booking: {
-                                              'id': createdGroupPartyId,
-                                              'bookingId': createdGroupPartyId,
-                                              'bookingDate': partyDateStr,
-                                              'partyDate': partyDateStr,
-                                              'startTime': formattedTime,
-                                              'status': 'confirmed',
-                                              'paymentStatus': 'paid',
-                                              'venue': widget.venue.toMap(),
-                                              'venueName': widget.venue.name,
-                                              'numberOfGuests': parsed,
-                                              'partySubject': 'Group Party',
-                                              'totalAmount': totalPrice,
-                                            },
-                                            venue: widget.venue.toMap(),
-                                          ),
-                                        ),
+                                    final navContext = rootContext.mounted ? rootContext : (NotificationNavigator.navigatorKey.currentContext ?? rootContext);
+                                    final partyTicketScreen = LargePartyTicketScreen(
+                                      booking: {
+                                        'id': createdGroupPartyId,
+                                        'bookingId': createdGroupPartyId,
+                                        'bookingDate': partyDateStr,
+                                        'partyDate': partyDateStr,
+                                        'startTime': formattedTime,
+                                        'status': 'confirmed',
+                                        'paymentStatus': 'paid',
+                                        'paymentMethod': 'Lunara Wallet',
+                                        'venue': widget.venue.toMap(),
+                                        'venueName': widget.venue.name,
+                                        'numberOfGuests': parsed,
+                                        'partySubject': 'Group Party',
+                                        'totalAmount': totalPrice,
+                                      },
+                                      venue: widget.venue.toMap(),
+                                    );
+                                    if (navContext.mounted) {
+                                      Navigator.pushReplacement(
+                                        navContext,
+                                        MaterialPageRoute(builder: (_) => partyTicketScreen),
+                                      );
+                                    } else if (NotificationNavigator.navigatorKey.currentState != null) {
+                                      NotificationNavigator.navigatorKey.currentState!.pushReplacement(
+                                        MaterialPageRoute(builder: (_) => partyTicketScreen),
                                       );
                                     }
                                     return;
@@ -2488,7 +2500,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
 
                             try {
                               rzp.open(rechargeOptions);
-                              return true;
+                              return 'gateway_launched';
                             } catch (e) {
                               debugPrint('Recharge Razorpay open error: $e');
                               if (rootContext.mounted) {
@@ -2504,7 +2516,7 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           },
                         );
 
-                        if (sheetSuccess == true && createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
+                        if (isWalletPaymentCompleted && sheetSuccess == true && createdGroupPartyId != null && createdGroupPartyId!.isNotEmpty) {
                           TopNotificationBanner.show(
                             title: 'Group Party Confirmed! 🥳',
                             body: 'Your party of $parsed guests at ${widget.venue.name} is fully confirmed. Digital ticket is ready!',

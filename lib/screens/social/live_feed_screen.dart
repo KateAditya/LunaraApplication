@@ -386,7 +386,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _onNotificationCreated(dynamic data) {
     if (!mounted || !context.mounted) return;
     if (data is Map) {
-      final notifMap = Map<String, dynamic>.from(data);
+      final rawMap = Map<String, dynamic>.from(data);
+      final notifMap = rawMap['notification'] is Map
+          ? Map<String, dynamic>.from(rawMap['notification'])
+          : rawMap;
       final recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
       final currentUid = ApiService.currentUserId ?? '';
       if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
@@ -397,7 +400,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'New Notification 🔔',
         body: notifMap['body'] ?? '',
-        data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
+        data: notifMap['data'] is Map
+            ? Map<String, dynamic>.from(notifMap['data'])
+            : (notifMap['metadata'] is Map ? Map<String, dynamic>.from(notifMap['metadata']) : notifMap),
       );
     } else {
       _loadFeed(showLoader: false);
@@ -770,7 +775,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     backgroundColor: Colors.green,
                   ),
                 );
+                return true;
               }
+              return false;
             } else {
               _pendingLargePartyBookingId = null;
               if (mounted) {
@@ -781,13 +788,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 );
               }
+              return false;
             }
-            return;
           }
 
+          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
           final options = {
-            'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_123',
-            'order_id': orderId,
+            'key': effectiveKey,
+            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
             'amount': amountInPaise,
             'name': 'Lunara – Group Party',
             'description': 'Group Party at $venueName',
@@ -800,6 +808,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           try {
             _razorpay?.open(options);
+            return 'gateway_launched';
           } catch (e) {
             debugPrint('Razorpay open error: $e');
             _pendingLargePartyBookingId = null;
@@ -811,6 +820,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               );
             }
+            return false;
           }
         } else if (mounted) {
           _pendingLargePartyBookingId = null;
@@ -820,7 +830,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.redAccent,
             ),
           );
+          return false;
         }
+        return false;
       },
       onHybridPayment: (shortfall) async {
         _pendingLargePartyBookingId = bookingId;
@@ -873,7 +885,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     backgroundColor: Colors.green,
                   ),
                 );
+                return true;
               }
+              return false;
             } else {
               _pendingLargePartyBookingId = null;
               if (mounted) {
@@ -884,13 +898,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 );
               }
+              return false;
             }
-            return;
           }
 
+          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
           final options = {
-            'key': razorpayKey.isNotEmpty ? razorpayKey : 'rzp_test_123',
-            'order_id': orderId,
+            'key': effectiveKey,
+            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
             'amount': shortfallPaise,
             'name': 'Lunara – Group Party Shortfall',
             'description': 'Group Party Shortfall at $venueName',
@@ -903,6 +918,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           try {
             _razorpay?.open(options);
+            return 'gateway_launched';
           } catch (e) {
             debugPrint('Razorpay open error: $e');
             _pendingLargePartyBookingId = null;
@@ -914,6 +930,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               );
             }
+            return false;
           }
         } else if (mounted) {
           _pendingLargePartyBookingId = null;
@@ -923,7 +940,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.redAccent,
             ),
           );
+          return false;
         }
+        return false;
       },
     );
 

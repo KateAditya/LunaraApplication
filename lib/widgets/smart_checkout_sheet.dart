@@ -291,15 +291,17 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                     } else {
                       final dynamic res = await widget.onHybridPayment(shortfall);
                       if (mounted) {
-                        final willPop = res == true || (res != false && res != null);
-                        setState(() {
-                          _isProcessing = false;
-                          if (willPop) _allowPop = true;
-                        });
+                        setState(() => _isProcessing = false);
                         if (res == true) {
+                          _allowPop = true;
                           navigator.pop(true);
-                        } else if (res != false && res != null) {
-                          navigator.pop(res);
+                        } else if (res == false) {
+                          // Keep sheet open so user can retry or adjust payment
+                        } else {
+                          // Asynchronous gateway launched (e.g. 'gateway_launched', or external flow)
+                          // Dismiss sheet WITHOUT returning true so ticket is not prematurely shown
+                          _allowPop = true;
+                          navigator.pop(false);
                         }
                       }
                     }
@@ -346,18 +348,17 @@ class _SmartCheckoutSheetState extends State<SmartCheckoutSheet> {
                   try {
                     final dynamic res = await widget.onDirectPayment();
                     if (mounted) {
-                      final willPop = res == true || (res != false && res != null);
-                      setState(() {
-                        _isProcessing = false;
-                        if (willPop) _allowPop = true;
-                      });
+                      setState(() => _isProcessing = false);
                       if (res == true) {
+                        _allowPop = true;
                         navigator.pop(true);
                       } else if (res == false) {
                         // Keep sheet open so user can retry or pay with wallet
                       } else {
-                        // Legacy callers returning void/null: pop
-                        navigator.pop(res);
+                        // Asynchronous gateway launched (e.g. Razorpay modal open, res == 'gateway_launched' or null)
+                        // Close sheet WITHOUT returning true so ticket is not prematurely shown
+                        _allowPop = true;
+                        navigator.pop(false);
                       }
                     }
                   } catch (e) {

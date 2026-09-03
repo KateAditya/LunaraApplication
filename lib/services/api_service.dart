@@ -1802,13 +1802,20 @@ class ApiService {
   }
 
   static String cleanBookingId(String rawId) {
+    final uuidRegex = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+    final match = uuidRegex.firstMatch(rawId);
+    if (match != null) {
+      return match.group(0)!;
+    }
     return rawId
+        .replaceAll('venue_booking_timeline_', '')
         .replaceAll('group_party_timeline_', '')
         .replaceAll('large_party_timeline_', '')
         .replaceAll('solo_booking_', '')
         .replaceAll('party_plan_timeline_', '')
         .replaceAll('notification_', '')
         .replaceAll('notif_', '')
+        .replaceAll('venue_booking_', '')
         .replaceAll('group_party_', '')
         .replaceAll('large_party_', '')
         .replaceAll('party_plan_', '')

@@ -71,9 +71,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   void _onSocketNotification(dynamic data) {
     if (!mounted || data == null) return;
-    final Map<String, dynamic> notifMap = data is Map
+    final Map<String, dynamic> rawMap = data is Map
         ? Map<String, dynamic>.from(data)
         : {};
+    final Map<String, dynamic> notifMap = rawMap['notification'] is Map
+        ? Map<String, dynamic>.from(rawMap['notification'])
+        : rawMap;
 
     final String recipientId =
         (notifMap['recipientUserId'] ??
@@ -93,7 +96,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       body: notifMap['body'] ?? '',
       data: notifMap['data'] is Map
           ? Map<String, dynamic>.from(notifMap['data'])
-          : notifMap,
+          : (notifMap['metadata'] is Map ? Map<String, dynamic>.from(notifMap['metadata']) : notifMap),
       senderData: notifMap['sender'] is Map
           ? Map<String, dynamic>.from(notifMap['sender'])
           : null,

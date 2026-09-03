@@ -65,9 +65,13 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
   @override
   void initState() {
     super.initState();
-    _initLocation();
     _startCountdown();
-    _initBookerProfile();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initLocation();
+        _initBookerProfile();
+      }
+    });
   }
 
   Future<void> _initBookerProfile() async {

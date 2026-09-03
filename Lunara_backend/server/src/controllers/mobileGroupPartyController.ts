@@ -61,7 +61,7 @@ export const createGroupParty = async (req: Request, res: Response): Promise<voi
             partyType: result.partyType,
             data: result.record,
             razorpayOrderId: result.razorpayOrderId || '',
-            razorpayKeyId: result.razorpayKeyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            razorpayKeyId: result.razorpayKeyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger',
             amount: result.amount || 0,
             currency: result.currency || 'INR'
         });

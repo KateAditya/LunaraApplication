@@ -110,8 +110,14 @@ export class NotificationService {
                     const { io } = require('../server');
                     if (io) {
                         const targetRoom = `user_${recipientUserId}`;
+                        const jsonNotif = notification.toJSON();
                         io.to(targetRoom).emit('notification_received', {
-                            notification: notification.toJSON(),
+                            ...jsonNotif,
+                            notification: jsonNotif,
+                        });
+                        io.to(targetRoom).emit('notification_created', {
+                            ...jsonNotif,
+                            notification: jsonNotif,
                         });
 
                         // Emit updated unread count

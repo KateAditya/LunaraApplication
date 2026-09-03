@@ -42,13 +42,19 @@ const DEFAULT_PACKAGES = [
 
 export const sanitizeBookingId = (raw: string | undefined | null): string => {
     if (!raw) return '';
-    return String(raw)
+    const str = String(raw).trim();
+    const uuidRegex = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+    const match = str.match(uuidRegex);
+    if (match) return match[0];
+    return str
+        .replace(/^venue_booking_timeline_/, '')
         .replace(/^group_party_timeline_/, '')
         .replace(/^large_party_timeline_/, '')
         .replace(/^solo_booking_/, '')
         .replace(/^party_plan_timeline_/, '')
         .replace(/^notification_/, '')
         .replace(/^notif_/, '')
+        .replace(/^venue_booking_/, '')
         .replace(/^group_party_/, '')
         .replace(/^large_party_/, '')
         .replace(/^party_plan_/, '')
@@ -315,7 +321,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
             success: true,
             data: booking,
             razorpayOrderId: razorpayOrder ? razorpayOrder.id : '',
-            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger',
             amount: razorpayOrder ? razorpayOrder.amount : 0,
             currency: razorpayOrder ? razorpayOrder.currency : 'INR',
             ticket: isFreeOrPaid ? buildTicket(booking, venueDetails, booking.ticketCode || '') : null
@@ -1573,13 +1579,13 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
 
                 const orderId = result.razorpayOrder?.id || result.paymentIntent?.razorpayOrderId || await createRazorpayOrderDirect(amount, groupParty.id);
                 await groupParty.update({ paymentId: orderId });
-                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger' });
             } catch (psErr: any) {
                 // PaymentService unavailable — fall back to direct Razorpay order creation
                 logger.warn('PaymentService unavailable for group party, using direct Razorpay fallback:', psErr?.message);
                 const orderId = await createRazorpayOrderDirect(amount, groupParty.id);
                 await groupParty.update({ paymentId: orderId });
-                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger' });
             }
         }
 
@@ -1659,13 +1665,13 @@ export const initiateLargePartyPayment = async (req: Request, res: Response) => 
 
                 const orderId = result.razorpayOrder?.id || result.paymentIntent?.razorpayOrderId || await createRazorpayOrderDirect(amount, booking.id);
                 await (booking as any).update({ razorpayOrderId: orderId });
-                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger' });
             } catch (psErr: any) {
                 // PaymentService unavailable — fall back to direct Razorpay order creation
                 logger.warn('PaymentService unavailable for booking, using direct Razorpay fallback:', psErr?.message);
                 const orderId = await createRazorpayOrderDirect(amount, booking.id);
                 await (booking as any).update({ razorpayOrderId: orderId });
-                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || '' });
+                return res.json({ success: true, razorpayOrderId: orderId, amount: Math.round(amount * 100), currency: 'INR', razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_T1rwVokR7tFger' });
             }
         }
 

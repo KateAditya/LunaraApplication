@@ -182,13 +182,21 @@ export class VenueBookingService {
         const planType = isUpcomingNight ? 'upcoming_night' : (isLargeParty ? 'large_group_party' : 'venue_booking');
 
         // Authoritative Booking Lead Time Validation for Solo Bookings
+        // Only paid solo bookings enforce pre-booking lead time cutoff; complimentary (free) walk-in reservations allow immediate entry as long as the slot time is not in the past
         if (goingMode === GoingMode.SOLO) {
-            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
-                BookingPolicyType.SOLO_BOOKING,
-                bookingStartDateTime
-            );
-            if (!leadTimeValidation.allowed) {
-                throw new Error(leadTimeValidation.reason || 'Booking lead time window has closed.');
+            if (pricing.totalAmount > 0) {
+                const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                    BookingPolicyType.SOLO_BOOKING,
+                    bookingStartDateTime
+                );
+                if (!leadTimeValidation.allowed) {
+                    throw new Error(leadTimeValidation.reason || 'Booking lead time window has closed.');
+                }
+            } else {
+                // Complimentary booking: ensure slot is not in the past (allow ongoing slot up to 30 mins)
+                if (bookingStartDateTime.getTime() < Date.now() - 30 * 60 * 1000) {
+                    throw new Error('Selected booking slot has already passed.');
+                }
             }
         }
 
@@ -248,6 +256,8 @@ export class VenueBookingService {
         try {
             if (booking.status === BookingStatus.CONFIRMED) {
                 await generateTicketForBookingHelper(booking.id);
+                await booking.reload();
+
                 await NotificationService.dispatch({
                     recipientUserId: userId,
                     eventType: 'booking_confirmed',
@@ -260,6 +270,14 @@ export class VenueBookingService {
                     idempotencyKey: `booking_created_${booking.id}`,
                     actionType: 'view_ticket',
                     deepLink: `/ticket/${booking.id}`,
+                    metadata: {
+                        bookingId: booking.id,
+                        venueId: venue.id,
+                        venueName: venue.name,
+                        ticketCode: booking.ticketCode,
+                        ticketUrl: (booking as any).ticketUrl,
+                        isSolo: goingMode === GoingMode.SOLO,
+                    },
                 });
 
                 // Notify Venue Owner
@@ -275,6 +293,25 @@ export class VenueBookingService {
                         priority: 'HIGH',
                         idempotencyKey: `venue_owner_booking_${booking.id}`,
                     }).catch(() => {});
+                }
+
+                // Real-time notification & live feed broadcast for confirmed booking
+                try {
+                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                    const { io } = require('../server');
+                    if (io && enrichedCard) {
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, status: 'confirmed' });
+                        io.to('live_feed').emit('live_feed_update', {
+                            type: 'venue_booking_activity',
+                            bookingId: booking.id,
+                            venueName: venue.name,
+                            status: 'confirmed',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                } catch (broadcastErr: any) {
+                    logger.warn('Failed to broadcast realtime live feed update for free booking: ' + broadcastErr.message);
                 }
             }
 
