@@ -14,6 +14,8 @@ import {
     BiLockAlt,
     BiUndo,
     BiCoinStack,
+    BiSliderAlt,
+    BiListUl,
 } from 'react-icons/bi';
 import walletApi, { type WalletConfig, type WalletTransactionItem, type WalletLedgerMetrics } from '../api/wallet';
 
@@ -189,338 +191,444 @@ export const WalletManagement: React.FC = () => {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-xl">
-                <div>
-                    <div className="flex items-center gap-3">
-                        <BiWallet className="text-3xl text-purple-300" />
-                        <h1 className="text-2xl font-bold">Smart Credit Wallet & Financial Engine</h1>
+        <div className="container-fluid py-4">
+            {/* Header Hero Banner */}
+            <div className="card border-0 shadow-sm mb-4" style={{ background: 'linear-gradient(135deg, #4338ca 0%, #312e81 60%, #1e1b4b 100%)', borderRadius: '16px' }}>
+                <div className="card-body p-4 text-white">
+                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                        <div>
+                            <div className="d-flex align-items-center gap-2 mb-1">
+                                <span className="p-2 rounded-3 bg-white bg-opacity-10 text-white">
+                                    <BiWallet size={26} />
+                                </span>
+                                <h4 className="fw-bold mb-0 text-white">Smart Credit Wallet & Financial Engine</h4>
+                            </div>
+                            <p className="mb-0 text-white-50 small">
+                                Central financial ledger for Lunara. Track recharges, locked commitment deposits, wallet refunds, and rewards.
+                            </p>
+                        </div>
+                        <div className="d-flex flex-wrap align-items-center gap-2">
+                            <button
+                                onClick={() => { setShowAdjustModal(true); setAdjustUserId(''); }}
+                                className="btn btn-light btn-sm fw-semibold d-flex align-items-center gap-2 shadow-sm"
+                            >
+                                <BiPlusCircle className="text-primary" size={16} /> Adjust Balance
+                            </button>
+                            <button
+                                onClick={() => { setShowFreezeModal(true); setFreezeUserId(''); }}
+                                className="btn btn-warning btn-sm fw-semibold d-flex align-items-center gap-2 shadow-sm text-dark"
+                            >
+                                <BiLock size={16} /> Freeze / Unfreeze
+                            </button>
+                            <button
+                                onClick={fetchLedger}
+                                className="btn btn-outline-light btn-sm d-flex align-items-center gap-1"
+                                title="Refresh data"
+                            >
+                                <BiRefresh size={16} className={loading ? 'fa-spin' : ''} /> Refresh
+                            </button>
+                        </div>
                     </div>
-                    <p className="text-purple-200 text-sm mt-1">
-                        Central financial ledger for Lunara. Track recharges, locked commitment deposits, wallet refunds, and rewards.
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => { setShowAdjustModal(true); setAdjustUserId(''); }}
-                        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-xl text-sm font-semibold transition"
-                    >
-                        <BiPlusCircle className="text-lg" /> Adjust User Balance
-                    </button>
-                    <button
-                        onClick={() => { setShowFreezeModal(true); setFreezeUserId(''); }}
-                        className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-xl text-sm font-semibold transition"
-                    >
-                        <BiLock className="text-lg" /> Freeze / Unfreeze
-                    </button>
                 </div>
             </div>
 
+            {/* Notification alert */}
             {notification && (
-                <div className={`p-4 rounded-xl text-sm font-medium flex items-center gap-2 ${notification.type === 'success' ? 'bg-emerald-900/40 border border-emerald-500 text-emerald-200' : 'bg-rose-900/40 border border-rose-500 text-rose-200'}`}>
-                    {notification.type === 'success' ? <BiCheckCircle className="text-lg text-emerald-400" /> : <BiXCircle className="text-lg text-rose-400" />}
-                    {notification.message}
+                <div className={`alert ${notification.type === 'success' ? 'alert-success' : 'alert-danger'} d-flex align-items-center gap-2 mb-4 shadow-sm`} role="alert">
+                    {notification.type === 'success' ? <BiCheckCircle size={20} /> : <BiXCircle size={20} />}
+                    <div>{notification.message}</div>
                 </div>
             )}
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Total Recharged</span>
-                        <BiWallet className="text-xl text-emerald-400" />
+            {/* Metrics Cards */}
+            <div className="row g-3 mb-4">
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Total Recharged</span>
+                                <span className="p-2 rounded bg-success-subtle text-success">
+                                    <BiWallet size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-success">₹{(metrics.totalRecharge || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Lifetime User Deposits</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalRecharge.toLocaleString()}</div>
-                    <span className="text-xs text-emerald-400 font-medium">Lifetime User Deposits</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Total Platform Spend</span>
-                        <BiSolidZap className="text-xl text-purple-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Platform Spend</span>
+                                <span className="p-2 rounded bg-primary-subtle text-primary">
+                                    <BiSolidZap size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-primary">₹{(metrics.totalSpent || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Bookings, VIP & Boosts</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalSpent.toLocaleString()}</div>
-                    <span className="text-xs text-purple-400 font-medium">Bookings, VIP & Boosts</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Locked Deposits</span>
-                        <BiLockAlt className="text-xl text-amber-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Locked Deposits</span>
+                                <span className="p-2 rounded bg-warning-subtle text-warning">
+                                    <BiLockAlt size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-warning">₹{(metrics.totalLockedDeposits || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Active Party Deposits</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalLockedDeposits.toLocaleString()}</div>
-                    <span className="text-xs text-amber-400 font-medium">Active Party Deposits</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Processed Refunds</span>
-                        <BiUndo className="text-xl text-cyan-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Processed Refunds</span>
+                                <span className="p-2 rounded bg-info-subtle text-info">
+                                    <BiUndo size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-info">₹{(metrics.totalRefunds || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Wallet Refunds Credited</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalRefunds.toLocaleString()}</div>
-                    <span className="text-xs text-cyan-400 font-medium">Wallet Refunds Credited</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Promotional Grants</span>
-                        <BiGift className="text-xl text-pink-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Promotional Grants</span>
+                                <span className="p-2 rounded bg-danger-subtle text-danger">
+                                    <BiGift size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-danger">₹{(metrics.totalPromotional || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Admin & Campaign Credits</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalPromotional.toLocaleString()}</div>
-                    <span className="text-xs text-pink-400 font-medium">Admin & Campaign Credits</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Cashback & Rewards</span>
-                        <BiCoinStack className="text-xl text-yellow-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Cashback & Rewards</span>
+                                <span className="p-2 rounded bg-secondary-subtle text-secondary">
+                                    <BiCoinStack size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1 text-secondary">₹{((metrics.totalCashback || 0) + (metrics.totalRewards || 0)).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">Earned Rewards & Cashback</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{(metrics.totalCashback + metrics.totalRewards).toLocaleString()}</div>
-                    <span className="text-xs text-yellow-400 font-medium">Earned Rewards & Cashback</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Total Available Pool</span>
-                        <BiWallet className="text-xl text-indigo-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Available Pool</span>
+                                <span className="p-2 rounded bg-purple-subtle text-purple" style={{ backgroundColor: 'rgba(132, 90, 223, 0.1)', color: '#845adf' }}>
+                                    <BiWallet size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1" style={{ color: '#845adf' }}>₹{(metrics.totalAvailablePool || 0).toLocaleString('en-IN')}</h3>
+                            <span className="text-muted small">System Unspent Balance</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">₹{metrics.totalAvailablePool.toLocaleString()}</div>
-                    <span className="text-xs text-indigo-400 font-medium">System Unspent Pool</span>
                 </div>
 
-                <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase">
-                        <span>Active / Frozen Wallets</span>
-                        <BiDetail className="text-xl text-slate-400" />
+                <div className="col-xl-3 col-md-6">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-body p-3">
+                            <div className="d-flex align-items-center justify-content-between mb-2">
+                                <span className="text-muted small fw-semibold text-uppercase">Active / Frozen</span>
+                                <span className="p-2 rounded bg-dark-subtle text-dark">
+                                    <BiDetail size={18} />
+                                </span>
+                            </div>
+                            <h3 className="fw-bold mb-1">
+                                {metrics.activeWalletsCount || 0}
+                                {metrics.frozenWalletsCount ? (
+                                    <span className="text-danger small fs-6 ms-2">({metrics.frozenWalletsCount} frozen)</span>
+                                ) : null}
+                            </h3>
+                            <span className="text-muted small">Total User Wallets</span>
+                        </div>
                     </div>
-                    <div className="text-2xl font-bold text-white mt-2">{metrics.activeWalletsCount} <span className="text-xs text-rose-400">/ {metrics.frozenWalletsCount} Frozen</span></div>
-                    <span className="text-xs text-slate-400 font-medium">Total Registered Wallets</span>
                 </div>
             </div>
 
-            {/* Config & Controls Section */}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-                <h2 className="text-lg font-bold text-white mb-4">Recharge & Wallet Controls</h2>
-                <form onSubmit={handleSaveConfig} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Minimum Recharge (₹)</label>
-                        <input
-                            type="number"
-                            value={config.minRechargeAmount}
-                            onChange={(e) => setConfig({ ...config, minRechargeAmount: Number(e.target.value) })}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Maximum Recharge (₹)</label>
-                        <input
-                            type="number"
-                            value={config.maxRechargeAmount}
-                            onChange={(e) => setConfig({ ...config, maxRechargeAmount: Number(e.target.value) })}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Suggested Chips (comma separated)</label>
-                        <input
-                            type="text"
-                            value={config.suggestedAmounts ? config.suggestedAmounts.join(', ') : ''}
-                            onChange={(e) => setConfig({
-                                ...config,
-                                suggestedAmounts: e.target.value.split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n) && n > 0),
-                            })}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Daily Recharge Limit per User (₹)</label>
-                        <input
-                            type="number"
-                            value={config.dailyRechargeLimit}
-                            onChange={(e) => setConfig({ ...config, dailyRechargeLimit: Number(e.target.value) })}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-400 mb-1">Monthly Recharge Limit per User (₹)</label>
-                        <input
-                            type="number"
-                            value={config.monthlyRechargeLimit}
-                            onChange={(e) => setConfig({ ...config, monthlyRechargeLimit: Number(e.target.value) })}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
-
-                    <div className="flex items-end">
-                        <label className="flex items-center gap-3 cursor-pointer">
+            {/* Wallet Settings Section */}
+            <div className="card border-0 shadow-sm mb-4">
+                <div className="card-header bg-transparent border-0 pt-3 pb-2 d-flex align-items-center gap-2">
+                    <BiSliderAlt size={18} className="text-primary" />
+                    <h5 className="fw-bold mb-0">Recharge & Wallet Controls</h5>
+                </div>
+                <div className="card-body">
+                    <form onSubmit={handleSaveConfig} className="row g-3">
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted">Minimum Recharge (₹)</label>
                             <input
-                                type="checkbox"
-                                checked={config.isWalletActive}
-                                onChange={(e) => setConfig({ ...config, isWalletActive: e.target.checked })}
-                                className="w-5 h-5 accent-purple-600 rounded"
-                            />
-                            <span className="text-sm font-semibold text-white">Smart Wallet Enabled</span>
-                        </label>
-                    </div>
-
-                    <div className="md:col-span-3 flex justify-end">
-                        <button
-                            type="submit"
-                            disabled={savingConfig}
-                            className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition disabled:opacity-50"
-                        >
-                            {savingConfig ? 'Saving Settings...' : 'Save Configuration'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            {/* Transaction Ledger Table */}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                    <div>
-                        <h2 className="text-lg font-bold text-white">Transaction Audit Ledger</h2>
-                        <p className="text-slate-400 text-xs mt-0.5">Immutable financial ledger records for recharges, deposits, refunds, and feature spend.</p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative">
-                            <BiSearch className="absolute left-3 top-2.5 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Search user name or email..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && fetchLedger()}
-                                className="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl pl-9 pr-4 py-2 focus:outline-none focus:border-purple-500 w-60"
+                                type="number"
+                                value={config.minRechargeAmount}
+                                onChange={(e) => setConfig({ ...config, minRechargeAmount: Number(e.target.value) })}
+                                className="form-control"
                             />
                         </div>
 
-                        <select
-                            value={typeFilter}
-                            onChange={(e) => setTypeFilter(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500"
-                        >
-                            <option value="ALL">All Types</option>
-                            <option value="recharge">Recharge</option>
-                            <option value="booking_payment">Booking Payment</option>
-                            <option value="commitment_deposit">Commitment Deposit Lock</option>
-                            <option value="deposit_unlock">Deposit Unlock</option>
-                            <option value="refund">Refund</option>
-                            <option value="vip_purchase">VIP Purchase</option>
-                            <option value="super_like_purchase">Super Likes</option>
-                            <option value="boost_purchase">Profile Boost</option>
-                            <option value="promotional_credit">Promotional Credit</option>
-                            <option value="cashback_credit">Cashback Credit</option>
-                            <option value="reward_credit">Reward Credit</option>
-                            <option value="admin_credit">Admin Credit</option>
-                            <option value="admin_debit">Admin Debit</option>
-                        </select>
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted">Maximum Recharge (₹)</label>
+                            <input
+                                type="number"
+                                value={config.maxRechargeAmount}
+                                onChange={(e) => setConfig({ ...config, maxRechargeAmount: Number(e.target.value) })}
+                                className="form-control"
+                            />
+                        </div>
 
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500"
-                        >
-                            <option value="ALL">All Statuses</option>
-                            <option value="success">Success</option>
-                            <option value="locked">Locked</option>
-                            <option value="pending">Pending</option>
-                            <option value="failed">Failed</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted">Suggested Chips (comma separated)</label>
+                            <input
+                                type="text"
+                                value={config.suggestedAmounts ? config.suggestedAmounts.join(', ') : ''}
+                                onChange={(e) => setConfig({
+                                    ...config,
+                                    suggestedAmounts: e.target.value.split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n) && n > 0),
+                                })}
+                                className="form-control"
+                            />
+                        </div>
 
-                        <button
-                            onClick={fetchLedger}
-                            className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition"
-                            title="Refresh"
-                        >
-                            <BiRefresh className={`text-lg ${loading ? 'animate-spin' : ''}`} />
-                        </button>
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted">Daily Limit per User (₹)</label>
+                            <input
+                                type="number"
+                                value={config.dailyRechargeLimit}
+                                onChange={(e) => setConfig({ ...config, dailyRechargeLimit: Number(e.target.value) })}
+                                className="form-control"
+                            />
+                        </div>
 
-                        <button
-                            onClick={handleExportCSV}
-                            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition"
-                        >
-                            <BiDownload className="text-base" /> Export CSV
-                        </button>
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted">Monthly Limit per User (₹)</label>
+                            <input
+                                type="number"
+                                value={config.monthlyRechargeLimit}
+                                onChange={(e) => setConfig({ ...config, monthlyRechargeLimit: Number(e.target.value) })}
+                                className="form-control"
+                            />
+                        </div>
+
+                        <div className="col-md-4 d-flex align-items-center pt-md-4">
+                            <div className="form-check form-switch">
+                                <input
+                                    type="checkbox"
+                                    role="switch"
+                                    id="walletActiveSwitch"
+                                    checked={config.isWalletActive}
+                                    onChange={(e) => setConfig({ ...config, isWalletActive: e.target.checked })}
+                                    className="form-check-input"
+                                    style={{ cursor: 'pointer' }}
+                                />
+                                <label className="form-check-label fw-semibold ms-2" htmlFor="walletActiveSwitch">
+                                    Smart Wallet Feature Enabled
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="col-12 text-end">
+                            <button
+                                type="submit"
+                                disabled={savingConfig}
+                                className="btn btn-primary px-4 fw-semibold"
+                            >
+                                {savingConfig ? 'Saving Settings...' : 'Save Configuration'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            {/* Transaction Ledger Table Card */}
+            <div className="card border-0 shadow-sm">
+                <div className="card-header bg-transparent border-0 pt-3 pb-2">
+                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                        <div>
+                            <div className="d-flex align-items-center gap-2">
+                                <BiListUl size={20} className="text-primary" />
+                                <h5 className="fw-bold mb-0">Transaction Audit Ledger</h5>
+                            </div>
+                            <p className="text-muted small mb-0 mt-0.5">
+                                Immutable financial ledger records for recharges, deposits, refunds, and spend.
+                            </p>
+                        </div>
+
+                        <div className="d-flex flex-wrap align-items-center gap-2">
+                            <div className="input-group input-group-sm" style={{ width: '220px' }}>
+                                <span className="input-group-text bg-light border-end-0">
+                                    <BiSearch className="text-muted" />
+                                </span>
+                                <input
+                                    type="text"
+                                    placeholder="Search user / email..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && fetchLedger()}
+                                    className="form-control form-control-sm border-start-0"
+                                />
+                            </div>
+
+                            <select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                className="form-select form-select-sm"
+                                style={{ width: '150px' }}
+                            >
+                                <option value="ALL">All Types</option>
+                                <option value="recharge">Recharge</option>
+                                <option value="booking_payment">Booking Payment</option>
+                                <option value="commitment_deposit">Commitment Deposit</option>
+                                <option value="deposit_unlock">Deposit Unlock</option>
+                                <option value="refund">Refund</option>
+                                <option value="vip_purchase">VIP Purchase</option>
+                                <option value="super_like_purchase">Super Likes</option>
+                                <option value="boost_purchase">Profile Boost</option>
+                                <option value="promotional_credit">Promotional Credit</option>
+                                <option value="cashback_credit">Cashback Credit</option>
+                                <option value="reward_credit">Reward Credit</option>
+                                <option value="admin_credit">Admin Credit</option>
+                                <option value="admin_debit">Admin Debit</option>
+                            </select>
+
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="form-select form-select-sm"
+                                style={{ width: '130px' }}
+                            >
+                                <option value="ALL">All Statuses</option>
+                                <option value="success">Success</option>
+                                <option value="locked">Locked</option>
+                                <option value="pending">Pending</option>
+                                <option value="failed">Failed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+
+                            <button
+                                onClick={handleExportCSV}
+                                className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                            >
+                                <BiDownload size={14} /> Export CSV
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs text-slate-300">
-                        <thead className="bg-slate-950 text-slate-400 font-semibold uppercase border-b border-slate-800">
-                            <tr>
-                                <th className="p-3">User</th>
-                                <th className="p-3">Type</th>
-                                <th className="p-3">Amount</th>
-                                <th className="p-3">Opening Bal</th>
-                                <th className="p-3">Closing Bal</th>
-                                <th className="p-3">Status</th>
-                                <th className="p-3">Reference</th>
-                                <th className="p-3">Date</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/50">
-                            {loading ? (
+                <div className="card-body p-0">
+                    <div className="table-responsive">
+                        <table className="table table-hover align-middle mb-0 small">
+                            <thead className="table-light">
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-500">Loading financial ledger...</td>
+                                    <th className="px-3 py-2">User</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Opening Bal</th>
+                                    <th>Closing Bal</th>
+                                    <th>Status</th>
+                                    <th>Reference</th>
+                                    <th className="px-3">Date & Time</th>
                                 </tr>
-                            ) : transactions.length === 0 ? (
-                                <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-500">No transactions found matching filters.</td>
-                                </tr>
-                            ) : (
-                                transactions.map((t) => (
-                                    <tr key={t.id} className="hover:bg-slate-800/30 transition">
-                                        <td className="p-3">
-                                            <div className="font-semibold text-white">{t.user ? `${t.user.firstName} ${t.user.lastName}` : 'System User'}</div>
-                                            <div className="text-[11px] text-slate-400">{t.user?.email || t.userId}</div>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={8} className="text-center py-5 text-muted">
+                                            <div className="spinner-border spinner-border-sm text-primary mb-2" />
+                                            <div>Loading financial ledger records...</div>
                                         </td>
-                                        <td className="p-3">
-                                            <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-slate-800 text-purple-300 uppercase">
-                                                {t.transactionType}
-                                            </span>
-                                        </td>
-                                        <td className={`p-3 font-semibold ${t.transactionType.includes('debit') || t.transactionType.includes('purchase') || t.transactionType.includes('deposit') ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                            {t.transactionType.includes('debit') || t.transactionType.includes('purchase') || t.transactionType === 'commitment_deposit' ? `-₹${t.amount}` : `+₹${t.amount}`}
-                                        </td>
-                                        <td className="p-3">₹{t.openingBalance}</td>
-                                        <td className="p-3 font-semibold text-white">₹{t.closingBalance}</td>
-                                        <td className="p-3">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.status === 'success' ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800' : t.status === 'locked' ? 'bg-amber-900/40 text-amber-400 border border-amber-800' : 'bg-rose-900/40 text-rose-400 border border-rose-800'}`}>
-                                                {t.status.toUpperCase()}
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-slate-400 font-mono text-[11px]">{t.reference || 'N/A'}</td>
-                                        <td className="p-3 text-slate-400">{new Date(t.createdAt).toLocaleString()}</td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : transactions.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={8} className="text-center py-5 text-muted">
+                                            No wallet transactions found matching filters.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    transactions.map((t) => {
+                                        const isDebit = t.transactionType.includes('debit') ||
+                                            t.transactionType.includes('purchase') ||
+                                            t.transactionType === 'commitment_deposit';
+                                        return (
+                                            <tr key={t.id}>
+                                                <td className="px-3">
+                                                    <div className="fw-semibold">
+                                                        {t.user ? `${t.user.firstName || ''} ${t.user.lastName || ''}`.trim() : 'System User'}
+                                                    </div>
+                                                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                                        {t.user?.email || t.userId}
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span className="badge bg-light text-dark border text-uppercase" style={{ fontSize: '0.68rem' }}>
+                                                        {t.transactionType.replace(/_/g, ' ')}
+                                                    </span>
+                                                </td>
+                                                <td className={`fw-bold ${isDebit ? 'text-danger' : 'text-success'}`}>
+                                                    {isDebit ? `-₹${t.amount}` : `+₹${t.amount}`}
+                                                </td>
+                                                <td>₹{t.openingBalance}</td>
+                                                <td className="fw-semibold">₹{t.closingBalance}</td>
+                                                <td>
+                                                    <span className={`badge rounded-pill ${
+                                                        t.status === 'success' ? 'bg-success-subtle text-success' :
+                                                        t.status === 'locked' ? 'bg-warning-subtle text-warning' :
+                                                        'bg-danger-subtle text-danger'
+                                                    }`}>
+                                                        {t.status.toUpperCase()}
+                                                    </span>
+                                                </td>
+                                                <td className="text-muted font-monospace" style={{ fontSize: '0.75rem' }}>
+                                                    {t.reference || '—'}
+                                                </td>
+                                                <td className="px-3 text-muted" style={{ fontSize: '0.75rem' }}>
+                                                    {new Date(t.createdAt).toLocaleString('en-IN')}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                {/* Pagination Controls */}
-                <div className="flex items-center justify-between mt-4 text-xs text-slate-400">
-                    <div>Page {page} of {totalPages}</div>
-                    <div className="flex gap-2">
+                {/* Pagination */}
+                <div className="card-footer bg-transparent border-0 d-flex justify-content-between align-items-center py-3">
+                    <span className="text-muted small">
+                        Page {page} of {totalPages || 1}
+                    </span>
+                    <div className="btn-group btn-group-sm">
                         <button
                             disabled={page <= 1}
                             onClick={() => setPage(page - 1)}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg disabled:opacity-40"
+                            className="btn btn-outline-secondary"
                         >
                             Previous
                         </button>
                         <button
                             disabled={page >= totalPages}
                             onClick={() => setPage(page + 1)}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg disabled:opacity-40"
+                            className="btn btn-outline-secondary"
                         >
                             Next
                         </button>
@@ -528,134 +636,153 @@ export const WalletManagement: React.FC = () => {
                 </div>
             </div>
 
-            {/* Adjust Modal */}
+            {/* Manual Adjustment Modal */}
             {showAdjustModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-                        <h3 className="text-lg font-bold text-white">Manual Balance Adjustment</h3>
-                        <div>
-                            <label className="block text-xs text-slate-400 mb-1">Target User ID</label>
-                            <input
-                                type="text"
-                                placeholder="UUID of the user"
-                                value={adjustUserId}
-                                onChange={(e) => setAdjustUserId(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs text-slate-400 mb-1">Adjustment Type</label>
-                                <select
-                                    value={adjustType}
-                                    onChange={(e) => setAdjustType(e.target.value as any)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                                >
-                                    <option value="credit">Credit (+)</option>
-                                    <option value="debit">Debit (-)</option>
-                                </select>
+                <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content shadow-lg border-0" style={{ borderRadius: '16px' }}>
+                            <div className="modal-header border-0 pb-0">
+                                <h5 className="modal-title fw-bold">Manual Balance Adjustment</h5>
+                                <button type="button" className="btn-close" onClick={() => setShowAdjustModal(false)} />
                             </div>
-                            <div>
-                                <label className="block text-xs text-slate-400 mb-1">Credit Category</label>
-                                <select
-                                    value={adjustCategory}
-                                    onChange={(e) => setAdjustCategory(e.target.value as any)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                                >
-                                    <option value="regular">Regular Cash</option>
-                                    <option value="promotional">Promotional</option>
-                                    <option value="reward">Reward Credits</option>
-                                </select>
+                            <div className="modal-body">
+                                <div className="mb-3">
+                                    <label className="form-label small fw-semibold text-muted">Target User ID (UUID)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+                                        value={adjustUserId}
+                                        onChange={(e) => setAdjustUserId(e.target.value)}
+                                        className="form-control"
+                                    />
+                                </div>
+                                <div className="row g-2 mb-3">
+                                    <div className="col-6">
+                                        <label className="form-label small fw-semibold text-muted">Adjustment Type</label>
+                                        <select
+                                            value={adjustType}
+                                            onChange={(e) => setAdjustType(e.target.value as any)}
+                                            className="form-select"
+                                        >
+                                            <option value="credit">Credit (+)</option>
+                                            <option value="debit">Debit (-)</option>
+                                        </select>
+                                    </div>
+                                    <div className="col-6">
+                                        <label className="form-label small fw-semibold text-muted">Credit Category</label>
+                                        <select
+                                            value={adjustCategory}
+                                            onChange={(e) => setAdjustCategory(e.target.value as any)}
+                                            className="form-select"
+                                        >
+                                            <option value="regular">Regular Cash</option>
+                                            <option value="promotional">Promotional</option>
+                                            <option value="reward">Reward Credits</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label small fw-semibold text-muted">Amount (₹)</label>
+                                    <input
+                                        type="number"
+                                        placeholder="e.g. 500"
+                                        value={adjustAmount}
+                                        onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
+                                        className="form-control"
+                                    />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label small fw-semibold text-muted">Reason (Audit Trail Required)</label>
+                                    <textarea
+                                        placeholder="Enter specific audit reason for this adjustment..."
+                                        value={adjustReason}
+                                        onChange={(e) => setAdjustReason(e.target.value)}
+                                        rows={3}
+                                        className="form-control"
+                                    />
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs text-slate-400 mb-1">Amount (₹)</label>
-                            <input
-                                type="number"
-                                placeholder="e.g. 500"
-                                value={adjustAmount}
-                                onChange={(e) => setAdjustAmount(e.target.value ? Number(e.target.value) : '')}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-slate-400 mb-1">Reason (Mandatory Audit Log)</label>
-                            <textarea
-                                placeholder="Enter specific reason for this adjustment..."
-                                value={adjustReason}
-                                onChange={(e) => setAdjustReason(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500 h-20"
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3 pt-2">
-                            <button
-                                onClick={() => setShowAdjustModal(false)}
-                                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleExecuteAdjustment}
-                                className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-4 py-2 rounded-xl"
-                            >
-                                Execute Adjustment
-                            </button>
+                            <div className="modal-footer border-0 pt-0">
+                                <button
+                                    type="button"
+                                    className="btn btn-light"
+                                    onClick={() => setShowAdjustModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={handleExecuteAdjustment}
+                                >
+                                    Execute Adjustment
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Freeze Modal */}
+            {/* Freeze / Unfreeze Modal */}
             {showFreezeModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-                        <h3 className="text-lg font-bold text-white">Wallet Lock / Freeze Controls</h3>
-                        <div>
-                            <label className="block text-xs text-slate-400 mb-1">User ID</label>
-                            <input
-                                type="text"
-                                placeholder="User UUID"
-                                value={freezeUserId}
-                                onChange={(e) => setFreezeUserId(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs text-slate-400 mb-1">Action</label>
-                            <select
-                                value={freezeAction}
-                                onChange={(e) => setFreezeAction(e.target.value as any)}
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                            >
-                                <option value="freeze">Freeze Wallet</option>
-                                <option value="unfreeze">Unfreeze Wallet</option>
-                            </select>
-                        </div>
-                        {freezeAction === 'freeze' && (
-                            <div>
-                                <label className="block text-xs text-slate-400 mb-1">Freeze Reason</label>
-                                <input
-                                    type="text"
-                                    placeholder="Reason for suspension..."
-                                    value={freezeReason}
-                                    onChange={(e) => setFreezeReason(e.target.value)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                                />
+                <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+                    <div className="modal-dialog modal-dialog-centered">
+                        <div className="modal-content shadow-lg border-0" style={{ borderRadius: '16px' }}>
+                            <div className="modal-header border-0 pb-0">
+                                <h5 className="modal-title fw-bold">Wallet Lock / Freeze Controls</h5>
+                                <button type="button" className="btn-close" onClick={() => setShowFreezeModal(false)} />
                             </div>
-                        )}
-                        <div className="flex justify-end gap-3 pt-2">
-                            <button
-                                onClick={() => setShowFreezeModal(false)}
-                                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleToggleFreeze}
-                                className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-4 py-2 rounded-xl"
-                            >
-                                Confirm Action
-                            </button>
+                            <div className="modal-body">
+                                <div className="mb-3">
+                                    <label className="form-label small fw-semibold text-muted">User ID (UUID)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="User UUID"
+                                        value={freezeUserId}
+                                        onChange={(e) => setFreezeUserId(e.target.value)}
+                                        className="form-control"
+                                    />
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label small fw-semibold text-muted">Action</label>
+                                    <select
+                                        value={freezeAction}
+                                        onChange={(e) => setFreezeAction(e.target.value as any)}
+                                        className="form-select"
+                                    >
+                                        <option value="freeze">Freeze Wallet</option>
+                                        <option value="unfreeze">Unfreeze Wallet</option>
+                                    </select>
+                                </div>
+                                {freezeAction === 'freeze' && (
+                                    <div className="mb-3">
+                                        <label className="form-label small fw-semibold text-muted">Freeze Reason</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Reason for suspension..."
+                                            value={freezeReason}
+                                            onChange={(e) => setFreezeReason(e.target.value)}
+                                            className="form-control"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-footer border-0 pt-0">
+                                <button
+                                    type="button"
+                                    className="btn btn-light"
+                                    onClick={() => setShowFreezeModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-warning text-dark fw-semibold"
+                                    onClick={handleToggleFreeze}
+                                >
+                                    Confirm Action
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -59,7 +59,8 @@ export const CancellationAnalytics: React.FC = () => {
         refetchInterval: 5 * 60 * 1000,
     } as any);
 
-    const analytics: CancellationAnalyticsData | undefined = data as any;
+    const rawData: any = data;
+    const analytics: CancellationAnalyticsData | undefined = (rawData?.kpis ? rawData : rawData?.data) || rawData;
     const kpis = analytics?.kpis;
     const charts = analytics?.charts;
 

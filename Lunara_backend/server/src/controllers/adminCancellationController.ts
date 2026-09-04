@@ -76,7 +76,7 @@ export class AdminCancellationController {
                         {
                             model: User,
                             as: 'creator',
-                            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
+                            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                         },
                         {
                             model: Venue,
@@ -92,7 +92,7 @@ export class AdminCancellationController {
                         {
                             model: User,
                             as: 'customer',
-                            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
+                            attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                         },
                         {
                             model: Venue,
@@ -235,7 +235,7 @@ export class AdminCancellationController {
                     {
                         model: User,
                         as: 'creator',
-                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                     },
                     {
                         model: Venue,
@@ -285,7 +285,7 @@ export class AdminCancellationController {
                     {
                         model: User,
                         as: 'customer',
-                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImage'],
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                     },
                     {
                         model: Venue,

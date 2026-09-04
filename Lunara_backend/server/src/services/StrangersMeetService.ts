@@ -1325,7 +1325,7 @@ export class StrangersMeetService {
                 {
                     model: User,
                     as: 'host',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl', 'upiId', 'accountNumber', 'bankName', 'ifscCode'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 },
                 {
                     model: User,
@@ -1411,13 +1411,14 @@ export class StrangersMeetService {
         const paidJoiners = allJoiners.filter((j: any) => j.paymentStatus === 'paid' || j.status === 'paid');
 
         // Extract host payout details
+        const hostPayout = (cancellation.hostPayoutDetails || {}) as any;
         const hostPayoutDetails = {
-            bankName: meet?.bankName || cancellation.host?.bankName,
-            accountNumber: meet?.accountNumber || cancellation.host?.accountNumber,
-            accountHolderName: meet?.accountHolderName || cancellation.host?.accountHolderName,
-            ifscCode: meet?.ifscCode || cancellation.host?.ifscCode,
-            upiId: meet?.upiId || cancellation.host?.upiId,
-            upiNumber: meet?.upiNumber,
+            bankName: meet?.bankName || hostPayout.bankName || (cancellation as any).hostBankName,
+            accountNumber: meet?.accountNumber || hostPayout.accountNumber || (cancellation as any).hostBankAccountNumber,
+            accountHolderName: meet?.accountHolderName || hostPayout.accountHolderName || (cancellation as any).hostBankHolderName,
+            ifscCode: meet?.ifscCode || hostPayout.ifscCode || (cancellation as any).hostBankIfsc,
+            upiId: meet?.upiId || hostPayout.upiId || (cancellation as any).hostUpiId,
+            upiNumber: meet?.upiNumber || hostPayout.upiNumber || (cancellation as any).hostUpiNumber,
         };
 
         // Calculate previews for standard policies (100%, 80%, 75%, 50%, 25%, 0%)
@@ -1469,11 +1470,11 @@ export class StrangersMeetService {
                 foodPreference: j.foodPreference,
                 drinkPreference: j.drinkPreference,
                 payoutDetails: {
-                    upiId: j.user?.upiId,
-                    bankName: j.user?.bankName,
-                    accountNumber: j.user?.accountNumber,
-                    ifscCode: j.user?.ifscCode,
-                    accountHolderName: j.user?.accountHolderName,
+                    upiId: j.upiId || (j.payoutDetails && j.payoutDetails.upiId),
+                    bankName: j.bankName || (j.payoutDetails && j.payoutDetails.bankName),
+                    accountNumber: j.accountNumber || (j.payoutDetails && j.payoutDetails.accountNumber),
+                    ifscCode: j.ifscCode || (j.payoutDetails && j.payoutDetails.ifscCode),
+                    accountHolderName: j.accountHolderName || (j.payoutDetails && j.payoutDetails.accountHolderName),
                 },
             })),
             policyPreviews,
@@ -2106,7 +2107,7 @@ export class StrangersMeetService {
                 {
                     model: User,
                     as: 'host',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'upiId', 'accountNumber'],
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 },
             ],
         });

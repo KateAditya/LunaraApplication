@@ -789,13 +789,29 @@ export const getBookingStats = async (req: Request, res: Response) => {
             }
         });
 
+        // Calculate total refunds for cancelled / refunded bookings
+        const totalRefundsResult = await Booking.sum('refundAmount', {
+            where: {
+                ...where,
+                [Op.or]: [
+                    { status: 'cancelled' },
+                    { paymentStatus: 'refunded' },
+                    { refundStatus: 'COMPLETED' },
+                    { refundAmount: { [Op.gt]: 0 } }
+                ]
+            }
+        }) || 0;
+
+        const netRevenue = Math.max(0, (totalRevenueResult || 0) - Number(totalRefundsResult));
+
         return res.json({
             success: true,
             data: {
                 totalBookings,
                 pendingBookings,
                 confirmedBookings,
-                totalRevenue: totalRevenueResult || 0
+                totalRevenue: netRevenue,
+                totalRefunds: Number(totalRefundsResult)
             }
         });
     } catch (err: any) {
@@ -1603,11 +1619,21 @@ export const getVenueRevenueDetails = async (req: Request, res: Response) => {
                 }
             }
 
+            if (b.refundAmount && Number(b.refundAmount) > 0) {
+                bRefund = Math.max(bRefund, Number(b.refundAmount));
+            }
+
+            if (b.status === 'cancelled' || b.paymentStatus === 'refunded') {
+                bPaid = Math.max(0, bPaid - bRefund);
+            } else if (bRefund > 0) {
+                bPaid = Math.max(0, bPaid - bRefund);
+            }
+
             if (bPaid > bAmount && bAmount > 0) {
                 bPaid = bAmount;
             }
 
-            const bPending = Math.max(0, bAmount - bPaid);
+            const bPending = Math.max(0, bAmount - bPaid - bRefund);
             summary.paidAmount += bPaid;
             summary.pendingAmount += bPending;
             summary.refundAmount += bRefund;

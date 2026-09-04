@@ -22,20 +22,25 @@ export const getPaymentSummary = async (req: Request, res: Response) => {
         });
 
         let totalRevenue = 0;
+        let totalRefunded = 0;
         let successfulCount = 0;
         let failedCount = 0;
         let pendingCount = 0;
+        let refundedCount = 0;
         const paymentMethodsMap: { [key: string]: number } = {};
         const revenueOverTimeMap: { [dateStr: string]: number } = {};
 
         allPayments.forEach((p: any) => {
             const amount = parseFloat(p.amount) || 0;
+            const refundAmount = parseFloat(p.refundAmount) || 0;
             const status = (p.status || '').toLowerCase();
             const method = p.paymentMethod || p.payment_method || 'razorpay';
 
-            if (status === 'successful') {
+            if (status === 'successful' || status === 'paid' || status === 'completed') {
                 successfulCount++;
-                totalRevenue += amount;
+                const netAmount = Math.max(0, amount - refundAmount);
+                totalRevenue += netAmount;
+                totalRefunded += refundAmount;
 
                 paymentMethodsMap[method] = (paymentMethodsMap[method] || 0) + 1;
 
@@ -43,8 +48,11 @@ export const getPaymentSummary = async (req: Request, res: Response) => {
                 if (createdAt) {
                     const d = new Date(createdAt);
                     const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
-                    revenueOverTimeMap[dateStr] = (revenueOverTimeMap[dateStr] || 0) + amount;
+                    revenueOverTimeMap[dateStr] = (revenueOverTimeMap[dateStr] || 0) + netAmount;
                 }
+            } else if (status === 'refunded') {
+                refundedCount++;
+                totalRefunded += amount;
             } else if (status === 'failed') {
                 failedCount++;
             } else {
@@ -69,10 +77,12 @@ export const getPaymentSummary = async (req: Request, res: Response) => {
             success: true,
             data: {
                 totalRevenue,
+                totalRefunded,
                 totalTransactions,
                 successfulCount,
                 failedCount,
                 pendingCount,
+                refundedCount,
                 averageTransactionValue,
                 paymentMethods,
                 revenueOverTime
