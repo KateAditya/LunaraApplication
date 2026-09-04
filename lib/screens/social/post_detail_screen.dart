@@ -2515,7 +2515,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ],
           );
-        } else if (jStatus == 'accepted' || jPayStatus == 'pending') {
+        } else if (jStatus == 'accepted') {
           final feeLabel = charges > 0 ? ' ₹${charges.toStringAsFixed(0)}' : '';
           return Container(
             width: double.infinity,

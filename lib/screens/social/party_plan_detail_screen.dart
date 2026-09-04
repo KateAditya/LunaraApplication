@@ -103,28 +103,49 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   void initState() {
     super.initState();
     final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    final currentUid = ApiService.currentUserId ?? '';
     final syncRequested = ApiService.isPartyPlanRequestedSync(targetPlanId);
     final syncReqData = ApiService.getCachedPartyPlanRequestSync(targetPlanId);
 
-    // The backend has no distinct terminal 'confirmed' status for a joiner
-    // request — a fully paid request stays 'accepted' forever, signalling
-    // completion only via joinerPaymentStatus == 'paid'. Normalize that here
-    // (mirrors live_feed_screen.dart's isConfirmed computation) so the same
-    // 'confirmed'/'paid' string checks used below actually match.
-    final syncRawStatus = (syncReqData?['status'] ?? 'pending')?.toString().toLowerCase();
-    final syncJoinerPaid = (syncReqData?['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
+    // Extract any existing request data passed directly in widget.plan
+    Map<String, dynamic>? embeddedReq;
+    if (widget.plan['myRequest'] is Map) {
+      embeddedReq = Map<String, dynamic>.from(widget.plan['myRequest']);
+    } else if (widget.plan['acceptedJoinerRequest'] is Map) {
+      final reqMap = Map<String, dynamic>.from(widget.plan['acceptedJoinerRequest']);
+      final reqId = (reqMap['requesterId'] ?? reqMap['requester']?['id'] ?? '').toString();
+      if (currentUid.isEmpty || reqId.isEmpty || reqId == currentUid) {
+        embeddedReq = reqMap;
+      }
+    } else if (widget.plan['requests'] is List) {
+      for (final r in widget.plan['requests']) {
+        if (r is Map) {
+          final reqId = (r['requesterId'] ?? r['requester']?['id'] ?? r['userId'] ?? '').toString();
+          if (currentUid.isNotEmpty && reqId == currentUid) {
+            embeddedReq = Map<String, dynamic>.from(r);
+            break;
+          }
+        }
+      }
+    }
+
+    final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
+    final effectiveReqData = syncReqData ?? embeddedReq;
+    final syncRawStatus = (effectiveReqData?['status'] ?? (isPartnerByPlan ? 'accepted' : 'pending'))?.toString().toLowerCase();
+    final syncJoinerPaid = isPartnerByPlan || (effectiveReqData?['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
     String? initialReqStatus = syncJoinerPaid ? 'confirmed' : syncRawStatus;
-    bool initialRequested = syncRequested;
+    bool initialRequested = syncRequested || isPartnerByPlan || embeddedReq != null;
     if (initialReqStatus == 'cancelled' || initialReqStatus == 'rejected' || initialReqStatus == 'declined' || initialReqStatus == 'payment_failed') {
-      initialRequested = false;
-      ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+      if (!isPartnerByPlan) {
+        initialRequested = false;
+        ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+      }
     }
 
     _alreadyRequested = (widget.plan['hasRequested'] == true || initialRequested) &&
-        initialReqStatus != 'payment_failed' &&
-        initialReqStatus != 'cancelled';
-    if (syncReqData != null) {
-      _activeRequestId = syncReqData['id']?.toString() ?? syncReqData['requestId']?.toString();
+        (isPartnerByPlan || (initialReqStatus != 'payment_failed' && initialReqStatus != 'cancelled'));
+    if (effectiveReqData != null || isPartnerByPlan) {
+      _activeRequestId = effectiveReqData?['id']?.toString() ?? effectiveReqData?['requestId']?.toString() ?? widget.plan['matchedRequestId']?.toString();
       _requestStatus = initialReqStatus;
     }
 
@@ -1154,13 +1175,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
     final bool isHost = _isHostPlan(widget.plan);
+    final bool isPartner = _isPartnerPlan(widget.plan);
     final String pLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
     final bool isConfirmed = isHost
         ? (widget.plan['hasConfirmedBooking'] == true ||
             pLife == 'match_confirmed' ||
             pLife == 'chat_enabled' ||
+            pLife == 'arrival_confirmation' ||
+            pLife == 'event_reminder' ||
             pLife == 'plan_completed')
-        : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+        : (isPartner || _requestStatus == 'confirmed' || _requestStatus == 'paid');
 
     if (!isHost && !isConfirmed) return const SizedBox.shrink();
 
@@ -1186,17 +1210,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
   Widget _buildArrivalConfirmationCard() {
     final bool isHost = _isHostPlan(widget.plan);
+    final bool isPartner = _isPartnerPlan(widget.plan);
     // A host's own plan-level fields genuinely reflect their own match (there's
     // only one host per plan). A non-host must only trust their own per-user
-    // _requestStatus (set exclusively from their own payment verification
-    // response) — otherwise a rejected/uninvolved viewer of a plan that got
-    // matched with someone else could be shown an arrival prompt that isn't theirs.
+    // _requestStatus / isPartner status.
     final isConfirmed = isHost
         ? (widget.plan['hasConfirmedBooking'] == true ||
             widget.plan['lifecycleStatus'] == 'match_confirmed' ||
             widget.plan['lifecycleStatus'] == 'chat_enabled' ||
+            widget.plan['lifecycleStatus'] == 'arrival_confirmation' ||
+            widget.plan['lifecycleStatus'] == 'event_reminder' ||
             widget.plan['lifecycleStatus'] == 'plan_completed')
-        : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+        : (isPartner || _requestStatus == 'confirmed' || _requestStatus == 'paid');
     if (!isConfirmed) return const SizedBox.shrink();
 
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
@@ -1592,26 +1617,48 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       // The host has no join request for their own plan. Avoid deriving the
       // host CTA from participant request cache/state.
       if (_isHostPlan(widget.plan)) return;
-      final myRequests = await ApiService.fetchMyPartyPlanRequests();
+      final currentUserId = ApiService.currentUserId ?? _currentUserId ?? '';
       final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
       if (targetPlanId.isEmpty) return;
-      
-      bool requested = false;
+
+      final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
+
+      bool requested = isPartnerByPlan || _alreadyRequested;
       bool isInvited = _isInvitedUser;
-      String? reqStatus;
-      String? reqId;
+      String? reqStatus = isPartnerByPlan ? 'confirmed' : _requestStatus;
+      String? reqId = _activeRequestId;
       bool foundInFreshList = false;
+
+      // Check plan['requests'] first
+      if (widget.plan['requests'] is List) {
+        for (final r in widget.plan['requests']) {
+          if (r is Map) {
+            final requesterId = (r['requesterId'] ?? r['requester']?['id'] ?? r['userId'] ?? '').toString();
+            if (currentUserId.isNotEmpty && requesterId == currentUserId) {
+              foundInFreshList = true;
+              reqId = r['id']?.toString() ?? reqId;
+              final rawStatus = (r['status'] ?? 'pending').toString().toLowerCase();
+              final joinerPaid = isPartnerByPlan || (r['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
+              reqStatus = joinerPaid ? 'confirmed' : rawStatus;
+              if (rawStatus != 'cancelled' && rawStatus != 'rejected' && rawStatus != 'declined') {
+                requested = true;
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      final myRequests = await ApiService.fetchMyPartyPlanRequests();
 
       for (final req in myRequests) {
         final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
         if (planId == targetPlanId) {
           foundInFreshList = true;
-          reqId = req['id']?.toString();
+          reqId = req['id']?.toString() ?? reqId;
           final rawStatus = (req['status'] ?? 'pending').toString().toLowerCase();
-          final joinerPaid = (req['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
-          // Same normalization as the constructor guess above: 'accepted' +
-          // joinerPaymentStatus == 'paid' means the request is actually
-          // confirmed, not still awaiting deposit.
+          final joinerPaid = isPartnerByPlan || (req['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
+          // Same normalization: 'accepted' + joinerPaymentStatus == 'paid' means confirmed
           reqStatus = joinerPaid ? 'confirmed' : rawStatus;
 
           bool isPaymentExpired = false;
@@ -1631,7 +1678,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               rawStatus != 'payment_failed' &&
               !isPaymentExpired) {
             requested = true;
-          } else {
+          } else if (!isPartnerByPlan) {
             // Cleared or expired request: clean up local cache so user can send a fresh request
             ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
             requested = false;
@@ -1650,13 +1697,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         }
       }
 
-      // Safety net: if this specific plan simply wasn't present in the fresh
-      // list (as opposed to being explicitly found with a cancelled/rejected
-      // status), that's ambiguous — it could mean the request genuinely
-      // doesn't exist, or it could be a transient/incomplete fetch. Don't
-      // regress a known-active request (constructor/sync-cache data already
-      // gave us an id) down to "Request to Join" on ambiguous data alone.
-      if (!foundInFreshList && _activeRequestId != null && _alreadyRequested) {
+      if (isPartnerByPlan) {
+        requested = true;
+        reqStatus = 'confirmed';
+      } else if (!foundInFreshList && _activeRequestId != null && _alreadyRequested) {
         requested = true;
         reqStatus = _requestStatus;
         reqId = _activeRequestId;
@@ -1664,9 +1708,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
       final planData = widget.plan;
       final visibility = (planData['visibility'] ?? '').toString().toLowerCase();
-      final currentUserId = ApiService.currentUserId;
       final hostId = (planData['userId'] ?? planData['hostId'] ?? '').toString();
-      if ((visibility == 'private' || visibility == 'both') && currentUserId != null && currentUserId != hostId && requested) {
+      if ((visibility == 'private' || visibility == 'both') && currentUserId.isNotEmpty && currentUserId != hostId && requested) {
         isInvited = true;
       }
 
@@ -2496,6 +2539,33 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     ].any((id) => id?.toString() == currentUid);
   }
 
+  bool _isPartnerPlan(Map<String, dynamic> plan) {
+    final currentUid = ApiService.currentUserId ?? _currentUserId ?? '';
+    if (currentUid.isEmpty) return false;
+
+    final role = (plan['role'] ?? plan['viewerRole'] ?? '').toString().toLowerCase();
+    if (role == 'partner' || role == 'joiner' || role == 'guest') return true;
+
+    if (plan['isAcceptedJoiner'] == true) return true;
+
+    final partnerId = (plan['partnerId'] ?? plan['partner_id'])?.toString();
+    if (partnerId != null && partnerId.isNotEmpty && partnerId == currentUid) return true;
+
+    if (plan['matchedPartner'] is Map) {
+      final mpId = (plan['matchedPartner']['id'] ?? plan['matchedPartner']['userId'])?.toString();
+      if (mpId != null && mpId == currentUid) return true;
+    }
+    if (plan['partner'] is Map) {
+      final pId = (plan['partner']['id'] ?? plan['partner']['userId'])?.toString();
+      if (pId != null && pId == currentUid) return true;
+    }
+    if (plan['acceptedJoinerRequest'] is Map) {
+      final reqId = (plan['acceptedJoinerRequest']['requesterId'] ?? plan['acceptedJoinerRequest']['requester']?['id'] ?? plan['acceptedJoinerRequest']['userId'])?.toString();
+      if (reqId != null && reqId == currentUid) return true;
+    }
+    return false;
+  }
+
   String _extractHostName(Map<String, dynamic> host, Map<String, dynamic> plan) {
     final name = host['name'] ?? host['fullName'];
     if (name != null && name.toString().trim().isNotEmpty && name.toString().trim() != 'Unknown') {
@@ -2875,12 +2945,22 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return _myPlanBanner();
     }
 
-    final currentUserId = ApiService.currentUserId ?? '';
+    final currentUserId = ApiService.currentUserId ?? _currentUserId ?? '';
     final String matchedReqId = (plan['matchedRequestId'] ?? plan['matched_request_id'] ?? '').toString();
     final String partnerId = (plan['partnerId'] ?? plan['partner_id'] ?? '').toString();
-    final bool isMyRequestConfirmed = _alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+    final bool isPartnerByPlan = _isPartnerPlan(plan);
+    final bool isMyRequestConfirmed = isPartnerByPlan || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'));
 
-    final bool isMatchedWithAnother = !isMyPost && !isMyRequestConfirmed && (
+    // Only show "partner already selected" to viewers who had an active request
+    // that was displaced. A fresh user with no request should see "Request to Join".
+    final bool hadActiveRequest = _alreadyRequested ||
+        _activeRequestId != null ||
+        _requestStatus == 'cancelled_partner_selected' ||
+        plan['reason'] == 'partner_already_selected' ||
+        plan['cancellationReason'] == 'partner_already_selected' ||
+        planStatus == 'partner_already_selected';
+
+    final bool isMatchedWithAnother = !isMyPost && !isMyRequestConfirmed && hadActiveRequest && (
       (matchedReqId.isNotEmpty && (_activeRequestId == null || _activeRequestId != matchedReqId)) ||
       (partnerId.isNotEmpty && (currentUserId.isEmpty || partnerId != currentUserId)) ||
       _requestStatus == 'cancelled_partner_selected' ||
@@ -2895,7 +2975,116 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: (_alreadyRequested && _requestStatus == 'pending' && !_isInvitedUser)
+        child: isMyRequestConfirmed
+            ? Row(
+                children: [
+                  // View Ticket
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        final requestData = widget.plan['myRequest'] is Map
+                            ? Map<String, dynamic>.from(widget.plan['myRequest'])
+                            : (widget.plan['acceptedJoinerRequest'] is Map
+                                ? Map<String, dynamic>.from(widget.plan['acceptedJoinerRequest'])
+                                : <String, dynamic>{});
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PartyPlanTicketScreen(
+                              request: requestData,
+                              plan: widget.plan,
+                              isHost: false,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        height: 54,
+                        decoration: BoxDecoration(
+                          gradient: LunaraTheme.purpleGradient,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'TICKET',
+                              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Open Chat
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        final host = _extractHost(widget.plan);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(user: {
+                              ...host,
+                              'contextType': 'party_plan',
+                              'planId': widget.plan['id']?.toString(),
+                            }),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        height: 54,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6D28D9), Color(0xFF9333EA)],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'CHAT',
+                              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!_isWindowClosed) ...[
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                      child: Container(
+                        height: 54,
+                        width: 54,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              )
+            : (_alreadyRequested && _requestStatus == 'pending' && !_isInvitedUser)
             ? SizedBox(
                 height: 58,
                 child: OutlinedButton.icon(
@@ -2952,81 +3141,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                 ],
               )
-            : (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))
-                ? Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            final host = _extractHost(widget.plan);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(user: {
-                                  ...host,
-                                  'contextType': 'party_plan',
-                                  'planId': widget.plan['id']?.toString(),
-                                }),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            height: 54,
-                            decoration: BoxDecoration(
-                              gradient: LunaraTheme.purpleGradient,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 18),
-                                SizedBox(width: 6),
-                                Text(
-                                  'OPEN CHAT',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (!_isWindowClosed) ...[
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-                            child: Container(
-                              height: 54,
-                              decoration: BoxDecoration(
-                                color: Colors.redAccent.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'CANCEL PLAN',
-                                    style: TextStyle(
-                                      color: Colors.redAccent,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  )
             : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
                     ? GestureDetector(
                         onTap: _isAcceptingInvite ? null : _handleAcceptInvite,
@@ -3412,7 +3526,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (rawDateTime != null) {
       try {
         final planTime = DateTime.parse(rawDateTime.toString()).toLocal();
-        if (planTime.isBefore(DateTime.now())) {
+        // Only treat as expired after a 4-hour grace window (matches live_feed_screen.dart).
+        if (DateTime.now().isAfter(planTime.add(const Duration(hours: 4)))) {
           return true;
         }
       } catch (_) {}

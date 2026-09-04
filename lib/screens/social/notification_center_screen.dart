@@ -15,6 +15,7 @@ import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'live_feed_screen.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import '../discovery/digital_ticket_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_countdown_button.dart';
@@ -3492,7 +3493,36 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => _markAsRead(item),
+                  onPressed: () {
+                    _markAsRead(item);
+                    final data = item['data'] is Map
+                        ? Map<String, dynamic>.from(item['data'])
+                        : (item['metadata'] is Map
+                            ? Map<String, dynamic>.from(item['metadata'])
+                            : <String, dynamic>{});
+                    final bookingData = Map<String, dynamic>.from(data['booking'] is Map ? data['booking'] : data);
+                    final venueMap = bookingData['venue'] is Map
+                        ? Map<String, dynamic>.from(bookingData['venue'])
+                        : {'name': bookingData['venueName'] ?? 'Venue'};
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DigitalTicketScreen(
+                          venue: venueMap,
+                          date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
+                          time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
+                          table: 'Confirmed Entry',
+                          guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
+                          package: 'Confirmed Entry',
+                          totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+                          ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
+                          status: 'CONFIRMED',
+                          booking: bookingData,
+                          user: ApiService.cachedCurrentUser,
+                        ),
+                      ),
+                    );
+                  },
                   icon: const Icon(
                     Icons.confirmation_number_outlined,
                     size: 14,
@@ -3516,19 +3546,39 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3E8FF),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Open Chat',
-                      style: TextStyle(
-                        color: LunaraTheme.electricViolet,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
+                child: GestureDetector(
+                  onTap: () {
+                    _markAsRead(item);
+                    final actor = item['actor'] ?? item['sender'];
+                    final data = item['data'] is Map
+                        ? Map<String, dynamic>.from(item['data'])
+                        : (item['metadata'] is Map
+                            ? Map<String, dynamic>.from(item['metadata'])
+                            : <String, dynamic>{});
+                    final partner = actor is Map
+                        ? Map<String, dynamic>.from(actor)
+                        : (data['user'] is Map ? Map<String, dynamic>.from(data['user']) : <String, dynamic>{});
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(user: partner),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Open Chat',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -3607,7 +3657,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 12),
           ElevatedButton.icon(
-            onPressed: () => _markAsRead(item),
+            onPressed: () {
+              _markAsRead(item);
+              final actor = item['actor'] ?? item['sender'];
+              final data = item['data'] is Map
+                  ? Map<String, dynamic>.from(item['data'])
+                  : (item['metadata'] is Map
+                      ? Map<String, dynamic>.from(item['metadata'])
+                      : <String, dynamic>{});
+              final userMap = actor is Map
+                  ? Map<String, dynamic>.from(actor)
+                  : (data['user'] is Map ? Map<String, dynamic>.from(data['user']) : <String, dynamic>{});
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(user: userMap),
+                ),
+              );
+            },
             icon: const Icon(
               Icons.forum_rounded,
               size: 14,
@@ -3692,7 +3759,36 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: () => _markAsRead(item),
+            onPressed: () {
+              _markAsRead(item);
+              final data = item['data'] is Map
+                  ? Map<String, dynamic>.from(item['data'])
+                  : (item['metadata'] is Map
+                      ? Map<String, dynamic>.from(item['metadata'])
+                      : <String, dynamic>{});
+              final bookingData = Map<String, dynamic>.from(data['booking'] is Map ? data['booking'] : data);
+              final venueMap = bookingData['venue'] is Map
+                  ? Map<String, dynamic>.from(bookingData['venue'])
+                  : {'name': bookingData['venueName'] ?? 'Venue'};
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DigitalTicketScreen(
+                    venue: venueMap,
+                    date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
+                    time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
+                    table: 'Standard Entry',
+                    guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
+                    package: 'Digital Pass',
+                    totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+                    ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
+                    status: 'CONFIRMED',
+                    booking: bookingData,
+                    user: ApiService.cachedCurrentUser,
+                  ),
+                ),
+              );
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -3839,19 +3935,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3E8FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Text(
-                'View Event',
-                style: TextStyle(
-                  color: LunaraTheme.electricViolet,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
+          GestureDetector(
+            onTap: () {
+              _markAsRead(item);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3E8FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Text(
+                  'View Event',
+                  style: TextStyle(
+                    color: LunaraTheme.electricViolet,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -3916,7 +4023,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           TextButton(
-            onPressed: () => _markAsRead(item),
+            onPressed: () {
+              _markAsRead(item);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const LunaraWalletScreen(),
+                ),
+              );
+            },
             child: const Text(
               'History',
               style: TextStyle(
