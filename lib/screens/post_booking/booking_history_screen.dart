@@ -746,7 +746,15 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
         final isSolo = booking['isSolo'] == true || booking['goingMode'] == 'solo' || booking['category'] == 'solo' || booking['bookingType'] == 'solo';
         final isStrangersMeet = !isSolo && (booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet');
-        final isPartyPlan = !isSolo && (booking['isPartyPlan'] == true || booking['bookingType'] == 'party_plan');
+        final isPartyPlan = !isSolo && (booking['isPartyPlan'] == true ||
+            booking['category'] == 'party_plan' ||
+            booking['bookingType'] == 'party_plan' ||
+            booking['type'] == 'party_plan' ||
+            booking['goingMode'] == 'plan' ||
+            (booking['ticketCode'] ?? booking['ticketId'])?.toString().toUpperCase().startsWith('PP-') == true ||
+            booking['plan'] != null ||
+            booking['partyPlanId'] != null ||
+            booking['planId'] != null);
         final isGroupParty = !isSolo && (booking['isGroupParty'] == true || booking['bookingType'] == 'group_party');
         final bool isEventTicketH = !isSolo && (booking['isUpcomingNight'] == true ||
             booking['isEventBooking'] == true ||
@@ -769,7 +777,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
         final table = isStrangersMeet
             ? 'STRANGER MEET'
-            : _formatTablePackage(booking['tablePackage']?.toString());
+            : (isPartyPlan ? 'PARTY PLAN' : _formatTablePackage(booking['tablePackage']?.toString()));
 
         final amtRaw = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'] ?? booking['charges'];
         final amtVal = double.tryParse(amtRaw?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ?? '0') ?? 0.0;

@@ -162,30 +162,43 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _getTicketCategory(Map<String, dynamic> booking) {
+    // 1. Check strong Party Plan indicators first (ensuring Host and Joiner party plans are NEVER misclassified as venue_booking)
+    final isPartyPlan = booking['isPartyPlan'] == true ||
+        booking['category']?.toString().toLowerCase() == 'party_plan' ||
+        booking['bookingType']?.toString().toLowerCase() == 'party_plan' ||
+        booking['type']?.toString().toLowerCase() == 'party_plan' ||
+        (booking['goingMode'] ?? booking['booking']?['goingMode'])?.toString().toLowerCase() == 'plan' ||
+        (booking['ticketCode'] ?? booking['ticketId'])?.toString().toUpperCase().startsWith('PP-') == true ||
+        booking['plan'] != null ||
+        booking['partyPlanId'] != null ||
+        booking['planId'] != null ||
+        booking['tablePackage']?.toString().toLowerCase().contains('party plan') == true ||
+        booking['partySubject']?.toString().toLowerCase().contains('party plan') == true ||
+        (booking['specialRequests'] != null && booking['specialRequests'].toString().contains('planId'));
+    if (isPartyPlan) return 'party_plan';
+
+    // 2. Check strong Strangers Meet indicators
+    final isStrangersMeet = booking['isStrangersMeet'] == true ||
+        booking['category']?.toString().toLowerCase() == 'strangers_meet' ||
+        booking['bookingType']?.toString().toLowerCase() == 'strangers_meet' ||
+        booking['type']?.toString().toLowerCase() == 'strangers_meet' ||
+        (booking['ticketCode'] ?? booking['ticketId'])?.toString().toUpperCase().startsWith('SM-') == true ||
+        booking['strangersMeet'] != null ||
+        booking['strangersMeetRequestId'] != null;
+    if (isStrangersMeet) return 'strangers_meet';
+
+    // 3. Check explicit server-provided category if non-generic
     if (booking['category'] != null && booking['category'].toString().isNotEmpty) {
       final cat = booking['category'].toString().toLowerCase().trim();
-      if (cat == 'party_plan' ||
-          cat == 'group_party' ||
+      if (cat == 'group_party' ||
           cat == 'large_party' ||
-          cat == 'strangers_meet' ||
           cat == 'solo' ||
-          cat == 'event_booking' ||
-          cat == 'venue_booking') {
+          cat == 'event_booking') {
         return cat;
       }
     }
 
     // Comprehensive fallback classification
-    final isPartyPlan = booking['isPartyPlan'] == true ||
-        booking['bookingType'] == 'party_plan' ||
-        booking['type'] == 'party_plan';
-    if (isPartyPlan) return 'party_plan';
-
-    final isStrangersMeet = booking['isStrangersMeet'] == true ||
-        booking['bookingType'] == 'strangers_meet' ||
-        booking['type'] == 'strangers_meet';
-    if (isStrangersMeet) return 'strangers_meet';
-
     final isLargeParty = booking['isLargeParty'] == true ||
         booking['isLargePartyRequest'] == true ||
         booking['tablePackage']?.toString().toLowerCase().contains('large_party') == true ||

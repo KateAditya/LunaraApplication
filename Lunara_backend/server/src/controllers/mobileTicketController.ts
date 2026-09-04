@@ -143,7 +143,7 @@ export class MobileTicketController {
                 }),
                 Booking.findAll({
                     where: { userId },
-                    attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'createdAt'],
+                    attributes: ['id', 'bookingDate', 'startTime', 'status', 'paymentStatus', 'adminApprovalStatus', 'totalAmount', 'numberOfGuests', 'tablePackage', 'goingMode', 'isLargePartyRequest', 'isUpcomingNight', 'partySubject', 'partyRequirement', 'partyDescription', 'mobileNumber', 'venueId', 'partyEventId', 'ticketUrl', 'ticketCode', 'specialRequests', 'createdAt'],
                     include: [
                         venueInclude,
                         userInclude,
@@ -349,7 +349,7 @@ export class MobileTicketController {
                     } catch (_) {}
                 }
 
-                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan';
+                const isPartyPlan = t.bookingType === 'party_plan' || Boolean(sourcePartyPlan) || sourceBooking?.goingMode === 'plan' || (sourceBooking?.goingMode as string)?.toLowerCase() === 'plan' || (t.ticketId && t.ticketId.startsWith('PP-'));
                 const partyPlanDt = sourcePartyPlan?.planDateTime ? new Date(sourcePartyPlan.planDateTime) : null;
                 const startDate = (isPartyPlan && partyPlanDt && !isNaN(partyPlanDt.getTime()))
                     ? partyPlanDt
@@ -460,8 +460,8 @@ export class MobileTicketController {
                     ticketId: t.ticketId,
                     ticketCode: t.ticketId,
                     bookingId: t.bookingId,
-                    bookingType: t.bookingType,
-                    category,
+                    bookingType: isPartyPlan ? 'party_plan' : t.bookingType,
+                    category: isPartyPlan ? 'party_plan' : category,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
                     bookingDate: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     startTime: startTimeStr,
@@ -562,6 +562,15 @@ export class MobileTicketController {
                 const bAny = b as any;
                 if (seenBookingIds.has(b.id) || (bAny.ticketCode && seenTicketIds.has(bAny.ticketCode))) continue;
 
+                // Skip party plan bookings: they are authoritatively synthesized in Step 4 (Joiner) and Step 5 (Host)
+                // with complete partner details, photos, and party_plan category
+                const isPlanBooking = (b.goingMode as string)?.toLowerCase() === 'plan' ||
+                    (typeof b.specialRequests === 'string' && b.specialRequests.includes('"planId"')) ||
+                    (bAny.ticketCode && bAny.ticketCode.startsWith('PP-'));
+                if (isPlanBooking) {
+                    continue;
+                }
+
                 const isLargePaid = b.paymentStatus === 'paid' || b.adminApprovalStatus === 'payment_done';
                 if (b.isLargePartyRequest && !isLargePaid) {
                     continue; // Large party must be paid before ticket is generated/shown
@@ -577,7 +586,6 @@ export class MobileTicketController {
                 seenBookingIds.add(b.id);
                 if (bAny.ticketCode) seenTicketIds.add(bAny.ticketCode);
 
-                const isPlanBooking = b.goingMode === 'plan';
                 let planStartAt: Date | null = null;
                 if (isPlanBooking && b.specialRequests) {
                     try {
@@ -638,7 +646,7 @@ export class MobileTicketController {
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: b.id,
-                    bookingType: isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : (isEventBooking ? 'event_booking' : 'venue_booking'))),
+                    bookingType: isPartyPlan ? 'party_plan' : (isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : (isEventBooking ? 'event_booking' : 'venue_booking')))),
                     category,
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: planStartAt || b.bookingDate,
@@ -670,7 +678,7 @@ export class MobileTicketController {
                         eventDate: bPartyEvent.eventDate,
                         entryPrice: bPartyEvent.entryPrice,
                     } : null,
-                    isPartyPlan: false,
+                    isPartyPlan,
                     isGroupParty,
                     isLargeParty,
                     isLargePartyRequest: isLargeParty,

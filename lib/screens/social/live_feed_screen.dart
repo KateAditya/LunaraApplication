@@ -2007,16 +2007,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         bookingData['startTime'] = cleanSt;
       }
       final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue', 'id': bookingData['venueId']};
-      final bool isLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0) > 20 ||
+      final dynamic rawLargeGuests = bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0;
+      final int gcInt = rawLargeGuests is num ? rawLargeGuests.toInt() : (int.tryParse(rawLargeGuests.toString()) ?? 0);
+      final bool isLarge = gcInt > 20 ||
           bookingData['isLargePartyRequest'] == true ||
           bookingData['goingMode'] == 'party_request' ||
           category.contains('large');
 
       if (status == 'confirmed' || status == 'paid') {
         if (!isLarge) {
-          final guestsCount = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1);
+          final dynamic rawTicketGuests = bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1;
+          final int guestsCount = rawTicketGuests is num ? rawTicketGuests.toInt() : (int.tryParse(rawTicketGuests.toString()) ?? 1);
           final bool isSolo = guestsCount <= 1;
           final dynamic rawAmt = bookingData['totalAmount'] ?? bookingData['amount'] ?? 0;
+          final double amtVal = rawAmt is num ? rawAmt.toDouble() : (double.tryParse(rawAmt.toString()) ?? 0.0);
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -2027,7 +2031,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 table: isSolo ? 'Solo Entry' : 'Standard Table',
                 guests: guestsCount.toString(),
                 package: isSolo ? 'Solo Entry' : 'Standard Table',
-                totalPrice: (rawAmt is num && rawAmt > 0) ? '₹${rawAmt.toStringAsFixed(0)}' : 'FREE (₹0)',
+                totalPrice: amtVal > 0 ? '₹${amtVal.toStringAsFixed(0)}' : 'FREE (₹0)',
                 ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item.id)?.toString(),
                 ticketUrl: bookingData['ticketUrl']?.toString(),
                 status: 'CONFIRMED',
@@ -2514,7 +2518,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return null;
     }
 
-    final int guestCount = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 1);
+    final dynamic rawGuests = item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 1;
+    final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 1);
     final bool isLargeOrGroup = guestCount >= 2 ||
         cat.contains('group_party') ||
         cat.contains('large_party') ||
@@ -2618,7 +2623,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? item['bookingType'] ?? '').toString().toLowerCase();
     final goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? item['metadata']?['goingMode'] ?? '').toString().toLowerCase();
-    final int guestCount = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 0);
+    final dynamic rawGuests = item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 0;
+    final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 0);
     final isLargeOrGroup = guestCount >= 2 ||
         item['isLargePartyRequest'] == true ||
         item['isLargeParty'] == true ||
@@ -2720,7 +2726,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
         continue; // Never render party plans or stranger meets as solo/table bookings!
       }
-      final int guestCount = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 1);
+      final dynamic rawGuests = booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 1;
+      final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 1);
       final isLargeOrGroup = guestCount >= 2 ||
           booking['isLargePartyRequest'] == true ||
           booking['isLargeParty'] == true ||
@@ -3191,12 +3198,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         partyMap['numberOfGuests'];
     if (rawGuests is num && rawGuests > 0) {
       guestCount = rawGuests.toInt();
+    } else if (rawGuests != null) {
+      final parsed = int.tryParse(rawGuests.toString());
+      if (parsed != null && parsed > 0) guestCount = parsed;
     } else {
       for (final e in entries) {
         final gc = e['guestCount'] ?? e['numberOfFriends'] ?? e['numberOfGuests'] ?? e['data']?['guestCount'];
-        if (gc != null && gc is num && gc > 0) {
+        if (gc is num && gc > 0) {
           guestCount = gc.toInt();
           break;
+        } else if (gc != null) {
+          final parsed = int.tryParse(gc.toString());
+          if (parsed != null && parsed > 0) {
+            guestCount = parsed;
+            break;
+          }
         }
       }
     }
@@ -3308,8 +3324,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         partyMap['refund_status'] ??
         entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['cancellationStatus'] ??
         entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['refundStatus'])?.toString();
-    final double? refundAmt = (partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) != null
-        ? ((partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) as num).toDouble()
+    final dynamic rawRefund = partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount'];
+    final double? refundAmt = rawRefund != null
+        ? (rawRefund is num ? rawRefund.toDouble() : double.tryParse(rawRefund.toString()))
         : null;
     final String? rejectionReason = (partyMap['cancellationRejectionReason'] ?? partyMap['rejectionReason'] ?? partyMap['adminNotes'])?.toString();
 
@@ -3596,12 +3613,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       timeStr = LunaraDateFormatter.normalizeTimeTo12Hour(timeStr);
     }
 
-    int guestCount = (bookingMap['numberOfGuests'] ?? bookingMap['guestCount'] ?? 1);
+    final dynamic rawSoloGuests = bookingMap['numberOfGuests'] ?? bookingMap['guestCount'] ?? 1;
+    int guestCount = rawSoloGuests is num ? rawSoloGuests.toInt() : (int.tryParse(rawSoloGuests.toString()) ?? 1);
     for (final e in entries) {
       final g = e['numberOfGuests'] ?? e['guestCount'] ?? e['data']?['guestCount'] ?? e['booking']?['numberOfGuests'];
-      if (g is int && g > 0) {
-        guestCount = g;
+      if (g is num && g > 0) {
+        guestCount = g.toInt();
         break;
+      } else if (g != null) {
+        final parsed = int.tryParse(g.toString());
+        if (parsed != null && parsed > 0) {
+          guestCount = parsed;
+          break;
+        }
       }
     }
 
@@ -4548,7 +4572,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bool isBothPlan = planVis == 'BOTH';
 
       if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
-        final double depositAmt = (planMap['depositAmount'] ?? 99.0) is num ? (planMap['depositAmount'] ?? 99.0).toDouble() : 99.0;
+        final dynamic rawDeposit = planMap['depositAmount'];
+        final double depositAmt = rawDeposit is num
+            ? rawDeposit.toDouble()
+            : (double.tryParse(rawDeposit?.toString() ?? '') ?? 99.0);
         final hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
@@ -5200,9 +5227,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (meetStatus == 'expired') isExpired = true;
     }
 
-    final double chargesPerHead = (meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0) is num
-        ? (meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0).toDouble()
-        : 0.0;
+    final dynamic rawCharges = meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0;
+    final double chargesPerHead = rawCharges is num
+        ? rawCharges.toDouble()
+        : (double.tryParse(rawCharges.toString()) ?? 0.0);
 
     Color accent = const Color(0xFF6366F1);
     String title = '🤝 Stranger Meet at $venueName';
