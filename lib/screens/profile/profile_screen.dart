@@ -21,7 +21,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   User? _displayUser;
-  User? _me;
   bool _isLoading = false;
   bool _isMe = false;
 
@@ -66,9 +65,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _onProfileUpdated() {
     ApiService.fetchProfile(forceRefresh: true).then((me) {
-      if (mounted && me != null) {
+      if (mounted && me != null && _isMe) {
         setState(() {
-          _me = me;
+          _displayUser = me;
         });
       }
     });
@@ -115,13 +114,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadAllProfiles() async {
     try {
-      final me = await ApiService.fetchProfile();
-      if (mounted) {
-        setState(() {
-          _me = me;
-        });
-      }
-
       if (widget.allProfiles != null && widget.allProfiles!.isNotEmpty) {
         if (mounted) {
           setState(() {

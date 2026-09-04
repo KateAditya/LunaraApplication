@@ -374,7 +374,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
 
                         final emailError = await AuthService.checkEmail(email);
                         if (emailError != null) {
-                          if (!mounted) return;
+                          if (!context.mounted) return;
                           setState(() => _isLoading = false);
                           TopErrorBanner.show(context, emailError);
                           return;
@@ -382,7 +382,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
 
                         final error = await AuthService.sendOtp(phone);
 
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         setState(() => _isLoading = false);
 
                         if (error != null) {
@@ -418,7 +418,7 @@ class _RegisterBasicScreenState extends State<RegisterBasicScreen> {
                           data,
                         );
 
-                        if (!mounted) return;
+                        if (!context.mounted) return;
 
                         Navigator.push(
                           context,

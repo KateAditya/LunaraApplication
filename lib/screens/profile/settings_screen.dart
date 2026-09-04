@@ -79,7 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _currentUser = await ApiService.fetchProfile();
                         setState(() => _isLoading = false);
                       }
-                      if (_currentUser != null && mounted) {
+                      if (_currentUser != null && context.mounted) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -109,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         await prefs.setBool('biometric_enabled', true);
                         setState(() => _biometricAuth = true);
                       } else {
-                        if (mounted) {
+                        if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Biometric authentication failed.'),
@@ -127,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         await prefs.setBool('biometric_enabled', false);
                         setState(() => _biometricAuth = false);
                       } else {
-                        if (mounted) {
+                        if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -180,7 +180,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             v,
                           );
 
-                      if (!success && mounted) {
+                      if (!success && context.mounted) {
                         setState(() => _pushNotifications = prev);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -190,7 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             backgroundColor: Colors.red,
                           ),
                         );
-                      } else if (mounted) {
+                      } else if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
@@ -516,7 +516,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         bool isUpdating = false;
 
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (modalCtx, setModalState) {
             void validateOld(String val) {
               setModalState(() {
                 if (val.isEmpty) {
@@ -558,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 24,
                 24,
                 24,
-                MediaQuery.of(context).viewInsets.bottom + 40,
+                MediaQuery.of(modalCtx).viewInsets.bottom + 40,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -815,7 +815,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                               if (res['success'] == true) {
                                 ApiService.profileUpdateNotifier.value++;
-                                Navigator.pop(ctx);
+                                if (ctx.mounted) Navigator.pop(ctx);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
@@ -887,7 +887,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         bool isError = false;
 
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (modalCtx, setModalState) {
             if (blockedUsers == null && !isError) {
               ApiService.getBlockedUsersDetails()
                   .then((list) {
@@ -987,13 +987,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             } else {
               content = ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.5,
+                  maxHeight: MediaQuery.of(modalCtx).size.height * 0.5,
                 ),
                 child: ListView.builder(
                   shrinkWrap: true,
                   padding: const EdgeInsets.only(top: 8, bottom: 24),
                   itemCount: blockedUsers!.length,
-                  itemBuilder: (context, index) {
+                  itemBuilder: (itemCtx, index) {
                     final user = blockedUsers![index];
                     final userId = user['id']?.toString() ?? '';
                     final firstName = user['firstName']?.toString() ?? '';
@@ -1016,7 +1016,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     final photoUrl = getFullPhotoUrl(profileImageUrl);
 
                     return StatefulBuilder(
-                      builder: (context, tileState) {
+                      builder: (tileCtx, tileState) {
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(12),
@@ -1274,13 +1274,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isScrollControlled: true,
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (modalCtx, setModalState) {
             return Padding(
               padding: EdgeInsets.fromLTRB(
                 24,
                 24,
                 24,
-                MediaQuery.of(context).viewInsets.bottom + 32,
+                MediaQuery.of(modalCtx).viewInsets.bottom + 32,
               ),
               child: SingleChildScrollView(
                 child: Column(
@@ -1587,7 +1587,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       await prefs.clear();
 
                                       if (mounted) {
-                                        Navigator.pop(ctx); // Close modal
+                                        if (ctx.mounted) Navigator.pop(ctx); // Close modal
                                         Navigator.pushAndRemoveUntil(
                                           context,
                                           MaterialPageRoute(

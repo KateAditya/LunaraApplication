@@ -463,9 +463,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
       if (!mounted) return;
 
-      final allUsersData = socialResults[0] as List<Map<String, dynamic>>;
-      final rawPartyPlans = socialResults[1] as List<Map<String, dynamic>>;
-      final rawStrangersMeet = socialResults[2] as List<Map<String, dynamic>>;
+      final allUsersData = socialResults[0];
+      final rawPartyPlans = socialResults[1];
+      final rawStrangersMeet = socialResults[2];
 
       List<Map<String, dynamic>> combinedPosts = [];
 

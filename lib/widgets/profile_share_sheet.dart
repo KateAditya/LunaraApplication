@@ -90,12 +90,14 @@ class ProfileShareSheet extends StatelessWidget {
   Future<void> _shareNatively(BuildContext context) async {
     try {
       final box = context.findRenderObject() as RenderBox?;
-      await Share.share(
-        _shareText,
-        subject: 'Check out $name on Lunara!',
-        sharePositionOrigin: box != null
-            ? box.localToGlobal(Offset.zero) & box.size
-            : null,
+      await SharePlus.instance.share(
+        ShareParams(
+          text: _shareText,
+          subject: 'Check out $name on Lunara!',
+          sharePositionOrigin: box != null
+              ? box.localToGlobal(Offset.zero) & box.size
+              : null,
+        ),
       );
     } catch (e) {
       if (!context.mounted) return;

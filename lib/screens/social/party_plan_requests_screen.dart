@@ -105,6 +105,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 paymentId,
                 signature,
               );
+              if (!mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -135,6 +136,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 'mock_payment',
                 'mock_signature',
               );
+              if (!mounted) return;
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -613,10 +615,6 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       text = Colors.red;
       label = lowerStatus == 'payment_failed' ? 'FAILED' : 'REJECTED';
     } else if (lowerStatus == 'accepted' || lowerStatus == 'payment_pending') {
-      final joinerPaid = paymentStatus == 'paid' || paymentStatus == 'refunded';
-      final hostPaid =
-          hostPaymentStatus == 'paid' || hostPaymentStatus == 'refunded';
-
       if (joinerPaid && hostPaid) {
         bg = Colors.green.withValues(alpha: 0.1);
         text = Colors.green;

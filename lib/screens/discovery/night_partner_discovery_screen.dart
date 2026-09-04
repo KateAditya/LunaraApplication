@@ -354,6 +354,14 @@ class _NightPartnerDiscoveryScreenState extends State<NightPartnerDiscoveryScree
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (isVerified) ...[
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.verified,
+                              color: LunaraTheme.electricViolet,
+                              size: 16,
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),

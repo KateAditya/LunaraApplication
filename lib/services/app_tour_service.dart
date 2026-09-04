@@ -62,6 +62,7 @@ class AppTourService {
     final hasSeen = prefs.getBool(_hasSeenDashboardTourKey) ?? false;
 
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -214,6 +215,7 @@ class AppTourService {
     final hasSeen = prefs.getBool(_hasSeenDiscoveryTourKey) ?? false;
 
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -263,6 +265,7 @@ class AppTourService {
     final hasSeen = prefs.getBool(_hasSeenPlanHubTourKey) ?? false;
 
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -352,6 +355,7 @@ class AppTourService {
     final hasSeen = prefs.getBool(_hasSeenVenueDetailTourKey) ?? false;
 
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -419,6 +423,7 @@ class AppTourService {
     final prefs = await SharedPreferences.getInstance();
     final hasSeen = prefs.getBool(_hasSeenCreatePlanTourKey) ?? false;
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -474,6 +479,7 @@ class AppTourService {
     final prefs = await SharedPreferences.getInstance();
     final hasSeen = prefs.getBool(_hasSeenStrangersMeetTourKey) ?? false;
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -529,6 +535,7 @@ class AppTourService {
     final prefs = await SharedPreferences.getInstance();
     final hasSeen = prefs.getBool(_hasSeenGroupPartyTourKey) ?? false;
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(
@@ -565,6 +572,7 @@ class AppTourService {
     final prefs = await SharedPreferences.getInstance();
     final hasSeen = prefs.getBool(_hasSeenGroupPartyBookingTourKey) ?? false;
     if (hasSeen) return;
+    if (!context.mounted) return;
 
     final targets = [
       TargetFocus(

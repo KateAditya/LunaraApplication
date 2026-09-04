@@ -391,11 +391,11 @@ class _PosterProfileScreenState extends State<PosterProfileScreen>
                           backgroundColor: LunaraTheme.primaryDeep,
                         ),
                       );
+                      final navigator = Navigator.of(context);
                       Future.delayed(const Duration(milliseconds: 500), () {
                         if (!mounted) return;
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
+                        navigator.pop();
+                        navigator.push(
                           MaterialPageRoute(
                             builder: (_) => const SplitPaymentScreen(),
                           ),

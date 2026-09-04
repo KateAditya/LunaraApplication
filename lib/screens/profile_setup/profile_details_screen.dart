@@ -162,7 +162,7 @@ class _ProfileDetailsScreenState extends State<ProfileDetailsScreen> {
 
                     await OnboardingService.saveProgress('profile_details', data);
 
-                    if (!mounted) return;
+                    if (!context.mounted) return;
 
                     Navigator.push(
                       context,

@@ -171,13 +171,25 @@ class _NightPartnerProfileScreenState extends State<NightPartnerProfileScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 16),
-                                Text(
-                                  age != null ? '$name, $age' : name,
-                                  style: const TextStyle(
-                                    fontFamily: 'AllroundGothic',
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      age != null ? '$name, $age' : name,
+                                      style: const TextStyle(
+                                        fontFamily: 'AllroundGothic',
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    if (isVerified) ...[
+                                      const SizedBox(width: 6),
+                                      const Icon(
+                                        Icons.verified,
+                                        color: LunaraTheme.electricViolet,
+                                        size: 22,
+                                      ),
+                                    ],
+                                  ],
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
