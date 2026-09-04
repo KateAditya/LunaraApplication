@@ -19,7 +19,7 @@ export const getPartyEvents = async (_req: Request, res: Response): Promise<void
                 {
                     model: Venue,
                     as: 'venue',
-                    attributes: ['id', 'name', 'address', 'city'],
+                    attributes: ['id', 'name', 'addressLine1', 'city'],
                     required: false,
                 }
             ]
@@ -45,7 +45,7 @@ export const getEventSummary = async (req: Request, res: Response): Promise<void
         if (!isAll) {
             event = await Ad.findOne({
                 where: { id: eventId, type: 'Party' },
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'city', 'address'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'city', 'addressLine1'] }]
             });
             if (!event) {
                 res.status(404).json({ success: false, message: 'Party event not found' });

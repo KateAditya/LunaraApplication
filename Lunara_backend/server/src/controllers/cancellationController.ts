@@ -895,7 +895,9 @@ export const getAdminCancelledPlans = async (req: Request, res: Response): Promi
                     model: PartyPlan,
                     as: 'plan',
                     attributes: ['id', 'message', 'planDateTime', 'venueId', 'userId', 'status'],
-                    include: venueId ? [{ model: (require('../models/Venue').default), as: 'venue', where: { id: venueId } }] : [{ model: (require('../models/Venue').default), as: 'venue' }],
+                    include: venueId 
+                        ? [{ model: (require('../models/Venue').default), as: 'venue', where: { id: venueId }, attributes: ['id', 'name', 'addressLine1', 'city', 'area'] }] 
+                        : [{ model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'area'] }],
                 },
                 {
                     model: User,
@@ -982,7 +984,7 @@ export const getAdminCancelledPlans = async (req: Request, res: Response): Promi
                 {
                     model: (require('../models/Venue').default),
                     as: 'venue',
-                    attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'],
+                    attributes: ['id', 'name', 'addressLine1', 'city'],
                 },
                 {
                     model: User,
@@ -1369,7 +1371,7 @@ export const getAdminCancellationDetail = async (req: Request, res: Response): P
                     model: PartyPlan,
                     as: 'plan',
                     include: [
-                        { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'] },
+                        { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city'] },
                     ],
                 },
                 {
@@ -1402,7 +1404,7 @@ export const getAdminCancellationDetail = async (req: Request, res: Response): P
         if (!cancellation) {
             const rawPlan = await PartyPlan.findByPk(cleanId, {
                 include: [
-                    { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city', 'imageUrl'] },
+                    { model: (require('../models/Venue').default), as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city'] },
                     {
                         model: User,
                         as: 'user',
