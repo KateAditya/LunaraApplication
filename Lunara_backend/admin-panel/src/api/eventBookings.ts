@@ -1,13 +1,13 @@
 import apiClient from './client';
 
 export const getPartyEvents = async () => {
-  const { data } = await apiClient.get('/admin/event-bookings/events');
+  const { data } = await apiClient.get('/api/admin/event-bookings/events');
   return data;
 };
 
 export const getEventSummary = async (eventId: string = 'all') => {
   const targetId = eventId || 'all';
-  const { data } = await apiClient.get(`/admin/event-bookings/${targetId}/summary`);
+  const { data } = await apiClient.get(`/api/admin/event-bookings/${targetId}/summary`);
   return data;
 };
 
@@ -24,7 +24,8 @@ export const getEventBookings = async (
   }
 ) => {
   const targetId = eventId || 'all';
-  const { data } = await apiClient.get(`/admin/event-bookings/${targetId}/bookings`, { params });
+  const { data } = await apiClient.get(`/api/admin/event-bookings/${targetId}/bookings`, { params });
   return data;
 };
+
 

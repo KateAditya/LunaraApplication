@@ -246,6 +246,7 @@ app.use('/api/mobile/strangers-meet', mobileStrangersMeetRoutes); // Strangers M
 app.use('/api/admin/strangers-meet', adminStrangersMeetRoutes);
 app.use('/api/admin/bookings', adminBookingsRoutes);   // Strangers Meet (Admin)
 app.use('/api/admin/event-bookings', adminEventBookingRoutes); // Event Bookings (Admin)
+app.use('/admin/event-bookings', adminEventBookingRoutes);     // Event Bookings Alias
 app.use('/api/mobile/cities', mobileCityRoutes);                   // Cities (Mobile App)
 app.use('/api/areas', areaRoutes);                                 // Areas API (Admin & App)
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes); // Subscriptions (Admin)
