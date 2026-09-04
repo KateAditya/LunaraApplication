@@ -1948,14 +1948,23 @@ export const cancelSoloBooking = async (req: Request, res: Response): Promise<vo
     try {
         const { id } = req.params;
         const userId = (req as any).user?.id || req.body?.userId;
-        const { reason } = req.body;
+        const { reason, payoutDetails, upiId, upiNumber, bankAccountNumber, bankIfsc, bankHolderName, payoutType } = req.body;
 
         if (!userId) {
             res.status(401).json({ success: false, message: 'Authentication required' });
             return;
         }
 
-        const result = await BookingPolicyService.cancelAndRefundSoloBooking(id, userId, reason);
+        const effectivePayoutDetails = payoutDetails || {
+            payoutType: payoutType || (upiId ? 'UPI_ID' : upiNumber ? 'UPI_NUMBER' : 'BANK_ACCOUNT'),
+            upiId,
+            upiNumber,
+            bankAccountNumber,
+            bankIfsc,
+            bankHolderName,
+        };
+
+        const result = await BookingPolicyService.cancelAndRefundSoloBooking(id, userId, reason, effectivePayoutDetails);
         res.json({
             success: true,
             message: result.message,
@@ -1964,6 +1973,7 @@ export const cancelSoloBooking = async (req: Request, res: Response): Promise<vo
                 status: result.booking.status,
                 refundAmount: result.refundAmount,
                 walletTransactionId: result.walletTransactionId,
+                refundMethod: result.refundMethod,
             },
         });
     } catch (err: any) {

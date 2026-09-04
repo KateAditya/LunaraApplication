@@ -40,6 +40,16 @@ export interface GroupPartyAttributes {
     reminder2hSent?: boolean;
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
+    // Refund & Payout columns (> ₹1500 direct payout vs <= ₹1500 wallet refund)
+    refundMethod?: string;
+    payoutType?: string;
+    upiId?: string;
+    upiNumber?: string;
+    bankAccountNumber?: string;
+    bankIfsc?: string;
+    bankHolderName?: string;
+    refundAmount?: number;
+    refundStatus?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -47,7 +57,7 @@ export interface GroupPartyAttributes {
 export interface GroupPartyCreationAttributes
     extends Optional<
         GroupPartyAttributes,
-        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'startTime' | 'expiresAt' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
+        'id' | 'status' | 'paymentStatus' | 'paymentId' | 'ticketCode' | 'ticketUrl' | 'startTime' | 'expiresAt' | 'createdAt' | 'updatedAt' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent' | 'refundMethod' | 'payoutType' | 'upiId' | 'upiNumber' | 'bankAccountNumber' | 'bankIfsc' | 'bankHolderName' | 'refundAmount' | 'refundStatus'
     > { }
 
 class GroupParty
@@ -75,6 +85,15 @@ class GroupParty
     public reminder2hSent!: boolean;
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
+    public refundMethod?: string;
+    public payoutType?: string;
+    public upiId?: string;
+    public upiNumber?: string;
+    public bankAccountNumber?: string;
+    public bankIfsc?: string;
+    public bankHolderName?: string;
+    public refundAmount?: number;
+    public refundStatus?: string;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -204,6 +223,54 @@ GroupParty.init(
             allowNull: false,
             defaultValue: false,
             field: 'reminder_30m_sent',
+        },
+        refundMethod: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            defaultValue: 'WALLET',
+            field: 'refund_method',
+        },
+        payoutType: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'payout_type',
+        },
+        upiId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'upi_id',
+        },
+        upiNumber: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'upi_number',
+        },
+        bankAccountNumber: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'bank_account_number',
+        },
+        bankIfsc: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'bank_ifsc',
+        },
+        bankHolderName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'bank_holder_name',
+        },
+        refundAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            defaultValue: 0,
+            field: 'refund_amount',
+        },
+        refundStatus: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            defaultValue: 'NONE',
+            field: 'refund_status',
         },
     },
     {

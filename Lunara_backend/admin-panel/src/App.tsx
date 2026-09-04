@@ -31,6 +31,7 @@ import { CancellationAnalytics } from './pages/CancellationAnalytics';
 import { WalletManagement } from './pages/WalletManagement';
 import { EventBookingPage } from './pages/EventBooking/EventBookingPage';
 import { BookingPolicySettings } from './pages/BookingPolicySettings';
+import { CancellationRequests } from './pages/CancellationRequests';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
 // Create React Query client
@@ -107,6 +108,7 @@ function AppContent() {
             <Route path="chat-settings" element={<ChatSettings />} />
             <Route path="subscriptions" element={<SubscriptionManagement />} />
             <Route path="wallet" element={<WalletManagement />} />
+            <Route path="cancellation-requests" element={<CancellationRequests />} />
             <Route path="cancelled-plans" element={<CancelledPartyPlans />} />
             <Route path="cancellation-analytics" element={<CancellationAnalytics />} />
             <Route path="booking-policies" element={<BookingPolicySettings />} />

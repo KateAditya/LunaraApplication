@@ -151,4 +151,40 @@ router.post(
     }
 );
 
+// ─── Group Party & With-Friends Cancellations (> ₹1,500) ────────────────────
+
+// GET /api/admin/bookings/group-party-cancellations
+router.get(
+    '/group-party-cancellations',
+    async (req: any, res: any) => {
+        const { AdminCancellationController } = await import('../controllers/adminCancellationController');
+        return AdminCancellationController.getGroupPartyCancellations(req, res);
+    }
+);
+
+// GET /api/admin/bookings/group-party-cancellations/:id
+router.get(
+    '/group-party-cancellations/:id',
+    [param('id').isUUID().withMessage('id must be a UUID'), validate],
+    async (req: any, res: any) => {
+        const { AdminCancellationController } = await import('../controllers/adminCancellationController');
+        return AdminCancellationController.getGroupPartyCancellationDetail(req, res);
+    }
+);
+
+// POST /api/admin/bookings/group-party-cancellations/:id/mark-paid
+router.post(
+    '/group-party-cancellations/:id/mark-paid',
+    [
+        param('id').isUUID().withMessage('id must be a UUID'),
+        body('paymentReference').notEmpty().withMessage('paymentReference is required'),
+        validate,
+    ],
+    async (req: any, res: any) => {
+        const { AdminCancellationController } = await import('../controllers/adminCancellationController');
+        return AdminCancellationController.markGroupPartyRefundPaid(req, res);
+    }
+);
+
 export default router;
+

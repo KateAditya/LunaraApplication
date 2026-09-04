@@ -2512,7 +2512,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return null;
     }
 
-    final bool isLargeOrGroup = cat.contains('group_party') ||
+    final int guestCount = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 1);
+    final bool isLargeOrGroup = guestCount >= 2 ||
+        cat.contains('group_party') ||
         cat.contains('large_party') ||
         cat.contains('large_party_approved') ||
         cat.contains('large_party_rejected') ||
@@ -2523,12 +2525,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         paymentCategory.contains('group_party') ||
         item['isLargePartyRequest'] == true ||
         item['isLargeParty'] == true ||
+        item['isGroupParty'] == true ||
+        item['isSmallGroupParty'] == true ||
         item['isLargeBooking'] == true ||
         item['goingMode'] == 'party_request' ||
+        item['goingMode'] == 'with_friends' ||
         item['payActionPayload']?['isLargeParty'] == true ||
         item['payActionPayload']?['goingMode'] == 'party_request' ||
         item['booking']?['isLargePartyRequest'] == true ||
         item['booking']?['goingMode'] == 'party_request' ||
+        item['booking']?['goingMode'] == 'with_friends' ||
         title.contains('large party') ||
         title.contains('group party') ||
         body.contains('large party') ||
@@ -2610,12 +2616,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? item['bookingType'] ?? '').toString().toLowerCase();
     final goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? item['metadata']?['goingMode'] ?? '').toString().toLowerCase();
-    final isLargeOrGroup = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? 0) > 20 ||
+    final int guestCount = (item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 0);
+    final isLargeOrGroup = guestCount >= 2 ||
         item['isLargePartyRequest'] == true ||
+        item['isLargeParty'] == true ||
         item['isGroupParty'] == true ||
+        item['isSmallGroupParty'] == true ||
+        item['isLargeBooking'] == true ||
         cat.contains('group_party') ||
         cat.contains('large_party') ||
-        goingMode == 'party_request';
+        goingMode == 'party_request' ||
+        goingMode == 'with_friends';
 
     if (isLargeOrGroup) {
       return null;
@@ -2707,12 +2718,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
         continue; // Never render party plans or stranger meets as solo/table bookings!
       }
-      final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
+      final int guestCount = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 1);
+      final isLargeOrGroup = guestCount >= 2 ||
           booking['isLargePartyRequest'] == true ||
+          booking['isLargeParty'] == true ||
+          booking['isGroupParty'] == true ||
+          booking['isSmallGroupParty'] == true ||
+          booking['isLargeBooking'] == true ||
           (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
-          (booking['isSmallGroupParty'] == true);
+          (booking['goingMode'] ?? '').toString().toLowerCase() == 'with_friends';
       if (isLargeOrGroup) {
-        final gpId = _extractGroupPartyId(booking);
+        final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString();
         if (gpId != null && gpId.isNotEmpty) {
           groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
         }
@@ -2728,20 +2744,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
         continue;
       }
-      final isLargeOrGroup = (booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 0) > 20 ||
-          booking['isLargePartyRequest'] == true ||
-          (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
-          (booking['isSmallGroupParty'] == true);
-      if (isLargeOrGroup) {
-        final gpId = _extractGroupPartyId(booking);
-        if (gpId != null && gpId.isNotEmpty) {
-          groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
-        }
-      } else {
-        final soloId = _extractSoloBookingId(booking);
-        if (soloId != null && soloId.isNotEmpty) {
-          soloBookingGroups.putIfAbsent(soloId, () => []).add(booking);
-        }
+      final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+      if (gpId != null && gpId.isNotEmpty) {
+        groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
       }
     }
 
@@ -2790,12 +2795,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // 5. Build Exactly ONE Authoritative Smart Card per Solo & Venue Table Booking
     for (final entry in soloBookingGroups.entries) {
       final bookingId = entry.key;
+      final cleanId = ApiService.cleanBookingId(bookingId);
+      if (processedBookingIds.contains(bookingId) || processedBookingIds.contains(cleanId)) {
+        continue; // Prevent duplicate solo card when party card was already built!
+      }
       final bookingEntries = entry.value;
       final smartCard = _buildAuthoritativeSoloBookingCard(bookingId, bookingEntries, currentUserId);
       if (smartCard != null) {
         items.add(smartCard);
         processedBookingIds.add(bookingId);
-        final cleanId = ApiService.cleanBookingId(bookingId);
         if (cleanId.isNotEmpty) processedBookingIds.add(cleanId);
         for (final e in bookingEntries) {
           final bId = e['bookingId']?.toString() ?? e['id']?.toString() ?? e['data']?['bookingId']?.toString();
@@ -3270,8 +3278,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final String? cancelStatus = (partyMap['cancellationStatus'] ??
         partyMap['cancellation_status'] ??
-        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null, orElse: () => <String, dynamic>{})['cancellationStatus'] ??
-        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null, orElse: () => <String, dynamic>{})['cancellation_status'])?.toString();
+        partyMap['refundStatus'] ??
+        partyMap['refund_status'] ??
+        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['cancellationStatus'] ??
+        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['refundStatus'])?.toString();
     final double? refundAmt = (partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) != null
         ? ((partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount']) as num).toDouble()
         : null;
@@ -3325,15 +3335,55 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _markGroupPartyAsRead(entries);
         _initiateLargePartyPayment(partyMap);
       };
-    } else if (overallStatus == 'cancelled' || cancelStatus == 'COMPLETED' || cancelStatus == 'APPROVED' || cancelStatus == 'REFUND_PROCESSING' || cancelStatus == 'REFUND_PAID') {
-      cardTitle = isLargeParty ? 'Large Party Cancelled ❌' : 'Group Party Cancelled ❌';
-      if (refundAmt != null && refundAmt > 0) {
-        cardBody = 'Your party at $venueName was cancelled. A refund of ₹${refundAmt.toInt()} has been processed.';
+    } else if (overallStatus == 'cancelled' ||
+        cancelStatus == 'COMPLETED' ||
+        cancelStatus == 'APPROVED' ||
+        cancelStatus == 'REFUND_PROCESSING' ||
+        cancelStatus == 'REFUND_PAID' ||
+        cancelStatus == 'PENDING_PAYOUT') {
+      final bool isRefundCompleted = cancelStatus == 'COMPLETED' ||
+          cancelStatus == 'REFUND_PAID' ||
+          partyMap['refundStatus'] == 'COMPLETED';
+      final bool isRefundPendingPayout = cancelStatus == 'REFUND_PROCESSING' ||
+          cancelStatus == 'PENDING_PAYOUT' ||
+          partyMap['refundStatus'] == 'PENDING_PAYOUT';
+
+      if (isRefundCompleted) {
+        cardTitle = isLargeParty ? 'Large Party Refunded ✅' : 'Group Party Refunded ✅';
+        badgeText = 'REFUND COMPLETED';
+        accentColor = const Color(0xFF10B981);
+        if (refundAmt != null && refundAmt > 0) {
+          cardBody = 'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} refund has been paid successfully.';
+        } else {
+          cardBody = 'Your party at $venueName was cancelled and refund has been completed.';
+        }
+      } else if (isRefundPendingPayout) {
+        cardTitle = isLargeParty ? 'Refund Processing ⏳' : 'Group Party Refund Processing ⏳';
+        badgeText = 'REFUND PROCESSING';
+        accentColor = const Color(0xFFF59E0B);
+        if (refundAmt != null && refundAmt > 0) {
+          cardBody = 'Cancellation approved. Your refund of ₹${refundAmt.toInt()} is being processed to your payout details.';
+        } else {
+          cardBody = 'Cancellation approved. Your refund is being processed to your payout details.';
+        }
       } else {
-        cardBody = 'Your party request at $venueName was cancelled.';
+        cardTitle = isLargeParty ? 'Large Party Cancelled ❌' : 'Group Party Cancelled ❌';
+        if (refundAmt != null && refundAmt > 0) {
+          if (refundAmt <= 1500) {
+            badgeText = 'REFUNDED TO WALLET';
+            accentColor = const Color(0xFF10B981);
+            cardBody = 'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} has been credited to your Lunara Wallet.';
+          } else {
+            badgeText = 'CANCELLED';
+            accentColor = const Color(0xFFEF4444);
+            cardBody = 'Your party at $venueName was cancelled. A refund of ₹${refundAmt.toInt()} is being processed.';
+          }
+        } else {
+          cardBody = 'Your party request at $venueName was cancelled.';
+          badgeText = 'CANCELLED';
+          accentColor = const Color(0xFFEF4444);
+        }
       }
-      badgeText = 'CANCELLED';
-      accentColor = const Color(0xFFEF4444);
     } else {
       // ── Pending state: waiting for admin approval (or admin has approved but no price set yet)
       // NEVER show a Pay Now button when amount is 0 — that means admin hasn't set a price.
@@ -3371,6 +3421,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           icon: actionButtonText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
         ),
       ];
+
+      if (overallStatus == 'confirmed') {
+        final dateStr = parsedEventDate != null
+            ? '${parsedEventDate.year}-${parsedEventDate.month.toString().padLeft(2, '0')}-${parsedEventDate.day.toString().padLeft(2, '0')}'
+            : (rawPartyDate?.toString() ?? '');
+        final timeStr = rawStartTime?.toString() ?? '';
+
+        actions.add(
+          NotificationAction(
+            label: 'Cancel Booking',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            onTap: () {
+              BookingCancellationDialog.show(
+                context,
+                bookingId: partyId,
+                isGroupParty: true,
+                initialVenueName: venueName,
+                initialDate: dateStr,
+                initialTime: timeStr,
+                initialAmountPaid: totalAmount,
+                onCancelled: () => _loadFeed(),
+              );
+            },
+          ),
+        );
+      }
     }
 
     final String? venuePhoto = _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);

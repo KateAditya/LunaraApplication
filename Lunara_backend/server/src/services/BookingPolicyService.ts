@@ -39,6 +39,16 @@ export interface RefundCalculationResult {
     isRefundable: boolean;
 }
 
+export interface RefundPayoutDetails {
+    refundMethod?: string;
+    payoutType?: 'UPI_ID' | 'UPI_NUMBER' | 'BANK_ACCOUNT' | string;
+    upiId?: string;
+    upiNumber?: string;
+    bankAccountNumber?: string;
+    bankIfsc?: string;
+    bankHolderName?: string;
+}
+
 export interface CancellationPreviewResult {
     bookingId: string;
     bookingType: 'SOLO_BOOKING' | 'GROUP_PARTY';
@@ -57,6 +67,7 @@ export interface CancellationPreviewResult {
     refundAmount: number;
     nonRefundableAmount: number;
     refundMethod: string;
+    requiresPayoutDetails: boolean;
 }
 
 export class BookingPolicyService {
@@ -286,23 +297,26 @@ export class BookingPolicyService {
             },
             refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
             nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
-            refundMethod: 'Lunara Wallet',
+            refundMethod: refundCalc.refundAmount > 1500 ? 'UPI / Bank Transfer' : 'Lunara Wallet',
+            requiresPayoutDetails: refundCalc.refundAmount > 1500,
         };
     }
 
     /**
-     * Atomically cancels Solo Booking, invalidates tickets, and issues wallet refund.
+     * Atomically cancels Solo Booking, invalidates tickets, and issues wallet refund (<= 1500) or saves payout details (> 1500).
      */
     public static async cancelAndRefundSoloBooking(
         bookingId: string,
         userId: string,
-        cancellationReason?: string
+        cancellationReason?: string,
+        payoutDetails?: RefundPayoutDetails
     ): Promise<{
         success: boolean;
         message: string;
         booking: Booking;
         refundAmount: number;
         walletTransactionId?: string;
+        refundMethod: string;
     }> {
         const booking = await Booking.findOne({
             where: { id: bookingId, userId },
@@ -331,6 +345,17 @@ export class BookingPolicyService {
         const paidAmount = wasPaid ? Number(booking.totalAmount || 0) : 0;
         const refundCalc = await this.calculateRefund(BookingPolicyType.SOLO_BOOKING, paidAmount);
         const refundAmount = wasPaid ? refundCalc.refundAmount : 0;
+        const isLargeRefund = refundAmount > 1500;
+
+        if (wasPaid && isLargeRefund) {
+            const hasUpiId = payoutDetails?.upiId && payoutDetails.upiId.trim().length > 0;
+            const hasUpiNumber = payoutDetails?.upiNumber && payoutDetails.upiNumber.trim().length === 10;
+            const hasBank = payoutDetails?.bankAccountNumber && payoutDetails.bankAccountNumber.trim().length > 0 &&
+                            payoutDetails?.bankIfsc && payoutDetails.bankIfsc.trim().length > 0;
+            if (!hasUpiId && !hasUpiNumber && !hasBank) {
+                throw new Error('For refund amounts exceeding ₹1,500, please provide your UPI ID, UPI phone number, or Bank account details.');
+            }
+        }
 
         const t = await sequelize.transaction();
         let walletTxId: string | undefined;
@@ -339,9 +364,20 @@ export class BookingPolicyService {
             // Update booking status
             await booking.update({
                 status: BookingStatus.CANCELLED,
-                paymentStatus: refundAmount > 0 ? PaymentStatus.REFUNDED : booking.paymentStatus,
+                paymentStatus: (wasPaid && refundAmount > 0)
+                    ? (isLargeRefund ? ('refund_processing' as any) : PaymentStatus.REFUNDED)
+                    : booking.paymentStatus,
                 cancellationReason: cancellationReason || 'Cancelled by user',
                 cancelledAt: new Date(),
+                refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
+                payoutType: isLargeRefund ? (payoutDetails?.payoutType || 'UPI_ID') : undefined,
+                upiId: isLargeRefund ? payoutDetails?.upiId?.trim() : undefined,
+                upiNumber: isLargeRefund ? payoutDetails?.upiNumber?.trim() : undefined,
+                bankAccountNumber: isLargeRefund ? payoutDetails?.bankAccountNumber?.trim() : undefined,
+                bankIfsc: isLargeRefund ? payoutDetails?.bankIfsc?.trim()?.toUpperCase() : undefined,
+                bankHolderName: isLargeRefund ? payoutDetails?.bankHolderName?.trim() : undefined,
+                refundAmount,
+                refundStatus: (wasPaid && refundAmount > 0) ? (isLargeRefund ? 'PENDING_PAYOUT' : 'COMPLETED') : 'NONE',
             }, { transaction: t });
 
             // Invalidate tickets
@@ -353,8 +389,8 @@ export class BookingPolicyService {
             // Release time locks
             await PlanEligibilityService.releaseLock(booking.id);
 
-            // Process Wallet Refund if eligible
-            if (wasPaid && refundAmount > 0) {
+            // Process Wallet Refund if eligible (<= ₹1500)
+            if (wasPaid && refundAmount > 0 && !isLargeRefund) {
                 const refundResult = await WalletService.refundToWallet({
                     userId,
                     amount: refundAmount,
@@ -381,7 +417,9 @@ export class BookingPolicyService {
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
         const notifBody = refundAmount > 0
-            ? `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`
+            ? (isLargeRefund
+                ? `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                : `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`)
             : `Your Solo Booking at ${venueName} has been cancelled.`;
 
         // Dispatch notifications
@@ -403,6 +441,7 @@ export class BookingPolicyService {
             bookingId: booking.id,
             status: BookingStatus.CANCELLED,
             refundAmount,
+            refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
         });
 
         try {
@@ -416,11 +455,14 @@ export class BookingPolicyService {
         return {
             success: true,
             message: refundAmount > 0
-                ? `Booking cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`
+                ? (isLargeRefund
+                    ? `Booking cancelled successfully. A refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                    : `Booking cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`)
                 : 'Booking cancelled successfully.',
             booking,
             refundAmount,
             walletTransactionId: walletTxId,
+            refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
         };
     }
 
@@ -451,6 +493,7 @@ export class BookingPolicyService {
 
         const venueName = (party as any)?.venue?.name || 'Venue';
         const venueAddress = (party as any)?.venue?.addressLine1 || (party as any)?.venue?.city || '';
+        const isLargeRefund = refundCalc.refundAmount > 1500;
 
         return {
             bookingId: party.id,
@@ -469,23 +512,26 @@ export class BookingPolicyService {
             },
             refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
             nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
-            refundMethod: 'Lunara Wallet',
+            refundMethod: isLargeRefund ? 'UPI / Bank Transfer' : 'Lunara Wallet',
+            requiresPayoutDetails: isLargeRefund,
         };
     }
 
     /**
-     * Atomically cancels Small Group Party (<= 20), invalidates tickets, and issues wallet refund.
+     * Atomically cancels Small Group Party (<= 20), invalidates tickets, and issues wallet refund (<= 1500) or saves payout details (> 1500).
      */
     public static async cancelAndRefundGroupParty(
         partyId: string,
         userId: string,
-        cancellationReason?: string
+        cancellationReason?: string,
+        payoutDetails?: RefundPayoutDetails
     ): Promise<{
         success: boolean;
         message: string;
         party: GroupParty;
         refundAmount: number;
         walletTransactionId?: string;
+        refundMethod: string;
     }> {
         const party = await GroupParty.findOne({
             where: { id: partyId, userId },
@@ -510,16 +556,40 @@ export class BookingPolicyService {
         const paidAmount = wasPaid ? Number(party.totalAmount || 0) : 0;
         const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
         const refundAmount = wasPaid ? refundCalc.refundAmount : 0;
+        const isLargeRefund = refundAmount > 1500;
+
+        if (wasPaid && isLargeRefund) {
+            const hasUpiId = payoutDetails?.upiId && payoutDetails.upiId.trim().length > 0;
+            const hasUpiNumber = payoutDetails?.upiNumber && payoutDetails.upiNumber.trim().length === 10;
+            const hasBank = payoutDetails?.bankAccountNumber && payoutDetails.bankAccountNumber.trim().length > 0 &&
+                            payoutDetails?.bankIfsc && payoutDetails.bankIfsc.trim().length > 0;
+            if (!hasUpiId && !hasUpiNumber && !hasBank) {
+                throw new Error('For refund amounts exceeding ₹1,500, please provide your UPI ID, UPI phone number, or Bank account details.');
+            }
+        }
 
         const t = await sequelize.transaction();
         let walletTxId: string | undefined;
 
         try {
-            // Update party status
+            // Update party status and refund/payout details
             await party.update({
                 status: GroupPartyStatus.CANCELLED,
-                paymentStatus: refundAmount > 0 ? (GroupPartyPaymentStatus as any).REFUNDED || GroupPartyPaymentStatus.FAILED : party.paymentStatus,
-            }, { transaction: t });
+                paymentStatus: (wasPaid && refundAmount > 0)
+                    ? (isLargeRefund ? ('refund_processing' as any) : ((GroupPartyPaymentStatus as any).REFUNDED || GroupPartyPaymentStatus.FAILED))
+                    : party.paymentStatus,
+                cancellationReason: cancellationReason || 'Cancelled by user',
+                cancelledAt: new Date(),
+                refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
+                payoutType: isLargeRefund ? (payoutDetails?.payoutType || 'UPI_ID') : undefined,
+                upiId: isLargeRefund ? payoutDetails?.upiId?.trim() : undefined,
+                upiNumber: isLargeRefund ? payoutDetails?.upiNumber?.trim() : undefined,
+                bankAccountNumber: isLargeRefund ? payoutDetails?.bankAccountNumber?.trim() : undefined,
+                bankIfsc: isLargeRefund ? payoutDetails?.bankIfsc?.trim()?.toUpperCase() : undefined,
+                bankHolderName: isLargeRefund ? payoutDetails?.bankHolderName?.trim() : undefined,
+                refundAmount,
+                refundStatus: (wasPaid && refundAmount > 0) ? (isLargeRefund ? 'PENDING_PAYOUT' : 'COMPLETED') : 'NONE',
+            } as any, { transaction: t });
 
             // Invalidate tickets
             await Ticket.update(
@@ -530,8 +600,8 @@ export class BookingPolicyService {
             // Release time locks
             await PlanEligibilityService.releaseLock(party.id);
 
-            // Process Wallet Refund if eligible
-            if (wasPaid && refundAmount > 0) {
+            // Process Wallet Refund if eligible (<= ₹1500)
+            if (wasPaid && refundAmount > 0 && !isLargeRefund) {
                 const refundResult = await WalletService.refundToWallet({
                     userId,
                     amount: refundAmount,
@@ -559,7 +629,9 @@ export class BookingPolicyService {
 
         const venueName = (party as any)?.venue?.name || 'Venue';
         const notifBody = refundAmount > 0
-            ? `Your Group Party at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`
+            ? (isLargeRefund
+                ? `Your Group Party at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                : `Your Group Party at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`)
             : `Your Group Party at ${venueName} has been cancelled.`;
 
         // Dispatch notifications
@@ -581,6 +653,7 @@ export class BookingPolicyService {
             partyId: party.id,
             status: GroupPartyStatus.CANCELLED,
             refundAmount,
+            refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
         });
 
         try {
@@ -594,11 +667,14 @@ export class BookingPolicyService {
         return {
             success: true,
             message: refundAmount > 0
-                ? `Group party cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`
+                ? (isLargeRefund
+                    ? `Group party cancelled successfully. A refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                    : `Group party cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`)
                 : 'Group party cancelled successfully.',
             party,
             refundAmount,
             walletTransactionId: walletTxId,
+            refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
         };
     }
 }

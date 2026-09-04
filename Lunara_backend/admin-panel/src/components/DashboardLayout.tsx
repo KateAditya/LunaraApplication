@@ -90,6 +90,7 @@ const navGroups: NavGroup[] = [
             { text: 'Safety Checks', icon: <BiShieldQuarter />, path: '/safety-checks' },
             { text: 'Chat Settings', icon: <BiChat />, path: '/chat-settings' },
             { text: 'Subscription Manage', icon: <BiCrown />, path: '/subscriptions' },
+            { text: 'Cancellation Requests', icon: <BiUndo />, path: '/cancellation-requests' },
             { text: 'Cancelled Plans', icon: <BiXCircle />, path: '/cancelled-plans' },
             { text: 'Cancellation Analytics', icon: <BiFlag />, path: '/cancellation-analytics' },
             { text: 'Refund & Policy Settings', icon: <BiUndo />, path: '/booking-policies' },

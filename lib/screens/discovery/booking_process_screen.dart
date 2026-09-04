@@ -1506,13 +1506,14 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     const SizedBox(width: 16),
                                     GestureDetector(
                                       onTap: () {
-                                        final int maxGuests =
+                                        final int parsedCapacity =
                                             int.tryParse(
                                               widget.venue['capacity']
                                                       ?.toString() ??
-                                                  '20',
+                                                  '100',
                                             ) ??
-                                            20;
+                                            100;
+                                        final int maxGuests = parsedCapacity < 25 ? 100 : parsedCapacity;
                                         if (guests < maxGuests) {
                                           setModalState(() {
                                             _guestsController.text =

@@ -133,7 +133,27 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_2h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_1h_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='reminder_30m_sent') THEN ALTER TABLE group_parties ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='refund_method') THEN ALTER TABLE group_parties ADD COLUMN refund_method VARCHAR(50) DEFAULT 'WALLET'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='payout_type') THEN ALTER TABLE group_parties ADD COLUMN payout_type VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='upi_id') THEN ALTER TABLE group_parties ADD COLUMN upi_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='upi_number') THEN ALTER TABLE group_parties ADD COLUMN upi_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='bank_account_number') THEN ALTER TABLE group_parties ADD COLUMN bank_account_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='bank_ifsc') THEN ALTER TABLE group_parties ADD COLUMN bank_ifsc VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='bank_holder_name') THEN ALTER TABLE group_parties ADD COLUMN bank_holder_name VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='refund_amount') THEN ALTER TABLE group_parties ADD COLUMN refund_amount DECIMAL(10,2) DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='refund_status') THEN ALTER TABLE group_parties ADD COLUMN refund_status VARCHAR(50) DEFAULT 'NONE'; END IF;
                     BEGIN ALTER TYPE "enum_group_parties_status" ADD VALUE IF NOT EXISTS 'expired'; EXCEPTION WHEN others THEN NULL; END;
+
+                    -- Bookings refund/payout columns
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_method') THEN ALTER TABLE "Bookings" ADD COLUMN refund_method VARCHAR(50) DEFAULT 'WALLET'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='payout_type') THEN ALTER TABLE "Bookings" ADD COLUMN payout_type VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='upi_id') THEN ALTER TABLE "Bookings" ADD COLUMN upi_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='upi_number') THEN ALTER TABLE "Bookings" ADD COLUMN upi_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_account_number') THEN ALTER TABLE "Bookings" ADD COLUMN bank_account_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_ifsc') THEN ALTER TABLE "Bookings" ADD COLUMN bank_ifsc VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_holder_name') THEN ALTER TABLE "Bookings" ADD COLUMN bank_holder_name VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_amount') THEN ALTER TABLE "Bookings" ADD COLUMN refund_amount DECIMAL(10,2) DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_status') THEN ALTER TABLE "Bookings" ADD COLUMN refund_status VARCHAR(50) DEFAULT 'NONE'; END IF;
 
                     -- UserSubscriptions columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;

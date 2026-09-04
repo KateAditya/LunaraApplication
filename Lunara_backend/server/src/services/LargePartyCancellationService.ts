@@ -784,6 +784,7 @@ export class LargePartyCancellationService {
         let originalPaid = 0;
         let hostUser: any = null;
         let methodDisplay = paymentMethod || 'Bank Transfer';
+        let venueName = 'Venue';
 
         // Atomic row-level lock transaction to prevent double payout settlement (Phase 15, 19)
         await sequelize.transaction(async (t) => {
@@ -822,6 +823,7 @@ export class LargePartyCancellationService {
             bookingId = cancelReq.bookingId;
             hostUserId = cancelReq.userId;
             hostUser = user;
+            venueName = (booking as any)?.venue?.name || 'Venue';
             refundPct = cancelReq.refundPercentage || 0;
             originalPaid = Number(cancelReq.originalPaidAmount || 0);
 
@@ -898,7 +900,38 @@ export class LargePartyCancellationService {
                         refundAmount: refundAmt,
                     },
                 });
+
+                // Broadcast live feed update
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'large_party_activity',
+                    bookingId,
+                    venueName: venueName,
+                    status: 'refund_completed',
+                    timestamp: new Date().toISOString(),
+                });
             }
+
+            // Save persistent notification
+            const { NotificationService } = await import('./NotificationService');
+            await NotificationService.dispatch({
+                recipientUserId: hostUserId,
+                eventType: 'refund_completed',
+                category: 'bookings',
+                entityType: 'Booking',
+                entityId: bookingId,
+                title: '🎉 Large Party Refund Transferred!',
+                body: notifBody,
+                priority: 'HIGH',
+                idempotencyKey: `lp_refund_paid_${requestId}`,
+                actionType: 'view_details',
+                deepLink: `/bookings`,
+                metadata: {
+                    bookingId,
+                    requestId,
+                    paymentReference: paymentReference.trim(),
+                    refundAmount: refundAmt,
+                },
+            }).catch(() => {});
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for large party refund paid:', pushErr);
         }

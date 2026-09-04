@@ -2176,6 +2176,13 @@ export class StrangersMeetService {
                     hostRefundStatus: HostRefundStatus.PAID,
                     settlementReference: paymentReference.trim(),
                 });
+                io.to('live_feed').emit('live_feed_update', {
+                    type: 'strangers_meet_activity',
+                    meetId: cancellation.meetId,
+                    hostRefundStatus: HostRefundStatus.PAID,
+                    status: 'settled',
+                    timestamp: new Date().toISOString(),
+                });
                 io.to(`user_${cancellation.hostUserId}`).emit('strangers_meet_status_update', {
                     meetId: cancellation.meetId,
                     status: 'settled',

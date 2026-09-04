@@ -258,13 +258,20 @@ export class VenueBookingService {
                 await generateTicketForBookingHelper(booking.id);
                 await booking.reload();
 
+                const guestCount = booking.numberOfGuests || 1;
+                const isSolo = goingMode === GoingMode.SOLO || guestCount === 1;
+                const isLarge = guestCount > 20 || booking.isLargePartyRequest;
+                const notifTitle = isLarge
+                    ? '🎉 Large Party Confirmed!'
+                    : (isSolo ? '🎉 Solo Booking Confirmed!' : '🎉 Group Party Confirmed!');
+
                 await NotificationService.dispatch({
                     recipientUserId: userId,
                     eventType: 'booking_confirmed',
                     category: 'bookings',
                     entityType: 'Booking',
                     entityId: booking.id,
-                    title: '🎉 Booking Confirmed!',
+                    title: notifTitle,
                     body: `Your booking at ${venue.name} for ${formatDateFull(bookingStartDateTime)} at ${formatTime12Hour(bookingStartDateTime)} has been confirmed. View your digital ticket now!`,
                     priority: 'HIGH',
                     idempotencyKey: `booking_created_${booking.id}`,
@@ -276,7 +283,9 @@ export class VenueBookingService {
                         venueName: venue.name,
                         ticketCode: booking.ticketCode,
                         ticketUrl: (booking as any).ticketUrl,
-                        isSolo: goingMode === GoingMode.SOLO,
+                        isSolo,
+                        isLargeParty: isLarge,
+                        guestCount,
                     },
                 });
 
@@ -382,13 +391,20 @@ export class VenueBookingService {
             const venue = await Venue.findByPk(booking.venueId, { attributes: ['name', 'ownerId'] });
             const venueName = venue ? venue.name : 'venue';
 
+            const guestCount = booking.numberOfGuests || 1;
+            const isSolo = booking.goingMode === GoingMode.SOLO || guestCount === 1;
+            const isLarge = guestCount > 20 || booking.isLargePartyRequest;
+            const notifTitle = isLarge
+                ? '🎉 Large Party Confirmed!'
+                : (isSolo ? '🎉 Solo Booking Confirmed!' : '🎉 Group Party Confirmed!');
+
             await NotificationService.dispatch({
                 recipientUserId: booking.userId,
                 eventType: 'booking_confirmed',
                 category: 'bookings',
                 entityType: 'Booking',
                 entityId: booking.id,
-                title: '🎉 Booking Confirmed!',
+                title: notifTitle,
                 body: `Your payment for ${venueName} is confirmed! Your ticket is ready in your Wallet.`,
                 priority: 'HIGH',
                 idempotencyKey: `booking_verified_${booking.id}`,
@@ -480,22 +496,33 @@ export class VenueBookingService {
             const completedCount = timelineSteps.filter(s => s.completed).length;
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
 
-            let title = `Venue Booking at ${venueName} 🎟`;
+            const isSolo = bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1;
+            const isLarge = guestCount > 20 || bookingRecord.isLargePartyRequest;
+
+            let title = isLarge
+                ? `Large Party at ${venueName} 🎉`
+                : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Group Party at ${venueName} 🎉`);
             let body = `Your reservation for ${guestCount} guests at ${venueName} is being processed.`;
             let statusText = 'Booking Requested';
 
             if (isCompleted) {
-                title = `Venue Booking Completed ✨`;
+                title = isLarge
+                    ? `Large Party Completed ✨`
+                    : (isSolo ? `Solo Booking Completed ✨` : `Group Party Completed ✨`);
                 body = `Hope you enjoyed your experience at ${venueName}!`;
                 statusText = 'Completed';
             } else if (isConfirmed && !isCancelled) {
-                title = `Venue Booking Confirmed! 🎉`;
+                title = isLarge
+                    ? `Large Party Confirmed! 🎉`
+                    : (isSolo ? `Solo Booking Confirmed! 🎉` : `Group Party Confirmed! 🎉`);
                 body = `Your table reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
                 statusText = 'Confirmed';
             } else if (isCancelled) {
-                title = `Venue Booking Cancelled ❌`;
+                title = isLarge
+                    ? `Large Party Cancelled ❌`
+                    : (isSolo ? `Solo Booking Cancelled ❌` : `Group Party Cancelled ❌`);
                 body = isRefunded
-                    ? `Your Solo Booking for ${venueName} was cancelled. Refund has been credited to your Lunara Wallet.`
+                    ? `Your booking for ${venueName} was cancelled. Refund has been credited to your Lunara Wallet.`
                     : `Your booking for ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
             }

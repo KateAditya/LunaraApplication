@@ -4804,17 +4804,25 @@ class ApiService {
     return null;
   }
 
-  /// Confirms booking cancellation and initiates atomic wallet refund
+  /// Confirms booking cancellation and initiates refund (Wallet if <= 1500, UPI/Bank if > 1500)
   static Future<Map<String, dynamic>?> confirmBookingCancellation(
     String bookingId, {
     bool isGroupParty = false,
     String? reason,
+    Map<String, dynamic>? payoutDetails,
   }) async {
     try {
       final path = isGroupParty
           ? '/api/mobile/group-parties/$bookingId/cancel'
           : '/api/mobile/bookings/$bookingId/cancel';
-      final response = await post(path, body: {'reason': reason ?? 'Cancelled by user'});
+      final Map<String, dynamic> body = {
+        'reason': reason ?? 'Cancelled by user',
+      };
+      if (payoutDetails != null) {
+        body['payoutDetails'] = payoutDetails;
+        body.addAll(payoutDetails);
+      }
+      final response = await post(path, body: body);
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
         return Map<String, dynamic>.from(data);
