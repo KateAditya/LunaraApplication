@@ -3232,8 +3232,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       latestTime = DateTime.now();
     }
 
-    final rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
-    final rawStartTime = partyMap['startTime'] ?? partyMap['time'];
+    dynamic rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
+    dynamic rawStartTime = partyMap['startTime'] ?? partyMap['time'];
+
+    if (rawPartyDate == null || rawPartyDate.toString().trim().isEmpty) {
+      for (final e in entries) {
+        final d = e['partyDate'] ?? e['bookingDate'] ?? e['eventDateTime'] ?? e['date'] ??
+            e['data']?['partyDate'] ?? e['data']?['bookingDate'] ?? e['data']?['eventDateTime'] ??
+            e['booking']?['bookingDate'] ?? e['booking']?['partyDate'];
+        if (d != null && d.toString().trim().isNotEmpty) {
+          rawPartyDate = d;
+          break;
+        }
+      }
+    }
+    if (rawStartTime == null || rawStartTime.toString().trim().isEmpty) {
+      for (final e in entries) {
+        final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ??
+            e['data']?['startTime'] ?? e['data']?['time'] ?? e['data']?['bookingTime'] ??
+            e['booking']?['startTime'] ?? e['booking']?['time'];
+        if (st != null && st.toString().trim().isNotEmpty) {
+          rawStartTime = st;
+          break;
+        }
+      }
+    }
+
     final parsedEventDate = _parseEventDateTime(rawPartyDate, rawStartTime);
 
     // Format event date & time if available
@@ -3426,7 +3450,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final dateStr = parsedEventDate != null
             ? '${parsedEventDate.year}-${parsedEventDate.month.toString().padLeft(2, '0')}-${parsedEventDate.day.toString().padLeft(2, '0')}'
             : (rawPartyDate?.toString() ?? '');
-        final timeStr = rawStartTime?.toString() ?? '';
+        final timeStr = parsedEventDate != null
+            ? LunaraDateFormatter.normalizeTimeTo12Hour('${parsedEventDate.hour}:${parsedEventDate.minute.toString().padLeft(2, '0')}')
+            : (rawStartTime?.toString() ?? '');
+        final cleanPartyId = ApiService.cleanBookingId(partyId);
 
         actions.add(
           NotificationAction(
@@ -3436,7 +3463,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               BookingCancellationDialog.show(
                 context,
-                bookingId: partyId,
+                bookingId: cleanPartyId.isNotEmpty ? cleanPartyId : partyId,
                 isGroupParty: true,
                 initialVenueName: venueName,
                 initialDate: dateStr,

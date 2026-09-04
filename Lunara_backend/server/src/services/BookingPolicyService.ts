@@ -255,16 +255,24 @@ export class BookingPolicyService {
         bookingId: string,
         userId: string
     ): Promise<CancellationPreviewResult> {
-        const booking = await Booking.findOne({
+        let booking = await Booking.findOne({
             where: { id: bookingId, userId },
             include: [{ model: Venue, as: 'venue' }],
         });
 
         if (!booking) {
+            // Fallback: check GroupParty table
+            const party = await GroupParty.findOne({
+                where: { id: bookingId, userId },
+                include: [{ model: Venue, as: 'venue' }],
+            });
+            if (party) {
+                return this.getSmallGroupPartyCancellationPreview(bookingId, userId);
+            }
             throw new Error('Solo booking not found');
         }
 
-        if (booking.isLargePartyRequest || booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20) {
+        if (booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20)) {
             throw new Error('This policy applies exclusively to Solo Bookings and small group parties.');
         }
 
@@ -272,17 +280,20 @@ export class BookingPolicyService {
             throw new Error('Booking is already cancelled.');
         }
 
+        const isGroupBooking = booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1;
         const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
-        const validation = await this.validateCancellationTime(BookingPolicyType.SOLO_BOOKING, eventDateTime);
+        const policyType = isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING;
+        const validation = await this.validateCancellationTime(policyType, eventDateTime);
         const paidAmount = booking.paymentStatus === PaymentStatus.PAID ? Number(booking.totalAmount || 0) : 0;
-        const refundCalc = await this.calculateRefund(BookingPolicyType.SOLO_BOOKING, paidAmount);
+        const refundCalc = await this.calculateRefund(policyType, paidAmount);
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
         const venueAddress = (booking as any)?.venue?.addressLine1 || (booking as any)?.venue?.city || '';
+        const isLargeRefund = refundCalc.refundAmount > 1500;
 
         return {
             bookingId: booking.id,
-            bookingType: 'SOLO_BOOKING',
+            bookingType: isGroupBooking ? 'GROUP_PARTY' : 'SOLO_BOOKING',
             venueName,
             venueAddress,
             eventDate: formatDateFull(eventDateTime),
@@ -297,8 +308,8 @@ export class BookingPolicyService {
             },
             refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
             nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
-            refundMethod: refundCalc.refundAmount > 1500 ? 'UPI / Bank Transfer' : 'Lunara Wallet',
-            requiresPayoutDetails: refundCalc.refundAmount > 1500,
+            refundMethod: isLargeRefund ? 'UPI / Bank Transfer' : 'Lunara Wallet',
+            requiresPayoutDetails: isLargeRefund,
         };
     }
 
@@ -309,21 +320,38 @@ export class BookingPolicyService {
         bookingId: string,
         userId: string,
         cancellationReason?: string,
-        payoutDetails?: RefundPayoutDetails
+        payoutDetails?: RefundPayoutDetails,
+        isGroupPartyContext: boolean = false
     ): Promise<{
         success: boolean;
         message: string;
-        booking: Booking;
+        booking: any;
         refundAmount: number;
         walletTransactionId?: string;
         refundMethod: string;
     }> {
-        const booking = await Booking.findOne({
+        let booking = await Booking.findOne({
             where: { id: bookingId, userId },
             include: [{ model: Venue, as: 'venue' }],
         });
 
         if (!booking) {
+            // Fallback: check GroupParty table
+            const party = await GroupParty.findOne({
+                where: { id: bookingId, userId },
+                include: [{ model: Venue, as: 'venue' }],
+            });
+            if (party) {
+                const res = await this.cancelAndRefundGroupParty(bookingId, userId, cancellationReason, payoutDetails);
+                return {
+                    success: res.success,
+                    message: res.message,
+                    booking: res.party,
+                    refundAmount: res.refundAmount,
+                    walletTransactionId: res.walletTransactionId,
+                    refundMethod: res.refundMethod,
+                };
+            }
             throw new Error('Solo booking not found');
         }
 
@@ -335,15 +363,17 @@ export class BookingPolicyService {
             throw new Error('Booking has already been cancelled.');
         }
 
+        const isGroupBooking = isGroupPartyContext || booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1;
+        const policyType = isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING;
         const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
-        const validation = await this.validateCancellationTime(BookingPolicyType.SOLO_BOOKING, eventDateTime);
+        const validation = await this.validateCancellationTime(policyType, eventDateTime);
         if (!validation.canCancel) {
             throw new Error(validation.reason || 'Cancellation cutoff window has passed.');
         }
 
         const wasPaid = booking.paymentStatus === PaymentStatus.PAID;
         const paidAmount = wasPaid ? Number(booking.totalAmount || 0) : 0;
-        const refundCalc = await this.calculateRefund(BookingPolicyType.SOLO_BOOKING, paidAmount);
+        const refundCalc = await this.calculateRefund(policyType, paidAmount);
         const refundAmount = wasPaid ? refundCalc.refundAmount : 0;
         const isLargeRefund = refundAmount > 1500;
 
@@ -395,15 +425,17 @@ export class BookingPolicyService {
                     userId,
                     amount: refundAmount,
                     bookingId: booking.id,
-                    reference: `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`,
-                    reason: cancellationReason || 'SOLO BOOKING CANCELLED',
+                    reference: isGroupBooking
+                        ? `REFUND_GP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                        : `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`,
+                    reason: cancellationReason || (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED'),
                     metadata: {
                         originalAmountPaid: paidAmount,
                         refundPercentage: refundCalc.refundPercentage,
                         nonRefundableAmount: refundCalc.nonRefundableAmount,
                         refundAmount,
                         bookingId: booking.id,
-                        transactionLabel: 'SOLO BOOKING CANCELLED',
+                        transactionLabel: isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED',
                     },
                 }, t);
                 walletTxId = refundResult.transaction.id;
@@ -416,25 +448,27 @@ export class BookingPolicyService {
         }
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
+        const entityLabel = isGroupBooking ? 'Group Party' : 'Booking';
+        const notifTitle = isGroupBooking ? 'Group Party Cancelled' : 'Booking Cancelled';
         const notifBody = refundAmount > 0
             ? (isLargeRefund
-                ? `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
-                : `Your Solo Booking at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`)
-            : `Your Solo Booking at ${venueName} has been cancelled.`;
+                ? `Your ${entityLabel} at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                : `Your ${entityLabel} at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\n₹${refundAmount} has been credited to your Lunara Wallet.`)
+            : `Your ${entityLabel} at ${venueName} has been cancelled.`;
 
         // Dispatch notifications
         await NotificationService.dispatch({
             recipientUserId: userId,
             eventType: 'booking_cancelled',
             category: 'bookings',
-            entityType: 'Booking',
+            entityType: isGroupBooking ? 'GroupParty' : 'Booking',
             entityId: booking.id,
-            title: 'Booking Cancelled',
+            title: notifTitle,
             body: notifBody,
             priority: 'HIGH',
-            idempotencyKey: `solo_cancel_${booking.id}`,
+            idempotencyKey: `${isGroupBooking ? 'gp' : 'solo'}_cancel_${booking.id}`,
             actionType: 'view_details',
-            deepLink: `/bookings`,
+            deepLink: isGroupBooking ? '/group-parties' : '/bookings',
         }).catch(() => {});
 
         RealtimeEventBroker.emitToUser(userId, 'booking_updated', 'ticket', booking.id, {
@@ -443,6 +477,14 @@ export class BookingPolicyService {
             refundAmount,
             refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
         });
+        if (isGroupBooking) {
+            RealtimeEventBroker.emitToUser(userId, 'group_party_updated', 'group_party', booking.id, {
+                partyId: booking.id,
+                status: BookingStatus.CANCELLED,
+                refundAmount,
+                refundMethod: isLargeRefund ? 'BANK_UPI' : 'WALLET',
+            });
+        }
 
         try {
             const { VenueBookingService } = await import('./VenueBookingService');
@@ -452,13 +494,21 @@ export class BookingPolicyService {
             }
         } catch (_) {}
 
+        try {
+            const { GroupPartyService } = await import('./GroupPartyService');
+            const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(booking.id, userId);
+            if (enrichedCard) {
+                RealtimeEventBroker.emitToUser(userId, 'notification_updated', 'notification', booking.id, enrichedCard);
+            }
+        } catch (_) {}
+
         return {
             success: true,
             message: refundAmount > 0
                 ? (isLargeRefund
-                    ? `Booking cancelled successfully. A refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
-                    : `Booking cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`)
-                : 'Booking cancelled successfully.',
+                    ? `${entityLabel} cancelled successfully. A refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
+                    : `${entityLabel} cancelled successfully. ₹${refundAmount} refunded to your Lunara Wallet.`)
+                : `${entityLabel} cancelled successfully.`,
             booking,
             refundAmount,
             walletTransactionId: walletTxId,
@@ -473,48 +523,95 @@ export class BookingPolicyService {
         partyId: string,
         userId: string
     ): Promise<CancellationPreviewResult> {
+        // 1. Check GroupParty table
         const party = await GroupParty.findOne({
             where: { id: partyId, userId },
             include: [{ model: Venue, as: 'venue' }],
         });
 
-        if (!party) {
-            throw new Error('Group party not found');
+        if (party) {
+            if (party.status === GroupPartyStatus.CANCELLED) {
+                throw new Error('Group party is already cancelled.');
+            }
+
+            const eventDateTime = parseBookingDateTime(party.partyDate as any, party.startTime);
+            const validation = await this.validateCancellationTime(BookingPolicyType.GROUP_PARTY, eventDateTime);
+            const paidAmount = party.paymentStatus === GroupPartyPaymentStatus.PAID ? Number(party.totalAmount || 0) : 0;
+            const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
+
+            const venueName = (party as any)?.venue?.name || 'Venue';
+            const venueAddress = (party as any)?.venue?.addressLine1 || (party as any)?.venue?.city || '';
+            const isLargeRefund = refundCalc.refundAmount > 1500;
+
+            return {
+                bookingId: party.id,
+                bookingType: 'GROUP_PARTY',
+                venueName,
+                venueAddress,
+                eventDate: formatDateFull(eventDateTime),
+                eventTime: formatTime12Hour(eventDateTime),
+                canCancel: validation.canCancel,
+                cancellationReason: validation.reason,
+                paidAmount,
+                refundPolicy: {
+                    refundEnabled: refundCalc.refundEnabled,
+                    refundPercentage: refundCalc.refundPercentage,
+                    cancellationCutoffHours: validation.cancellationCutoffHours,
+                },
+                refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
+                nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
+                refundMethod: isLargeRefund ? 'UPI / Bank Transfer' : 'Lunara Wallet',
+                requiresPayoutDetails: isLargeRefund,
+            };
         }
 
-        if (party.status === GroupPartyStatus.CANCELLED) {
-            throw new Error('Group party is already cancelled.');
+        // 2. Fallback: Check Booking table (group party / with_friends reservation <= 20)
+        const booking = await Booking.findOne({
+            where: { id: partyId, userId },
+            include: [{ model: Venue, as: 'venue' }],
+        });
+
+        if (booking) {
+            if (booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20)) {
+                throw new Error('This cancellation policy does not apply to Large Parties (>20 guests).');
+            }
+
+            if (booking.status === BookingStatus.CANCELLED) {
+                throw new Error('Booking is already cancelled.');
+            }
+
+            const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
+            const validation = await this.validateCancellationTime(BookingPolicyType.GROUP_PARTY, eventDateTime);
+            const paidAmount = booking.paymentStatus === PaymentStatus.PAID ? Number(booking.totalAmount || 0) : 0;
+            const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
+
+            const venueName = (booking as any)?.venue?.name || 'Venue';
+            const venueAddress = (booking as any)?.venue?.addressLine1 || (booking as any)?.venue?.city || '';
+            const isLargeRefund = refundCalc.refundAmount > 1500;
+
+            return {
+                bookingId: booking.id,
+                bookingType: 'GROUP_PARTY',
+                venueName,
+                venueAddress,
+                eventDate: formatDateFull(eventDateTime),
+                eventTime: formatTime12Hour(eventDateTime),
+                canCancel: validation.canCancel,
+                cancellationReason: validation.reason,
+                paidAmount,
+                refundPolicy: {
+                    refundEnabled: refundCalc.refundEnabled,
+                    refundPercentage: refundCalc.refundPercentage,
+                    cancellationCutoffHours: validation.cancellationCutoffHours,
+                },
+                refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
+                nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
+                refundMethod: isLargeRefund ? 'UPI / Bank Transfer' : 'Lunara Wallet',
+                requiresPayoutDetails: isLargeRefund,
+            };
         }
 
-        const eventDateTime = parseBookingDateTime(party.partyDate as any, party.startTime);
-        const validation = await this.validateCancellationTime(BookingPolicyType.GROUP_PARTY, eventDateTime);
-        const paidAmount = party.paymentStatus === GroupPartyPaymentStatus.PAID ? Number(party.totalAmount || 0) : 0;
-        const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
-
-        const venueName = (party as any)?.venue?.name || 'Venue';
-        const venueAddress = (party as any)?.venue?.addressLine1 || (party as any)?.venue?.city || '';
-        const isLargeRefund = refundCalc.refundAmount > 1500;
-
-        return {
-            bookingId: party.id,
-            bookingType: 'GROUP_PARTY',
-            venueName,
-            venueAddress,
-            eventDate: formatDateFull(eventDateTime),
-            eventTime: formatTime12Hour(eventDateTime),
-            canCancel: validation.canCancel,
-            cancellationReason: validation.reason,
-            paidAmount,
-            refundPolicy: {
-                refundEnabled: refundCalc.refundEnabled,
-                refundPercentage: refundCalc.refundPercentage,
-                cancellationCutoffHours: validation.cancellationCutoffHours,
-            },
-            refundAmount: validation.canCancel ? refundCalc.refundAmount : 0,
-            nonRefundableAmount: validation.canCancel ? refundCalc.nonRefundableAmount : paidAmount,
-            refundMethod: isLargeRefund ? 'UPI / Bank Transfer' : 'Lunara Wallet',
-            requiresPayoutDetails: isLargeRefund,
-        };
+        throw new Error('Group party not found');
     }
 
     /**
@@ -528,17 +625,35 @@ export class BookingPolicyService {
     ): Promise<{
         success: boolean;
         message: string;
-        party: GroupParty;
+        party: any;
         refundAmount: number;
         walletTransactionId?: string;
         refundMethod: string;
     }> {
-        const party = await GroupParty.findOne({
+        let party = await GroupParty.findOne({
             where: { id: partyId, userId },
             include: [{ model: Venue, as: 'venue' }],
         });
 
         if (!party) {
+            // Fallback: check Booking table!
+            const booking = await Booking.findOne({
+                where: { id: partyId, userId },
+                include: [{ model: Venue, as: 'venue' }],
+            });
+
+            if (booking) {
+                const res = await this.cancelAndRefundSoloBooking(partyId, userId, cancellationReason, payoutDetails, true);
+                return {
+                    success: res.success,
+                    message: res.message,
+                    party: res.booking,
+                    refundAmount: res.refundAmount,
+                    walletTransactionId: res.walletTransactionId,
+                    refundMethod: res.refundMethod,
+                };
+            }
+
             throw new Error('Group party not found');
         }
 

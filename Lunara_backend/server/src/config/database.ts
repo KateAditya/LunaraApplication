@@ -74,6 +74,20 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
     }
 
     if (connected) {
+        // Run enum additions outside transaction blocks (PostgreSQL does not permit ALTER TYPE ADD VALUE inside transactions)
+        const enumAdditions = [
+            `ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'in_progress'`,
+            `ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'host_confirmed_ended'`,
+            `ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'admin_confirmed_ended'`,
+            `ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'completed'`,
+            `ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settlement_pending'`,
+            `ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settled'`,
+            `ALTER TYPE "enum_group_parties_status" ADD VALUE IF NOT EXISTS 'expired'`,
+        ];
+        for (const enumSql of enumAdditions) {
+            await sequelize.query(enumSql).catch(() => {});
+        }
+
         // Run all additive table & column migrations + schema upgrades in a single round-trip
         try {
             await sequelize.query(`
@@ -109,14 +123,6 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='admin_confirmed_by') THEN ALTER TABLE strangers_meet_requests ADD COLUMN admin_confirmed_by UUID; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_requests' AND column_name='settlement_overdue') THEN ALTER TABLE strangers_meet_requests ADD COLUMN settlement_overdue BOOLEAN DEFAULT FALSE; END IF;
 
-                    -- Strangers Meet Enums
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'in_progress'; EXCEPTION WHEN others THEN NULL; END;
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'host_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'admin_confirmed_ended'; EXCEPTION WHEN others THEN NULL; END;
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_status" ADD VALUE IF NOT EXISTS 'completed'; EXCEPTION WHEN others THEN NULL; END;
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settlement_pending'; EXCEPTION WHEN others THEN NULL; END;
-                    BEGIN ALTER TYPE "enum_strangers_meet_requests_settlement_status" ADD VALUE IF NOT EXISTS 'settled'; EXCEPTION WHEN others THEN NULL; END;
-
                     -- strangers_meet_joiners columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='status') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN status VARCHAR(50) DEFAULT 'pending'; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='strangers_meet_joiners' AND column_name='food_preference') THEN ALTER TABLE strangers_meet_joiners ADD COLUMN food_preference VARCHAR(100); END IF;
@@ -142,18 +148,17 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='bank_holder_name') THEN ALTER TABLE group_parties ADD COLUMN bank_holder_name VARCHAR(100); END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='refund_amount') THEN ALTER TABLE group_parties ADD COLUMN refund_amount DECIMAL(10,2) DEFAULT 0; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='group_parties' AND column_name='refund_status') THEN ALTER TABLE group_parties ADD COLUMN refund_status VARCHAR(50) DEFAULT 'NONE'; END IF;
-                    BEGIN ALTER TYPE "enum_group_parties_status" ADD VALUE IF NOT EXISTS 'expired'; EXCEPTION WHEN others THEN NULL; END;
 
                     -- Bookings refund/payout columns
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_method') THEN ALTER TABLE "Bookings" ADD COLUMN refund_method VARCHAR(50) DEFAULT 'WALLET'; END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='payout_type') THEN ALTER TABLE "Bookings" ADD COLUMN payout_type VARCHAR(50); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='upi_id') THEN ALTER TABLE "Bookings" ADD COLUMN upi_id VARCHAR(100); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='upi_number') THEN ALTER TABLE "Bookings" ADD COLUMN upi_number VARCHAR(20); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_account_number') THEN ALTER TABLE "Bookings" ADD COLUMN bank_account_number VARCHAR(50); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_ifsc') THEN ALTER TABLE "Bookings" ADD COLUMN bank_ifsc VARCHAR(20); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='bank_holder_name') THEN ALTER TABLE "Bookings" ADD COLUMN bank_holder_name VARCHAR(100); END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_amount') THEN ALTER TABLE "Bookings" ADD COLUMN refund_amount DECIMAL(10,2) DEFAULT 0; END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE (table_name='Bookings' OR table_name='bookings') AND column_name='refund_status') THEN ALTER TABLE "Bookings" ADD COLUMN refund_status VARCHAR(50) DEFAULT 'NONE'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='refund_method') THEN ALTER TABLE bookings ADD COLUMN refund_method VARCHAR(50) DEFAULT 'WALLET'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='payout_type') THEN ALTER TABLE bookings ADD COLUMN payout_type VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='upi_id') THEN ALTER TABLE bookings ADD COLUMN upi_id VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='upi_number') THEN ALTER TABLE bookings ADD COLUMN upi_number VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='bank_account_number') THEN ALTER TABLE bookings ADD COLUMN bank_account_number VARCHAR(50); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='bank_ifsc') THEN ALTER TABLE bookings ADD COLUMN bank_ifsc VARCHAR(20); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='bank_holder_name') THEN ALTER TABLE bookings ADD COLUMN bank_holder_name VARCHAR(100); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='refund_amount') THEN ALTER TABLE bookings ADD COLUMN refund_amount DECIMAL(10,2) DEFAULT 0; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='refund_status') THEN ALTER TABLE bookings ADD COLUMN refund_status VARCHAR(50) DEFAULT 'NONE'; END IF;
 
                     -- UserSubscriptions columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserSubscriptions' AND column_name='expiration_alert_sent') THEN ALTER TABLE "UserSubscriptions" ADD COLUMN expiration_alert_sent BOOLEAN NOT NULL DEFAULT FALSE; END IF;
@@ -550,6 +555,31 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             logger.info('Database schema and performance indexes verified successfully.');
         } catch (alterError: any) {
             logger.warn('Dynamic table migration warning: ' + alterError.message);
+        }
+
+        // Direct safety check ensuring refund & payout columns are always present
+        const explicitCols = [
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS refund_method VARCHAR(50) DEFAULT 'WALLET'`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS payout_type VARCHAR(50)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS upi_id VARCHAR(100)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS bank_account_number VARCHAR(50)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS bank_holder_name VARCHAR(100)`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(10,2) DEFAULT 0`,
+            `ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS refund_status VARCHAR(50) DEFAULT 'NONE'`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS refund_method VARCHAR(50) DEFAULT 'WALLET'`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS payout_type VARCHAR(50)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS upi_id VARCHAR(100)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS upi_number VARCHAR(20)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS bank_account_number VARCHAR(50)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS bank_holder_name VARCHAR(100)`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(10,2) DEFAULT 0`,
+            `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS refund_status VARCHAR(50) DEFAULT 'NONE'`,
+        ];
+        for (const colSql of explicitCols) {
+            await sequelize.query(colSql).catch(() => {});
         }
 
         // ── Seed Default Admin User if None Exists ──

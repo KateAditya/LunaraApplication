@@ -204,16 +204,36 @@ class _BookingCancellationDialogState extends State<BookingCancellationDialog> {
     final secondaryTextColor = isDark ? Colors.white70 : Colors.black54;
 
     final venueName = _previewData?['venueName'] ?? widget.initialVenueName ?? 'Venue';
-    final eventDate = _previewData?['eventDate'] ?? widget.initialDate ?? 'Event Date';
+    String eventDate = (_previewData?['eventDate'] ?? '').toString().trim();
+    if (eventDate.isEmpty && widget.initialDate != null && widget.initialDate!.trim().isNotEmpty) {
+      final parsed = DateTime.tryParse(widget.initialDate!.trim());
+      if (parsed != null) {
+        try {
+          eventDate = DateFormat('EEEE, d MMMM yyyy').format(parsed);
+        } catch (_) {
+          eventDate = widget.initialDate!.trim();
+        }
+      } else {
+        eventDate = widget.initialDate!.trim();
+      }
+    }
+    if (eventDate.isEmpty) {
+      eventDate = 'Event Date';
+    }
+
     final eventTime = _previewData?['eventTime'] ?? widget.initialTime ?? '';
     final paidAmount = double.tryParse(_previewData?['paidAmount']?.toString() ?? widget.initialAmountPaid?.toString() ?? '0') ?? 0.0;
 
     final policy = _previewData?['refundPolicy'];
     final refundPercentage = policy != null ? (policy['refundPercentage'] ?? 80) : 80;
-    final refundAmount = double.tryParse(_previewData?['refundAmount']?.toString() ?? '0') ?? (paidAmount * refundPercentage / 100);
-    final nonRefundableAmount = double.tryParse(_previewData?['nonRefundableAmount']?.toString() ?? '0') ?? (paidAmount - refundAmount);
-    final refundMethod = _previewData?['refundMethod'] ?? 'Lunara Wallet';
-    final canCancel = _previewData?['canCancel'] ?? true;
+    final refundAmount = _previewData != null
+        ? (double.tryParse(_previewData!['refundAmount']?.toString() ?? '0') ?? 0.0)
+        : (paidAmount * refundPercentage / 100);
+    final nonRefundableAmount = _previewData != null
+        ? (double.tryParse(_previewData!['nonRefundableAmount']?.toString() ?? '0') ?? 0.0)
+        : (paidAmount - refundAmount);
+    final refundMethod = _previewData?['refundMethod'] ?? (refundAmount > 1500 ? 'UPI / Bank Transfer' : 'Lunara Wallet');
+    final canCancel = _previewData != null ? (_previewData!['canCancel'] ?? true) : (_errorMessage == null);
     final cancellationReason = _previewData?['cancellationReason'];
 
     return Container(
@@ -331,17 +351,40 @@ class _BookingCancellationDialogState extends State<BookingCancellationDialog> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: LunaraTheme.electricViolet,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: const Text(
-                    'CLOSE',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _loadCancellationPreview,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: LunaraTheme.electricViolet,
+                          side: const BorderSide(color: LunaraTheme.electricViolet),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: const Text(
+                          'RETRY',
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: const Text(
+                          'CLOSE',
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ] else ...[
                 // Booking Details Card
