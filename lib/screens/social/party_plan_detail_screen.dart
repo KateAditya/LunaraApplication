@@ -8,6 +8,7 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'plan_hub_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/top_notification_banner.dart';
@@ -169,6 +170,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_deleted', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_partner_selected', _onSocketUpdate);
+    ApiService.addSocketListener('plan_unavailable', _onSocketUpdate);
     ApiService.addSocketListener('notification_created', _onSocketUpdate);
   }
 
@@ -186,6 +189,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_deleted', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_partner_selected', _onSocketUpdate);
+    ApiService.removeSocketListener('plan_unavailable', _onSocketUpdate);
     ApiService.removeSocketListener('notification_created', _onSocketUpdate);
   }
 
@@ -1672,6 +1677,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           _openDepositPaymentSheet();
         }
       } else {
+        if (res?['code'] == 'PARTNER_ALREADY_SELECTED') {
+          setState(() {
+            _requestStatus = 'cancelled_partner_selected';
+            _alreadyRequested = false;
+          });
+          _refreshPlanDetails();
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(res?['message'] ?? 'Failed to accept invite'),
@@ -2763,6 +2775,24 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (isMyPost) {
       return _myPlanBanner();
     }
+
+    final currentUserId = ApiService.currentUserId ?? '';
+    final String matchedReqId = (plan['matchedRequestId'] ?? plan['matched_request_id'] ?? '').toString();
+    final String partnerId = (plan['partnerId'] ?? plan['partner_id'] ?? '').toString();
+    final bool isMyRequestConfirmed = _alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+
+    final bool isMatchedWithAnother = !isMyPost && !isMyRequestConfirmed && (
+      (matchedReqId.isNotEmpty && (_activeRequestId == null || _activeRequestId != matchedReqId)) ||
+      (partnerId.isNotEmpty && (currentUserId.isEmpty || partnerId != currentUserId)) ||
+      _requestStatus == 'cancelled_partner_selected' ||
+      plan['reason'] == 'partner_already_selected' ||
+      plan['cancellationReason'] == 'partner_already_selected' ||
+      planStatus == 'partner_already_selected'
+    );
+
+    if (isMatchedWithAnother) {
+      return _partnerAlreadySelectedBanner();
+    }
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -3333,9 +3363,131 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  Widget _partnerAlreadySelectedBanner() {
+    final host = _extractHost(widget.plan);
+    final String hostName = _extractHostName(host, widget.plan);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161622),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Text(
+                      'NO LONGER AVAILABLE',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Party Plan Unavailable',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PlanHubScreen()),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text(
+                          'Find Another Plan',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PlanHubScreen(autoShowCreatePlan: true)),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text(
+                          'Create Your Own',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildPendingRequestsSection() {
-    if (_pendingRequests.isEmpty) return const SizedBox.shrink();
+    if (_pendingRequests.isEmpty || (widget.plan['matchedRequestId'] != null && widget.plan['matchedRequestId'].toString().isNotEmpty)) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

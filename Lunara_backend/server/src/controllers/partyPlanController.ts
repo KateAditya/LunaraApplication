@@ -327,26 +327,124 @@ async function createBookingAndPayments(plan: PartyPlan, request: PartyPlanReque
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// markRequestsAsWaiting — called on accept: puts all other PENDING requests
-// into WAITING state so they can be re-activated if accepted user fails.
+
 // ─────────────────────────────────────────────────────────────────────────────
-async function markRequestsAsWaiting(plan: PartyPlan, acceptedRequestId: string, transaction?: Transaction) {
-    try {
-        const otherRequests = await PartyPlanRequest.findAll({
-            where: {
-                planId: plan.id,
-                id: { [Op.ne]: acceptedRequestId },
-                status: PartyPlanRequestStatus.PENDING,
+// invalidateCompetingRequests — called when a partner is selected (accepted):
+// Atomically marks all other PENDING or WAITING requests (both private and public)
+// as CANCELLED with cancellationReason = 'partner_already_selected' and notifies
+// all losing candidate users that the plan is no longer available.
+// ─────────────────────────────────────────────────────────────────────────────
+async function invalidateCompetingRequests(
+    plan: PartyPlan,
+    winningRequestId: string,
+    winningRequesterId: string,
+    transaction: Transaction
+): Promise<() => Promise<void>> {
+    const otherRequests = await PartyPlanRequest.findAll({
+        where: {
+            planId: plan.id,
+            id: { [Op.ne]: winningRequestId },
+            status: {
+                [Op.in]: [
+                    PartyPlanRequestStatus.PENDING,
+                    PartyPlanRequestStatus.WAITING,
+                ]
             },
-            transaction
-        });
-        for (const req of otherRequests) {
-            await req.update({ status: PartyPlanRequestStatus.WAITING }, { transaction });
-        }
-        logger.info(`[markRequestsAsWaiting] Marked ${otherRequests.length} requests as WAITING for plan ${plan.id}`);
-    } catch (err: any) {
-        logger.error('Error in markRequestsAsWaiting:', err);
+        },
+        transaction
+    });
+
+    for (const req of otherRequests) {
+        await req.update({
+            status: PartyPlanRequestStatus.CANCELLED,
+            previousStatus: req.status,
+            cancelledAt: new Date(),
+            cancelledBy: plan.userId,
+            cancellationReason: 'partner_already_selected',
+            paymentTimeoutAt: null,
+        }, { transaction });
     }
+
+    logger.info(`[invalidateCompetingRequests] Cancelled ${otherRequests.length} competing requests on plan ${plan.id} for partner request ${winningRequestId}`);
+
+    // Return post-commit callback (to run via setImmediate after transaction commit)
+    return async () => {
+        try {
+            const host = await User.findByPk(plan.userId, {
+                attributes: ['id', 'firstName', 'lastName'],
+            });
+            const hostName = host ? `${host.firstName || ''} ${host.lastName || ''}`.trim() : 'The host';
+            const { io } = require('../server');
+
+            // Emit partner selected event to global and affected parties
+            if (io) {
+                io.emit('party_plan_partner_selected', {
+                    partyPlanId: plan.id,
+                    planId: plan.id,
+                    hostId: plan.userId,
+                    partnerId: winningRequesterId,
+                    status: 'PARTNER_SELECTED',
+                });
+                io.emit('party_plan_deleted', { planId: plan.id });
+            }
+
+            for (const req of otherRequests) {
+                try {
+                    await NotificationService.dispatch({
+                        recipientUserId: req.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'plan_unavailable',
+                        category: 'requests',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: 'Party Plan Unavailable',
+                        body: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                        metadata: {
+                            partyPlanId: plan.id,
+                            planId: plan.id,
+                            requestId: req.id,
+                            hostId: plan.userId,
+                            hostName,
+                            status: 'NO_LONGER_AVAILABLE',
+                            reason: 'partner_already_selected',
+                        },
+                        idempotencyKey: `plan_unavailable_${plan.id}_${req.requesterId}`,
+                    });
+
+                    if (io) {
+                        io.to(`user_${req.requesterId}`).emit('party_plan_partner_selected', {
+                            partyPlanId: plan.id,
+                            planId: plan.id,
+                            hostId: plan.userId,
+                            partnerId: winningRequesterId,
+                            status: 'PARTNER_SELECTED',
+                            message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                        });
+                        io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                            partyPlanId: plan.id,
+                            planId: plan.id,
+                            requestId: req.id,
+                            hostName,
+                            message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                        });
+                        io.to(`user_${req.requesterId}`).emit('party_plan_request_updated', {
+                            planId: plan.id,
+                            requestId: req.id,
+                            status: 'cancelled',
+                        });
+                        io.to(`user_${req.requesterId}`).emit('live_feed_update', {
+                            type: 'party_plan_partner_selected',
+                            partyPlanId: plan.id,
+                        });
+                    }
+                } catch (notifErr: any) {
+                    logger.warn(`Failed to dispatch plan_unavailable to user ${req.requesterId}:`, notifErr.message);
+                }
+            }
+        } catch (err: any) {
+            logger.error('invalidateCompetingRequests post-commit notification error:', err);
+        }
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1763,6 +1861,7 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 userId: plan.userId,
                 status: plan.status,
                 lifecycleStatus: plan.lifecycleStatus,
+                matchedRequestId: plan.matchedRequestId,
                 visibility: plan.visibility,
                 selectedUsers: plan.selectedUsers,
                 message: redactVenueNameFromText(plan.message, (plan as any).venue?.name, !!venueData?.isSecret),
@@ -2330,12 +2429,48 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        // Validate that the request being accepted is still PENDING or WAITING (and NOT cancelled)
-        if (request.status === PartyPlanRequestStatus.CANCELLED) {
+        // Atomic concurrency protection: verify plan has no accepted partner and is not already locked
+        if (plan.matchedRequestId && plan.matchedRequestId !== request.id) {
             await transaction.rollback();
             res.status(409).json({
                 success: false,
-                message: 'This request was cancelled by the requester and is no longer available.'
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
+            });
+            return;
+        }
+
+        const existingPartnerReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: plan.id,
+                id: { [Op.ne]: request.id },
+                [Op.or]: [
+                    { status: PartyPlanRequestStatus.ACCEPTED },
+                    {
+                        status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                        paymentTimeoutAt: { [Op.gt]: new Date() }
+                    }
+                ]
+            },
+            transaction
+        });
+        if (existingPartnerReq) {
+            await transaction.rollback();
+            res.status(409).json({
+                success: false,
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
+            });
+            return;
+        }
+
+        // Validate that the request being accepted is still PENDING or WAITING (and NOT cancelled/rejected)
+        if (request.status === PartyPlanRequestStatus.CANCELLED || request.status === PartyPlanRequestStatus.REJECTED) {
+            await transaction.rollback();
+            res.status(409).json({
+                success: false,
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
             });
             return;
         }
@@ -2364,9 +2499,13 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         if (plan.paymentType === 'self_pay') {
             if (hostAlreadyPaid) {
                 // Self-pay + host already paid = instant match. confirmMatch handles everything atomically.
+                const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
                 const postCommit = await confirmMatch(plan, request, transaction);
                 await transaction.commit();
-                setImmediate(postCommit);
+                setImmediate(async () => {
+                    await postInvalidate();
+                    await postCommit();
+                });
 
                 res.json({ success: true, message: 'Request accepted & booking confirmed immediately (Self-Paid) 🎉', data: request });
                 return;
@@ -2377,8 +2516,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                     joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID,
                 }, { transaction });
 
-                // Mark other requests as WAITING
-                await markRequestsAsWaiting(plan, request.id, transaction);
+                // Atomically invalidate all other competing requests (private + public)
+                const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
 
                 await plan.update({
                     lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
@@ -2391,8 +2530,9 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
                 await transaction.commit();
 
-                // Notify joiner via NotificationService
+                // Notify joiner via NotificationService & run post-commit invalidation
                 setImmediate(async () => {
+                    await postInvalidate();
                     try {
                         await NotificationService.dispatch({
                             recipientUserId: request.requesterId,
@@ -2468,8 +2608,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
         }, { transaction });
 
-        // Mark other PENDING requests as WAITING (they can be re-activated if this fails)
-        await markRequestsAsWaiting(plan, request.id, transaction);
+        // Atomically invalidate all competing requests (both private and public)
+        const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
 
         // Reserve the plan with lifecycle state
         const newLifecycle = hostAlreadyPaid
@@ -2491,6 +2631,7 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
         // Post-commit socket & notification dispatch
         setImmediate(async () => {
+            await postInvalidate();
             try {
                 const { io } = require('../server');
 
@@ -3552,8 +3693,30 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             return;
         }
 
+        // Validate that the request being accepted is not cancelled or rejected
+        if (request.status === PartyPlanRequestStatus.CANCELLED || request.status === PartyPlanRequestStatus.REJECTED) {
+            await transaction.rollback();
+            res.status(409).json({
+                success: false,
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
+            });
+            return;
+        }
+
         // Acquire transactional row update lock on the party plan
         await plan.reload({ lock: transaction.LOCK.UPDATE, transaction });
+
+        // Atomic concurrency protection: verify plan has no accepted partner and is not already locked
+        if (plan.matchedRequestId && plan.matchedRequestId !== request.id) {
+            await transaction.rollback();
+            res.status(409).json({
+                success: false,
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
+            });
+            return;
+        }
 
         // Enforce state transition checks: plan must not be cancelled or expired
         if (
@@ -3566,21 +3729,27 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             return;
         }
 
-        // Check if there is already an active unpaid request on this plan (another user took it)
+        // Check if there is already an active accepted or unpaid request on this plan (another user took it)
         const activeReq = await PartyPlanRequest.findOne({
             where: {
                 planId: plan.id,
                 id: { [Op.ne]: request.id },
-                status: PartyPlanRequestStatus.PAYMENT_PENDING,
-                paymentTimeoutAt: { [Op.gt]: new Date() }
+                [Op.or]: [
+                    { status: PartyPlanRequestStatus.ACCEPTED },
+                    {
+                        status: PartyPlanRequestStatus.PAYMENT_PENDING,
+                        paymentTimeoutAt: { [Op.gt]: new Date() }
+                    }
+                ]
             },
             transaction
         });
         if (activeReq) {
             await transaction.rollback();
-            res.status(400).json({
+            res.status(409).json({
                 success: false,
-                message: 'This plan is currently reserved by another user. Try again later.'
+                code: 'PARTNER_ALREADY_SELECTED',
+                message: 'This Party Plan is no longer available because another partner has already joined.'
             });
             return;
         }
@@ -3597,13 +3766,18 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                     status: PartyPlanStatus.INACTIVE,
                     isLive: false,
                     paymentStatus: 'Confirmed',
+                    matchedRequestId: request.id,
                 }, { transaction });
                 await createBookingAndPayments(plan, request, transaction);
 
-                // Reject and notify all other requests now that match is fully confirmed
+                // Atomically invalidate all competing requests (both private and public)
+                const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
                 await rejectAndNotifyStaleRequests(plan, request.id, transaction);
 
                 await transaction.commit();
+                setImmediate(async () => {
+                    await postInvalidate();
+                });
 
                 // Send push notification & socket events
                 setImmediate(async () => {
@@ -3670,13 +3844,18 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 }, { transaction });
                 await plan.update({
                     paymentStatus: 'Awaiting Host Payment',
+                    matchedRequestId: request.id,
                     isLive: false,
                 }, { transaction });
+
+                // Atomically invalidate all competing requests (both private and public)
+                const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
 
                 await transaction.commit();
 
                 // Send push notification & socket events
                 setImmediate(async () => {
+                    await postInvalidate();
                     try {
                         const host = await User.findByPk(plan.userId);
                         const joiner = await User.findByPk(request.requesterId);
@@ -3758,8 +3937,8 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                 joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
             }, { transaction });
 
-            // Mark other PENDING requests as WAITING (they can be re-activated if this fails)
-            await markRequestsAsWaiting(plan, request.id, transaction);
+            // Atomically invalidate all competing requests (both private and public)
+            const postInvalidate = await invalidateCompetingRequests(plan, request.id, request.requesterId, transaction);
 
             const newLifecycle = hostPaid
                 ? PartyPlanLifecycleStatus.HOST_PAYMENT_COMPLETED
@@ -3775,6 +3954,10 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
             }, { transaction });
 
             await transaction.commit();
+
+            setImmediate(async () => {
+                await postInvalidate();
+            });
 
             try {
                 const host = await User.findByPk(plan.userId);

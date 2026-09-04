@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/realtime_sync_manager.dart';
 import 'party_plan_detail_screen.dart';
+import 'plan_hub_screen.dart';
 import 'post_detail_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
@@ -276,6 +277,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.addSocketListener('party_plan_partner_selected', _onPlanUnavailable);
     ApiService.addSocketListener('notification_created', _onNotificationCreated);
     ApiService.addSocketListener('notification_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('notification_received', _onNotificationCreated);
@@ -340,6 +342,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
+    ApiService.removeSocketListener('party_plan_partner_selected', _onPlanUnavailable);
     ApiService.removeSocketListener('notification_created', _onNotificationCreated);
     ApiService.removeSocketListener('notification_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('notification_received', _onNotificationCreated);
@@ -464,6 +467,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onPlanUnavailable(dynamic data) {
     if (!mounted || !context.mounted) return;
+    if (data is Map) {
+      final pId = (data['planId'] ?? data['partyPlanId'] ?? data['id'])?.toString();
+      if (pId != null && pId.isNotEmpty) {
+        ApiService.markPartyPlanAsCancelledLocal(pId);
+      }
+    }
     _loadFeed(showLoader: false);
   }
 
@@ -4844,6 +4853,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
 
+      final bool hasAnotherPartner = !isHost && !isConfirmed && (
+          (planMap['matchedRequestId'] != null &&
+              planMap['matchedRequestId'].toString().isNotEmpty &&
+              (myRequest == null || myRequest['id']?.toString() != planMap['matchedRequestId'].toString())) ||
+          (planMap['partnerId'] != null &&
+              planMap['partnerId'].toString().isNotEmpty &&
+              planMap['partnerId'].toString() != currentUserId) ||
+          myRequest?['cancellationReason'] == 'partner_already_selected' ||
+          myRequest?['reason'] == 'partner_already_selected' ||
+          entries.any((e) =>
+              e['eventType'] == 'plan_unavailable' ||
+              e['reason'] == 'partner_already_selected' ||
+              e['status'] == 'NO_LONGER_AVAILABLE' ||
+              e['metadata']?['reason'] == 'partner_already_selected' ||
+              (e['title'] != null && e['title'].toString().contains('Unavailable')))
+      );
+
       if (isConfirmed) {
         title = '🎉 Match Confirmed!';
         badge = 'CONFIRMED';
@@ -4895,6 +4921,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if (hasAnotherPartner) {
+        title = 'Party Plan Unavailable';
+        badge = 'NO LONGER AVAILABLE';
+        accent = const Color(0xFFEF4444);
+        body = 'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.';
+        statusSummary = 'Unavailable';
+
+        actionsList = [
+          NotificationAction(
+            label: 'Find Another Plan',
+            icon: Icons.explore_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PlanHubScreen()),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+          NotificationAction(
+            label: 'Create Your Own',
+            icon: Icons.add_circle_outline_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PlanHubScreen(autoShowCreatePlan: true)),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];

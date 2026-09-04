@@ -260,11 +260,12 @@ describe('Party Plan PRIVATE and BOTH Flows with Entity Isolation', () => {
 
         expect(acceptBRes.status).toBe(200);
 
-        // 6. Check that reqB is PAYMENT_PENDING and inviteReqA is marked WAITING
+        // 6. Check that reqB is PAYMENT_PENDING and competing inviteReqA is invalidated immediately (CANCELLED)
         const updatedReqB = await PartyPlanRequest.findByPk(reqBId);
         const updatedReqA = await PartyPlanRequest.findByPk(inviteReqA.id);
 
         expect(updatedReqB!.status).toBe(PartyPlanRequestStatus.PAYMENT_PENDING);
-        expect(updatedReqA!.status).toBe(PartyPlanRequestStatus.WAITING);
+        expect(updatedReqA!.status).toBe(PartyPlanRequestStatus.CANCELLED);
+        expect(updatedReqA!.cancellationReason).toBe('partner_already_selected');
     });
 });

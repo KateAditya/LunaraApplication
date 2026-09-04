@@ -65,7 +65,7 @@ router.post(
             .isISO8601().withMessage('planDateTime must be a valid ISO 8601 date (e.g. "2025-06-01T22:00:00.000Z")'),
         body('visibility')
             .optional()
-            .isIn(['public', 'private']).withMessage('visibility must be public or private'),
+            .isIn(['public', 'private', 'both']).withMessage('visibility must be public, private, or both'),
         body('selectedUsers')
             .optional()
             .isArray().withMessage('selectedUsers must be an array of user UUIDs'),
