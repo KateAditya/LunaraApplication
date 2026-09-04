@@ -2744,14 +2744,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.grey[50],
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.grey[200]!),
+                      border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.15)),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.06),
                           blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
@@ -2846,6 +2846,108 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
+                  // Host Details Card
+                  const SizedBox(height: 24),
+                  const Text(
+                    'HOST',
+                    style: TextStyle(
+                      color: Colors.black38,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () {
+                      final hostUserMap = widget.post['user'] is Map
+                          ? Map<String, dynamic>.from(widget.post['user'])
+                          : (widget.post['creator'] is Map
+                              ? Map<String, dynamic>.from(widget.post['creator'])
+                              : {
+                                  'id': widget.post['userId'] ?? widget.post['creatorId'],
+                                  'firstName': firstName,
+                                  'lastName': lastName,
+                                  'photoUrl': photo,
+                                  'profilePhotoUrl': photo,
+                                  'profileImageUrl': photo,
+                                });
+                      User? profileUser;
+                      try {
+                        profileUser = User.fromJson(hostUserMap);
+                      } catch (_) {}
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ProfileScreen(user: profileUser),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.12)),
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                            backgroundImage: photo != null && photo.trim().isNotEmpty
+                                ? NetworkImage(
+                                    photo.startsWith('http')
+                                        ? photo
+                                        : (photo.startsWith('/')
+                                            ? '${ApiService.baseUrl}$photo'
+                                            : '${ApiService.baseUrl}/$photo'),
+                                  )
+                                : null,
+                            child: photo == null || photo.trim().isEmpty
+                                ? const Icon(
+                                    Icons.person,
+                                    color: LunaraTheme.electricViolet,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '$firstName $lastName',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Text(
+                                  'Party Plan Host',
+                                  style: TextStyle(
+                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 40),
                 ],
               ),
@@ -2930,9 +3032,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                       )
-                    : SizedBox(
+                    : Container(
                         width: double.infinity,
                         height: 60,
+                        decoration: BoxDecoration(
+                          gradient: LunaraTheme.purpleGradient,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
                         child: ElevatedButton(
                           onPressed: _alreadyRequested
                               ? null
