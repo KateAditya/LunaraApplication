@@ -148,9 +148,7 @@ interface Counts {
 
 const BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:9076'
-    : `${window.location.protocol}//${window.location.hostname}:9076`);
+  (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:9076');
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   pending: { bg: 'rgba(245, 158, 11, 0.12)', text: '#d97706', border: 'rgba(245,158,11,0.3)' },

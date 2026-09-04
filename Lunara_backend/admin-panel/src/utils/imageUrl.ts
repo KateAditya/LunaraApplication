@@ -22,7 +22,7 @@ export const getImageUrl = (filePath?: string | any): string => {
         return clean;
     }
 
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:5000');
     const formattedPath = clean.startsWith('/') ? clean : '/' + clean;
     return `${baseUrl}${formattedPath}`;
 };

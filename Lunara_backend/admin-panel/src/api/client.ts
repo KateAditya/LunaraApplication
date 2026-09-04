@@ -1,7 +1,17 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 
-const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:9076';
-const API_URL = rawApiUrl.replace(/\/+$/, '');
+const getBaseUrl = (): string => {
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+        return envUrl.trim().replace(/\/+$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+        return window.location.origin;
+    }
+    return 'http://localhost:9076';
+};
+
+const API_URL = getBaseUrl();
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({

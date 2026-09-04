@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { BiSave, BiReset, BiChat } from 'react-icons/bi';
 import { useAuthStore } from '../store/authStore';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://192.168.0.155:9076';
+const API_BASE = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:9076');
 
 interface ChatSettingsData {
   freeDays: number;

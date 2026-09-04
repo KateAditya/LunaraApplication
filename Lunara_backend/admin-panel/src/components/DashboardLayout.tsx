@@ -233,7 +233,7 @@ export const DashboardLayout: React.FC = () => {
 
     // Socket.IO for real-time notifications across the admin panel
     useEffect(() => {
-        const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:9076';
+        const socketUrl = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:9076');
         const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
 
         socket.on('connect', () => {
