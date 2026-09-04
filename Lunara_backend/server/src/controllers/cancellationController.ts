@@ -894,7 +894,7 @@ export const getAdminCancelledPlans = async (req: Request, res: Response): Promi
                 {
                     model: PartyPlan,
                     as: 'plan',
-                    attributes: ['id', 'planTitle', 'planDateTime', 'venueId', 'userId', 'status'],
+                    attributes: ['id', 'message', 'planDateTime', 'venueId', 'userId', 'status'],
                     include: venueId ? [{ model: (require('../models/Venue').default), as: 'venue', where: { id: venueId } }] : [{ model: (require('../models/Venue').default), as: 'venue' }],
                 },
                 {
@@ -941,7 +941,7 @@ export const getAdminCancelledPlans = async (req: Request, res: Response): Promi
                 reliabilityImpact: j.reliabilityImpact || 0,
                 plan: j.plan ? {
                     id: j.plan.id,
-                    planTitle: j.plan.planTitle,
+                    planTitle: j.plan.message || 'Party Plan',
                     planDateTime: j.plan.planDateTime,
                     status: j.plan.status,
                     venue: j.plan.venue,
@@ -1131,7 +1131,7 @@ export const getAdminCancellationAnalytics = async (_req: Request, res: Response
                         { refundStatus: 'COMPLETED' },
                     ],
                 },
-                attributes: ['id', 'creatorId', 'totalAmount', 'refundAmount', 'cancellationReason', 'partyDate', 'createdAt', 'updatedAt', 'cancelledAt'],
+                attributes: ['id', 'userId', 'totalAmount', 'refundAmount', 'partyDate', 'createdAt', 'updatedAt'],
             });
         } catch (_) {}
 
@@ -1650,12 +1650,11 @@ export const adminRestoreBooking = async (req: Request, res: Response): Promise<
 
 /**
  * GET /api/admin/party-plans/cancellations/export
- * Export cancellation data as JSON (suitable for CSV/Excel conversion client-side)
+ * Exports filtered cancellation records as CSV
  */
 export const exportCancellations = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { startDate, endDate, status } = req.query as Record<string, string>;
-
+        const { status, startDate, endDate } = req.query as any;
         const where: any = {};
         if (status && status !== 'all') where.status = status;
         if (startDate) where.requestedAt = { ...where.requestedAt, [Op.gte]: new Date(startDate) };
@@ -1668,7 +1667,7 @@ export const exportCancellations = async (req: Request, res: Response): Promise<
                 {
                     model: PartyPlan,
                     as: 'plan',
-                    attributes: ['id', 'planTitle', 'planDateTime', 'status'],
+                    attributes: ['id', 'message', 'planDateTime', 'status'],
                     include: [{ model: (require('../models/Venue').default), as: 'venue', attributes: ['name', 'city'] }],
                 },
                 { model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'email', 'phone'] },
@@ -1681,7 +1680,7 @@ export const exportCancellations = async (req: Request, res: Response): Promise<
             cancellationRequestId: r.id,
             bookingId: r.bookingId || '—',
             planId: r.planId,
-            planTitle: r.plan?.planTitle || '—',
+            planTitle: r.plan?.message || 'Party Plan',
             venueName: r.plan?.venue?.name || '—',
             venueCity: r.plan?.venue?.city || '—',
             eventDateTime: r.plan?.planDateTime ? new Date(r.plan.planDateTime).toISOString() : '—',
@@ -1725,7 +1724,7 @@ export const exportCancellations = async (req: Request, res: Response): Promise<
             cancellationRequestId: `plan_${p.id}`,
             bookingId: '—',
             planId: p.id,
-            planTitle: p.planTitle || p.message || '—',
+            planTitle: p.message || 'Party Plan',
             venueName: p.venue?.name || '—',
             venueCity: p.venue?.city || '—',
             eventDateTime: p.planDateTime ? new Date(p.planDateTime).toISOString() : '—',
@@ -1763,4 +1762,6 @@ export const exportCancellations = async (req: Request, res: Response): Promise<
         return res.status(500).json({ success: false, message: err.message || 'Export failed' });
     }
 };
+
+export const exportCancellationsCSV = exportCancellations;
 

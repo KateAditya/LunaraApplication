@@ -5,13 +5,14 @@ export const getPartyEvents = async () => {
   return data;
 };
 
-export const getEventSummary = async (eventId: string) => {
-  const { data } = await apiClient.get(`/admin/event-bookings/${eventId}/summary`);
+export const getEventSummary = async (eventId: string = 'all') => {
+  const targetId = eventId || 'all';
+  const { data } = await apiClient.get(`/admin/event-bookings/${targetId}/summary`);
   return data;
 };
 
 export const getEventBookings = async (
-  eventId: string,
+  eventId: string = 'all',
   params: {
     page?: number;
     limit?: number;
@@ -22,6 +23,8 @@ export const getEventBookings = async (
     toDate?: string;
   }
 ) => {
-  const { data } = await apiClient.get(`/admin/event-bookings/${eventId}/bookings`, { params });
+  const targetId = eventId || 'all';
+  const { data } = await apiClient.get(`/admin/event-bookings/${targetId}/bookings`, { params });
   return data;
 };
+

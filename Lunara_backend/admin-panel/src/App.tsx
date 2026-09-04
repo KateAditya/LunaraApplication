@@ -34,11 +34,16 @@ import { BookingPolicySettings } from './pages/BookingPolicySettings';
 import { CancellationRequests } from './pages/CancellationRequests';
 import { ThemeProvider, useThemeMode } from './context/ThemeContext';
 
-// Create React Query client
-const queryClient = new QueryClient({
+// Create React Query client with 3-minute smart auto-refresh
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
+      refetchInterval: 3 * 60 * 1000, // Auto-refresh all pages every 3 minutes
+      refetchIntervalInBackground: false, // Freeze polling when tab is hidden to preserve system performance
+      refetchOnWindowFocus: true, // Smoothly refresh stale data when admin switches back to tab
+      refetchOnReconnect: true, // Auto-refresh when internet reconnects
+      staleTime: 45 * 1000, // 45 seconds cache validity to prevent duplicate bursts
+      gcTime: 10 * 60 * 1000, // 10 minutes cache garbage collection
       retry: 1,
     },
   },

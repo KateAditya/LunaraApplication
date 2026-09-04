@@ -4,16 +4,25 @@ import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import Ad from '../models/Ad';
 import User from '../models/User';
 import Ticket from '../models/Ticket';
+import Venue from '../models/Venue';
 
 /**
- * Fetch all Party Events for the dropdown
+ * Fetch all Party Events for the dropdown and selection
  */
-export const getPartyEvents = async (_req: Request, res: Response) => {
+export const getPartyEvents = async (_req: Request, res: Response): Promise<void> => {
     try {
         const events = await Ad.findAll({
             where: { type: 'Party' },
             order: [['eventDate', 'DESC'], ['createdAt', 'DESC']],
             attributes: ['id', 'title', 'eventDate', 'entryPrice', 'seatLimit', 'isUnlimited', 'city', 'area', 'venueId'],
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    attributes: ['id', 'name', 'address', 'city'],
+                    required: false,
+                }
+            ]
         });
         res.json({ success: true, events });
     } catch (error) {
@@ -23,68 +32,129 @@ export const getPartyEvents = async (_req: Request, res: Response) => {
 };
 
 /**
- * Fetch summary statistics for a specific Party Event
+ * Fetch summary statistics for a specific Party Event OR overall aggregate across all events
  */
 export const getEventSummary = async (req: Request, res: Response): Promise<void> => {
     try {
         const { eventId } = req.params;
+        const isAll = !eventId || eventId === 'all';
 
-        const event = await Ad.findOne({ where: { id: eventId, type: 'Party' } });
-        if (!event) {
-            res.status(404).json({ success: false, message: 'Party event not found' });
-            return;
+        let event: any = null;
+        let whereClause: any = {};
+
+        if (!isAll) {
+            event = await Ad.findOne({
+                where: { id: eventId, type: 'Party' },
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'city', 'address'] }]
+            });
+            if (!event) {
+                res.status(404).json({ success: false, message: 'Party event not found' });
+                return;
+            }
+            whereClause.partyEventId = eventId;
+        } else {
+            whereClause.partyEventId = { [Op.ne]: null };
         }
 
-        const validBookings = await Booking.findAll({
-            where: {
-                partyEventId: eventId,
-                status: {
-                    [Op.notIn]: [BookingStatus.CANCELLED, BookingStatus.NO_SHOW]
-                }
-            }
+        // Fetch ALL bookings for this event (or all events) to compute full financial & cancellation breakdown
+        const allBookings = await Booking.findAll({
+            where: whereClause,
+            order: [['createdAt', 'DESC']],
         });
 
-        let totalBookings = validBookings.length;
+        const totalEventsCount = isAll ? await Ad.count({ where: { type: 'Party' } }) : 1;
+
+        let totalBookings = allBookings.length;
         let confirmedBookings = 0;
+        let completedBookings = 0;
+        let cancelledBookings = 0;
+        let pendingBookings = 0;
         let paidBookings = 0;
         let freeBookings = 0;
-        let totalEntries = 0;
-        let totalRevenue = 0;
+        let refundedBookings = 0;
 
-        for (const b of validBookings) {
-            if (b.status === BookingStatus.CONFIRMED) {
-                confirmedBookings++;
-                totalEntries += b.numberOfGuests;
+        let totalAttendees = 0;
+        let grossRevenue = 0;
+        let refundedAmount = 0;
 
-                if (b.paymentStatus === PaymentStatus.PAID) {
-                    if (b.totalAmount > 0) {
+        for (const b of allBookings) {
+            const amt = Number(b.totalAmount || 0);
+            const status = (b.status || '').toLowerCase();
+            const payStatus = (b.paymentStatus || '').toLowerCase();
+
+            if (status === BookingStatus.CANCELLED) {
+                cancelledBookings++;
+                if (payStatus === PaymentStatus.REFUNDED || payStatus === PaymentStatus.PAID) {
+                    refundedBookings++;
+                    refundedAmount += amt;
+                }
+            } else if (status === BookingStatus.CONFIRMED || status === BookingStatus.COMPLETED) {
+                if (status === BookingStatus.CONFIRMED) confirmedBookings++;
+                if (status === BookingStatus.COMPLETED) completedBookings++;
+
+                totalAttendees += Number(b.numberOfGuests || 1);
+
+                if (payStatus === PaymentStatus.PAID) {
+                    if (amt > 0) {
                         paidBookings++;
-                        totalRevenue += Number(b.totalAmount);
+                        grossRevenue += amt;
                     } else {
                         freeBookings++;
                     }
-                } else if (b.totalAmount == 0) {
-                    // Free registration logic for older logic if paymentStatus isn't explicitly PAID
+                } else if (amt === 0) {
                     freeBookings++;
                 }
+            } else if (status === BookingStatus.PENDING) {
+                pendingBookings++;
             }
         }
 
-        let filledSeats = totalEntries;
-        let remainingSeats = event.isUnlimited ? 'Unlimited' : Math.max(0, (event.seatLimit || 0) - filledSeats);
+        const netRevenue = Math.max(0, grossRevenue - refundedAmount);
+        const cancellationRate = totalBookings > 0 ? Number(((cancelledBookings / totalBookings) * 100).toFixed(1)) : 0;
+        const avgBookingValue = (confirmedBookings + completedBookings) > 0 
+            ? Math.round(grossRevenue / (confirmedBookings + completedBookings)) 
+            : 0;
+
+        let filledSeats = totalAttendees;
+        let seatLimitDisplay = 'Unlimited';
+        let remainingSeats: any = 'Unlimited';
+        let occupancyRate = 0;
+
+        if (event) {
+            if (event.isUnlimited) {
+                seatLimitDisplay = 'No Limit';
+                remainingSeats = 'Unlimited';
+            } else {
+                const limit = Number(event.seatLimit || 0);
+                seatLimitDisplay = String(limit);
+                remainingSeats = Math.max(0, limit - filledSeats);
+                occupancyRate = limit > 0 ? Number(Math.min(100, (filledSeats / limit) * 100).toFixed(1)) : 0;
+            }
+        }
 
         res.json({
             success: true,
             summary: {
+                totalEvents: totalEventsCount,
                 totalBookings,
                 confirmedBookings,
+                completedBookings,
+                cancelledBookings,
+                pendingBookings,
                 paidBookings,
                 freeBookings,
-                totalEntries,
+                refundedBookings,
+                totalAttendees,
                 filledSeats,
                 remainingSeats,
-                totalRevenue,
-                seatLimit: event.isUnlimited ? 'No Limit' : event.seatLimit,
+                seatLimit: seatLimitDisplay,
+                occupancyRate,
+                grossRevenue,
+                refundedAmount,
+                netRevenue,
+                cancellationRate,
+                avgBookingValue,
+                isAllEvents: isAll,
             }
         });
     } catch (error) {
@@ -94,28 +164,36 @@ export const getEventSummary = async (req: Request, res: Response): Promise<void
 };
 
 /**
- * Fetch paginated bookings for a specific Party Event with search and filters
+ * Fetch paginated bookings for a specific Party Event OR all party events
  */
 export const getEventBookings = async (req: Request, res: Response): Promise<void> => {
     try {
         const { eventId } = req.params;
+        const isAll = !eventId || eventId === 'all';
+
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 20;
         const offset = (page - 1) * limit;
 
-        const search = (req.query.search as string) || '';
-        const bookingStatus = req.query.bookingStatus as string;
-        const paymentStatus = req.query.paymentStatus as string;
+        const search = ((req.query.search as string) || '').trim();
+        const bookingStatus = (req.query.bookingStatus as string) || '';
+        const paymentStatus = (req.query.paymentStatus as string) || '';
         const fromDate = req.query.fromDate as string;
         const toDate = req.query.toDate as string;
 
         // Base where clause for Booking
-        let whereClause: any = {
-            partyEventId: eventId
-        };
+        let whereClause: any = {};
+        if (!isAll) {
+            whereClause.partyEventId = eventId;
+        } else {
+            whereClause.partyEventId = { [Op.ne]: null };
+        }
 
-        if (bookingStatus) whereClause.status = bookingStatus;
-        if (paymentStatus) {
+        if (bookingStatus && bookingStatus !== 'all') {
+            whereClause.status = bookingStatus;
+        }
+
+        if (paymentStatus && paymentStatus !== 'all') {
             if (paymentStatus === 'free') {
                 whereClause.totalAmount = 0;
             } else {
@@ -124,52 +202,40 @@ export const getEventBookings = async (req: Request, res: Response): Promise<voi
         }
         
         if (fromDate || toDate) {
-            whereClause.bookingDate = {};
-            if (fromDate) whereClause.bookingDate[Op.gte] = new Date(fromDate);
-            if (toDate) whereClause.bookingDate[Op.lte] = new Date(toDate);
+            whereClause.createdAt = {};
+            if (fromDate) whereClause.createdAt[Op.gte] = new Date(fromDate);
+            if (toDate) whereClause.createdAt[Op.lte] = new Date(toDate);
         }
 
-        // Search in user or booking number
-        let userWhereClause: any = {};
+        // Handle search
+        let userWhereClause: any = undefined;
         if (search) {
             const searchLower = `%${search.toLowerCase()}%`;
-            whereClause[Op.or] = [
-                { bookingNumber: { [Op.iLike]: searchLower } }
-            ];
-            
             userWhereClause = {
                 [Op.or]: [
                     { firstName: { [Op.iLike]: searchLower } },
                     { lastName: { [Op.iLike]: searchLower } },
                     { email: { [Op.iLike]: searchLower } },
-                    { mobile: { [Op.iLike]: searchLower } }
+                    { phone: { [Op.iLike]: searchLower } },
                 ]
             };
         }
 
-        let includeConfig: any[] = [
+        const includeConfig: any[] = [
             {
                 model: User,
                 as: 'user',
-                attributes: ['id', 'firstName', 'lastName', 'email', 'mobile', 'profileImageUrl'],
-                where: search ? userWhereClause : undefined,
-                required: !!search && Object.keys(userWhereClause).length > 0
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                where: userWhereClause,
+                required: !!userWhereClause,
+            },
+            {
+                model: Ad,
+                as: 'partyEvent',
+                attributes: ['id', 'title', 'eventDate', 'entryPrice', 'city', 'area'],
+                required: false,
             }
         ];
-        
-        if (search) {
-            delete whereClause[Op.or]; // Remove previous OR
-            includeConfig[0].where = undefined;
-            includeConfig[0].required = false;
-
-            whereClause[Op.or] = [
-                { bookingNumber: { [Op.iLike]: `%${search}%` } },
-                { '$user.first_name$': { [Op.iLike]: `%${search}%` } },
-                { '$user.last_name$': { [Op.iLike]: `%${search}%` } },
-                { '$user.email$': { [Op.iLike]: `%${search}%` } },
-                { '$user.mobile$': { [Op.iLike]: `%${search}%` } }
-            ];
-        }
 
         const { count, rows } = await Booking.findAndCountAll({
             where: whereClause,
@@ -177,7 +243,7 @@ export const getEventBookings = async (req: Request, res: Response): Promise<voi
             order: [['createdAt', 'DESC']],
             limit,
             offset,
-            distinct: true
+            distinct: true,
         });
 
         const bookingIds = rows.map(b => b.id);

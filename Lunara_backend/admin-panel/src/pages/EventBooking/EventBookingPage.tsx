@@ -1,177 +1,340 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getPartyEvents, getEventSummary } from '../../api/eventBookings';
-import { Container, Row, Col, Card, Form, Spinner } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Spinner, ProgressBar } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { EventBookingTable } from './EventBookingTable';
-import { BiCalendarEvent, BiGroup, BiDollarCircle, BiCalendar, BiMap } from 'react-icons/bi';
+import {
+  BiCalendarEvent,
+  BiGroup,
+  BiDollarCircle,
+  BiMap,
+  BiCheckCircle,
+  BiXCircle,
+  BiRefresh,
+  BiMoney,
+  BiTrendingUp,
+  BiUndo,
+  BiParty,
+} from 'react-icons/bi';
 import { useThemeMode } from '../../context/ThemeContext';
 
 export function EventBookingPage() {
   const { mode } = useThemeMode();
-  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [selectedEventId, setSelectedEventId] = useState<string>('all');
 
-  const { data: eventsData, isLoading: loadingEvents } = useQuery({
+  const { data: eventsData, isLoading: loadingEvents, refetch: refetchEvents } = useQuery({
     queryKey: ['partyEvents'],
     queryFn: getPartyEvents,
   });
 
-  const { data: summaryData, isLoading: loadingSummary } = useQuery({
+  const { data: summaryData, isLoading: loadingSummary, refetch: refetchSummary } = useQuery({
     queryKey: ['eventSummary', selectedEventId],
     queryFn: () => getEventSummary(selectedEventId),
-    enabled: !!selectedEventId,
   });
 
   const events = eventsData?.events || [];
-  const selectedEvent = events.find((e: any) => e.id === selectedEventId);
+  const selectedEvent = selectedEventId !== 'all' ? events.find((e: any) => e.id === selectedEventId) : null;
   const summary = summaryData?.summary;
 
-  const cardBg = mode === 'dark' ? 'bg-dark text-white border-secondary' : 'bg-white text-dark';
-  const cardValueStyle = { fontSize: '1.5rem', fontWeight: 'bold' };
+  const cardBg = mode === 'dark' ? 'bg-dark text-white border-secondary' : 'bg-white text-dark shadow-sm border-0';
+
+  const handleRefreshAll = () => {
+    refetchEvents();
+    refetchSummary();
+  };
 
   return (
     <Container fluid className="py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <h2 className={`mb-1 ${mode === 'dark' ? 'text-white' : 'text-dark'}`}>Event Booking Management</h2>
-          <p className="text-muted mb-0">Manage and monitor all Party Event bookings</p>
+      {/* ─── Hero Header Banner ────────────────────────────────────────────── */}
+      <div
+        className="card border-0 shadow-sm mb-4"
+        style={{
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
+          borderRadius: '16px',
+        }}
+      >
+        <div className="card-body p-4 text-white">
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+            <div>
+              <div className="d-flex align-items-center gap-2 mb-1">
+                <span className="p-2 rounded-3 bg-white bg-opacity-10 text-white">
+                  <BiParty size={26} />
+                </span>
+                <h4 className="fw-bold mb-0 text-white">Party Event Booking & Revenue Hub</h4>
+              </div>
+              <p className="mb-0 text-white-50 small">
+                Track real-time event registrations, ticket sales revenue, cancellations, refund statistics, and guest attendances.
+              </p>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                onClick={handleRefreshAll}
+                className="btn btn-outline-light btn-sm d-flex align-items-center gap-1"
+                title="Refresh Metrics"
+              >
+                <BiRefresh size={16} /> Refresh
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <Card className={`mb-4 ${cardBg}`}>
-        <Card.Body>
-          <Form.Group>
-            <Form.Label>Select Party Event</Form.Label>
-            {loadingEvents ? (
-              <div className="py-2"><Spinner animation="border" size="sm" /> Loading events...</div>
-            ) : (
-              <Form.Select 
-                value={selectedEventId} 
-                onChange={(e) => setSelectedEventId(e.target.value)}
-                className={mode === 'dark' ? 'bg-dark text-white border-secondary' : ''}
-              >
-                <option value="">-- Select Event --</option>
-                {events.map((evt: any) => (
-                  <option key={evt.id} value={evt.id}>
-                    {evt.title} ({format(new Date(evt.eventDate), 'dd-MM-yyyy')})
-                  </option>
-                ))}
-              </Form.Select>
-            )}
-          </Form.Group>
+      {/* ─── Event Selector Card ─────────────────────────────────────────── */}
+      <Card className={`mb-4 ${cardBg}`} style={{ borderRadius: '14px' }}>
+        <Card.Body className="p-3">
+          <Row className="align-items-center g-3">
+            <Col md={6} lg={5}>
+              <Form.Label className="small fw-bold text-muted text-uppercase mb-1">
+                Filter by Party Event
+              </Form.Label>
+              {loadingEvents ? (
+                <div className="py-1 text-muted small">
+                  <Spinner animation="border" size="sm" className="me-2" /> Loading party events...
+                </div>
+              ) : (
+                <Form.Select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className={`form-select-sm fw-semibold ${mode === 'dark' ? 'bg-dark text-white border-secondary' : ''}`}
+                >
+                  <option value="all">🌟 All Party Events (Platform-wide Overview)</option>
+                  {events.map((evt: any) => (
+                    <option key={evt.id} value={evt.id}>
+                      {evt.title} ({evt.eventDate ? format(new Date(evt.eventDate), 'dd MMM yyyy') : 'No date'}) • {evt.city || 'General'}
+                    </option>
+                  ))}
+                </Form.Select>
+              )}
+            </Col>
+            <Col md={6} lg={7} className="d-flex justify-content-md-end align-items-center">
+              <div className="text-muted small">
+                {selectedEventId === 'all' ? (
+                  <span>Showing aggregated statistics for <strong>{events.length}</strong> active & scheduled events</span>
+                ) : (
+                  <span>Viewing focused metrics for selected event</span>
+                )}
+              </div>
+            </Col>
+          </Row>
         </Card.Body>
       </Card>
 
+      {/* ─── Selected Event Info (if specific event chosen) ────────────────── */}
       {selectedEvent && (
-        <>
-          <Card className={`mb-4 ${cardBg}`}>
-            <Card.Body>
-              <h4 className="mb-3">{selectedEvent.title}</h4>
-              <Row>
-                <Col md={3}>
-                  <p className="mb-1 text-muted"><BiCalendarEvent size={16} className="me-1"/> Event Date</p>
-                  <strong>{format(new Date(selectedEvent.eventDate), 'dd-MM-yyyy')}</strong>
-                </Col>
-                <Col md={3}>
-                  <p className="mb-1 text-muted"><BiMap size={16} className="me-1"/> Venue / Location</p>
-                  <strong>{selectedEvent.venue?.name || 'Unknown'} | {selectedEvent.area}, {selectedEvent.city}</strong>
-                </Col>
-                <Col md={3}>
-                  <p className="mb-1 text-muted"><BiDollarCircle size={16} className="me-1"/> Entry Price</p>
-                  <strong>₹{selectedEvent.entryPrice || 0}</strong>
-                </Col>
-                <Col md={3}>
-                  <p className="mb-1 text-muted"><BiGroup size={16} className="me-1"/> Seat Limit</p>
-                  <strong>{selectedEvent.isUnlimited ? 'No Limit' : selectedEvent.seatLimit}</strong>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
+        <Card className={`mb-4 ${cardBg}`} style={{ borderRadius: '14px' }}>
+          <Card.Body className="p-4">
+            <div className="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+              <div>
+                <span className="badge bg-primary-subtle text-primary mb-2 text-uppercase fw-semibold" style={{ fontSize: '0.7rem' }}>
+                  Selected Event Details
+                </span>
+                <h4 className="fw-bold mb-1">{selectedEvent.title}</h4>
+              </div>
+              <div className="text-end">
+                <span className="badge bg-success-subtle text-success fs-6 fw-bold">
+                  Entry: ₹{selectedEvent.entryPrice || 0}
+                </span>
+              </div>
+            </div>
 
-          {loadingSummary ? (
-            <div className="text-center py-4"><Spinner animation="border" /></div>
-          ) : summary ? (
-            <Row className="mb-4">
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Total Seats</div>
-                    <div style={cardValueStyle}>{summary.seatLimit}</div>
-                  </Card.Body>
-                </Card>
+            <Row className="g-3">
+              <Col sm={6} md={3}>
+                <div className="p-2 rounded bg-light bg-opacity-50">
+                  <div className="text-muted small d-flex align-items-center gap-1 mb-1">
+                    <BiCalendarEvent className="text-primary" /> Event Date
+                  </div>
+                  <strong>{selectedEvent.eventDate ? format(new Date(selectedEvent.eventDate), 'dd-MM-yyyy') : '—'}</strong>
+                </div>
               </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Filled Seats</div>
-                    <div style={cardValueStyle} className="text-primary">{summary.filledSeats}</div>
-                  </Card.Body>
-                </Card>
+              <Col sm={6} md={3}>
+                <div className="p-2 rounded bg-light bg-opacity-50">
+                  <div className="text-muted small d-flex align-items-center gap-1 mb-1">
+                    <BiMap className="text-danger" /> Venue & City
+                  </div>
+                  <strong>{selectedEvent.venue?.name || selectedEvent.area || 'Venue TBA'}, {selectedEvent.city}</strong>
+                </div>
               </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Remaining Seats</div>
-                    <div style={cardValueStyle} className="text-info">{summary.remainingSeats}</div>
-                  </Card.Body>
-                </Card>
+              <Col sm={6} md={3}>
+                <div className="p-2 rounded bg-light bg-opacity-50">
+                  <div className="text-muted small d-flex align-items-center gap-1 mb-1">
+                    <BiGroup className="text-info" /> Capacity / Limit
+                  </div>
+                  <strong>{selectedEvent.isUnlimited ? 'Unlimited Seats' : `${selectedEvent.seatLimit} Seats`}</strong>
+                </div>
               </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Total Revenue</div>
-                    <div style={cardValueStyle} className="text-success">₹{summary.totalRevenue.toLocaleString()}</div>
-                  </Card.Body>
-                </Card>
-              </Col>
-              
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Total Bookings</div>
-                    <div style={cardValueStyle}>{summary.totalBookings}</div>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Confirmed Bookings</div>
-                    <div style={cardValueStyle}>{summary.confirmedBookings}</div>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Paid Bookings</div>
-                    <div style={cardValueStyle}>{summary.paidBookings}</div>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className={`h-100 ${cardBg}`}>
-                  <Card.Body>
-                    <div className="text-muted mb-2">Free Registrations</div>
-                    <div style={cardValueStyle}>{summary.freeBookings}</div>
-                  </Card.Body>
-                </Card>
+              <Col sm={6} md={3}>
+                <div className="p-2 rounded bg-light bg-opacity-50">
+                  <div className="text-muted small d-flex align-items-center gap-1 mb-1">
+                    <BiTrendingUp className="text-success" /> Occupancy Rate
+                  </div>
+                  <strong>{summary?.occupancyRate ? `${summary.occupancyRate}%` : '—'}</strong>
+                </div>
               </Col>
             </Row>
-          ) : null}
 
-          <EventBookingTable eventId={selectedEventId} event={selectedEvent} />
-        </>
-      )}
-
-      {!selectedEventId && (
-        <Card className={`text-center py-5 ${cardBg}`}>
-          <Card.Body>
-            <BiCalendar size={48} className="text-muted mb-3 opacity-50" />
-            <h5 className="text-muted">Select an event to view bookings</h5>
+            {summary && !selectedEvent.isUnlimited && (
+              <div className="mt-3">
+                <div className="d-flex justify-content-between small text-muted mb-1">
+                  <span>Capacity Filled: {summary.filledSeats} / {selectedEvent.seatLimit}</span>
+                  <span>{summary.remainingSeats} remaining</span>
+                </div>
+                <ProgressBar
+                  now={summary.occupancyRate || 0}
+                  variant={summary.occupancyRate > 85 ? 'danger' : summary.occupancyRate > 50 ? 'warning' : 'success'}
+                  style={{ height: '8px' }}
+                />
+              </div>
+            )}
           </Card.Body>
         </Card>
       )}
+
+      {/* ─── Financial & Operational KPI Grid ─────────────────────────────── */}
+      {loadingSummary ? (
+        <div className="text-center py-5">
+          <Spinner animation="border" variant="primary" />
+          <p className="text-muted small mt-2">Computing event revenue & cancellation analysis...</p>
+        </div>
+      ) : summary ? (
+        <Row className="g-3 mb-4">
+          {/* Gross Revenue */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Gross Ticket Revenue</span>
+                  <span className="p-2 rounded bg-success-subtle text-success">
+                    <BiMoney size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-success">₹{(summary.grossRevenue || 0).toLocaleString('en-IN')}</h3>
+                <span className="text-muted small">Total confirmed ticket sales</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Refunded on Cancellations */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Total Refunded</span>
+                  <span className="p-2 rounded bg-danger-subtle text-danger">
+                    <BiUndo size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-danger">₹{(summary.refundedAmount || 0).toLocaleString('en-IN')}</h3>
+                <span className="text-muted small">{summary.cancelledBookings || 0} cancelled bookings refunded</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Net Revenue */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Net Retained Revenue</span>
+                  <span className="p-2 rounded bg-primary-subtle text-primary">
+                    <BiDollarCircle size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-primary">₹{(summary.netRevenue || 0).toLocaleString('en-IN')}</h3>
+                <span className="text-muted small">Gross sales minus refunded cancellations</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Total Attendees */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Total Attendees</span>
+                  <span className="p-2 rounded bg-info-subtle text-info">
+                    <BiGroup size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-info">{(summary.totalAttendees || 0).toLocaleString('en-IN')}</h3>
+                <span className="text-muted small">Registered guests / entries</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Total Bookings */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Total Bookings</span>
+                  <span className="p-2 rounded bg-secondary-subtle text-secondary">
+                    <BiCalendarEvent size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1">{summary.totalBookings || 0}</h3>
+                <span className="text-muted small">All booking records created</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Confirmed Bookings */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Confirmed / Paid</span>
+                  <span className="p-2 rounded bg-success-subtle text-success">
+                    <BiCheckCircle size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-success">{summary.confirmedBookings || 0}</h3>
+                <span className="text-muted small">{summary.paidBookings || 0} paid • {summary.freeBookings || 0} free</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Cancelled Bookings */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Cancellations</span>
+                  <span className="p-2 rounded bg-danger-subtle text-danger">
+                    <BiXCircle size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-danger">
+                  {summary.cancelledBookings || 0}
+                  <span className="small fs-6 text-muted ms-2">({summary.cancellationRate || 0}%)</span>
+                </h3>
+                <span className="text-muted small">Cancellation rate across bookings</span>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Average Booking Spend */}
+          <Col xl={3} md={6}>
+            <Card className={`h-100 ${cardBg}`} style={{ borderRadius: '14px' }}>
+              <Card.Body className="p-3">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <span className="text-muted small fw-semibold text-uppercase">Avg Booking Value</span>
+                  <span className="p-2 rounded bg-warning-subtle text-warning">
+                    <BiTrendingUp size={18} />
+                  </span>
+                </div>
+                <h3 className="fw-bold mb-1 text-warning">₹{(summary.avgBookingValue || 0).toLocaleString('en-IN')}</h3>
+                <span className="text-muted small">Average spend per confirmed booking</span>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      ) : null}
+
+      {/* ─── Unified Event Bookings & Cancellation Table ─────────────────── */}
+      <EventBookingTable eventId={selectedEventId} event={selectedEvent} />
     </Container>
   );
 }
+
+export default EventBookingPage;

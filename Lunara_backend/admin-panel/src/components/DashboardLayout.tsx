@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { io } from 'socket.io-client';
 import {
     BiHomeAlt,
@@ -144,6 +145,10 @@ export const DashboardLayout: React.FC = () => {
         fetchNotifications();
     };
 
+    const queryClient = useQueryClient();
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+
     const [notifCounts, setNotifCounts] = useState<NotificationCounts>({
         bookings: 0,
         partyRequests: 0,
@@ -230,6 +235,22 @@ export const DashboardLayout: React.FC = () => {
         const interval = setInterval(fetchNotifications, 10000);
         return () => clearInterval(interval);
     }, [location.pathname, fetchNotifications]);
+
+    const handleManualSync = async () => {
+        setIsSyncing(true);
+        try {
+            await Promise.all([
+                queryClient.invalidateQueries(),
+                fetchNotifications(),
+            ]);
+            setLastSyncTime(new Date());
+        } catch (e) {
+            console.error('Manual sync failed:', e);
+        } finally {
+            setTimeout(() => setIsSyncing(false), 500);
+        }
+    };
+
 
     // Socket.IO for real-time notifications across the admin panel
     useEffect(() => {
@@ -441,6 +462,39 @@ export const DashboardLayout: React.FC = () => {
                 </div>
 
                 <div className="header-right">
+                    {/* Auto-Refresh Status & Manual Sync Button */}
+                    <div 
+                        className="d-none d-sm-flex align-items-center gap-2 px-2 py-1 rounded border"
+                        style={{ 
+                            fontSize: '0.75rem',
+                            background: mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                            borderColor: mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                            marginRight: '1rem'
+                        }}
+                    >
+                        <span 
+                            style={{ 
+                                width: '7px', 
+                                height: '7px', 
+                                borderRadius: '50%', 
+                                backgroundColor: '#10b981',
+                                display: 'inline-block',
+                                boxShadow: '0 0 6px #10b981'
+                            }} 
+                        />
+                        <span className="text-muted fw-semibold" style={{ fontSize: '0.72rem' }}>Auto-Sync (3m)</span>
+                        <button
+                            className="btn btn-sm btn-link p-0 text-primary text-decoration-none d-flex align-items-center gap-1 ms-1"
+                            onClick={handleManualSync}
+                            disabled={isSyncing}
+                            title={`Last refreshed at ${lastSyncTime.toLocaleTimeString()}`}
+                            style={{ fontSize: '0.72rem', fontWeight: 600 }}
+                        >
+                            <BiRefresh className={isSyncing ? 'rotating' : ''} size={14} />
+                            <span>{isSyncing ? 'Syncing…' : 'Sync'}</span>
+                        </button>
+                    </div>
+
                     {/* Theme Toggle */}
                     <button className="header-btn" onClick={toggleTheme} title={mode === 'dark' ? 'Switch to Light' : 'Switch to Dark'}>
                         {mode === 'dark' ? <BiSun /> : <BiMoon />}

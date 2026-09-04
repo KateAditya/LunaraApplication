@@ -84,7 +84,7 @@ export class AdminCancellationController {
                             attributes: ['id', 'name', 'city', 'addressLine1'],
                         },
                     ],
-                    order: [['cancelledAt', 'DESC'], ['createdAt', 'DESC']],
+                    order: [['updatedAt', 'DESC'], ['createdAt', 'DESC']],
                 }),
                 Booking.findAll({
                     where: bkWhere,
@@ -100,7 +100,7 @@ export class AdminCancellationController {
                             attributes: ['id', 'name', 'city', 'addressLine1'],
                         },
                     ],
-                    order: [['cancelledAt', 'DESC'], ['createdAt', 'DESC']],
+                    order: [['updatedAt', 'DESC'], ['createdAt', 'DESC']],
                 }),
             ]);
 

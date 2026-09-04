@@ -180,17 +180,17 @@ export const CancelledPartyPlans: React.FC = () => {
             {/* ─── Filters ────────────────────────────────────────────────── */}
             {showFilters && (
                 <div className="card border-0 shadow-sm mb-4">
-                    <div className="card-body">
-                        <div className="row g-3">
-                            <div className="col-md-3">
-                                <label className="form-label small fw-semibold">Search</label>
+                    <div className="card-body p-3">
+                        <div className="row g-2 align-items-end">
+                            <div className="col-xl-3 col-lg-4 col-md-6 col-12">
+                                <label className="form-label small fw-semibold mb-1">Search</label>
                                 <div className="input-group input-group-sm">
-                                    <span className="input-group-text"><BiSearch /></span>
+                                    <span className="input-group-text bg-light"><BiSearch /></span>
                                     <input className="form-control" placeholder="Name, email, booking ID…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
                                 </div>
                             </div>
-                            <div className="col-md-2">
-                                <label className="form-label small fw-semibold">Status</label>
+                            <div className="col-xl-2 col-lg-2 col-md-3 col-6">
+                                <label className="form-label small fw-semibold mb-1">Status</label>
                                 <select className="form-select form-select-sm" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
                                     <option value="all">All Statuses</option>
                                     <option value="pending">Pending</option>
@@ -200,8 +200,8 @@ export const CancelledPartyPlans: React.FC = () => {
                                     <option value="expired">Expired</option>
                                 </select>
                             </div>
-                            <div className="col-md-2">
-                                <label className="form-label small fw-semibold">Reason</label>
+                            <div className="col-xl-2 col-lg-2 col-md-3 col-6">
+                                <label className="form-label small fw-semibold mb-1">Reason</label>
                                 <select className="form-select form-select-sm" value={reason} onChange={e => { setReason(e.target.value); setPage(1); }}>
                                     <option value="all">All Reasons</option>
                                     <option value="my_plans_changed">Plans Changed</option>
@@ -213,22 +213,23 @@ export const CancelledPartyPlans: React.FC = () => {
                                     <option value="other">Other</option>
                                 </select>
                             </div>
-                            <div className="col-md-2">
-                                <label className="form-label small fw-semibold">Requested By</label>
+                            <div className="col-xl-2 col-lg-2 col-md-3 col-6">
+                                <label className="form-label small fw-semibold mb-1">Requested By</label>
                                 <select className="form-select form-select-sm" value={requestedBy} onChange={e => { setRequestedBy(e.target.value); setPage(1); }}>
                                     <option value="all">All</option>
                                     <option value="host">Host</option>
                                     <option value="participant">Participant</option>
                                 </select>
                             </div>
-                            <div className="col-md-2">
-                                <label className="form-label small fw-semibold">Date Range</label>
-                                <div className="d-flex gap-1">
-                                    <input type="date" className="form-control form-control-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                                    <input type="date" className="form-control form-control-sm" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                                </div>
+                            <div className="col-xl-2 col-lg-2 col-md-3 col-6">
+                                <label className="form-label small fw-semibold mb-1">From Date</label>
+                                <input type="date" className="form-control form-control-sm" value={startDate} onChange={e => { setStartDate(e.target.value); setPage(1); }} />
                             </div>
-                            <div className="col-md-1 d-flex align-items-end">
+                            <div className="col-xl-2 col-lg-2 col-md-3 col-6">
+                                <label className="form-label small fw-semibold mb-1">To Date</label>
+                                <input type="date" className="form-control form-control-sm" value={endDate} onChange={e => { setEndDate(e.target.value); setPage(1); }} />
+                            </div>
+                            <div className="col-xl-1 col-lg-2 col-md-3 col-6">
                                 <button className="btn btn-outline-secondary btn-sm w-100" onClick={() => { setSearch(''); setStatus('all'); setReason('all'); setRequestedBy('all'); setStartDate(''); setEndDate(''); setPage(1); }}>
                                     Reset
                                 </button>

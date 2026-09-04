@@ -1,32 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { BiSearch } from 'react-icons/bi';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { BiSearch, BiRefresh } from 'react-icons/bi';
 import toast from 'react-hot-toast';
 import bookingsApi from '../api/bookings';
 
 export const LargePartyRequests: React.FC = () => {
-    const [requests, setRequests] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
     const [amount, setAmount] = useState<string>('');
 
-    useEffect(() => {
-        fetchRequests();
-    }, []);
+    const { data: resData, isLoading: loading, isFetching, refetch } = useQuery({
+        queryKey: ['largePartyRequests'],
+        queryFn: () => bookingsApi.getLargePartyRequests(),
+    });
 
-    const fetchRequests = async () => {
-        try {
-            setLoading(true);
-            const res = await bookingsApi.getLargePartyRequests();
-            if (res.success) {
-                setRequests(res.data);
-            }
-        } catch (error) {
-            toast.error('Failed to load party requests');
-        } finally {
-            setLoading(false);
-        }
-    };
+    const requests = resData?.success && Array.isArray(resData.data) ? resData.data : [];
 
     const handleApprove = async () => {
         if (!selectedRequest || !amount || isNaN(Number(amount))) {
@@ -40,7 +28,7 @@ export const LargePartyRequests: React.FC = () => {
                 toast.success('Request approved successfully');
                 setSelectedRequest(null);
                 setAmount('');
-                fetchRequests();
+                refetch();
             }
         } catch (error) {
             toast.error('Failed to approve request');
@@ -52,7 +40,7 @@ export const LargePartyRequests: React.FC = () => {
             const res = await bookingsApi.approveLargePartyRequest(id, 'rejected');
             if (res.success) {
                 toast.success('Request rejected');
-                fetchRequests();
+                refetch();
             }
         } catch (error) {
             toast.error('Failed to reject request');
@@ -69,7 +57,16 @@ export const LargePartyRequests: React.FC = () => {
 
     return (
         <div>
-            <h4 className="mb-4">Large Party Requests</h4>
+            <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                <h4 className="mb-0">Large Party Requests</h4>
+                <button 
+                    className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1"
+                    onClick={() => refetch()}
+                    disabled={isFetching}
+                >
+                    <BiRefresh className={isFetching ? 'rotating' : ''} /> {isFetching ? 'Refreshing…' : 'Refresh'}
+                </button>
+            </div>
 
             <div className="vz-card mb-3">
                 <div className="vz-card-body" style={{ padding: '0.75rem 1.25rem' }}>
