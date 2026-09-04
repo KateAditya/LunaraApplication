@@ -44,7 +44,8 @@ app.use(helmet({
         directives: {
             ...helmet.contentSecurityPolicy.getDefaultDirectives(),
             "img-src": ["'self'", "data:", "blob:", "https:", "*.blob.core.windows.net", "placehold.co", "*.placehold.co", "images.unsplash.com"],
-            "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net"],
+            "media-src": ["'self'", "data:", "blob:", "https:"],
+            "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net", "ws:", "wss:"],
         },
     },
 })); // Security headers

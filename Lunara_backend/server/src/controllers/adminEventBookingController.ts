@@ -271,8 +271,9 @@ export const getEventBookings = async (req: Request, res: Response): Promise<voi
             totalPages: Math.ceil(count / limit),
             currentPage: page
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching event bookings:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        res.status(500).json({ success: false, message: error?.message || 'Internal server error' });
     }
 };
+
