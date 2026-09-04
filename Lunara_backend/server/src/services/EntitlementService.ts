@@ -809,6 +809,10 @@ export class EntitlementService {
         success: boolean;
         message: string;
         addon?: UserAddon;
+        addonName?: string;
+        featureKey?: string;
+        quantity?: number;
+        newBalance?: number;
         walletData?: any;
     }> {
         const { userId, addonPackageId, count = 1 } = params;
@@ -870,6 +874,26 @@ export class EntitlementService {
                 metadata: { addonName: addonPkg.name, price: totalPrice, method: 'WALLET' },
             }, { transaction: t });
 
+            // Record SubscriptionTransaction
+            await SubscriptionTransaction.create({
+                userId,
+                packageId: null,
+                addonPackageId: addonPkg.id,
+                type: TransactionType.PURCHASE,
+                amount: totalPrice,
+                currency: addonPkg.currency || 'INR',
+                paymentMethod: 'wallet',
+                paymentGateway: 'wallet',
+                status: TransactionStatus.SUCCESS,
+                invoiceNumber: `ADDON-WLT-${Date.now().toString(36).toUpperCase()}`,
+                metadata: {
+                    addonName: addonPkg.name,
+                    featureKey: addonPkg.featureKey,
+                    quantity: totalQuantity,
+                    walletTransactionId: purchaseResult.data?.transaction?.id,
+                },
+            }, { transaction: t });
+
             await t.commit();
 
             RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
@@ -882,6 +906,10 @@ export class EntitlementService {
                 success: true,
                 message: `Successfully purchased ${totalQuantity} ${addonPkg.name} using Smart Wallet!`,
                 addon: userAddon,
+                addonName: addonPkg.name,
+                featureKey: addonPkg.featureKey,
+                quantity: totalQuantity,
+                newBalance: userAddon.remainingQuantity,
                 walletData: purchaseResult.data,
             };
         } catch (error) {
@@ -947,6 +975,10 @@ export class EntitlementService {
         success: boolean;
         message: string;
         addon?: UserAddon;
+        addonName?: string;
+        featureKey?: string;
+        quantity?: number;
+        newBalance?: number;
     }> {
         const { userId, addonPackageId, gatewayOrderId, gatewayPaymentId, razorpaySignature } = params;
         const t = await sequelize.transaction();
@@ -995,9 +1027,13 @@ export class EntitlementService {
             // Record SubscriptionTransaction
             await SubscriptionTransaction.create({
                 userId,
-                packageId: addonPkg.id,
+                packageId: null,
+                addonPackageId: addonPkg.id,
                 type: TransactionType.PURCHASE,
                 amount: price,
+                currency: addonPkg.currency || 'INR',
+                paymentMethod: 'razorpay',
+                paymentGateway: 'razorpay',
                 status: TransactionStatus.SUCCESS,
                 gatewayOrderId,
                 gatewayPaymentId,
@@ -1051,6 +1087,10 @@ export class EntitlementService {
                 success: true,
                 message: `Successfully purchased ${addonPkg.name}!`,
                 addon: userAddon,
+                addonName: addonPkg.name,
+                featureKey: addonPkg.featureKey,
+                quantity: totalQuantity,
+                newBalance: userAddon.remainingQuantity,
             };
         } catch (error) {
             await t.rollback();

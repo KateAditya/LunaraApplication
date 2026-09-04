@@ -6,6 +6,7 @@ import 'settings_screen.dart';
 import 'edit_profile_screen.dart';
 import '../../services/block_service.dart';
 import '../../services/api_service.dart';
+import '../../services/optimistic_action_guard.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/profile_share_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
@@ -57,8 +58,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   late User _currentUser;
   String? _localSwipedAction;
   bool _isLoadingSwipeStatus = false;
-  bool _isLikeProcessing = false;
-  bool _isSuperProcessing = false;
 
   @override
   void initState() {
@@ -1145,7 +1144,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     color: Colors.white,
                   ),
                   iconSize: isLiked ? 34 : 32,
-                  onPressed: (_isLikeProcessing || likeDisabled)
+                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || likeDisabled)
                       ? null
                       : () async {
                           if (isLiked) {
@@ -1170,21 +1169,24 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                             );
                             return;
                           }
-                          setState(() => _isLikeProcessing = true);
+                          if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
+                          final prevSwipedAction = _localSwipedAction;
+                          // Optimistic UI: immediately set liked state
+                          setState(() {
+                            _localSwipedAction = 'like';
+                          });
                           try {
                             if (widget.onLike != null) {
                               await widget.onLike!.call();
-                              if (mounted) {
-                                setState(() => _localSwipedAction = 'like');
-                              }
                             } else {
                               final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
                               if (!mounted) return;
                               if (res == null || res['limitReached'] == true) {
+                                // Rollback
+                                setState(() => _localSwipedAction = prevSwipedAction);
                                 showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
                                 return;
                               }
-                              setState(() => _localSwipedAction = 'like');
                               if (res['matched'] == true) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1204,8 +1206,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               }
                               _checkUsageWarning(res);
                             }
+                          } catch (e) {
+                            if (mounted) {
+                              setState(() => _localSwipedAction = prevSwipedAction);
+                            }
                           } finally {
-                            if (mounted) setState(() => _isLikeProcessing = false);
+                            OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
                           }
                         },
                 ),
@@ -1276,7 +1282,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     isSuperLiked ? Icons.star : Icons.star_border,
                     color: Colors.white,
                   ),
-                  onPressed: (_isSuperProcessing || superLikeDisabled)
+                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_SUPER:${_currentUser.id}') || superLikeDisabled)
                       ? null
                       : () async {
                           if (isSuperLiked) {
@@ -1290,21 +1296,24 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                             );
                             return;
                           }
-                          setState(() => _isSuperProcessing = true);
+                          if (!OptimisticActionGuard.start('SWIPE_SUPER:${_currentUser.id}')) return;
+                          final prevSwipedAction = _localSwipedAction;
+                          // Optimistic UI: immediately set superliked state
+                          setState(() {
+                            _localSwipedAction = 'superlike';
+                          });
                           try {
                             if (widget.onSuper != null) {
                               await widget.onSuper!.call();
-                              if (mounted) {
-                                setState(() => _localSwipedAction = 'superlike');
-                              }
                             } else {
                               final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
                               if (!mounted) return;
                               if (res == null || res['limitReached'] == true) {
+                                // Rollback
+                                setState(() => _localSwipedAction = prevSwipedAction);
                                 showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
                                 return;
                               }
-                              setState(() => _localSwipedAction = 'superlike');
                               if (res['matched'] == true) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -1324,8 +1333,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               }
                               _checkUsageWarning(res);
                             }
+                          } catch (e) {
+                            if (mounted) {
+                              setState(() => _localSwipedAction = prevSwipedAction);
+                            }
                           } finally {
-                            if (mounted) setState(() => _isSuperProcessing = false);
+                            OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
                           }
                         },
                 ),
@@ -1911,64 +1924,66 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
   }
 
   Future<void> _sendJoinRequest(String planId) async {
-    if (_joiningPlanIds.contains(planId) || _requestedPlanIds.contains(planId)) return;
+    if (_requestedPlanIds.contains(planId)) return;
+    if (!OptimisticActionGuard.start('PROFILE_JOIN_PLAN:$planId')) return;
 
+    // Optimistic UI: immediately show as requested
     setState(() {
-      _joiningPlanIds.add(planId);
+      _requestedPlanIds.add(planId);
     });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        content: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            gradient: LunaraTheme.purpleGradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 
     try {
       final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
       if (res.alreadyRequested || res.success) {
         ApiService.planPostedNotifier.value++;
-        setState(() {
-          _requestedPlanIds.add(planId);
-        });
-        if (mounted && res.isNewRequest) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              behavior: SnackBarBehavior.floating,
-              content: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LunaraTheme.purpleGradient,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
       } else {
+        // Rollback
         if (mounted) {
+          setState(() {
+            _requestedPlanIds.remove(planId);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(res.message),
@@ -1979,16 +1994,18 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _requestedPlanIds.remove(planId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _joiningPlanIds.remove(planId);
-        });
-      }
+      OptimisticActionGuard.end('PROFILE_JOIN_PLAN:$planId');
     }
   }
 
@@ -2198,34 +2215,48 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
 
     if (confirmed != true) return;
 
-    setState(() => _joiningPlanIds.add(meetId));
+    if (!OptimisticActionGuard.start('PROFILE_SM_JOIN:$meetId')) return;
+
+    // Optimistic UI: immediately mark as requested
+    setState(() => _requestedPlanIds.add(meetId));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF10B981),
+          content: Text(
+            'Join request sent for "$subject"! The host will review it. 🎉',
+          ),
+        ),
+      );
+    }
+
     try {
       final success = await ApiService.sendStrangersMeetJoinRequest(
         meetId,
         foodPreference: selectedFood,
         drinkPreference: selectedDrink,
       );
-      if (success) {
-        setState(() => _requestedPlanIds.add(meetId));
+      if (!success) {
+        // Rollback
         if (mounted) {
+          setState(() => _requestedPlanIds.remove(meetId));
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFF10B981),
-              content: Text(
-                'Join request sent for "$subject"! The host will review it. 🎉',
-              ),
+            const SnackBar(
+              backgroundColor: Colors.red,
+              content: Text('Failed to send join request. Please try again.'),
             ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _requestedPlanIds.remove(meetId));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) setState(() => _joiningPlanIds.remove(meetId));
+      OptimisticActionGuard.end('PROFILE_SM_JOIN:$meetId');
     }
   }
 

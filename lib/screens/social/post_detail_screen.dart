@@ -15,6 +15,7 @@ import '../../widgets/lunara_network_image.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
+import '../../services/optimistic_action_guard.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -35,6 +36,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _lastOrderId;
   double? _calculatedDistanceKm;
   bool _isFetchingDistance = false;
+  final Map<String, String> _optimisticJoinerStatus = {};
 
   @override
   void initState() {
@@ -702,32 +704,54 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   ) async {
     final req = _meetRequest;
     if (req == null) return;
-    setState(() => _isProcessing = true);
-    final success = await ApiService.sendStrangersMeetJoinRequest(
-      req.id,
-      foodPreference: foodPref,
-      drinkPreference: drinkPref,
-    );
-    if (!mounted) return;
-    setState(() => _isProcessing = false);
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Join request sent successfully! Waiting for host approval. 🤞',
+    if (!OptimisticActionGuard.start('JOIN_MEET:${req.id}')) return;
+
+    // Optimistic UI: immediately show request sent
+    setState(() {
+      _alreadyRequested = true;
+      _isProcessing = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Join request sent successfully! Waiting for host approval. 🤞',
+        ),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    try {
+      final success = await ApiService.sendStrangersMeetJoinRequest(
+        req.id,
+        foodPreference: foodPref,
+        drinkPreference: drinkPref,
+      );
+      if (!mounted) return;
+
+      if (!success) {
+        // Rollback
+        setState(() => _alreadyRequested = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send join request. Please try again.'),
+            backgroundColor: Colors.red,
           ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      _loadStrangersMeetDetails(showFullScreenLoader: false);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to send join request. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _alreadyRequested = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end('JOIN_MEET:${req.id}');
     }
   }
 
@@ -1380,7 +1404,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildParticipantsSection() {
-    final allJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().toList();
+    final rawJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().toList();
+    final allJoiners = rawJoiners.map((j) {
+      final id = j['id']?.toString() ?? '';
+      if (_optimisticJoinerStatus.containsKey(id)) {
+        final copy = Map<String, dynamic>.from(j);
+        copy['status'] = _optimisticJoinerStatus[id];
+        return copy;
+      }
+      return j;
+    }).toList();
 
     // 1. Actual Joined — paid participants
     final actualJoined = allJoiners.where((j) {
@@ -1601,11 +1634,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPendingRequestsSection(int slotsFilled, int maxPersons) {
-    final pendingJoiners = (_meetRequest?.joiners ?? []).where((j) {
-      if (j is Map) {
-        return (j['status']?.toString() ?? '').toLowerCase() == 'pending';
-      }
-      return false;
+    final pendingJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().where((j) {
+      final id = j['id']?.toString() ?? '';
+      final optStatus = _optimisticJoinerStatus[id];
+      final status = (optStatus ?? j['status']?.toString() ?? '').toLowerCase();
+      return status == 'pending';
     }).toList();
 
     if (pendingJoiners.isEmpty) {
@@ -1827,33 +1860,70 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _handleRequest(String joinerId, String action) async {
     final req = _meetRequest;
     if (req == null) return;
-    setState(() => _isProcessing = true);
-    final success = await ApiService.handleStrangersMeetJoinRequest(
-      req.id,
-      joinerId,
-      action,
-    );
-    if (!mounted) return;
-    setState(() => _isProcessing = false);
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            action == 'accept'
-                ? 'Join request accepted!'
-                : 'Join request rejected.',
+
+    if (!OptimisticActionGuard.start('HANDLE_MEET_REQ:${req.id}:$joinerId')) return;
+
+    final prevStatus = _optimisticJoinerStatus[joinerId];
+
+    // Optimistic UI: immediately update joiner status locally
+    setState(() {
+      _optimisticJoinerStatus[joinerId] = action == 'accept' ? 'accepted' : 'rejected';
+      _isProcessing = false;
+    });
+
+    try {
+      final success = await ApiService.handleStrangersMeetJoinRequest(
+        req.id,
+        joinerId,
+        action,
+      );
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              action == 'accept'
+                  ? 'Join request accepted!'
+                  : 'Join request rejected.',
+            ),
+            backgroundColor: action == 'accept' ? Colors.green : Colors.grey[800],
           ),
-          backgroundColor: action == 'accept' ? Colors.green : Colors.grey[800],
-        ),
-      );
-      _loadStrangersMeetDetails(showFullScreenLoader: false);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to handle join request. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+        );
+      } else {
+        // Rollback
+        setState(() {
+          if (prevStatus != null) {
+            _optimisticJoinerStatus[joinerId] = prevStatus;
+          } else {
+            _optimisticJoinerStatus.remove(joinerId);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to handle join request. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          if (prevStatus != null) {
+            _optimisticJoinerStatus[joinerId] = prevStatus;
+          } else {
+            _optimisticJoinerStatus.remove(joinerId);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end('HANDLE_MEET_REQ:${req.id}:$joinerId');
     }
   }
 
@@ -2860,112 +2930,104 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                       )
-                    : Container(
+                    : SizedBox(
                         width: double.infinity,
                         height: 60,
-                        decoration: BoxDecoration(
-                          gradient: _isProcessing
-                              ? null
-                              : LunaraTheme.purpleGradient,
-                          color: _isProcessing
-                              ? Colors.grey.withValues(alpha: 0.3)
-                              : null,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: _isProcessing
-                              ? null
-                              : [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFFb952eb,
-                                    ).withValues(alpha: 0.3),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                        ),
                         child: ElevatedButton(
-                          onPressed: (_isProcessing || _alreadyRequested)
+                          onPressed: _alreadyRequested
                               ? null
                               : () async {
-                                  if (_isProcessing || _alreadyRequested) return;
-                                  setState(() => _isProcessing = true);
-                                  final messenger = ScaffoldMessenger.of(
-                                    context,
-                                  );
-                                  final result =
-                                      await ApiService.requestToJoinPartyPlanDetailed(
-                                        widget.post['id'],
-                                      );
-                                  if (mounted) {
-                                    setState(() => _isProcessing = false);
-                                  }
-                                  if (result.alreadyRequested || result.success) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _alreadyRequested = true;
-                                      });
-                                    }
-                                    if (result.isNewRequest) {
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          backgroundColor: Colors.transparent,
-                                          elevation: 0,
-                                          behavior: SnackBarBehavior.floating,
-                                          content: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 20,
-                                              vertical: 16,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              gradient:
-                                                  LunaraTheme.purpleGradient,
-                                              borderRadius: BorderRadius.circular(
-                                                16,
+                                  if (_alreadyRequested) return;
+                                  final planId = widget.post['id']?.toString() ?? '';
+                                  if (planId.isEmpty) return;
+
+                                  if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
+
+                                  final prevAlreadyRequested = _alreadyRequested;
+
+                                  // Optimistic UI: immediately show "REQUEST SENT"
+                                  setState(() {
+                                    _alreadyRequested = true;
+                                    _isProcessing = false;
+                                  });
+
+                                  final messenger = ScaffoldMessenger.of(context);
+
+                                  try {
+                                    final result = await ApiService.requestToJoinPartyPlanDetailed(planId);
+                                    if (!mounted) return;
+
+                                    if (result.alreadyRequested || result.success) {
+                                      if (result.isNewRequest) {
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            backgroundColor: Colors.transparent,
+                                            elevation: 0,
+                                            behavior: SnackBarBehavior.floating,
+                                            content: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 20,
+                                                vertical: 16,
                                               ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: LunaraTheme
-                                                      .electricViolet
-                                                      .withValues(alpha: 0.3),
-                                                  blurRadius: 15,
-                                                  offset: const Offset(0, 8),
-                                                ),
-                                              ],
-                                            ),
-                                            child: const Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.auto_awesome,
-                                                  color: Colors.white,
-                                                  size: 20,
-                                                ),
-                                                SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Text(
-                                                    'YOUR REQUEST TO JOIN THE VIBE HAS BEEN SENT!',
-                                                    style: TextStyle(
-                                                      fontFamily:
-                                                          'AllroundGothic',
-                                                      color: Colors.white,
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.bold,
-                                                      letterSpacing: 0.5,
+                                              decoration: BoxDecoration(
+                                                gradient: LunaraTheme.purpleGradient,
+                                                borderRadius: BorderRadius.circular(16),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                                    blurRadius: 15,
+                                                    offset: const Offset(0, 8),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: const Row(
+                                                children: [
+                                                  Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                                                  SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                                                      style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.bold,
+                                                        letterSpacing: 0.5,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
+                                        );
+                                      }
+                                    } else {
+                                      if (mounted) {
+                                        setState(() {
+                                          _alreadyRequested = prevAlreadyRequested;
+                                        });
+                                      }
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(result.message),
+                                          backgroundColor: Colors.red,
                                         ),
                                       );
                                     }
-                                  } else {
-                                    messenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text(result.message),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
+                                  } catch (e) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _alreadyRequested = prevAlreadyRequested;
+                                      });
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  } finally {
+                                    OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
                                   }
                                 },
                           style: ElevatedButton.styleFrom(

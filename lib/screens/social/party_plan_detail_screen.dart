@@ -12,6 +12,7 @@ import 'plan_hub_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/top_notification_banner.dart';
+import '../../services/optimistic_action_guard.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class _VenueImageFallback extends StatelessWidget {
@@ -235,70 +236,102 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Future<void> _handleAcceptPartyPlanRequest(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
-      ),
-    );
+    if (!OptimisticActionGuard.start('ACCEPT_PARTY_REQ:$reqId')) return;
+
+    // Optimistic UI: immediately remove from pending requests list
+    final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
+    setState(() {
+      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    });
+
     try {
       final res = await ApiService.acceptPartyPlanRequest(reqId);
-      Navigator.pop(context);
       if (res != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request accepted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _refreshPlanDetails();
-        _fetchRequestsIfNeeded();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request accepted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _refreshPlanDetails();
+        }
       } else {
+        // Rollback
+        if (mounted) {
+          setState(() {
+            _pendingRequests = prevPending;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to accept request.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _pendingRequests = prevPending;
+        });
+        debugPrint('Error accepting request: $e');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to accept request.'),
+          SnackBar(
+            content: Text('Error accepting request: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      Navigator.pop(context);
-      debugPrint('Error accepting request: $e');
+    } finally {
+      OptimisticActionGuard.end('ACCEPT_PARTY_REQ:$reqId');
     }
   }
 
   Future<void> _handleRejectPartyPlanRequest(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
-      ),
-    );
+    if (!OptimisticActionGuard.start('REJECT_PARTY_REQ:$reqId')) return;
+
+    // Optimistic UI: immediately remove from pending requests list
+    final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
+    setState(() {
+      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    });
+
     try {
       final success = await ApiService.rejectPartyPlanRequest(reqId);
-      Navigator.pop(context);
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request declined.'),
-            backgroundColor: Colors.grey,
-          ),
-        );
-        _refreshPlanDetails();
-        _fetchRequestsIfNeeded();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request declined.'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          _refreshPlanDetails();
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to decline request.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Rollback
+        if (mounted) {
+          setState(() {
+            _pendingRequests = prevPending;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to decline request.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
-      Navigator.pop(context);
-      debugPrint('Error rejecting request: $e');
+      if (mounted) {
+        setState(() {
+          _pendingRequests = prevPending;
+        });
+        debugPrint('Error declining request: $e');
+      }
+    } finally {
+      OptimisticActionGuard.end('REJECT_PARTY_REQ:$reqId');
     }
   }
 
@@ -1723,28 +1756,66 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
     if (confirmed != true) return;
 
-    setState(() => _isLoadingCancellation = true);
     final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
-    final success = withdraw
-        ? await ApiService.withdrawPartyPlanRequest(_activeRequestId!)
-        : await ApiService.cancelPartyPlanRequest(_activeRequestId!);
-    if (!mounted) return;
+    final reqId = _activeRequestId ?? '';
+    if (reqId.isEmpty) return;
+
+    if (!OptimisticActionGuard.start('CANCEL_PARTY_REQ:$reqId')) return;
+
+    final prevAlreadyRequested = _alreadyRequested;
+    final prevRequestStatus = _requestStatus;
+    final prevActiveReqId = _activeRequestId;
+
+    // Optimistic UI: immediately reflect cancelled state
     setState(() {
+      _alreadyRequested = false;
+      _requestStatus = 'cancelled';
+      _activeRequestId = null;
       _isLoadingCancellation = false;
+    });
+
+    try {
+      final success = withdraw
+          ? await ApiService.withdrawPartyPlanRequest(reqId)
+          : await ApiService.cancelPartyPlanRequest(reqId);
+      if (!mounted) return;
+
       if (success) {
-        _alreadyRequested = false;
-        _requestStatus = 'cancelled';
-        _activeRequestId = null;
         if (targetPlanId.isNotEmpty) {
           ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
         }
+        final action = withdraw ? 'withdrawn' : 'cancelled';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Request $action'),
+          backgroundColor: Colors.green,
+        ));
+      } else {
+        // Rollback
+        setState(() {
+          _alreadyRequested = prevAlreadyRequested;
+          _requestStatus = prevRequestStatus;
+          _activeRequestId = prevActiveReqId;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Unable to update this request. Please refresh and try again.'),
+          backgroundColor: Colors.red,
+        ));
       }
-    });
-    final action = withdraw ? 'withdrawn' : 'cancelled';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(success ? 'Request $action' : 'Unable to update this request. Please refresh and try again.'),
-      backgroundColor: success ? Colors.green : Colors.red,
-    ));
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _alreadyRequested = prevAlreadyRequested;
+          _requestStatus = prevRequestStatus;
+          _activeRequestId = prevActiveReqId;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } finally {
+      OptimisticActionGuard.end('CANCEL_PARTY_REQ:$reqId');
+    }
   }
 
   void _startRazorpayDirectPayment(String reqId, String venueName, {String? orderId, double depositAmount = 99.0}) async {
@@ -2197,7 +2268,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       );
       return;
     }
-    if (_isJoining || _alreadyRequested) return;
+    if (_alreadyRequested) return;
 
     final planId =
         widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
@@ -2211,7 +2282,21 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return;
     }
 
-    setState(() => _isJoining = true);
+    if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
+
+    final prevAlreadyRequested = _alreadyRequested;
+    final prevRequestStatus = _requestStatus;
+    final prevIsInvited = _isInvitedUser;
+    final prevActiveReqId = _activeRequestId;
+
+    // Optimistic UI: immediately show "REQUEST SENT — AWAITING HOST APPROVAL"
+    setState(() {
+      _alreadyRequested = true;
+      _requestStatus = 'pending';
+      _isInvitedUser = false;
+      _isJoining = false;
+    });
+
     try {
       final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
       if (!mounted) return;
@@ -2263,6 +2348,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           );
         }
       } else {
+        // Server rejected: rollback
+        setState(() {
+          _alreadyRequested = prevAlreadyRequested;
+          _requestStatus = prevRequestStatus;
+          _isInvitedUser = prevIsInvited;
+          _activeRequestId = prevActiveReqId;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(res.message),
@@ -2272,6 +2364,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      // Network/unexpected failure: rollback
+      setState(() {
+        _alreadyRequested = prevAlreadyRequested;
+        _requestStatus = prevRequestStatus;
+        _isInvitedUser = prevIsInvited;
+        _activeRequestId = prevActiveReqId;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: $e'),
@@ -2279,7 +2378,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _isJoining = false);
+      OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
     }
   }
 

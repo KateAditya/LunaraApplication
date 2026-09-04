@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/optimistic_action_guard.dart';
 import '../../widgets/lunara_profile_image.dart';
 
 class NightPartnerProfileScreen extends StatefulWidget {
@@ -44,33 +45,54 @@ class _NightPartnerProfileScreenState extends State<NightPartnerProfileScreen> {
   }
 
   Future<void> _sendRequest() async {
-    final venueId = widget.venue['id']?.toString() ?? '';
-    final res = await ApiService.sendNightPartnerRequest(
-      partnerId: widget.partnerId,
-      venueId: venueId,
-      date: widget.date,
-      time: widget.time,
+    if (_isRequested) return;
+    if (!OptimisticActionGuard.start('PARTNER_REQ:${widget.partnerId}')) return;
+
+    // Optimistic UI: immediately mark as requested
+    setState(() => _isRequested = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Partner request sent to ${_profile?['firstName'] ?? 'User'}! 🎉'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
 
-    if (!mounted) return;
+    try {
+      final venueId = widget.venue['id']?.toString() ?? '';
+      final res = await ApiService.sendNightPartnerRequest(
+        partnerId: widget.partnerId,
+        venueId: venueId,
+        date: widget.date,
+        time: widget.time,
+      );
 
-    if (res != null) {
-      setState(() => _isRequested = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Partner request sent to ${_profile?['firstName']}! 🎉'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to send partner request.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (res == null) {
+        // Rollback
+        if (mounted) {
+          setState(() => _isRequested = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to send partner request.'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRequested = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end('PARTNER_REQ:${widget.partnerId}');
     }
   }
 

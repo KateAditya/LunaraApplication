@@ -577,7 +577,10 @@ export const getSubscriptionHistory = async (req: Request, res: Response): Promi
 
         const { count, rows } = await SubscriptionTransaction.findAndCountAll({
             where: { userId },
-            include: [{ model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'] }],
+            include: [
+                { model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'], required: false },
+                { model: SubscriptionAddonPackage, as: 'addonPackage', attributes: ['id', 'name', 'featureKey', 'quantity'], required: false },
+            ],
             order: [['created_at', 'DESC']],
             limit,
             offset,

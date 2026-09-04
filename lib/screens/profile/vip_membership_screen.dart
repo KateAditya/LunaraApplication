@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../models/vip_entitlement_model.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/top_notification_banner.dart';
 
 enum VIPPaymentState {
   initial,
@@ -728,13 +729,37 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       _pendingAddonPackageId = null;
     });
     if (response['success'] == true) {
-      await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
+      await SubscriptionProvider.instance.refreshAfterPurchase();
       await _loadAddons();
-      if (mounted) setState(() {});
-      _showSuccessDialog(
-        'Add-on Activated! ✨',
-        response['message'] ?? 'Your add-on has been credited to your account.',
-      );
+      await _loadData();
+      if (mounted) {
+        SubscriptionAddonPackageModel? purchasedAddon;
+        for (final a in _availableAddons) {
+          if (a.id == addonPackageId) {
+            purchasedAddon = a;
+            break;
+          }
+        }
+        final featKey = purchasedAddon?.featureKey ?? response['featureKey'] ?? 'addon';
+        final name = purchasedAddon?.name ?? response['addonName'] ?? 'Add-on Pack';
+        final newBal = _currentBalance(featKey);
+        final unit = _addonUnit(featKey);
+
+        TopNotificationBanner.show(
+          title: 'Purchase Successful! 🎉',
+          body: response['message'] ?? '$name has been credited to your account.',
+          iconData: _addonIcon(featKey),
+        );
+
+        _showSuccessDialog(
+          'Purchase Successful! 🎉',
+          response['message'] ?? '$name has been credited to your account.',
+          itemName: name,
+          balanceInfo: '$newBal $unit',
+          icon: _addonIcon(featKey),
+          iconColor: _addonColor(featKey),
+        );
+      }
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -747,61 +772,151 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     }
   }
 
-  void _showSuccessDialog(String title, String subtitle) {
+  void _showSuccessDialog(
+    String title,
+    String subtitle, {
+    String? itemName,
+    String? balanceInfo,
+    IconData? icon,
+    Color? iconColor,
+  }) {
+    final brandColor = iconColor ?? const Color(0xFF10B981);
     showDialog(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: const Color(0xFF16161E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: Colors.green,
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      brandColor.withValues(alpha: 0.25),
+                      brandColor.withValues(alpha: 0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  border: Border.all(
+                    color: brandColor.withValues(alpha: 0.6),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: brandColor.withValues(alpha: 0.35),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 48,
+                child: Center(
+                  child: Icon(
+                    icon ?? Icons.check_rounded,
+                    color: brandColor,
+                    size: 38,
+                  ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
+                style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
               ),
-              const SizedBox(height: 32),
-              SizedBox(
+              if (itemName != null || balanceInfo != null) ...[
+                const SizedBox(height: 18),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Column(
+                    children: [
+                      if (itemName != null) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Item', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                            Text(itemName, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
+                      if (itemName != null && balanceInfo != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+                        ),
+                      if (balanceInfo != null) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Updated Balance', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                            Text(balanceInfo, style: TextStyle(color: brandColor, fontSize: 13, fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              Container(
                 width: double.infinity,
-                height: 50,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFA855F7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   child: const Text(
-                    'GREAT',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    'AWESOME',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                    ),
                   ),
                 ),
               ),
@@ -1993,8 +2108,37 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
 
   // ── Feature icon/color/unit helpers ─────────────────────────────────────
+  String _normalizeFeatureKey(String featureKey) {
+    switch (featureKey.toLowerCase()) {
+      case 'boost':
+      case 'profile_boost':
+      case 'boosts':
+        return 'boost';
+      case 'superlike':
+      case 'super_likes':
+      case 'superlikes':
+        return 'superlike';
+      case 'swipe':
+      case 'swipes':
+        return 'swipe';
+      case 'like':
+      case 'likes':
+        return 'like';
+      case 'party_plan':
+      case 'party_creation':
+      case 'party_plans':
+        return 'party_plan';
+      case 'undo':
+      case 'backtrack':
+      case 'backtracks':
+        return 'undo';
+      default:
+        return featureKey.toLowerCase();
+    }
+  }
+
   IconData _addonIcon(String featureKey) {
-    switch (featureKey) {
+    switch (_normalizeFeatureKey(featureKey)) {
       case 'superlike': return Icons.star_rounded;
       case 'boost': return Icons.bolt_rounded;
       case 'swipe': return Icons.swipe_rounded;
@@ -2006,9 +2150,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   Color _addonColor(String featureKey) {
-    switch (featureKey) {
+    switch (_normalizeFeatureKey(featureKey)) {
       case 'superlike': return const Color(0xFF2563EB);
-      case 'boost': return Colors.purple;
+      case 'boost': return const Color(0xFF8B5CF6);
       case 'swipe': return const Color(0xFF0891B2);
       case 'like': return const Color(0xFFE11D48);
       case 'party_plan': return const Color(0xFF7C3AED);
@@ -2018,29 +2162,32 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   String _addonUnit(String featureKey) {
-    switch (featureKey) {
+    switch (_normalizeFeatureKey(featureKey)) {
       case 'superlike': return 'Superlikes';
       case 'boost': return 'Boosts';
       case 'swipe': return 'Swipes';
       case 'like': return 'Likes';
       case 'party_plan': return 'Party Plans';
-      case 'undo': return 'Undos';
+      case 'undo': return 'Backtracks';
       default: return 'Credits';
     }
   }
 
   int _currentBalance(String featureKey) {
+    final norm = _normalizeFeatureKey(featureKey);
     final summary = SubscriptionProvider.instance.entitlementsSummary;
     if (summary == null) {
-      if (featureKey == 'superlike') return _superlikesRemaining;
-      if (featureKey == 'boost') return _boostsRemaining;
+      if (norm == 'superlike') return _superlikesRemaining;
+      if (norm == 'boost') return _boostsRemaining;
       return 0;
     }
-    switch (featureKey) {
+    switch (norm) {
       case 'superlike': return summary.superlikesAvailable;
       case 'boost': return summary.boostsAvailable;
+      case 'like': return summary.likesAvailable;
+      case 'party_plan': return summary.partyPlansAvailable;
       default:
-        final t = summary.totals['${featureKey}Available'];
+        final t = summary.totals['${norm}Available'] ?? summary.totals['${featureKey}Available'];
         if (t is int) return t;
         return int.tryParse(t?.toString() ?? '0') ?? 0;
     }
@@ -2198,17 +2345,18 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   Widget _buildAddonCard(SubscriptionAddonPackageModel addon, bool isDark) {
-    final color = _addonColor(addon.featureKey);
-    final icon = _addonIcon(addon.featureKey);
-    final unit = _addonUnit(addon.featureKey);
+    final normKey = _normalizeFeatureKey(addon.featureKey);
+    final color = _addonColor(normKey);
+    final icon = _addonIcon(normKey);
+    final unit = _addonUnit(normKey);
     final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
     final bool isUnlimitedForUser = isElite &&
-        (addon.featureKey == 'boost' ||
-            addon.featureKey == 'superlike' ||
-            addon.featureKey == 'swipe' ||
-            addon.featureKey == 'like' ||
-            addon.featureKey == 'party_plan');
-    final balance = _currentBalance(addon.featureKey);
+        (normKey == 'boost' ||
+            normKey == 'superlike' ||
+            normKey == 'swipe' ||
+            normKey == 'like' ||
+            normKey == 'party_plan');
+    final balance = _currentBalance(normKey);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2336,13 +2484,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   void _purchaseAddon(SubscriptionAddonPackageModel addon) {
+    final normKey = _normalizeFeatureKey(addon.featureKey);
     final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
     final bool isUnlimitedForUser = isElite &&
-        (addon.featureKey == 'boost' ||
-            addon.featureKey == 'superlike' ||
-            addon.featureKey == 'swipe' ||
-            addon.featureKey == 'like' ||
-            addon.featureKey == 'party_plan');
+        (normKey == 'boost' ||
+            normKey == 'superlike' ||
+            normKey == 'swipe' ||
+            normKey == 'like' ||
+            normKey == 'party_plan');
 
     if (isUnlimitedForUser) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2357,14 +2506,31 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     SmartCheckoutSheet.show(
       context: context,
       title: addon.name,
-      subtitle: '+${addon.quantity} ${_addonUnit(addon.featureKey)} · Instant credit',
+      subtitle: '+${addon.quantity} ${_addonUnit(normKey)} · Instant credit',
       itemPrice: addon.price,
       onWalletPayment: () async {
         final result = await SubscriptionProvider.instance.purchaseAddonWithWallet(addon.id);
         if (result['success'] == true) {
           if (mounted) {
-            setState(() { _availableAddons = SubscriptionProvider.instance.availableAddons; });
-            _showSuccessDialog('${addon.name} Added! ✨', result['message'] ?? '+${addon.quantity} ${_addonUnit(addon.featureKey)} credited.');
+            await SubscriptionProvider.instance.refreshAfterPurchase();
+            await _loadAddons();
+            await _loadData();
+            if (mounted) {
+              final newBal = _currentBalance(normKey);
+              TopNotificationBanner.show(
+                title: 'Purchase Successful! 🎉',
+                body: '${addon.name} added to your account.',
+                iconData: _addonIcon(normKey),
+              );
+              _showSuccessDialog(
+                'Purchase Successful! 🎉',
+                result['message'] ?? 'Successfully added ${addon.name} to your account.',
+                itemName: addon.name,
+                balanceInfo: '$newBal ${_addonUnit(normKey)}',
+                icon: _addonIcon(normKey),
+                iconColor: _addonColor(normKey),
+              );
+            }
           }
           return true;
         } else {

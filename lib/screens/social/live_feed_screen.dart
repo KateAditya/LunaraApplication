@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/realtime_sync_manager.dart';
+import '../../services/optimistic_action_guard.dart';
 import 'party_plan_detail_screen.dart';
 import 'plan_hub_screen.dart';
 import 'post_detail_screen.dart';
@@ -1247,68 +1248,78 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _handleAcceptPartyPlan(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
-      ),
-    );
+    if (!OptimisticActionGuard.start('FEED_ACCEPT_PARTY:$reqId')) return;
     try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Request accepted successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
       final res = await ApiService.acceptPartyPlanRequest(reqId);
-      Navigator.pop(context);
       if (res != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request accepted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept request.'),
             backgroundColor: Colors.red,
           ),
         );
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
-      Navigator.pop(context);
       debugPrint('Error accepting request: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false);
+      }
+    } finally {
+      OptimisticActionGuard.end('FEED_ACCEPT_PARTY:$reqId');
     }
   }
 
   Future<void> _handleRejectPartyPlan(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
-      ),
-    );
+    if (!OptimisticActionGuard.start('FEED_REJECT_PARTY:$reqId')) return;
     try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Request declined.'),
+          backgroundColor: Colors.grey,
+        ),
+      );
       final success = await ApiService.rejectPartyPlanRequest(reqId);
-      Navigator.pop(context);
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request declined.'),
-            backgroundColor: Colors.grey,
-          ),
-        );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to decline request.'),
             backgroundColor: Colors.red,
           ),
         );
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
-      Navigator.pop(context);
       debugPrint('Error rejecting request: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false);
+      }
+    } finally {
+      OptimisticActionGuard.end('FEED_REJECT_PARTY:$reqId');
     }
   }
 
@@ -1723,103 +1734,136 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   /// Cancels the CURRENT USER's own pending join request (joiner cancels their own request).
   Future<void> _handleCancelMyRequest(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+    if (!OptimisticActionGuard.start('FEED_CANCEL_REQ:$reqId')) return;
+
+    final prevFeedItems = List<Map<String, dynamic>>.from(_feedItems);
+    setState(() {
+      _feedItems.removeWhere((item) =>
+          item['id']?.toString() == reqId ||
+          item['requestId']?.toString() == reqId);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Request cancelled successfully.'),
+        backgroundColor: Colors.grey,
       ),
     );
+
     try {
       bool success = await ApiService.cancelPartyPlanRequest(reqId);
       if (!success) {
         success = await ApiService.withdrawPartyPlanRequest(reqId);
       }
-      Navigator.pop(context);
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request cancelled successfully.'),
-            backgroundColor: Colors.grey,
-          ),
-        );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       } else {
+        if (mounted) {
+          setState(() {
+            _feedItems = prevFeedItems;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to cancel request. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error cancelling request: $e');
+      if (mounted) {
+        setState(() {
+          _feedItems = prevFeedItems;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to cancel request. Please try again.'),
+          SnackBar(
+            content: Text('Error: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      Navigator.pop(context);
-      debugPrint('Error cancelling request: $e');
+    } finally {
+      OptimisticActionGuard.end('FEED_CANCEL_REQ:$reqId');
     }
   }
 
   /// Accept a private invite sent by the host (calls accept-invite endpoint)
   Future<void> _handleAcceptPartyPlanInvite(String reqId) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+    if (!OptimisticActionGuard.start('FEED_ACCEPT_INVITE:$reqId')) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Invite accepted! Proceed to pay deposit.'),
+        backgroundColor: Colors.green,
       ),
     );
+
     try {
       final res = await ApiService.acceptPartyPlanInvite(reqId);
-      Navigator.pop(context);
       if (res != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invite accepted! Proceed to pay deposit.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept invite. Try again.'),
             backgroundColor: Colors.red,
           ),
         );
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
-      Navigator.pop(context);
       debugPrint('Error accepting invite: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false);
+      }
+    } finally {
+      OptimisticActionGuard.end('FEED_ACCEPT_INVITE:$reqId');
     }
   }
 
   Future<void> _handleStrangersMeetJoinAction(String meetId, String joinerId, String action) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+    if (!OptimisticActionGuard.start('FEED_SM_JOIN:$meetId:$joinerId')) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
+        backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
       ),
     );
+
     try {
       final success = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, action);
-      Navigator.pop(context);
       if (success) {
+        _loadFeed(showLoader: false);
+      } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
-            backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
+          const SnackBar(
+            content: Text('Failed to update join request.'),
+            backgroundColor: Colors.red,
           ),
         );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false);
+      }
+    } finally {
+      OptimisticActionGuard.end('FEED_SM_JOIN:$meetId:$joinerId');
     }
   }
 
@@ -1829,13 +1873,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String action, {
     String? rejectReason,
   }) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
+    if (!OptimisticActionGuard.start('FEED_SM_CANCEL:$meetId:$cancellationId')) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          action == 'accept'
+              ? 'Cancellation approved.'
+              : 'Cancellation request rejected.',
+        ),
+        backgroundColor: action == 'accept' ? const Color(0xFF10B981) : Colors.grey,
       ),
     );
+
     try {
       final result = await ApiService.respondStrangersMeetCancellation(
         meetId,
@@ -1843,35 +1893,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         action: action,
         rejectReason: rejectReason,
       );
-      Navigator.pop(context);
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              action == 'accept'
-                  ? 'Cancellation approved & ₹${result['data']?['refundAmount'] ?? ''} credited to member wallet.'
-                  : 'Cancellation request rejected.',
-            ),
-            backgroundColor: action == 'accept' ? const Color(0xFF10B981) : Colors.grey,
-          ),
-        );
-        _loadFeed();
+        _loadFeed(showLoader: false);
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Failed to process cancellation.'),
             backgroundColor: Colors.red,
           ),
         );
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false);
+      }
+    } finally {
+      OptimisticActionGuard.end('FEED_SM_CANCEL:$meetId:$cancellationId');
     }
   }
 

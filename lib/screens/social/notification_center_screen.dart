@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/optimistic_action_guard.dart';
 import '../../services/push_notification_service.dart';
 import '../../models/user.dart';
 import '../profile/profile_screen.dart';
@@ -2561,24 +2562,49 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () async {
+                      if (!OptimisticActionGuard.start('NOTIF_CANCEL_KEEP:$planId:$requestId')) return;
+                      final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
+                      setState(() {
+                        item['read'] = true;
+                        item['isRead'] = true;
+                        item['metadata'] = {
+                          ...(prevMetadata ?? {}),
+                          'status': 'ACTIONED',
+                          'actionExecuted': 'reject',
+                        };
+                      });
                       _markAsRead(item);
-                      final res =
-                          await ApiService.respondToPartyPlanCancellationRequest(
-                            planId: planId,
-                            requestId: requestId,
-                            action: 'reject',
-                          );
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              res['message'] ??
-                                  'Cancellation request declined. Party Plan remains active.',
-                            ),
-                            backgroundColor: Colors.grey.shade800,
-                          ),
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Cancellation request declined. Party Plan remains active.'),
+                          backgroundColor: Colors.grey.shade800,
+                        ),
+                      );
+                      try {
+                        await ApiService.respondToPartyPlanCancellationRequest(
+                          planId: planId,
+                          requestId: requestId,
+                          action: 'reject',
                         );
                         _fetchNotifications();
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() {
+                            if (prevMetadata != null) {
+                              item['metadata'] = prevMetadata;
+                            } else {
+                              item['metadata']?.remove('status');
+                            }
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } finally {
+                        OptimisticActionGuard.end('NOTIF_CANCEL_KEEP:$planId:$requestId');
                       }
                     },
                     style: OutlinedButton.styleFrom(
@@ -2601,24 +2627,49 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () async {
+                      if (!OptimisticActionGuard.start('NOTIF_CANCEL_APPROVE:$planId:$requestId')) return;
+                      final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
+                      setState(() {
+                        item['read'] = true;
+                        item['isRead'] = true;
+                        item['metadata'] = {
+                          ...(prevMetadata ?? {}),
+                          'status': 'ACTIONED',
+                          'actionExecuted': 'approve',
+                        };
+                      });
                       _markAsRead(item);
-                      final res =
-                          await ApiService.respondToPartyPlanCancellationRequest(
-                            planId: planId,
-                            requestId: requestId,
-                            action: 'approve',
-                          );
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              res['message'] ??
-                                  'Party Plan cancelled. Commitment deposits credited to wallets!',
-                            ),
-                            backgroundColor: Colors.green,
-                          ),
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Party Plan cancelled. Commitment deposits credited to wallets!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      try {
+                        await ApiService.respondToPartyPlanCancellationRequest(
+                          planId: planId,
+                          requestId: requestId,
+                          action: 'approve',
                         );
                         _fetchNotifications();
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() {
+                            if (prevMetadata != null) {
+                              item['metadata'] = prevMetadata;
+                            } else {
+                              item['metadata']?.remove('status');
+                            }
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } finally {
+                        OptimisticActionGuard.end('NOTIF_CANCEL_APPROVE:$planId:$requestId');
                       }
                     },
                     style: ElevatedButton.styleFrom(

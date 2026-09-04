@@ -648,7 +648,8 @@ export const getAllTransactions = async (req: Request, res: Response): Promise<v
             where,
             include: [
                 { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
-                { model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'] },
+                { model: SubscriptionPackage, as: 'package', attributes: ['id', 'name', 'tier'], required: false },
+                { model: SubscriptionAddonPackage, as: 'addonPackage', attributes: ['id', 'name', 'featureKey', 'quantity'], required: false },
             ],
             order: [['created_at', 'DESC']],
             limit,

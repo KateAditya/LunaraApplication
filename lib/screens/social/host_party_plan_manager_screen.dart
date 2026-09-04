@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/optimistic_action_guard.dart';
 import 'party_plan_ticket_screen.dart';
 import 'chat_screen.dart';
 
@@ -339,8 +340,20 @@ class _HostPartyPlanManagerScreenState
   }
 
   void _onAcceptRequest(String reqId, Map<String, dynamic> plan) async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
+    if (!OptimisticActionGuard.start('HOST_ACCEPT_REQ:$reqId')) return;
+
+    final planId = plan['id']?.toString() ?? '';
+    final reqsList = _planRequests[planId];
+    final reqIdx = reqsList?.indexWhere((r) => r['id']?.toString() == reqId) ?? -1;
+    final prevStatus = reqIdx != -1 ? reqsList![reqIdx]['status'] : 'pending';
+
+    // Optimistic UI: immediately mark request as accepted locally
+    setState(() {
+      if (reqIdx != -1) {
+        reqsList![reqIdx]['status'] = 'accepted';
+      }
+    });
+
     try {
       final result = await ApiService.acceptPartyPlanRequest(reqId);
       if (!mounted) return;
@@ -352,7 +365,7 @@ class _HostPartyPlanManagerScreenState
             ),
           ),
         );
-        await _loadData();
+        _loadData();
         final hostOrderId = result['hostRazorpayOrderId']?.toString();
         if (hostOrderId != null) {
           final updatedPlan = _myPlans.firstWhere(
@@ -370,6 +383,12 @@ class _HostPartyPlanManagerScreenState
           }
         }
       } else {
+        // Rollback
+        setState(() {
+          if (reqIdx != -1) {
+            reqsList![reqIdx]['status'] = prevStatus;
+          }
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept request.'),
@@ -377,10 +396,22 @@ class _HostPartyPlanManagerScreenState
           ),
         );
       }
-    } finally {
+    } catch (e) {
       if (mounted) {
-        setState(() => _isProcessing = false);
+        setState(() {
+          if (reqIdx != -1) {
+            reqsList![reqIdx]['status'] = prevStatus;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
+    } finally {
+      OptimisticActionGuard.end('HOST_ACCEPT_REQ:$reqId');
     }
   }
 
@@ -1447,7 +1478,7 @@ class _HostPartyPlanManagerScreenState
                           if (status.toString().toLowerCase() == 'pending' &&
                               req['isInvite'] != true)
                             ElevatedButton(
-                              onPressed: (_isProcessing || hasActiveReservation)
+                              onPressed: (OptimisticActionGuard.isLocked('HOST_ACCEPT_REQ:${req['id']}') || hasActiveReservation)
                                   ? null
                                   : () => _onAcceptRequest(req['id'], plan),
                               style: ElevatedButton.styleFrom(
@@ -1467,7 +1498,7 @@ class _HostPartyPlanManagerScreenState
                                 ),
                                 minimumSize: const Size(0, 36),
                               ),
-                              child: _isProcessing
+                              child: OptimisticActionGuard.isLocked('HOST_ACCEPT_REQ:${req['id']}')
                                   ? const SizedBox(
                                       width: 14,
                                       height: 14,

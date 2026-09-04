@@ -274,6 +274,12 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
 
+                    -- SubscriptionTransactions add-on support
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionTransactions' AND column_name='addon_package_id') THEN
+                        ALTER TABLE "SubscriptionTransactions" ADD COLUMN addon_package_id UUID REFERENCES "SubscriptionAddonPackages"(id) ON DELETE SET NULL;
+                    END IF;
+                    CREATE INDEX IF NOT EXISTS idx_sub_txn_addon_pkg ON "SubscriptionTransactions"(addon_package_id);
+
                     -- UserAddons table
                     CREATE TABLE IF NOT EXISTS "UserAddons" (
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

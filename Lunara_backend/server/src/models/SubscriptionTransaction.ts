@@ -2,6 +2,7 @@ import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config/database';
 import User from './User';
 import SubscriptionPackage from './SubscriptionPackage';
+import SubscriptionAddonPackage from './SubscriptionAddonPackage';
 
 export enum TransactionType {
     PURCHASE = 'purchase',
@@ -27,6 +28,7 @@ class SubscriptionTransaction extends Model {
     public id!: string;
     public userId!: string;
     public packageId!: string | null;
+    public addonPackageId!: string | null;
     public type!: TransactionType;
     public amount!: number;
     public currency!: string;
@@ -46,6 +48,7 @@ class SubscriptionTransaction extends Model {
     // Associations
     public readonly user?: User;
     public readonly package?: SubscriptionPackage;
+    public readonly addonPackage?: SubscriptionAddonPackage;
 }
 
 SubscriptionTransaction.init(
@@ -73,6 +76,16 @@ SubscriptionTransaction.init(
                 model: 'SubscriptionPackages',
                 key: 'id',
             },
+        },
+        addonPackageId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'addon_package_id',
+            references: {
+                model: 'SubscriptionAddonPackages',
+                key: 'id',
+            },
+            onDelete: 'SET NULL',
         },
         type: {
             type: DataTypes.STRING(30),
@@ -145,6 +158,7 @@ SubscriptionTransaction.init(
         indexes: [
             { fields: ['user_id'] },
             { fields: ['package_id'] },
+            { fields: ['addon_package_id'] },
             { fields: ['status'] },
             { fields: ['type'] },
             { fields: ['created_at'] },
@@ -154,6 +168,8 @@ SubscriptionTransaction.init(
 
 SubscriptionTransaction.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 SubscriptionTransaction.belongsTo(SubscriptionPackage, { foreignKey: 'package_id', as: 'package' });
+SubscriptionTransaction.belongsTo(SubscriptionAddonPackage, { foreignKey: 'addon_package_id', as: 'addonPackage' });
 User.hasMany(SubscriptionTransaction, { foreignKey: 'user_id', as: 'subscriptionTransactions' });
+SubscriptionAddonPackage.hasMany(SubscriptionTransaction, { foreignKey: 'addon_package_id', as: 'transactions' });
 
 export default SubscriptionTransaction;
