@@ -5519,16 +5519,36 @@ class ApiService {
     required String planId,
     required String userId,
     required bool hasArrived,
-    String stage = 'final_check',
+    String stage = 'thirty_min_reach',
+    String source = 'LIVE_FEED',
+    String? notificationId,
   }) async {
     try {
       final response = await _post(
         '/api/mobile/party-plans/$planId/confirm-arrival',
-        {'userId': userId, 'hasArrived': hasArrived, 'response': hasArrived ? 'YES' : 'NO', 'stage': stage},
+        {
+          'userId': userId,
+          'hasArrived': hasArrived,
+          'response': hasArrived ? 'YES' : 'NO',
+          'stage': stage,
+          'source': source,
+          // ignore: use_null_aware_elements
+          if (notificationId != null) 'notificationId': notificationId,
+        },
       );
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {
       debugPrint('confirmArrival error: $e');
+      return {'success': false, 'message': '$e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getPartyPlanReachStatus(String planId) async {
+    try {
+      final response = await _get('/api/mobile/party-plans/$planId/reach-status');
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('getPartyPlanReachStatus error: $e');
       return {'success': false, 'message': '$e'};
     }
   }

@@ -16,6 +16,7 @@ import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage'
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 import Booking, { AdminApprovalStatus, BookingStatus } from '../models/Booking';
 import GroupParty, { GroupPartyStatus } from '../models/GroupParty';
+import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 /**
  * Sweeps large-party Bookings and small GroupParty requests that were approved
@@ -539,6 +540,209 @@ export const startPartyPlanCron = () => {
                 }
             }
 
+            // ── 1B. 30-Minute Authoritative Venue Reach Confirmation ─────────────
+            try {
+                const reachWindowStart = new Date(now.getTime() + 15 * 60 * 1000);
+                const reachWindowEnd = new Date(now.getTime() + 40 * 60 * 1000);
+                const upcoming30mReachPlans = await PartyPlan.findAll({
+                    where: {
+                        status: { [Op.notIn]: ['cancelled', 'expired'] },
+                        reachConfirmation30mSent: false,
+                        hostPaymentStatus: { [Op.in]: ['paid', 'completed'] },
+                        planDateTime: { [Op.between]: [reachWindowStart, reachWindowEnd] },
+                    },
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'area'] }]
+                });
+
+                for (const plan of upcoming30mReachPlans) {
+                    if (plan.lifecycleStatus === PartyPlanLifecycleStatus.PLAN_COMPLETED || plan.status === 'cancelled') {
+                        continue;
+                    }
+
+                    const acceptedReq = await PartyPlanRequest.findOne({
+                        where: {
+                            planId: plan.id,
+                            status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] },
+                            joinerPaymentStatus: { [Op.in]: [PartyPlanJoinerPaymentStatus.PAID, 'paid'] }
+                        }
+                    });
+
+                    if (!acceptedReq) {
+                        continue;
+                    }
+
+                    // Mark 30-min reach confirmation sent (Idempotent guard)
+                    await plan.update({ reachConfirmation30mSent: true });
+
+                    const host = await User.findByPk(plan.userId);
+                    const joiner = await User.findByPk(acceptedReq.requesterId);
+                    const venueName = (plan as any).venue?.name || 'the venue';
+
+                    const hostName = `${host?.firstName || 'Host'} ${host?.lastName || ''}`.trim();
+                    const hostPhoto = host?.profileImageUrl || null;
+                    const joinerName = `${joiner?.firstName || 'Partner'} ${joiner?.lastName || ''}`.trim();
+                    const joinerPhoto = joiner?.profileImageUrl || null;
+
+                    const { sendMulticastPushNotification } = require('../services/fcmService');
+                    const NotificationService = (await import('../services/NotificationService')).NotificationService;
+                    const { io } = require('../server');
+
+                    const eventKey = `PARTY_PLAN_VENUE_REACH_CONFIRMATION_${plan.id}`;
+                    const scheduledTimeString = plan.planDateTime ? formatTime12Hour(plan.planDateTime) : '10:00 PM';
+
+                    // Host Notification: "Your Party Plan with [Partner Name] starts in 30 minutes. Have you reached [Venue Name]?"
+                    const hostNotifTitle = '📍 Venue Confirmation Required';
+                    const hostNotifBody = `Your Party Plan with ${joinerName} starts in 30 minutes. Have you reached ${venueName}?`;
+
+                    if (host?.fcmToken) {
+                        await sendMulticastPushNotification([host.fcmToken], {
+                            title: hostNotifTitle,
+                            body: hostNotifBody,
+                            data: {
+                                type: 'party_plan_reach_prompt',
+                                actionType: 'CONFIRM_VENUE_REACH',
+                                partyPlanId: plan.id,
+                                planId: plan.id,
+                                eventKey,
+                                stage: 'thirty_min_reach',
+                                partnerName: joinerName,
+                                partnerPhoto: joinerPhoto || '',
+                                hostName,
+                                hostPhoto: hostPhoto || '',
+                                venueName,
+                                partyTime: scheduledTimeString,
+                                planDateTime: plan.planDateTime ? plan.planDateTime.toISOString() : '',
+                                click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                            }
+                        });
+                    }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: plan.userId,
+                        actorUserId: acceptedReq.requesterId,
+                        eventType: 'party_plan_reach_prompt',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: hostNotifTitle,
+                        body: hostNotifBody,
+                        actionType: 'CONFIRM_VENUE_REACH',
+                        metadata: {
+                            partyPlanId: plan.id,
+                            eventKey,
+                            stage: 'thirty_min_reach',
+                            isHost: true,
+                            hostName,
+                            hostPhoto,
+                            partnerName: joinerName,
+                            partnerPhoto: joinerPhoto,
+                            venueName,
+                            partyTime: scheduledTimeString,
+                            planDateTime: plan.planDateTime,
+                        },
+                        idempotencyKey: `reach_30m_${plan.id}_host`
+                    });
+
+                    // Joiner Notification: "Your Party Plan with [Host Name] starts in 30 minutes. Have you reached [Venue Name]?"
+                    const joinerNotifTitle = '📍 Venue Confirmation Required';
+                    const joinerNotifBody = `Your Party Plan with ${hostName} starts in 30 minutes. Have you reached ${venueName}?`;
+
+                    if (joiner?.fcmToken) {
+                        await sendMulticastPushNotification([joiner.fcmToken], {
+                            title: joinerNotifTitle,
+                            body: joinerNotifBody,
+                            data: {
+                                type: 'party_plan_reach_prompt',
+                                actionType: 'CONFIRM_VENUE_REACH',
+                                partyPlanId: plan.id,
+                                planId: plan.id,
+                                eventKey,
+                                stage: 'thirty_min_reach',
+                                partnerName: hostName,
+                                partnerPhoto: hostPhoto || '',
+                                hostName,
+                                hostPhoto: hostPhoto || '',
+                                venueName,
+                                partyTime: scheduledTimeString,
+                                planDateTime: plan.planDateTime ? plan.planDateTime.toISOString() : '',
+                                click_action: 'FLUTTER_NOTIFICATION_CLICK'
+                            }
+                        });
+                    }
+
+                    await NotificationService.dispatch({
+                        recipientUserId: acceptedReq.requesterId,
+                        actorUserId: plan.userId,
+                        eventType: 'party_plan_reach_prompt',
+                        category: 'events',
+                        entityType: 'party_plan',
+                        entityId: plan.id,
+                        title: joinerNotifTitle,
+                        body: joinerNotifBody,
+                        actionType: 'CONFIRM_VENUE_REACH',
+                        metadata: {
+                            partyPlanId: plan.id,
+                            eventKey,
+                            stage: 'thirty_min_reach',
+                            isHost: false,
+                            hostName,
+                            hostPhoto,
+                            partnerName: hostName,
+                            partnerPhoto: hostPhoto,
+                            venueName,
+                            partyTime: scheduledTimeString,
+                            planDateTime: plan.planDateTime,
+                        },
+                        idempotencyKey: `reach_30m_${plan.id}_joiner`
+                    });
+
+                    // Real-time Sockets for in-app popup and Live Feed synchronization
+                    if (io) {
+                        io.to(`user_${plan.userId}`).emit('party_plan_reach_prompt', {
+                            planId: plan.id,
+                            partyPlanId: plan.id,
+                            eventKey,
+                            stage: 'thirty_min_reach',
+                            isHost: true,
+                            hostName,
+                            hostPhoto,
+                            partnerName: joinerName,
+                            partnerPhoto: joinerPhoto,
+                            venueName,
+                            partyTime: scheduledTimeString,
+                            eventDateTime: plan.planDateTime,
+                            planDateTime: plan.planDateTime,
+                            planTitle: plan.message || 'Party Plan'
+                        });
+
+                        io.to(`user_${acceptedReq.requesterId}`).emit('party_plan_reach_prompt', {
+                            planId: plan.id,
+                            partyPlanId: plan.id,
+                            eventKey,
+                            stage: 'thirty_min_reach',
+                            isHost: false,
+                            hostName,
+                            hostPhoto,
+                            partnerName: hostName,
+                            partnerPhoto: hostPhoto,
+                            venueName,
+                            partyTime: scheduledTimeString,
+                            eventDateTime: plan.planDateTime,
+                            planDateTime: plan.planDateTime,
+                            planTitle: plan.message || 'Party Plan'
+                        });
+
+                        io.emit('live_feed_update', {
+                            type: 'party_plan_reach_prompt',
+                            planId: plan.id,
+                            eventKey
+                        });
+                    }
+                }
+            } catch (reach30mErr: any) {
+                logger.error('[Cron] 30m Venue Reach Confirmation error: ' + reach30mErr.message);
+            }
+
             // ── 2. Party Plan Arrival Cadence Engine (T-20m, T-10m, T-5m, On-Time, T+5m, T+10m, T+30m, 5h Expiry) ──
             try {
                 const sequelize = (await import('../config/database')).default;
@@ -568,12 +772,17 @@ export const startPartyPlanCron = () => {
                     const venue = plan.venue || await (await import('../models/Venue')).default.findByPk(plan.venueId);
                     const venueName = venue?.name || 'the venue';
 
+                    const hostName = `${host?.firstName || 'Host'} ${host?.lastName || ''}`.trim();
+                    const hostPhoto = host?.profileImageUrl || null;
+                    const joinerName = `${joiner?.firstName || 'Partner'} ${joiner?.lastName || ''}`.trim();
+                    const joinerPhoto = joiner?.profileImageUrl || null;
+
                     const title = '📍 Has your partner reached?';
                     const body = `Your Party Plan at ${venueName} is starting! Please confirm if your partner has reached.`;
 
                     const recipients = [
-                        { user: host, isHost: true, partnerId: acceptedReq.requesterId },
-                        { user: joiner, isHost: false, partnerId: plan.userId }
+                        { user: host, isHost: true, partnerId: acceptedReq.requesterId, partnerName: joinerName, partnerPhoto: joinerPhoto },
+                        { user: joiner, isHost: false, partnerId: plan.userId, partnerName: hostName, partnerPhoto: hostPhoto }
                     ];
 
                     for (const r of recipients) {
@@ -585,7 +794,11 @@ export const startPartyPlanCron = () => {
                                 data: {
                                     type: 'arrival_prompt',
                                     partyPlanId: plan.id,
-                                    action: 'CONFIRM_ARRIVAL'
+                                    action: 'CONFIRM_ARRIVAL',
+                                    partnerName: r.partnerName,
+                                    partnerPhoto: r.partnerPhoto || '',
+                                    venueName,
+                                    eventDateTime: plan.planDateTime ? plan.planDateTime.toISOString() : ''
                                 }
                             });
                         }
@@ -603,14 +816,46 @@ export const startPartyPlanCron = () => {
                             metadata: {
                                 partyPlanId: plan.id,
                                 step: stepLabel,
-                                isHost: r.isHost
+                                isHost: r.isHost,
+                                partnerName: r.partnerName,
+                                partnerPhoto: r.partnerPhoto,
+                                venueName,
+                                eventDateTime: plan.planDateTime
                             }
                         });
                     }
 
                     if (io) {
-                        io.to(`user_${plan.userId}`).emit('party_plan_arrival_prompt', { planId: plan.id, step: stepLabel });
-                        io.to(`user_${acceptedReq.requesterId}`).emit('party_plan_arrival_prompt', { planId: plan.id, step: stepLabel });
+                        io.to(`user_${plan.userId}`).emit('party_plan_arrival_prompt', {
+                            planId: plan.id,
+                            partyPlanId: plan.id,
+                            step: stepLabel,
+                            stage: 'final_check',
+                            isHost: true,
+                            hostName,
+                            hostPhoto,
+                            partnerName: joinerName,
+                            partnerPhoto: joinerPhoto,
+                            venueName,
+                            eventDateTime: plan.planDateTime,
+                            planDateTime: plan.planDateTime,
+                            planTitle: plan.message || 'Party Plan'
+                        });
+                        io.to(`user_${acceptedReq.requesterId}`).emit('party_plan_arrival_prompt', {
+                            planId: plan.id,
+                            partyPlanId: plan.id,
+                            step: stepLabel,
+                            stage: 'final_check',
+                            isHost: false,
+                            hostName,
+                            hostPhoto,
+                            partnerName: hostName,
+                            partnerPhoto: hostPhoto,
+                            venueName,
+                            eventDateTime: plan.planDateTime,
+                            planDateTime: plan.planDateTime,
+                            planTitle: plan.message || 'Party Plan'
+                        });
                     }
                 };
 

@@ -5071,9 +5071,17 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        // Validate 24-hour resolution deadline
+        // Server-side authoritative confirmation window: opens ~35 min before scheduled party time
         const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
-        if (eventTime > 0 && Date.now() > eventTime + 24 * 60 * 60 * 1000) {
+        const nowMs = Date.now();
+        if (eventTime > 0 && nowMs < eventTime - 35 * 60 * 1000) {
+            await transaction.rollback();
+            res.status(400).json({ success: false, message: 'Venue reach confirmation opens 30 minutes before the scheduled Party Plan time.' });
+            return;
+        }
+
+        // Validate 24-hour resolution deadline
+        if (eventTime > 0 && nowMs > eventTime + 24 * 60 * 60 * 1000) {
             await transaction.rollback();
             res.status(400).json({ success: false, message: 'The 24-hour arrival confirmation window for this Party Plan has closed.' });
             return;
@@ -5108,70 +5116,47 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
 
         const choice = response ? response.toString().toUpperCase() : (hasArrived === false ? 'NO' : 'YES');
         const isYes = choice === 'YES' || hasArrived === true;
+        const targetReachStatus = isYes ? 'REACHED' : 'NOT_REACHED';
         const nowStamp = new Date();
-        const stage = (req.body.stage || 'final_check').toString().toLowerCase();
+        const stage = (req.body.stage || 'thirty_min_reach').toString().toLowerCase();
 
-        // ── STAGE 1: FIRST REACH CHECK (PRE-EVENT EVIDENCE) ──────────────────
-        if (stage === 'first_check' || stage === 'pre_event_check') {
-            if (isHost) {
-                await plan.update({
-                    hostFirstCheckStatus: isYes ? 'yes' : 'no',
-                    hostFirstCheckRespondedAt: nowStamp,
-                    reachVerificationStage: 'pre_event_check',
-                    hostLatLangCheckIn: latitude && longitude ? true : plan.hostLatLangCheckIn
-                }, { transaction });
-            } else if (acceptedReq) {
-                await acceptedReq.update({
-                    guestFirstCheckStatus: isYes ? 'yes' : 'no',
-                    guestFirstCheckRespondedAt: nowStamp,
-                    latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
-                }, { transaction });
-            }
-
-            const AuditLog = (await import('../models/AuditLog')).default;
-            await AuditLog.logAction({
-                userId,
-                partyPlanId: id,
-                action: `Pre-Event Reach First Evidence (${choice})`,
-                metadata: { isHost, response: choice, latitude, longitude, device, ip }
-            });
-
-            await transaction.commit();
-
-            // Broadcast real-time socket updates for First Evidence
-            setImmediate(async () => {
-                try {
-                    const { io } = require('../server');
-                    if (io) {
-                        const partnerId = isHost ? acceptedReq?.requesterId : plan.userId;
-                        if (partnerId) {
-                            io.to(`user_${partnerId}`).emit('party_plan_reach_update', {
-                                planId: id,
-                                stage: 'first_check',
-                                respondedBy: userId,
-                                isHost,
-                                choice,
-                            });
-                        }
-                        io.emit('live_feed_update', { type: 'party_plan_reach_update', planId: id });
-                    }
-                } catch (_) { }
-            });
-
+        // Idempotent guard: if the user already submitted this same reach choice, return early without re-charging or duplicate events
+        if (isHost && plan.hostReachStatus === targetReachStatus) {
+            await transaction.rollback();
             res.json({
                 success: true,
-                isFirstCheck: true,
-                message: 'First reach evidence recorded successfully. Final verification will occur at scheduled party time.',
-                firstCheckStatus: choice,
+                alreadyConfirmed: true,
+                isHost: true,
+                confirmed: isYes,
+                reachStatus: targetReachStatus,
+                message: 'Your venue reach confirmation has already been recorded.'
+            });
+            return;
+        }
+        if (isGuest && acceptedReq?.partnerReachStatus === targetReachStatus) {
+            await transaction.rollback();
+            res.json({
+                success: true,
+                alreadyConfirmed: true,
+                isHost: false,
+                confirmed: isYes,
+                reachStatus: targetReachStatus,
+                message: 'Your venue reach confirmation has already been recorded.'
             });
             return;
         }
 
-        // ── STAGE 2: FINAL CONFIRMATION (AT PARTY TIME) ─────────────────────
+        // ── Store Server-Side Reach Confirmation Response ─────────────────────
         if (isHost) {
             await plan.update({
+                hostReachStatus: targetReachStatus,
+                hostReachConfirmedAt: nowStamp,
+                hostReachConfirmationSource: req.body.source || 'LIVE_FEED',
+                hostReachNotificationId: req.body.notificationId || `PARTY_PLAN_VENUE_REACH_CONFIRMATION_${plan.id}`,
                 hostArrivalConfirmed: isYes,
                 hostArrivalTime: nowStamp,
+                hostFirstCheckStatus: isYes ? 'yes' : 'no',
+                hostFirstCheckRespondedAt: nowStamp,
                 hostFinalCheckStatus: isYes ? 'yes' : 'no',
                 hostFinalCheckRespondedAt: nowStamp,
                 reachVerificationStage: 'final_check',
@@ -5179,8 +5164,14 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             }, { transaction });
         } else if (acceptedReq) {
             await acceptedReq.update({
+                partnerReachStatus: targetReachStatus,
+                partnerReachConfirmedAt: nowStamp,
+                partnerReachConfirmationSource: req.body.source || 'LIVE_FEED',
+                partnerReachNotificationId: req.body.notificationId || `PARTY_PLAN_VENUE_REACH_CONFIRMATION_${plan.id}`,
                 guestArrivalConfirmed: isYes,
                 guestArrivalTime: nowStamp,
+                guestFirstCheckStatus: isYes ? 'yes' : 'no',
+                guestFirstCheckRespondedAt: nowStamp,
                 guestFinalCheckStatus: isYes ? 'yes' : 'no',
                 guestFinalCheckRespondedAt: nowStamp,
                 latLangCheckIn: latitude && longitude ? true : acceptedReq.latLangCheckIn
@@ -5191,15 +5182,15 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         await AuditLog.logAction({
             userId,
             partyPlanId: id,
-            action: `Final Partner Reach Response (${choice})`,
-            metadata: { isHost, response: choice, latitude, longitude, device, ip }
+            action: `Venue Reach Confirmation (${choice})`,
+            metadata: { isHost, response: choice, reachStatus: targetReachStatus, stage, source: req.body.source || 'LIVE_FEED', latitude, longitude, device, ip }
         });
 
         // Determine updated arrival states
-        const hostArrived = isHost ? isYes : Boolean(plan.hostArrivalConfirmed);
-        const guestArrived = !isHost ? isYes : Boolean(acceptedReq?.guestArrivalConfirmed);
-        const hostHasAnswered = isHost ? true : plan.hostArrivalTime !== null;
-        const guestHasAnswered = !isHost ? true : acceptedReq?.guestArrivalTime !== null;
+        const hostArrived = isHost ? isYes : (plan.hostReachStatus === 'REACHED' || Boolean(plan.hostArrivalConfirmed));
+        const guestArrived = !isHost ? isYes : (acceptedReq?.partnerReachStatus === 'REACHED' || Boolean(acceptedReq?.guestArrivalConfirmed));
+        const hostHasAnswered = isHost ? true : (plan.hostReachStatus === 'REACHED' || plan.hostReachStatus === 'NOT_REACHED' || plan.hostArrivalTime !== null);
+        const guestHasAnswered = !isHost ? true : (acceptedReq?.partnerReachStatus === 'REACHED' || acceptedReq?.partnerReachStatus === 'NOT_REACHED' || acceptedReq?.guestArrivalTime !== null);
         const bothAnswered = hostHasAnswered && guestHasAnswered;
 
         let bothArrived = false;
@@ -5420,16 +5411,41 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         io.to(`user_${plan.userId}`).emit('party_plan_both_arrived', { planId: plan.id, refundAmount: 99 });
                         io.to(`user_${acceptedReq.requesterId}`).emit('party_plan_both_arrived', { planId: plan.id, refundAmount: 99 });
                     }
-                } else if (isYes && acceptedReq) {
-                    const { io } = require('../server');
-                    if (io) {
-                        const partnerId = isHost ? acceptedReq.requesterId : plan.userId;
-                        io.to(`user_${partnerId}`).emit('party_plan_arrival_update', {
-                            planId: plan.id,
-                            hostArrived,
-                            guestArrived,
-                        });
-                    }
+                }
+
+                if (io && acceptedReq) {
+                    const partnerId = isHost ? acceptedReq.requesterId : plan.userId;
+                    const updatedHostReach = isHost ? targetReachStatus : (plan.hostReachStatus || 'PENDING');
+                    const updatedPartnerReach = !isHost ? targetReachStatus : (acceptedReq.partnerReachStatus || 'PENDING');
+
+                    io.to(`user_${partnerId}`).emit('party_plan_reach_update', {
+                        planId: plan.id,
+                        partyPlanId: plan.id,
+                        respondedBy: userId,
+                        isHost,
+                        choice: targetReachStatus,
+                        hostReachStatus: updatedHostReach,
+                        partnerReachStatus: updatedPartnerReach,
+                        bothArrived,
+                        isFinalized
+                    });
+
+                    io.to(`user_${partnerId}`).emit('party_plan_arrival_update', {
+                        planId: plan.id,
+                        hostArrived,
+                        guestArrived,
+                        hostReachStatus: updatedHostReach,
+                        partnerReachStatus: updatedPartnerReach
+                    });
+
+                    io.emit('live_feed_update', {
+                        type: 'party_plan_reach_update',
+                        planId: plan.id,
+                        partyPlanId: plan.id,
+                        hostReachStatus: updatedHostReach,
+                        partnerReachStatus: updatedPartnerReach,
+                        bothArrived
+                    });
                 }
             } catch (err: any) {
                 logger.warn('Error in post-arrival notification dispatch:', err.message);
@@ -6078,6 +6094,31 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
             showHostName: plan.showHostName ?? true,
             showVenueDetails: plan.showVenueDetails ?? true,
             showDateDetails: plan.showDateDetails ?? true,
+            // ── 30-Minute Authoritative Venue Reach Confirmation Fields ─────────
+            hostReachStatus: plan.hostReachStatus || (plan.hostArrivalConfirmed ? 'REACHED' : 'PENDING'),
+            partnerReachStatus: matchedRequest?.partnerReachStatus || (matchedRequest?.guestArrivalConfirmed ? 'REACHED' : 'PENDING'),
+            hostArrivalConfirmed: Boolean(plan.hostArrivalConfirmed),
+            guestArrivalConfirmed: Boolean(matchedRequest?.guestArrivalConfirmed),
+            hostArrivalTime: plan.hostArrivalTime || null,
+            guestArrivalTime: matchedRequest?.guestArrivalTime || null,
+            reachConfirmation30mSent: Boolean(plan.reachConfirmation30mSent),
+            acceptedRequest: matchedRequest ? {
+                id: matchedRequest.id,
+                planId: matchedRequest.planId,
+                requesterId: matchedRequest.requesterId,
+                status: matchedRequest.status,
+                joinerPaymentStatus: matchedRequest.joinerPaymentStatus,
+                partnerReachStatus: matchedRequest.partnerReachStatus || (matchedRequest.guestArrivalConfirmed ? 'REACHED' : 'PENDING'),
+                guestArrivalConfirmed: Boolean(matchedRequest.guestArrivalConfirmed),
+                guestArrivalTime: matchedRequest.guestArrivalTime || null,
+                requester: counterpartUser ? {
+                    id: counterpartUser.id,
+                    firstName: counterpartUser.firstName,
+                    lastName: counterpartUser.lastName,
+                    profileImageUrl: counterpartPhoto,
+                    profilePhotoUrl: counterpartPhoto,
+                } : null
+            } : null,
         };
     } catch (enrichErr: any) {
         logger.error(`Error enriching party plan notification card ${planId}:`, enrichErr);
@@ -6164,3 +6205,75 @@ export async function getPlanSummary(req: Request, res: Response): Promise<Respo
         return res.status(500).json({ success: false, message: 'Failed to fetch plan summary' });
     }
 }
+
+/**
+ * GET /api/mobile/party-plans/:id/reach-status
+ * Returns current 30-min venue reach confirmation state for Host & Partner
+ */
+export const getReachStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const id = req.params.id || req.params.planId;
+        const userId = (req as any).user?.id || req.body?.userId || req.query?.userId;
+
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(id, {
+            include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'area'] }]
+        });
+        if (!plan) {
+            res.status(404).json({ success: false, message: 'Party plan not found' });
+            return;
+        }
+
+        const acceptedReq = await PartyPlanRequest.findOne({
+            where: {
+                planId: id,
+                status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] }
+            },
+            include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+        });
+
+        const isHost = plan.userId === userId;
+        const isGuest = acceptedReq?.requesterId === userId;
+
+        if (!isHost && !isGuest) {
+            res.status(403).json({ success: false, message: 'You are not an active participant in this plan' });
+            return;
+        }
+
+        const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
+        const now = Date.now();
+        const inArrivalWindow = eventTime > 0 && now >= eventTime - 35 * 60 * 1000 && now <= eventTime + 24 * 60 * 60 * 1000;
+
+        const hostReachStatus = plan.hostReachStatus || (plan.hostArrivalConfirmed ? 'REACHED' : 'PENDING');
+        const partnerReachStatus = acceptedReq?.partnerReachStatus || (acceptedReq?.guestArrivalConfirmed ? 'REACHED' : 'PENDING');
+        const bothReached = hostReachStatus === 'REACHED' && partnerReachStatus === 'REACHED';
+
+        const myReachStatus = isHost ? hostReachStatus : partnerReachStatus;
+        const otherReachStatus = isHost ? partnerReachStatus : hostReachStatus;
+
+        res.json({
+            success: true,
+            partyPlanId: plan.id,
+            isHost,
+            hostReachStatus,
+            partnerReachStatus,
+            myReachStatus,
+            otherReachStatus,
+            hostArrivalConfirmed: Boolean(plan.hostArrivalConfirmed),
+            guestArrivalConfirmed: Boolean(acceptedReq?.guestArrivalConfirmed),
+            bothReached,
+            inArrivalWindow,
+            reachConfirmation30mSent: Boolean(plan.reachConfirmation30mSent),
+            scheduledTime: plan.planDateTime,
+            canConfirm: inArrivalWindow && myReachStatus === 'PENDING' && plan.status !== 'cancelled' && plan.lifecycleStatus !== PartyPlanLifecycleStatus.PLAN_COMPLETED
+        });
+    } catch (err: any) {
+        logger.error('getReachStatus error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch reach status', error: err.message });
+    }
+};
+

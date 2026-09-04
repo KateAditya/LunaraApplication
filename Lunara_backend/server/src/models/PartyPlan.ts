@@ -107,6 +107,12 @@ export interface PartyPlanAttributes {
     reminderPost10mSent?: boolean;
     reminderPost30mSent?: boolean;
     expiredNoShowCancelled?: boolean;
+    // ── 30-Minute Venue Reach Confirmation Fields ─────────────────────────
+    reachConfirmation30mSent?: boolean;
+    hostReachStatus?: string;
+    hostReachConfirmedAt?: Date | null;
+    hostReachConfirmationSource?: string | null;
+    hostReachNotificationId?: string | null;
     // ── Lifecycle Timestamps ──────────────────────────────────────────────────
     acceptedAt?: Date | null;       // When host accepted a requester
     paymentDeadlineAt?: Date | null; // Canonical 30-min payment deadline
@@ -173,6 +179,11 @@ class PartyPlan
     public reminderPost10mSent!: boolean;
     public reminderPost30mSent!: boolean;
     public expiredNoShowCancelled!: boolean;
+    public reachConfirmation30mSent?: boolean;
+    public hostReachStatus?: string;
+    public hostReachConfirmedAt?: Date | null;
+    public hostReachConfirmationSource?: string | null;
+    public hostReachNotificationId?: string | null;
     public acceptedAt?: Date | null;
     public paymentDeadlineAt?: Date | null;
     public matchedRequestId?: string | null;
@@ -442,6 +453,31 @@ PartyPlan.init(
             type: DataTypes.BOOLEAN,
             defaultValue: false,
             field: 'expired_no_show_cancelled',
+        },
+        reachConfirmation30mSent: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'reach_confirmation_30m_sent',
+        },
+        hostReachStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'PENDING',
+            field: 'host_reach_status',
+        },
+        hostReachConfirmedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'host_reach_confirmed_at',
+        },
+        hostReachConfirmationSource: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'host_reach_confirmation_source',
+        },
+        hostReachNotificationId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'host_reach_notification_id',
         },
         // ── Lifecycle Timestamps ────────────────────────────────────────────────
         acceptedAt: {

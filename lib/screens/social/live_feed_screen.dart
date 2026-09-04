@@ -271,6 +271,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('party_plan_reach_prompt', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
@@ -323,6 +324,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('party_plan_reach_prompt', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
@@ -4041,20 +4043,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final bool isCancelled = planStatus == 'cancelled' ||
         lifecycleStatus == 'cancelled';
 
-    final bool hostReached = planMap['hostArrivalConfirmed'] == true;
-    final bool guestReached = (acceptedJoinerRequest != null && acceptedJoinerRequest['guestArrivalConfirmed'] == true) ||
-        (myRequest != null && myRequest['guestArrivalConfirmed'] == true);
-    final bool bothReached = hostReached && guestReached;
-    final bool userReached = isHost ? hostReached : guestReached;
-    final bool partnerReached = isHost ? guestReached : hostReached;
+    final String hostReachStatus = (planMap['hostReachStatus'] ??
+        (planMap['hostArrivalConfirmed'] == true ? 'REACHED' : 'PENDING')).toString().toUpperCase();
+    final String partnerReachStatus = (acceptedJoinerRequest?['partnerReachStatus'] ??
+        myRequest?['partnerReachStatus'] ??
+        planMap['partnerReachStatus'] ??
+        ((acceptedJoinerRequest?['guestArrivalConfirmed'] == true || myRequest?['guestArrivalConfirmed'] == true) ? 'REACHED' : 'PENDING')).toString().toUpperCase();
+
+    final bool hostIsReached = hostReachStatus == 'REACHED' || planMap['hostArrivalConfirmed'] == true;
+    final bool hostIsNotReached = hostReachStatus == 'NOT_REACHED';
+    final bool partnerIsReached = partnerReachStatus == 'REACHED' ||
+        acceptedJoinerRequest?['guestArrivalConfirmed'] == true ||
+        myRequest?['guestArrivalConfirmed'] == true;
+    final bool partnerIsNotReached = partnerReachStatus == 'NOT_REACHED';
+
+    final bool bothReached = hostIsReached && partnerIsReached;
+    final String myReachStatus = isHost ? hostReachStatus : partnerReachStatus;
+    final bool myHasResponded = myReachStatus == 'REACHED' || myReachStatus == 'NOT_REACHED';
+    final String otherReachStatus = isHost ? partnerReachStatus : hostReachStatus;
+
     final bool isRefunded = hostPaymentStatus == 'refunded' ||
         (myRequest != null && myRequest['joinerPaymentStatus'] == 'refunded') ||
         lifecycleStatus == 'plan_completed' ||
+        planStatus == 'completed' ||
         planMap['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
 
-    final bool inArrivalWindow = parsedEventDate != null &&
-        parsedEventDate.difference(DateTime.now()).inMinutes <= 30 &&
-        parsedEventDate.difference(DateTime.now()).inHours >= -5;
+    final bool reach30mSent = planMap['reachConfirmation30mSent'] == true;
+    final bool inArrivalWindow = reach30mSent || (parsedEventDate != null &&
+        parsedEventDate.difference(DateTime.now()).inMinutes <= 35 &&
+        parsedEventDate.difference(DateTime.now()).inHours >= -24);
 
     // A plan-level lifecycleStatus/acceptedJoinerRequest only genuinely reflects
     // the current viewer's own match when they're the host (there's only one
@@ -4064,6 +4081,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // incorrectly see "Match Confirmed" with working Chat/Ticket buttons.
     final bool isConfirmed = (isHost && (lifecycleStatus == 'match_confirmed' ||
             lifecycleStatus == 'chat_enabled' ||
+            lifecycleStatus == 'plan_completed' ||
             (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid')))) ||
         (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid'));
 
@@ -4285,104 +4303,244 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
     } else if (bothReached || isRefunded) {
-      title = '🎉 Party Completed';
+      final otherId = isHost
+          ? (acceptedJoinerRequest?['requesterId'] ?? acceptedJoinerRequest?['requester']?['id'] ?? partnerUser?['id'] ?? '')
+          : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
+      final String partnerDisplayName = (isHost
+              ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Partner')
+              : (hostCreator['firstName'] ?? hostName))
+          .trim();
+      final String? otherPhoto = isHost
+          ? (partnerUser?['profileImageUrl'] ?? partnerUser?['profilePhotoUrl'] ?? acceptedJoinerRequest?['requesterPhotoUrl'])
+          : hostPhoto;
+
+      title = '🎉 Party Plan Confirmed';
       badge = 'COMPLETED';
       accent = const Color(0xFF10B981);
-      body = 'Both participants confirmed arrival • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
-      statusSummary = '₹99 Refunded';
+      body = '✓ Both reached the venue • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
+      statusSummary = '✓ Both Reached • ₹99 Refunded';
       actionsList = [
         NotificationAction(
-          label: 'View Wallet',
-          icon: Icons.account_balance_wallet_rounded,
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
           isPrimary: true,
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+            MaterialPageRoute(
+              builder: (_) => PartyPlanTicketScreen(
+                request: acceptedJoinerRequest ?? myRequest ?? planMap,
+                plan: planMap,
+                isHost: isHost,
+              ),
+            ),
           ),
         ),
         NotificationAction(
-          label: 'View Details',
-          icon: Icons.info_outline_rounded,
-          isPrimary: false,
-          color: Colors.grey[200],
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
-          ).then((_) => _loadFeed(showLoader: false)),
-        ),
-      ];
-    } else if (isConfirmed && userReached && !partnerReached) {
-      title = '📍 Arrival Confirmed';
-      badge = 'CONFIRMED';
-      accent = const Color(0xFF6366F1);
-      body = 'You: ✓ Reached • Partner: ⏳ Waiting for confirmation';
-      statusSummary = 'Waiting for Partner';
-      final otherId = isHost
-          ? (acceptedJoinerRequest?['requesterId'] ?? '')
-          : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
-
-      actionsList = [
-        NotificationAction(
           label: 'Chat',
           icon: Icons.chat_bubble_rounded,
-          isPrimary: true,
+          isPrimary: false,
+          color: Colors.grey[200],
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => ChatScreen(
                 user: {
                   'id': otherId,
-                  'firstName': isHost ? 'Party Partner' : (hostCreator['firstName'] ?? hostName),
-                  'lastName': isHost ? '' : (hostCreator['lastName'] ?? ''),
-                  'profilePhotoUrl': isHost ? null : hostPhoto,
+                  'firstName': partnerDisplayName,
+                  'profilePhotoUrl': otherPhoto,
                 },
               ),
             ),
           ),
         ),
         NotificationAction(
-          label: 'View Plan',
-          icon: Icons.open_in_new_rounded,
+          label: 'View Wallet',
+          icon: Icons.account_balance_wallet_rounded,
           isPrimary: false,
           color: Colors.grey[200],
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
           ),
         ),
       ];
-    } else if (isConfirmed && !userReached && inArrivalWindow) {
-      title = 'Let\'s party at $venueName! 🚀';
-      badge = 'ACTION REQUIRED';
-      accent = const Color(0xFFF59E0B);
-      body = '⏱ Starts soon • 📍 Have you reached the venue? Confirm arrival for ₹99 refund.';
-      statusSummary = 'Confirm Arrival';
+    } else if (isConfirmed && inArrivalWindow) {
+      final otherId = isHost
+          ? (acceptedJoinerRequest?['requesterId'] ?? acceptedJoinerRequest?['requester']?['id'] ?? partnerUser?['id'] ?? '')
+          : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
+      final String partnerDisplayName = (isHost
+              ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Partner')
+              : (hostCreator['firstName'] ?? hostName))
+          .trim();
+      final String? otherPhoto = isHost
+          ? (partnerUser?['profileImageUrl'] ?? partnerUser?['profilePhotoUrl'] ?? acceptedJoinerRequest?['requesterPhotoUrl'])
+          : hostPhoto;
 
-      actionsList = [
+      final String hostStatusText = hostIsReached
+          ? '🟢 Reached'
+          : (hostIsNotReached ? '❌ Not reached' : '⚪ Waiting for response');
+      final String partnerStatusText = partnerIsReached
+          ? '🟢 Reached'
+          : (partnerIsNotReached ? '❌ Not reached' : '⚪ Waiting for response');
+
+      title = myHasResponded
+          ? (myReachStatus == 'REACHED' ? '📍 Arrival Confirmed' : '📍 Venue Status Updated')
+          : '📍 Have you reached the venue?';
+      badge = myHasResponded ? 'CONFIRMED' : 'ACTION REQUIRED';
+      accent = myHasResponded ? const Color(0xFF6366F1) : const Color(0xFFF59E0B);
+
+      body = '📍 $venueName${formattedDateTime.isNotEmpty ? ' • $formattedDateTime' : ''}\n'
+          'Host (${isHost ? "You" : hostName}): $hostStatusText\n'
+          'Partner (${!isHost ? "You" : partnerDisplayName}): $partnerStatusText';
+
+      if (bothReached) {
+        statusSummary = '✓ Both Reached';
+      } else if (myReachStatus == 'REACHED') {
+        statusSummary = 'Waiting for Partner';
+      } else if (myReachStatus == 'NOT_REACHED') {
+        statusSummary = 'You: Not Reached';
+      } else {
+        statusSummary = 'Confirm Arrival';
+      }
+
+      actionsList = [];
+
+      // If user hasn't responded yet, render YES and NO confirmation buttons directly on the card
+      if (!myHasResponded) {
+        actionsList.add(
+          NotificationAction(
+            label: 'YES, REACHED',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            color: const Color(0xFF10B981),
+            onTap: () async {
+              try {
+                final res = await ApiService.confirmArrival(
+                  planId: planId,
+                  userId: currentUserId,
+                  hasArrived: true,
+                  stage: 'thirty_min_reach',
+                  source: 'LIVE_FEED_CARD',
+                );
+                if (context.mounted) {
+                  if (res['bothArrived'] == true) {
+                    PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
+                      context,
+                      venueName: venueName,
+                      plan: planMap,
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(res['message'] ?? 'Arrival confirmed! ₹99 refund will be credited once both arrive.'),
+                        backgroundColor: const Color(0xFF10B981),
+                      ),
+                    );
+                  }
+                  _loadFeed(showLoader: false);
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to confirm arrival: $e')),
+                  );
+                }
+              }
+            },
+          ),
+        );
+
+        actionsList.add(
+          NotificationAction(
+            label: 'NO, NOT REACHED',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () async {
+              try {
+                final res = await ApiService.confirmArrival(
+                  planId: planId,
+                  userId: currentUserId,
+                  hasArrived: false,
+                  stage: 'thirty_min_reach',
+                  source: 'LIVE_FEED_CARD',
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res['message'] ?? 'Status updated: Not reached venue yet.'),
+                      backgroundColor: Colors.grey.shade800,
+                    ),
+                  );
+                  _loadFeed(showLoader: false);
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to update status: $e')),
+                  );
+                }
+              }
+            },
+          ),
+        );
+      }
+
+      // Always show View Ticket & Chat
+      actionsList.add(
         NotificationAction(
-          label: "YES, REACHED",
-          icon: Icons.check_circle_rounded,
-          isPrimary: true,
-          onTap: () => PartyPlanArrivalDialog.showArrivalPrompt(
+          label: 'View Ticket',
+          icon: Icons.confirmation_number_rounded,
+          isPrimary: myHasResponded,
+          color: myHasResponded ? const Color(0xFF6366F1) : Colors.grey[200],
+          onTap: () => Navigator.push(
             context,
-            plan: planMap,
-            isHost: isHost,
-            onUpdate: () => _loadFeed(showLoader: false),
+            MaterialPageRoute(
+              builder: (_) => PartyPlanTicketScreen(
+                request: acceptedJoinerRequest ?? myRequest ?? planMap,
+                plan: planMap,
+                isHost: isHost,
+              ),
+            ),
           ),
         ),
+      );
+
+      actionsList.add(
         NotificationAction(
-          label: 'NO, NOT REACHED',
-          icon: Icons.cancel_outlined,
+          label: 'Chat',
+          icon: Icons.chat_bubble_rounded,
           isPrimary: false,
           color: Colors.grey[200],
-          onTap: () => PartyPlanArrivalDialog.showArrivalPrompt(
+          onTap: () => Navigator.push(
             context,
-            plan: planMap,
-            isHost: isHost,
-            onUpdate: () => _loadFeed(showLoader: false),
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                user: {
+                  'id': otherId,
+                  'firstName': partnerDisplayName,
+                  'profilePhotoUrl': otherPhoto,
+                },
+              ),
+            ),
           ),
         ),
-      ];
+      );
+
+      if (myHasResponded) {
+        actionsList.add(
+          NotificationAction(
+            label: 'Cancel Plan',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        );
+      }
     } else if (isHost) {
       userRoleLabel = '👑 Your Party Plan';
       final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
@@ -6883,7 +7041,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             color: Colors.grey[700],
                             height: 1.3,
                           ),
-                          maxLines: 3,
+                          maxLines: (item.category == 'party_plan' || item.body.contains('\n')) ? 6 : 3,
                           overflow: TextOverflow.ellipsis,
                         ),
 

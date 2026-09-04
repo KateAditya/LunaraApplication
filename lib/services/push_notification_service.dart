@@ -421,6 +421,11 @@ class PushNotificationService {
       final rawDate = promptMap['eventDateTime']?.toString() ?? promptMap['planDateTime']?.toString();
       final eventDate = rawDate != null ? DateTime.tryParse(rawDate)?.toLocal() : null;
 
+      final isHost = promptMap['isHost'] == true;
+      final hostName = promptMap['hostName']?.toString();
+      final hostPhoto = promptMap['hostPhoto']?.toString();
+      final eventKey = promptMap['eventKey']?.toString() ?? 'PARTY_PLAN_VENUE_REACH_CONFIRMATION_$planId';
+
       if (planId.isNotEmpty) {
         PartnerReachConfirmationDialog.show(
           context,
@@ -428,9 +433,13 @@ class PushNotificationService {
           stage: stage,
           partnerName: partnerName,
           partnerPhoto: partnerPhoto,
+          isHost: isHost,
+          hostName: hostName,
+          hostPhoto: hostPhoto,
           planTitle: planTitle,
           venueName: venueName,
           eventDateTime: eventDate ?? DateTime.now(),
+          eventKey: eventKey,
         );
       }
     }

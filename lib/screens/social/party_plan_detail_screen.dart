@@ -1165,8 +1165,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = (widget.plan['venue'] is Map) ? widget.plan['venue'] as Map<String, dynamic> : <String, dynamic>{};
     final venueName = venue['name']?.toString() ?? widget.plan['venueName']?.toString() ?? 'the venue';
 
-    final hostReached = widget.plan['hostArrivalConfirmed'] == true;
-    final guestReached = widget.plan['guestArrivalConfirmed'] == true;
+    final String hostReachStatus = (widget.plan['hostReachStatus'] ??
+        (widget.plan['hostArrivalConfirmed'] == true ? 'REACHED' : 'PENDING')).toString().toUpperCase();
+    final String partnerReachStatus = (widget.plan['partnerReachStatus'] ??
+        (widget.plan['guestArrivalConfirmed'] == true ? 'REACHED' : 'PENDING')).toString().toUpperCase();
+
+    final hostReached = hostReachStatus == 'REACHED' || widget.plan['hostArrivalConfirmed'] == true;
+    final hostNotReached = hostReachStatus == 'NOT_REACHED';
+    final guestReached = partnerReachStatus == 'REACHED' || widget.plan['guestArrivalConfirmed'] == true;
+    final guestNotReached = partnerReachStatus == 'NOT_REACHED';
+
     final bothReached = hostReached && guestReached;
     final isRefunded = widget.plan['hostPaymentStatus'] == 'refunded' ||
         widget.plan['joinerPaymentStatus'] == 'refunded' ||
@@ -1174,7 +1182,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         widget.plan['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
 
     final userReached = isHost ? hostReached : guestReached;
+    final userNotReached = isHost ? hostNotReached : guestNotReached;
     final partnerReached = isHost ? guestReached : hostReached;
+    final partnerNotReached = isHost ? guestNotReached : hostNotReached;
 
     if (bothReached || isRefunded) {
       return Container(
@@ -1226,6 +1236,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
 
     if (userReached && !partnerReached) {
+      final String partnerNote = partnerNotReached
+          ? 'Your partner indicated: ❌ Not reached venue yet.'
+          : 'Waiting for your partner\'s confirmation (⏳ Waiting).';
       return Container(
         margin: const EdgeInsets.only(top: 14),
         padding: const EdgeInsets.all(16),
@@ -1234,10 +1247,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
         ),
-        child: const Column(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
                 Icon(Icons.pin_drop_rounded, color: Color(0xFF6366F1), size: 20),
                 SizedBox(width: 8),
@@ -1247,10 +1260,80 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 6),
+            const SizedBox(height: 6),
             Text(
-              'You confirmed arrival (✓ Reached). Waiting for your partner\'s confirmation (⏳ Waiting) to process your ₹99 Commitment Deposit refund.',
+              'You confirmed arrival (✓ Reached). $partnerNote Once both arrive, your ₹99 Commitment Deposit is automatically refunded.',
+              style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (userNotReached) {
+      return Container(
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.cancel_outlined, color: Colors.orange, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  '📍 NOT REACHED YET',
+                  style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'You marked: Not reached venue yet. When you arrive at the venue, tap below to confirm your arrival for your ₹99 refund.',
               style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final uid = await ApiService.getCurrentUserId();
+                  if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
+                    final res = await ApiService.confirmArrival(
+                      planId: planId,
+                      userId: uid,
+                      hasArrived: true,
+                      stage: 'thirty_min_reach',
+                      source: 'PLAN_DETAIL',
+                    );
+                    if (res['bothArrived'] == true && mounted) {
+                      PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
+                        context,
+                        venueName: venueName,
+                        plan: widget.plan,
+                      );
+                    } else if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✓ Arrival confirmed! Waiting for your partner.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                    _refreshPlanDetails();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('YES — I\'M HERE NOW', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
             ),
           ],
         ),
@@ -1291,7 +1374,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   onPressed: () async {
                     final uid = await ApiService.getCurrentUserId();
                     if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
-                      final res = await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: true);
+                      final res = await ApiService.confirmArrival(
+                        planId: planId,
+                        userId: uid,
+                        hasArrived: true,
+                        stage: 'thirty_min_reach',
+                        source: 'PLAN_DETAIL',
+                      );
                       if (res['bothArrived'] == true && mounted) {
                         PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
                           context,
@@ -1322,7 +1411,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   onPressed: () async {
                     final uid = await ApiService.getCurrentUserId();
                     if (planId.isNotEmpty && uid != null && uid.isNotEmpty) {
-                      await ApiService.confirmArrival(planId: planId, userId: uid, hasArrived: false);
+                      await ApiService.confirmArrival(
+                        planId: planId,
+                        userId: uid,
+                        hasArrived: false,
+                        stage: 'thirty_min_reach',
+                        source: 'PLAN_DETAIL',
+                      );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(

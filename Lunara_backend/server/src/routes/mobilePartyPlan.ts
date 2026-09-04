@@ -23,6 +23,7 @@ import {
     acceptPartyPlanInvite,
     getPartyPlanTicket,
     confirmArrival,
+    getReachStatus,
     submitPartyReview,
     rejectPartyPlanRequest,
     cancelPartyPlanRequest,
@@ -457,6 +458,8 @@ router.post('/safety-checks/respond', authenticate, respondToSafetyCheck);
 router.get('/safety-checks/pending', authenticate, getPendingSafetyCheck);
 
 // Phase 2 & 3 Routes
+router.get('/:id/reach-status', authenticate, getReachStatus);
+router.get('/:planId/reach-status', authenticate, getReachStatus);
 router.post('/:id/confirm-arrival', authenticate, confirmArrival);
 router.post('/:planId/arrival-confirm', authenticate, confirmArrival);
 router.get('/:planId/summary', authenticate, getPlanSummary);

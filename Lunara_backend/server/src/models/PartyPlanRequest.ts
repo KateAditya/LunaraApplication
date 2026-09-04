@@ -43,6 +43,10 @@ export interface PartyPlanRequestAttributes {
     guestFirstCheckRespondedAt?: Date | null;
     guestFinalCheckStatus?: string | null;
     guestFinalCheckRespondedAt?: Date | null;
+    partnerReachStatus?: string;
+    partnerReachConfirmedAt?: Date | null;
+    partnerReachConfirmationSource?: string | null;
+    partnerReachNotificationId?: string | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -50,7 +54,7 @@ export interface PartyPlanRequestAttributes {
 export interface PartyPlanRequestCreationAttributes
     extends Optional<
         PartyPlanRequestAttributes,
-        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus' | 'guestFirstCheckStatus' | 'guestFirstCheckRespondedAt' | 'guestFinalCheckStatus' | 'guestFinalCheckRespondedAt'
+        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus' | 'guestFirstCheckStatus' | 'guestFirstCheckRespondedAt' | 'guestFinalCheckStatus' | 'guestFinalCheckRespondedAt' | 'partnerReachStatus' | 'partnerReachConfirmedAt' | 'partnerReachConfirmationSource' | 'partnerReachNotificationId'
     > {}
 
 class PartyPlanRequest
@@ -75,6 +79,10 @@ class PartyPlanRequest
     public guestFirstCheckRespondedAt?: Date | null;
     public guestFinalCheckStatus?: string | null;
     public guestFinalCheckRespondedAt?: Date | null;
+    public partnerReachStatus?: string;
+    public partnerReachConfirmedAt?: Date | null;
+    public partnerReachConfirmationSource?: string | null;
+    public partnerReachNotificationId?: string | null;
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -181,6 +189,26 @@ PartyPlanRequest.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'guest_final_check_responded_at',
+        },
+        partnerReachStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: 'PENDING',
+            field: 'partner_reach_status',
+        },
+        partnerReachConfirmedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'partner_reach_confirmed_at',
+        },
+        partnerReachConfirmationSource: {
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            field: 'partner_reach_confirmation_source',
+        },
+        partnerReachNotificationId: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'partner_reach_notification_id',
         },
     },
     {
