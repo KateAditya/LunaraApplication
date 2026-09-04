@@ -2,6 +2,17 @@ import { Modal, Button, Row, Col, Badge } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { useThemeMode } from '../../context/ThemeContext';
 
+const safeFormat = (d: any, pattern: string, fallback = '—') => {
+  if (!d) return fallback;
+  try {
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return fallback;
+    return format(parsed, pattern);
+  } catch (_) {
+    return fallback;
+  }
+};
+
 interface EventBookingDetailModalProps {
   show: boolean;
   onHide: () => void;
@@ -34,7 +45,7 @@ export function EventBookingDetailModal({ show, onHide, booking, event }: EventB
               <h6 className={`fw-bold text-uppercase small ${textClass}`}>Event Information</h6>
               <div className="p-3 rounded bg-light bg-opacity-25 border">
                 <div className="mb-1"><strong>Event:</strong> {event?.title || 'Party Event'}</div>
-                <div className="mb-1"><strong>Date:</strong> {event?.eventDate ? format(new Date(event.eventDate), 'dd-MM-yyyy') : 'N/A'}</div>
+                <div className="mb-1"><strong>Date:</strong> {safeFormat(event?.eventDate, 'dd-MM-yyyy', 'N/A')}</div>
                 <div className="mb-1"><strong>Venue:</strong> {event?.venue?.name || 'Venue TBA'}</div>
                 <div className="mb-1"><strong>Location:</strong> {event?.area || ''}, {event?.city || ''}</div>
                 <div><strong>Standard Entry Price:</strong> ₹{event?.entryPrice || 0}</div>
@@ -56,7 +67,7 @@ export function EventBookingDetailModal({ show, onHide, booking, event }: EventB
             <Col md={6}>
               <h6 className={`fw-bold text-uppercase small ${textClass}`}>Booking & Attendance</h6>
               <div className="p-3 rounded bg-light bg-opacity-25 border">
-                <div className="mb-1"><strong>Booked At:</strong> {format(new Date(booking.createdAt), 'dd-MM-yyyy HH:mm')}</div>
+                <div className="mb-1"><strong>Booked At:</strong> {safeFormat(booking.createdAt, 'dd-MM-yyyy HH:mm')}</div>
                 <div className="mb-1"><strong>Guests / Quantity:</strong> {booking.numberOfGuests || 1} Entries</div>
                 <div className="mb-1"><strong>Total Booking Amount:</strong> ₹{booking.totalAmount || 0}</div>
                 <div>
@@ -100,7 +111,7 @@ export function EventBookingDetailModal({ show, onHide, booking, event }: EventB
                   </div>
                   {booking.cancelledAt && (
                     <div className="small mb-1">
-                      <strong>Cancelled At:</strong> {format(new Date(booking.cancelledAt), 'dd-MM-yyyy HH:mm')}
+                      <strong>Cancelled At:</strong> {safeFormat(booking.cancelledAt, 'dd-MM-yyyy HH:mm')}
                     </div>
                   )}
                   {booking.refundMethod && (
@@ -118,7 +129,7 @@ export function EventBookingDetailModal({ show, onHide, booking, event }: EventB
                 <div className="p-3 rounded bg-light bg-opacity-25 border d-flex justify-content-between align-items-center">
                   <div>
                     <div className="fw-bold font-monospace">{booking.ticket.ticketNumber}</div>
-                    <div className="text-muted small">Generated on {format(new Date(booking.ticket.createdAt), 'dd-MM-yyyy HH:mm')}</div>
+                    <div className="text-muted small">Generated on {safeFormat(booking.ticket.createdAt, 'dd-MM-yyyy HH:mm')}</div>
                   </div>
                   <Badge bg={booking.ticket.status === 'valid' ? 'success' : 'secondary'} className="fs-6">
                     {(booking.ticket.status || 'ACTIVE').toUpperCase()}

@@ -4,6 +4,17 @@ import { getPartyEvents, getEventSummary } from '../../api/eventBookings';
 import { Container, Row, Col, Card, Form, Spinner, ProgressBar } from 'react-bootstrap';
 import { format } from 'date-fns';
 import { EventBookingTable } from './EventBookingTable';
+
+const safeFormat = (d: any, pattern: string, fallback = '—') => {
+  if (!d) return fallback;
+  try {
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return fallback;
+    return format(parsed, pattern);
+  } catch (_) {
+    return fallback;
+  }
+};
 import {
   BiCalendarEvent,
   BiGroup,
@@ -101,7 +112,7 @@ export function EventBookingPage() {
                   <option value="all">🌟 All Party Events (Platform-wide Overview)</option>
                   {events.map((evt: any) => (
                     <option key={evt.id} value={evt.id}>
-                      {evt.title} ({evt.eventDate ? format(new Date(evt.eventDate), 'dd MMM yyyy') : 'No date'}) • {evt.city || 'General'}
+                      {evt.title} ({safeFormat(evt.eventDate, 'dd MMM yyyy', 'No date')}) • {evt.city || 'General'}
                     </option>
                   ))}
                 </Form.Select>
@@ -144,7 +155,7 @@ export function EventBookingPage() {
                   <div className="text-muted small d-flex align-items-center gap-1 mb-1">
                     <BiCalendarEvent className="text-primary" /> Event Date
                   </div>
-                  <strong>{selectedEvent.eventDate ? format(new Date(selectedEvent.eventDate), 'dd-MM-yyyy') : '—'}</strong>
+                  <strong>{safeFormat(selectedEvent.eventDate, 'dd-MM-yyyy')}</strong>
                 </div>
               </Col>
               <Col sm={6} md={3}>

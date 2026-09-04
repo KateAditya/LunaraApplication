@@ -7,6 +7,17 @@ import { useThemeMode } from '../../context/ThemeContext';
 import { EventBookingDetailModal } from './EventBookingDetailModal';
 import { BiSearch, BiCalendar } from 'react-icons/bi';
 
+const safeFormat = (d: any, pattern: string, fallback = '—') => {
+  if (!d) return fallback;
+  try {
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return fallback;
+    return format(parsed, pattern);
+  } catch (_) {
+    return fallback;
+  }
+};
+
 interface EventBookingTableProps {
   eventId: string;
   event?: any;
@@ -258,7 +269,7 @@ export function EventBookingTable({ eventId, event }: EventBookingTableProps) {
 
                       <td>
                         <div style={{ fontSize: '0.75rem' }}>
-                          {booking.createdAt ? format(new Date(booking.createdAt), 'dd MMM yyyy, HH:mm') : '—'}
+                          {safeFormat(booking.createdAt, 'dd MMM yyyy, HH:mm')}
                         </div>
                       </td>
 

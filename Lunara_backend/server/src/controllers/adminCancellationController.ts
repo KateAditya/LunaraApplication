@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import GroupParty from '../models/GroupParty';
-import Booking from '../models/Booking';
+import Booking, { GoingMode } from '../models/Booking';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import { logger } from '../config/logger';
@@ -43,8 +43,8 @@ export class AdminCancellationController {
             const bkWhere: any = {
                 status: 'cancelled',
                 [Op.or]: [
-                    { goingMode: 'with_friends' },
-                    { goingMode: 'party_request' },
+                    { isGroupBooking: true },
+                    { goingMode: GoingMode.PARTY_REQUEST },
                     { numberOfGuests: { [Op.between]: [2, 20] } },
                 ],
             };
