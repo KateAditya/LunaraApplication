@@ -3,12 +3,16 @@ import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import User from '../models/User';
 import Venue from '../models/Venue';
 import Ticket, { TicketStatus } from '../models/Ticket';
+import GroupParty, { GroupPartyStatus } from '../models/GroupParty';
 import LargePartyCancellationRequest, {
     LargePartyCancellationStatus,
     LargePartyRefundMethod,
 } from '../models/LargePartyCancellationRequest';
 import { WalletService } from './walletService';
+import { NotificationService } from './NotificationService';
+import { RealtimeEventBroker } from './RealtimeEventBroker';
 import { logger } from '../config/logger';
+import { Op } from 'sequelize';
 
 export interface MaskedPayoutDetails {
     upiId?: string;
@@ -64,8 +68,8 @@ export function maskPaymentDetails(details: MaskedPayoutDetails): MaskedPayoutDe
 
 export class LargePartyCancellationService {
     /**
-     * Submit a Host Large Party Cancellation Request
-     * Phase 2, 3, 19, 22
+     * Submit a Host Group Party / Large Party / Booking Cancellation Request
+     * Automatically handles Group Parties and refunds to Lunara Wallet.
      */
     public static async requestCancellation(params: {
         bookingId: string;
@@ -98,138 +102,386 @@ export class LargePartyCancellationService {
             return { success: false, message: 'Cancellation reason is required' };
         }
 
-        // Validate booking
-        const booking = await Booking.findByPk(bookingId, {
+        const cleanBookingId = String(bookingId).trim();
+        const cleanUserId = String(userId).trim();
+
+        // ── 1. Resolve Target Entity across Booking, GroupParty, or Ticket ──
+        let booking = await Booking.findByPk(cleanBookingId, {
             include: [
                 { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
                 { model: User, as: 'customer', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'fcmToken'] },
             ],
         });
 
+        let groupParty: GroupParty | null = null;
         if (!booking) {
+            groupParty = await GroupParty.findByPk(cleanBookingId, {
+                include: [
+                    { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
+                    { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'fcmToken'] },
+                ],
+            });
+        }
+
+        // If not found by direct ID, check Ticket table
+        if (!booking && !groupParty) {
+            const ticket = await Ticket.findOne({
+                where: {
+                    [Op.or]: [{ id: cleanBookingId }, { ticketId: cleanBookingId }, { bookingId: cleanBookingId }],
+                },
+            });
+
+            if (ticket && ticket.bookingId) {
+                booking = await Booking.findByPk(ticket.bookingId, {
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
+                        { model: User, as: 'customer', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'fcmToken'] },
+                    ],
+                });
+
+                if (!booking) {
+                    groupParty = await GroupParty.findByPk(ticket.bookingId, {
+                        include: [
+                            { model: Venue, as: 'venue', attributes: ['id', 'name', 'city'] },
+                            { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'fcmToken'] },
+                        ],
+                    });
+                }
+            }
+        }
+
+        // If still neither found
+        if (!booking && !groupParty) {
             return { success: false, message: 'Booking not found' };
         }
 
-        // Validate that this is a Large Party (>20)
-        const isLargeParty = booking.isLargePartyRequest || (booking.numberOfGuests && booking.numberOfGuests > 20);
-        if (!isLargeParty) {
-            return { success: false, message: 'This cancellation workflow applies only to Large Party (>20) bookings' };
-        }
-
-        // Validate ownership
-        if (String(booking.userId).trim() !== String(userId).trim()) {
-            return { success: false, message: 'Unauthorized: You can only cancel your own Large Party booking' };
-        }
-
-        // Validate status
-        const bStatus = (booking.status || '').toLowerCase();
-        const pStatus = (booking.paymentStatus || '').toLowerCase();
-
-        if (bStatus === 'cancelled') {
-            return { success: false, message: 'This Large Party is already cancelled' };
-        }
-        if (bStatus === 'completed') {
-            return { success: false, message: 'Completed Large Parties cannot be cancelled' };
-        }
-
-        if (pStatus !== 'paid' && bStatus !== 'confirmed') {
-            return { success: false, message: 'Only confirmed and paid Large Parties can be submitted for cancellation' };
-        }
-
-        // Idempotency: Check if there is already an active pending request (Phase 19)
-        const existingPending = await LargePartyCancellationRequest.findOne({
-            where: {
-                bookingId,
-                status: [
-                    LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
-                    LargePartyCancellationStatus.REFUND_PROCESSING,
-                    LargePartyCancellationStatus.APPROVED,
-                    LargePartyCancellationStatus.COMPLETED,
-                ],
-            },
-        });
-
-        if (existingPending) {
-            if (existingPending.status === LargePartyCancellationStatus.COMPLETED) {
-                return {
-                    success: false,
-                    message: 'This Large Party has already been cancelled and refund processed',
-                    data: existingPending,
-                };
+        // ── 2. Handle GroupParty Cancellation & Lunara Wallet Refund ──
+        if (groupParty) {
+            if (String(groupParty.userId).trim() !== cleanUserId) {
+                return { success: false, message: 'Unauthorized: You can only cancel your own Group Party booking' };
             }
+
+            const gpStatus = (groupParty.status || '').toLowerCase();
+            if (gpStatus === 'cancelled') {
+                return { success: false, message: 'This Group Party is already cancelled' };
+            }
+            if (gpStatus === 'completed') {
+                return { success: false, message: 'Completed Group Parties cannot be cancelled' };
+            }
+
+            const originalPaidAmount = Number(groupParty.totalAmount || 0);
+            const venueName = (groupParty as any)?.venue?.name || 'Venue';
+
+            if (originalPaidAmount > 0) {
+                // Refund paid amount into Lunara Wallet
+                const idempotentRef = `GP_REFUND_${groupParty.id}_${Date.now()}`;
+                await WalletService.refundToWallet({
+                    userId: cleanUserId,
+                    amount: originalPaidAmount,
+                    bookingId: groupParty.id,
+                    reference: idempotentRef,
+                    reason: `Group Party cancellation refund: ${reason.trim()}`,
+                    metadata: {
+                        partyId: groupParty.id,
+                        venueName,
+                        reason: reason.trim(),
+                    },
+                });
+
+                await groupParty.update({
+                    status: GroupPartyStatus.CANCELLED,
+                    paymentStatus: 'refunded' as any,
+                    refundMethod: 'WALLET',
+                    refundStatus: 'COMPLETED',
+                    refundAmount: originalPaidAmount,
+                    upiId: upiId?.trim() || undefined,
+                    bankAccountNumber: accountNumber?.trim() || undefined,
+                    bankIfsc: ifscCode?.trim() || undefined,
+                    bankHolderName: accountHolderName?.trim() || undefined,
+                } as any);
+            } else {
+                // Free booking
+                await groupParty.update({
+                    status: GroupPartyStatus.CANCELLED,
+                    refundMethod: 'NONE',
+                    refundStatus: 'NONE',
+                    refundAmount: 0,
+                } as any);
+            }
+
+            // Invalidate tickets
+            await Ticket.update(
+                { ticketStatus: TicketStatus.CANCELLED, cancelledAt: new Date() },
+                { where: { [Op.or]: [{ bookingId: groupParty.id }, { ticketId: groupParty.ticketCode || '' }] } }
+            );
+
+            // Realtime & Notifications
+            try {
+                const notifTitle = 'Group Party Cancelled';
+                const notifBody = originalPaidAmount > 0
+                    ? `Your Group Party at ${venueName} has been cancelled. ₹${originalPaidAmount.toFixed(0)} has been refunded to your Lunara Wallet.`
+                    : `Your Group Party at ${venueName} has been cancelled successfully.`;
+
+                await NotificationService.dispatch({
+                    recipientUserId: cleanUserId,
+                    eventType: 'cancellation_confirmed',
+                    category: 'bookings',
+                    entityType: 'GroupParty',
+                    entityId: groupParty.id,
+                    title: notifTitle,
+                    body: notifBody,
+                    priority: 'HIGH',
+                    idempotencyKey: `gp_cancel_${groupParty.id}_${Date.now()}`,
+                    actionType: 'view_details',
+                    deepLink: '/my-tickets',
+                }).catch((e: any) => logger.warn('[LargePartyCancellationService] Notification error:', e));
+
+                RealtimeEventBroker.emitToUser(cleanUserId, 'group_party_cancelled', 'group_party', groupParty.id, {
+                    partyId: groupParty.id,
+                    status: 'cancelled',
+                    refundAmount: originalPaidAmount,
+                    refundMethod: originalPaidAmount > 0 ? 'WALLET' : 'NONE',
+                });
+
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${cleanUserId}`).emit('group_party_status_update', {
+                        partyId: groupParty.id,
+                        status: 'cancelled',
+                    });
+                }
+            } catch (err: any) {
+                logger.warn('[LargePartyCancellationService] Dispatch error:', err);
+            }
+
+            const successMessage = originalPaidAmount > 0
+                ? `Group Party cancelled successfully. ₹${originalPaidAmount.toFixed(2)} has been refunded to your Lunara Wallet.`
+                : 'Group Party cancelled successfully.';
+
             return {
-                success: false,
-                message: 'A cancellation request for this Large Party is already pending admin review',
-                data: existingPending,
+                success: true,
+                message: successMessage,
+                data: {
+                    id: groupParty.id,
+                    bookingId: groupParty.id,
+                    status: 'cancelled',
+                    refundAmount: originalPaidAmount,
+                    refundMethod: originalPaidAmount > 0 ? 'WALLET' : 'NONE',
+                },
             };
         }
 
-        // Authoritative paid amount from booking
-        const originalPaidAmount = Number(booking.totalAmount || booking.adminPaymentAmount || 0);
-
-        // Create cancellation request
-        const cancellationRequest = await LargePartyCancellationRequest.create({
-            bookingId: booking.id,
-            userId: booking.userId,
-            venueId: booking.venueId || undefined,
-            originalPaidAmount,
-            reason: reason.trim(),
-            reasonDetails: reasonDetails?.trim() || undefined,
-            upiId: upiId?.trim() || undefined,
-            mobileNumber: mobileNumber?.trim() || undefined,
-            accountHolderName: accountHolderName?.trim() || undefined,
-            accountNumber: accountNumber?.trim() || undefined,
-            ifscCode: ifscCode?.trim() || undefined,
-            status: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
-        });
-
-        // Notify Admins & Host via Socket/Push (Phase 17)
-        try {
-            const { io } = require('../server');
-            const venueName = (booking as any)?.venue?.name || 'Venue';
-            const hostName = (booking as any)?.customer
-                ? `${(booking as any).customer.firstName || ''} ${(booking as any).customer.lastName || ''}`.trim()
-                : 'Host';
-
-            if (io) {
-                // Realtime broadcast to admin room
-                io.to('admin_room').emit('large_party_cancellation_requested', {
-                    requestId: cancellationRequest.id,
-                    bookingId: booking.id,
-                    hostName,
-                    venueName,
-                    amount: originalPaidAmount,
-                    reason: cancellationRequest.reason,
-                    requestedAt: cancellationRequest.createdAt,
-                });
-
-                // Realtime update to host
-                io.to(`user_${userId}`).emit('large_party_status_update', {
-                    bookingId: booking.id,
-                    cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
-                });
-
-                io.to(`user_${userId}`).emit('large_party_cancellation_requested', {
-                    bookingId: booking.id,
-                    cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
-                });
+        // ── 3. Handle Booking Record (Large Party or Standard Booking) ──
+        if (booking) {
+            // Validate ownership
+            if (String(booking.userId).trim() !== cleanUserId) {
+                return { success: false, message: 'Unauthorized: You can only cancel your own booking' };
             }
-        } catch (notifErr) {
-            logger.warn('Failed to dispatch notifications for large party cancellation request:', notifErr);
+
+            const bStatus = (booking.status || '').toLowerCase();
+            const pStatus = (booking.paymentStatus || '').toLowerCase();
+
+            if (bStatus === 'cancelled') {
+                return { success: false, message: 'This booking is already cancelled' };
+            }
+            if (bStatus === 'completed') {
+                return { success: false, message: 'Completed bookings cannot be cancelled' };
+            }
+
+            const isLargeParty = booking.isLargePartyRequest || (booking.numberOfGuests && booking.numberOfGuests > 20);
+            const originalPaidAmount = Number(booking.totalAmount || booking.adminPaymentAmount || 0);
+            const venueName = (booking as any)?.venue?.name || 'Venue';
+
+            // For regular/standard bookings (<= 20 guests), perform direct cancellation & Lunara Wallet refund
+            if (!isLargeParty) {
+                if (originalPaidAmount > 0) {
+                    const idempotentRef = `BKG_REFUND_${booking.id}_${Date.now()}`;
+                    await WalletService.refundToWallet({
+                        userId: cleanUserId,
+                        amount: originalPaidAmount,
+                        bookingId: booking.id,
+                        reference: idempotentRef,
+                        reason: `Booking cancellation refund: ${reason.trim()}`,
+                        metadata: {
+                            bookingId: booking.id,
+                            venueName,
+                            reason: reason.trim(),
+                        },
+                    });
+
+                    await booking.update({
+                        status: BookingStatus.CANCELLED,
+                        paymentStatus: PaymentStatus.REFUNDED,
+                        refundMethod: 'WALLET',
+                        refundStatus: 'COMPLETED',
+                        refundAmount: originalPaidAmount,
+                        cancellationReason: reason.trim(),
+                        cancelledAt: new Date(),
+                    });
+                } else {
+                    await booking.update({
+                        status: BookingStatus.CANCELLED,
+                        cancellationReason: reason.trim(),
+                        cancelledAt: new Date(),
+                        refundMethod: 'NONE',
+                        refundStatus: 'NONE',
+                        refundAmount: 0,
+                    });
+                }
+
+                // Invalidate tickets
+                await Ticket.update(
+                    { ticketStatus: TicketStatus.CANCELLED, cancelledAt: new Date() },
+                    { where: { [Op.or]: [{ bookingId: booking.id }, { ticketId: booking.ticketCode || '' }] } }
+                );
+
+                // Realtime & Notifications
+                try {
+                    const notifTitle = 'Booking Cancelled';
+                    const notifBody = originalPaidAmount > 0
+                        ? `Your booking at ${venueName} has been cancelled. ₹${originalPaidAmount.toFixed(0)} has been refunded to your Lunara Wallet.`
+                        : `Your booking at ${venueName} has been cancelled successfully.`;
+
+                    await NotificationService.dispatch({
+                        recipientUserId: cleanUserId,
+                        eventType: 'cancellation_confirmed',
+                        category: 'bookings',
+                        entityType: 'Booking',
+                        entityId: booking.id,
+                        title: notifTitle,
+                        body: notifBody,
+                        priority: 'HIGH',
+                        idempotencyKey: `bkg_cancel_${booking.id}_${Date.now()}`,
+                        actionType: 'view_details',
+                        deepLink: '/my-tickets',
+                    }).catch((e: any) => logger.warn('[LargePartyCancellationService] Notification error:', e));
+
+                    RealtimeEventBroker.emitToUser(cleanUserId, 'booking_cancelled', 'large_party', booking.id, {
+                        bookingId: booking.id,
+                        status: 'cancelled',
+                        refundAmount: originalPaidAmount,
+                        refundMethod: originalPaidAmount > 0 ? 'WALLET' : 'NONE',
+                    });
+                } catch (err: any) {
+                    logger.warn('[LargePartyCancellationService] Dispatch error:', err);
+                }
+
+                const successMessage = originalPaidAmount > 0
+                    ? `Booking cancelled successfully. ₹${originalPaidAmount.toFixed(2)} has been refunded to your Lunara Wallet.`
+                    : 'Booking cancelled successfully.';
+
+                return {
+                    success: true,
+                    message: successMessage,
+                    data: {
+                        id: booking.id,
+                        bookingId: booking.id,
+                        status: 'cancelled',
+                        refundAmount: originalPaidAmount,
+                        refundMethod: originalPaidAmount > 0 ? 'WALLET' : 'NONE',
+                    },
+                };
+            }
+
+            // ── Large Party (>20) Admin Review Workflow ──
+            if (pStatus !== 'paid' && bStatus !== 'confirmed') {
+                return { success: false, message: 'Only confirmed and paid Large Parties can be submitted for cancellation' };
+            }
+
+            // Idempotency: Check if there is already an active pending request (Phase 19)
+            const existingPending = await LargePartyCancellationRequest.findOne({
+                where: {
+                    bookingId: booking.id,
+                    status: [
+                        LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
+                        LargePartyCancellationStatus.REFUND_PROCESSING,
+                        LargePartyCancellationStatus.APPROVED,
+                        LargePartyCancellationStatus.COMPLETED,
+                    ],
+                },
+            });
+
+            if (existingPending) {
+                if (existingPending.status === LargePartyCancellationStatus.COMPLETED) {
+                    return {
+                        success: false,
+                        message: 'This Large Party has already been cancelled and refund processed',
+                        data: existingPending,
+                    };
+                }
+                return {
+                    success: false,
+                    message: 'A cancellation request for this Large Party is already pending admin review',
+                    data: existingPending,
+                };
+            }
+
+            // Create cancellation request for Admin Review
+            const cancellationRequest = await LargePartyCancellationRequest.create({
+                bookingId: booking.id,
+                userId: booking.userId,
+                venueId: booking.venueId || undefined,
+                originalPaidAmount,
+                reason: reason.trim(),
+                reasonDetails: reasonDetails?.trim() || undefined,
+                upiId: upiId?.trim() || undefined,
+                mobileNumber: mobileNumber?.trim() || undefined,
+                accountHolderName: accountHolderName?.trim() || undefined,
+                accountNumber: accountNumber?.trim() || undefined,
+                ifscCode: ifscCode?.trim() || undefined,
+                status: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
+            });
+
+            // Notify Admins & Host via Socket/Push (Phase 17)
+            try {
+                const { io } = require('../server');
+                const hostName = (booking as any)?.customer
+                    ? `${(booking as any).customer.firstName || ''} ${(booking as any).customer.lastName || ''}`.trim()
+                    : 'Host';
+
+                if (io) {
+                    // Realtime broadcast to admin room
+                    io.to('admin_room').emit('large_party_cancellation_requested', {
+                        requestId: cancellationRequest.id,
+                        bookingId: booking.id,
+                        hostName,
+                        venueName,
+                        amount: originalPaidAmount,
+                        reason: cancellationRequest.reason,
+                        requestedAt: cancellationRequest.createdAt,
+                    });
+
+                    // Realtime update to host
+                    io.to(`user_${cleanUserId}`).emit('large_party_status_update', {
+                        bookingId: booking.id,
+                        cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
+                    });
+
+                    io.to(`user_${cleanUserId}`).emit('large_party_cancellation_requested', {
+                        bookingId: booking.id,
+                        cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
+                    });
+                }
+            } catch (notifErr) {
+                logger.warn('Failed to dispatch notifications for large party cancellation request:', notifErr);
+            }
+
+            return {
+                success: true,
+                message: 'Cancellation request submitted successfully. It will be reviewed by Lunara Admin.',
+                data: {
+                    id: cancellationRequest.id,
+                    bookingId: cancellationRequest.bookingId,
+                    status: cancellationRequest.status,
+                    originalPaidAmount: cancellationRequest.originalPaidAmount,
+                    createdAt: cancellationRequest.createdAt,
+                },
+            };
         }
 
-        return {
-            success: true,
-            message: 'Cancellation request submitted successfully. It will be reviewed by Lunara Admin.',
-            data: {
-                id: cancellationRequest.id,
-                bookingId: cancellationRequest.bookingId,
-                status: cancellationRequest.status,
-                originalPaidAmount: cancellationRequest.originalPaidAmount,
-                createdAt: cancellationRequest.createdAt,
-            },
-        };
+        return { success: false, message: 'Booking not found' };
     }
+
 
     /**
      * Admin: Get all cancellation requests with pagination and filters

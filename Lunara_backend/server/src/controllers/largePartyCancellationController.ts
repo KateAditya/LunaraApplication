@@ -63,6 +63,45 @@ export class LargePartyCancellationController {
             });
 
             if (!cancelReq) {
+                const GroupParty = (await import('../models/GroupParty')).default;
+                const Booking = (await import('../models/Booking')).default;
+                
+                const gp = await GroupParty.findByPk(bookingId);
+                if (gp && gp.status === 'cancelled') {
+                    return res.json({
+                        success: true,
+                        hasCancellation: true,
+                        data: {
+                            id: gp.id,
+                            bookingId: gp.id,
+                            status: 'COMPLETED',
+                            reason: 'Group Party Cancelled',
+                            originalPaidAmount: gp.totalAmount,
+                            refundAmount: gp.refundAmount,
+                            refundMethod: gp.refundMethod || 'WALLET',
+                            requestedAt: gp.updatedAt,
+                        },
+                    });
+                }
+
+                const bkg = await Booking.findByPk(bookingId);
+                if (bkg && bkg.status === 'cancelled') {
+                    return res.json({
+                        success: true,
+                        hasCancellation: true,
+                        data: {
+                            id: bkg.id,
+                            bookingId: bkg.id,
+                            status: 'COMPLETED',
+                            reason: bkg.cancellationReason || 'Booking Cancelled',
+                            originalPaidAmount: bkg.totalAmount,
+                            refundAmount: bkg.refundAmount,
+                            refundMethod: bkg.refundMethod || 'WALLET',
+                            requestedAt: bkg.cancelledAt || bkg.updatedAt,
+                        },
+                    });
+                }
+
                 return res.json({ success: true, hasCancellation: false });
             }
 
