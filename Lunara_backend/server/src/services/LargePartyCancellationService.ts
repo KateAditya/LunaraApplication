@@ -1,3 +1,4 @@
+import '../models';
 import sequelize from '../config/database';
 import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import User from '../models/User';

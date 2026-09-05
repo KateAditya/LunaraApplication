@@ -78,12 +78,29 @@ export class BookingPolicyService {
     public static async getPolicy(bookingType: BookingPolicyType): Promise<BookingPolicyConfig> {
         let policy = await BookingPolicyConfig.findOne({ where: { bookingType } });
         if (!policy) {
+            let minLead = 2.0;
+            let cutoff = 2.0;
+            let refundPct = 80.0;
+            if (bookingType === BookingPolicyType.LARGE_PARTY) {
+                minLead = 24.0;
+                cutoff = 12.0;
+                refundPct = 75.0;
+            } else if (bookingType === BookingPolicyType.STRANGERS_MEET) {
+                minLead = 2.0;
+                cutoff = 2.0;
+                refundPct = 100.0;
+            } else if (bookingType === BookingPolicyType.EVENT_BOOKING) {
+                minLead = 4.0;
+                cutoff = 4.0;
+                refundPct = 80.0;
+            }
+
             policy = await BookingPolicyConfig.create({
                 bookingType,
-                minBookingLeadTimeHours: 2.0,
-                cancellationCutoffHours: 2.0,
+                minBookingLeadTimeHours: minLead,
+                cancellationCutoffHours: cutoff,
                 refundEnabled: true,
-                refundPercentage: 80.0,
+                refundPercentage: refundPct,
                 isActive: true,
             });
         }
@@ -91,14 +108,20 @@ export class BookingPolicyService {
     }
 
     /**
-     * Retrieves all active booking policies (Solo & Small Group Party).
+     * Retrieves all active booking policies (Solo, Event, Group Party, Large Party, Stranger Meet).
      */
     public static async getAllPolicies(): Promise<Record<string, BookingPolicyConfig>> {
         const soloPolicy = await this.getPolicy(BookingPolicyType.SOLO_BOOKING);
+        const eventPolicy = await this.getPolicy(BookingPolicyType.EVENT_BOOKING);
         const groupPolicy = await this.getPolicy(BookingPolicyType.GROUP_PARTY);
+        const largePartyPolicy = await this.getPolicy(BookingPolicyType.LARGE_PARTY);
+        const strangersMeetPolicy = await this.getPolicy(BookingPolicyType.STRANGERS_MEET);
         return {
             SOLO_BOOKING: soloPolicy,
+            EVENT_BOOKING: eventPolicy,
             GROUP_PARTY: groupPolicy,
+            LARGE_PARTY: largePartyPolicy,
+            STRANGERS_MEET: strangersMeetPolicy,
         };
     }
 

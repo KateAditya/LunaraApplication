@@ -1793,10 +1793,11 @@ export const getAdminBookingPolicySettings = async (_req: Request, res: Response
 export const updateAdminBookingPolicySettings = async (req: Request, res: Response): Promise<void> => {
     try {
         const { bookingType, minBookingLeadTimeHours, cancellationCutoffHours, refundEnabled, refundPercentage, isActive } = req.body;
-        if (!bookingType || ![BookingPolicyType.SOLO_BOOKING, BookingPolicyType.GROUP_PARTY].includes(bookingType)) {
+        const validTypes = Object.values(BookingPolicyType);
+        if (!bookingType || !validTypes.includes(bookingType)) {
             res.status(400).json({
                 success: false,
-                message: 'bookingType must be either "SOLO_BOOKING" or "GROUP_PARTY". Large Party (>20) is managed separately.',
+                message: `bookingType must be one of: ${validTypes.join(', ')}`,
             });
             return;
         }

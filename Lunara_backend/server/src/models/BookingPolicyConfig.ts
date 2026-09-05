@@ -3,7 +3,10 @@ import sequelize from '../config/database';
 
 export enum BookingPolicyType {
     SOLO_BOOKING = 'SOLO_BOOKING',
+    EVENT_BOOKING = 'EVENT_BOOKING',
     GROUP_PARTY = 'GROUP_PARTY',
+    LARGE_PARTY = 'LARGE_PARTY',
+    STRANGERS_MEET = 'STRANGERS_MEET',
 }
 
 export interface BookingPolicyConfigAttributes {

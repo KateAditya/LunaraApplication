@@ -31,6 +31,7 @@ import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
+import '../../dialogs/large_party_cancellation_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
