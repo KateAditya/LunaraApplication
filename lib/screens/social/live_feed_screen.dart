@@ -31,7 +31,6 @@ import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
-import '../../dialogs/large_party_cancellation_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -5045,9 +5044,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               enrichedPlan['hasRequested'] = true;
               enrichedPlan['status'] = 'payment_pending';
               enrichedPlan['requestStatus'] = 'payment_pending';
+              enrichedPlan['joinerPaymentStatus'] = 'unpaid';
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: enrichedPlan)),
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(
+                    plan: enrichedPlan,
+                    autoOpenPaymentSheet: true,
+                  ),
+                ),
               ).then((_) => _loadFeed(showLoader: false));
             },
           ),

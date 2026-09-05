@@ -13,6 +13,7 @@ import '../../widgets/subscription_limit_dialog.dart';
 import 'vip_membership_screen.dart';
 import '../social/post_detail_screen.dart';
 import '../../models/strangers_meet_request.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -1927,66 +1928,68 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
     if (_requestedPlanIds.contains(planId)) return;
     if (!OptimisticActionGuard.start('PROFILE_JOIN_PLAN:$planId')) return;
 
-    // Optimistic UI: immediately show as requested
-    setState(() {
-      _requestedPlanIds.add(planId);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        behavior: SnackBarBehavior.floating,
-        content: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 14,
-          ),
-          decoration: BoxDecoration(
-            gradient: LunaraTheme.purpleGradient,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
     try {
       final res = await ApiService.requestToJoinPartyPlanDetailed(planId);
+      if (!mounted) return;
+
       if (res.alreadyRequested || res.success) {
+        setState(() {
+          _requestedPlanIds.add(planId);
+        });
         ApiService.planPostedNotifier.value++;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            behavior: SnackBarBehavior.floating,
+            content: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 14,
+              ),
+              decoration: BoxDecoration(
+                gradient: LunaraTheme.purpleGradient,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                    blurRadius: 15,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
       } else {
-        // Rollback
-        if (mounted) {
-          setState(() {
-            _requestedPlanIds.remove(planId);
-          });
+        if (TimeLockBlockedDialog.isConflictError(res.message) ||
+            (res.rawData != null && res.rawData!['allowed'] == false)) {
+          TimeLockBlockedDialog.show(
+            context,
+            errorData: res.rawData ?? {'message': res.message},
+          );
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(res.message),
+              content: Text(TimeLockBlockedDialog.cleanErrorMessage(res.message)),
               backgroundColor: Colors.red,
             ),
           );
@@ -1994,15 +1997,16 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _requestedPlanIds.remove(planId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (TimeLockBlockedDialog.isConflictError(e)) {
+          TimeLockBlockedDialog.showWithMessage(context, e.toString());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       OptimisticActionGuard.end('PROFILE_JOIN_PLAN:$planId');
@@ -2217,43 +2221,44 @@ class _ActivePlansBottomSheetState extends State<_ActivePlansBottomSheet> {
 
     if (!OptimisticActionGuard.start('PROFILE_SM_JOIN:$meetId')) return;
 
-    // Optimistic UI: immediately mark as requested
-    setState(() => _requestedPlanIds.add(meetId));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF10B981),
-          content: Text(
-            'Join request sent for "$subject"! The host will review it. 🎉',
-          ),
-        ),
-      );
-    }
-
     try {
       final success = await ApiService.sendStrangersMeetJoinRequest(
         meetId,
         foodPreference: selectedFood,
         drinkPreference: selectedDrink,
       );
-      if (!success) {
-        // Rollback
-        if (mounted) {
-          setState(() => _requestedPlanIds.remove(meetId));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Colors.red,
-              content: Text('Failed to send join request. Please try again.'),
+      if (!mounted) return;
+
+      if (success) {
+        setState(() => _requestedPlanIds.add(meetId));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF10B981),
+            content: Text(
+              'Join request sent for "$subject"! The host will review it. 🎉',
             ),
-          );
-        }
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.red,
+            content: Text('Failed to send join request. Please try again.'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _requestedPlanIds.remove(meetId));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        if (TimeLockBlockedDialog.isConflictError(e)) {
+          TimeLockBlockedDialog.showWithMessage(context, e.toString());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       OptimisticActionGuard.end('PROFILE_SM_JOIN:$meetId');

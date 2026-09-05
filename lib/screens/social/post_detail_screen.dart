@@ -16,6 +16,7 @@ import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
 import '../../services/optimistic_action_guard.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -707,20 +708,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (!OptimisticActionGuard.start('JOIN_MEET:${req.id}')) return;
 
-    // Optimistic UI: immediately show request sent
     setState(() {
-      _alreadyRequested = true;
-      _isProcessing = false;
+      _isProcessing = true;
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Join request sent successfully! Waiting for host approval. 🤞',
-        ),
-        backgroundColor: Colors.green,
-      ),
-    );
 
     try {
       final success = await ApiService.sendStrangersMeetJoinRequest(
@@ -730,9 +720,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
       if (!mounted) return;
 
-      if (!success) {
-        // Rollback
-        setState(() => _alreadyRequested = false);
+      if (success) {
+        setState(() {
+          _alreadyRequested = true;
+          _isProcessing = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Join request sent successfully! Waiting for host approval. 🤞',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        setState(() {
+          _alreadyRequested = false;
+          _isProcessing = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to send join request. Please try again.'),
@@ -742,13 +748,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _alreadyRequested = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() {
+          _alreadyRequested = false;
+          _isProcessing = false;
+        });
+        if (TimeLockBlockedDialog.isConflictError(e)) {
+          TimeLockBlockedDialog.showWithMessage(context, e.toString());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       OptimisticActionGuard.end('JOIN_MEET:${req.id}');
@@ -2629,7 +2642,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ],
         ),
         child: ElevatedButton.icon(
-          onPressed: _sendJoinRequest,
+          onPressed: (_isProcessing || _alreadyRequested) ? null : _sendJoinRequest,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
@@ -2637,9 +2650,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
           ),
-          icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+          icon: _isProcessing
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Icon(Icons.person_add_rounded, color: Colors.white),
           label: Text(
-            'REQUEST TO JOIN$feeLabel',
+            _isProcessing ? 'SENDING REQUEST...' : 'REQUEST TO JOIN$feeLabel',
             style: const TextStyle(
               fontFamily: 'AllroundGothic',
               color: Colors.white,
@@ -3047,7 +3069,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ],
                         ),
                         child: ElevatedButton(
-                          onPressed: _alreadyRequested
+                          onPressed: (_alreadyRequested || _isProcessing)
                               ? null
                               : () async {
                                   if (_alreadyRequested) return;
@@ -3058,10 +3080,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                                   final prevAlreadyRequested = _alreadyRequested;
 
-                                  // Optimistic UI: immediately show "REQUEST SENT"
                                   setState(() {
-                                    _alreadyRequested = true;
-                                    _isProcessing = false;
+                                    _isProcessing = true;
                                   });
 
                                   final messenger = ScaffoldMessenger.of(context);
@@ -3071,6 +3091,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     if (!mounted) return;
 
                                     if (result.alreadyRequested || result.success) {
+                                      setState(() {
+                                        _alreadyRequested = true;
+                                        _isProcessing = false;
+                                      });
                                       if (result.isNewRequest) {
                                         messenger.showSnackBar(
                                           SnackBar(
@@ -3118,26 +3142,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       if (mounted) {
                                         setState(() {
                                           _alreadyRequested = prevAlreadyRequested;
+                                          _isProcessing = false;
                                         });
                                       }
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text(result.message),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
+                                      if (TimeLockBlockedDialog.isConflictError(result.message) ||
+                                          (result.rawData != null && result.rawData!['allowed'] == false)) {
+                                        TimeLockBlockedDialog.show(
+                                          context,
+                                          errorData: result.rawData ?? {'message': result.message},
+                                        );
+                                      } else {
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(TimeLockBlockedDialog.cleanErrorMessage(result.message)),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
                                     }
                                   } catch (e) {
                                     if (mounted) {
                                       setState(() {
                                         _alreadyRequested = prevAlreadyRequested;
+                                        _isProcessing = false;
                                       });
-                                      messenger.showSnackBar(
-                                        SnackBar(
-                                          content: Text('Error: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
+                                      if (TimeLockBlockedDialog.isConflictError(e)) {
+                                        TimeLockBlockedDialog.showWithMessage(context, e.toString());
+                                      } else {
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
                                     }
                                   } finally {
                                     OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
@@ -3160,8 +3198,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         width: 20,
                                         height: 20,
                                         child: CircularProgressIndicator(
-                                          color: Colors.white,
                                           strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                         ),
                                       )
                                     : Icon(hideVenue ? Icons.lock_rounded : Icons.bolt, color: Colors.white),

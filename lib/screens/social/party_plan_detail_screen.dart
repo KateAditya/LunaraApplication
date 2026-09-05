@@ -12,6 +12,7 @@ import 'plan_hub_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/top_notification_banner.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../../services/optimistic_action_guard.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
@@ -78,8 +79,13 @@ class _SecretVenueImagePlaceholder extends StatelessWidget {
 
 class PartyPlanDetailScreen extends StatefulWidget {
   final Map<String, dynamic> plan;
+  final bool autoOpenPaymentSheet;
 
-  const PartyPlanDetailScreen({super.key, required this.plan});
+  const PartyPlanDetailScreen({
+    super.key,
+    required this.plan,
+    this.autoOpenPaymentSheet = false,
+  });
 
   @override
   State<PartyPlanDetailScreen> createState() => _PartyPlanDetailScreenState();
@@ -131,9 +137,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
     final effectiveReqData = syncReqData ?? embeddedReq;
-    final syncRawStatus = (effectiveReqData?['status'] ?? (isPartnerByPlan ? 'accepted' : 'pending'))?.toString().toLowerCase();
-    final syncJoinerPaid = isPartnerByPlan || (effectiveReqData?['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
-    String? initialReqStatus = syncJoinerPaid ? 'confirmed' : syncRawStatus;
+    final syncRawStatus = (effectiveReqData?['status'] ?? (isPartnerByPlan ? 'payment_pending' : 'pending'))?.toString().toLowerCase();
+    final syncJoinerPaid = _isJoinerPaid(widget.plan, effectiveReqData);
+    String? initialReqStatus = syncJoinerPaid ? 'confirmed' : (syncRawStatus == 'accepted' ? 'payment_pending' : syncRawStatus);
     bool initialRequested = syncRequested || isPartnerByPlan || embeddedReq != null;
     if (initialReqStatus == 'cancelled' || initialReqStatus == 'rejected' || initialReqStatus == 'declined' || initialReqStatus == 'payment_failed') {
       if (!isPartnerByPlan) {
@@ -145,7 +151,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     _alreadyRequested = (widget.plan['hasRequested'] == true || initialRequested) &&
         (isPartnerByPlan || (initialReqStatus != 'payment_failed' && initialReqStatus != 'cancelled'));
     if (effectiveReqData != null || isPartnerByPlan) {
-      _activeRequestId = effectiveReqData?['id']?.toString() ?? effectiveReqData?['requestId']?.toString() ?? widget.plan['matchedRequestId']?.toString();
+      _activeRequestId = effectiveReqData?['id']?.toString() ??
+          effectiveReqData?['requestId']?.toString() ??
+          widget.plan['requestId']?.toString() ??
+          widget.plan['activeRequestId']?.toString() ??
+          widget.plan['matchedRequestId']?.toString();
       _requestStatus = initialReqStatus;
     }
 
@@ -170,6 +180,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     _fetchCurrentUserAndCancellationState();
     _fetchRequestsIfNeeded();
     _initListeners();
+
+    if (widget.autoOpenPaymentSheet && !_isHostPlan(widget.plan) && !_isJoinerPaid(widget.plan)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isHostPlan(widget.plan) && !_isJoinerPaid(widget.plan)) {
+          _openDepositPaymentSheet();
+        }
+      });
+    }
   }
 
   @override
@@ -1176,6 +1194,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
     final bool isHost = _isHostPlan(widget.plan);
     final bool isPartner = _isPartnerPlan(widget.plan);
+    final bool joinerPaid = _isJoinerPaid(widget.plan);
     final String pLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
     final bool isConfirmed = isHost
         ? (widget.plan['hasConfirmedBooking'] == true ||
@@ -1184,7 +1203,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             pLife == 'arrival_confirmation' ||
             pLife == 'event_reminder' ||
             pLife == 'plan_completed')
-        : (isPartner || _requestStatus == 'confirmed' || _requestStatus == 'paid');
+        : ((isPartner && joinerPaid) || _requestStatus == 'confirmed' || _requestStatus == 'paid');
 
     if (!isHost && !isConfirmed) return const SizedBox.shrink();
 
@@ -1211,6 +1230,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   Widget _buildArrivalConfirmationCard() {
     final bool isHost = _isHostPlan(widget.plan);
     final bool isPartner = _isPartnerPlan(widget.plan);
+    final bool joinerPaid = _isJoinerPaid(widget.plan);
     // A host's own plan-level fields genuinely reflect their own match (there's
     // only one host per plan). A non-host must only trust their own per-user
     // _requestStatus / isPartner status.
@@ -1221,7 +1241,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             widget.plan['lifecycleStatus'] == 'arrival_confirmation' ||
             widget.plan['lifecycleStatus'] == 'event_reminder' ||
             widget.plan['lifecycleStatus'] == 'plan_completed')
-        : (isPartner || _requestStatus == 'confirmed' || _requestStatus == 'paid');
+        : ((isPartner && joinerPaid) || _requestStatus == 'confirmed' || _requestStatus == 'paid');
     if (!isConfirmed) return const SizedBox.shrink();
 
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
@@ -1622,11 +1642,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       if (targetPlanId.isEmpty) return;
 
       final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
+      final bool isPaidInitial = _isJoinerPaid(widget.plan);
 
       bool requested = isPartnerByPlan || _alreadyRequested;
       bool isInvited = _isInvitedUser;
-      String? reqStatus = isPartnerByPlan ? 'confirmed' : _requestStatus;
-      String? reqId = _activeRequestId;
+      String? reqStatus = (isPartnerByPlan && isPaidInitial) ? 'confirmed' : (_requestStatus ?? 'payment_pending');
+      String? reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['activeRequestId']?.toString() ?? widget.plan['matchedRequestId']?.toString();
       bool foundInFreshList = false;
 
       // Check plan['requests'] first
@@ -1638,8 +1659,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               foundInFreshList = true;
               reqId = r['id']?.toString() ?? reqId;
               final rawStatus = (r['status'] ?? 'pending').toString().toLowerCase();
-              final joinerPaid = isPartnerByPlan || (r['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
-              reqStatus = joinerPaid ? 'confirmed' : rawStatus;
+              final joinerPaid = _isJoinerPaid(widget.plan, Map<String, dynamic>.from(r));
+              reqStatus = joinerPaid ? 'confirmed' : (rawStatus == 'accepted' ? 'payment_pending' : rawStatus);
               if (rawStatus != 'cancelled' && rawStatus != 'rejected' && rawStatus != 'declined') {
                 requested = true;
               }
@@ -1657,9 +1678,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           foundInFreshList = true;
           reqId = req['id']?.toString() ?? reqId;
           final rawStatus = (req['status'] ?? 'pending').toString().toLowerCase();
-          final joinerPaid = isPartnerByPlan || (req['joinerPaymentStatus'] ?? '').toString().toLowerCase() == 'paid';
-          // Same normalization: 'accepted' + joinerPaymentStatus == 'paid' means confirmed
-          reqStatus = joinerPaid ? 'confirmed' : rawStatus;
+          final joinerPaid = _isJoinerPaid(widget.plan, Map<String, dynamic>.from(req));
+          reqStatus = joinerPaid ? 'confirmed' : (rawStatus == 'accepted' ? 'payment_pending' : rawStatus);
 
           bool isPaymentExpired = false;
           final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
@@ -2028,7 +2048,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   void _openDepositPaymentSheet() async {
-    final reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['activeRequestId']?.toString();
+    final reqId = _activeRequestId ??
+        widget.plan['requestId']?.toString() ??
+        widget.plan['activeRequestId']?.toString() ??
+        widget.plan['matchedRequestId']?.toString() ??
+        (widget.plan['myRequest'] is Map ? widget.plan['myRequest']['id']?.toString() : null) ??
+        (widget.plan['acceptedJoinerRequest'] is Map ? widget.plan['acceptedJoinerRequest']['id']?.toString() : null);
     if (reqId == null || reqId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2332,12 +2357,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final prevIsInvited = _isInvitedUser;
     final prevActiveReqId = _activeRequestId;
 
-    // Optimistic UI: immediately show "REQUEST SENT — AWAITING HOST APPROVAL"
     setState(() {
-      _alreadyRequested = true;
-      _requestStatus = 'pending';
-      _isInvitedUser = false;
-      _isJoining = false;
+      _isJoining = true;
     });
 
     try {
@@ -2345,6 +2366,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       if (!mounted) return;
       if (res.alreadyRequested || res.success) {
         setState(() {
+          _isJoining = false;
           _alreadyRequested = true;
           _isInvitedUser = false;
           _activeRequestId = res.requestId ?? _activeRequestId;
@@ -2393,33 +2415,47 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       } else {
         // Server rejected: rollback
         setState(() {
+          _isJoining = false;
           _alreadyRequested = prevAlreadyRequested;
           _requestStatus = prevRequestStatus;
           _isInvitedUser = prevIsInvited;
           _activeRequestId = prevActiveReqId;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(res.message),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (TimeLockBlockedDialog.isConflictError(res.message) ||
+            (res.rawData != null && res.rawData!['allowed'] == false)) {
+          TimeLockBlockedDialog.show(
+            context,
+            errorData: res.rawData ?? {'message': res.message},
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TimeLockBlockedDialog.cleanErrorMessage(res.message)),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (!mounted) return;
       // Network/unexpected failure: rollback
       setState(() {
+        _isJoining = false;
         _alreadyRequested = prevAlreadyRequested;
         _requestStatus = prevRequestStatus;
         _isInvitedUser = prevIsInvited;
         _activeRequestId = prevActiveReqId;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (TimeLockBlockedDialog.isConflictError(e)) {
+        TimeLockBlockedDialog.showWithMessage(context, e.toString());
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
     }
@@ -2563,6 +2599,36 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       final reqId = (plan['acceptedJoinerRequest']['requesterId'] ?? plan['acceptedJoinerRequest']['requester']?['id'] ?? plan['acceptedJoinerRequest']['userId'])?.toString();
       if (reqId != null && reqId == currentUid) return true;
     }
+    return false;
+  }
+
+  bool _isJoinerPaid(Map<String, dynamic> plan, [Map<String, dynamic>? request]) {
+    // If self_pay and host is paid, joiner doesn't need to pay deposit
+    final paymentType = (plan['paymentType'] ?? '').toString().toLowerCase();
+    final hostPaid = (plan['hostPaymentStatus'] ?? '').toString().toLowerCase() == 'paid' ||
+        (plan['paymentStatus'] ?? '').toString().toLowerCase() == 'confirmed';
+    if (paymentType == 'self_pay' && hostPaid) return true;
+
+    // Check request joinerPaymentStatus
+    final reqJoinerPay = (request?['joinerPaymentStatus'] ?? '').toString().toLowerCase();
+    if (reqJoinerPay == 'paid') return true;
+    if (reqJoinerPay == 'unpaid' || reqJoinerPay == 'pending') return false;
+
+    // Check plan-level joiner payment status
+    final planJoinerPay = (plan['joinerPaymentStatus'] ?? plan['guestPaymentStatus'] ?? '').toString().toLowerCase();
+    if (planJoinerPay == 'paid') return true;
+    if (planJoinerPay == 'unpaid' || planJoinerPay == 'pending') return false;
+
+    final reqStatus = (request?['status'] ?? _requestStatus ?? plan['requestStatus'] ?? '').toString().toLowerCase();
+    if (reqStatus == 'payment_pending') return false;
+    if (reqStatus == 'confirmed' || reqStatus == 'paid') return true;
+
+    final life = (plan['lifecycleStatus'] ?? '').toString().toLowerCase();
+    if (life == 'payment_pending' || life == 'host_payment_completed' || life == 'user_accepted') return false;
+    if (life == 'match_confirmed' || life == 'chat_enabled' || life == 'arrival_confirmation' || life == 'event_reminder' || life == 'plan_completed') {
+      return true;
+    }
+
     return false;
   }
 
@@ -2949,7 +3015,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final String matchedReqId = (plan['matchedRequestId'] ?? plan['matched_request_id'] ?? '').toString();
     final String partnerId = (plan['partnerId'] ?? plan['partner_id'] ?? '').toString();
     final bool isPartnerByPlan = _isPartnerPlan(plan);
-    final bool isMyRequestConfirmed = isPartnerByPlan || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'));
+    final bool joinerPaid = _isJoinerPaid(plan);
+    final bool isMyRequestConfirmed = (isPartnerByPlan && joinerPaid) || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'));
 
     // Only show "partner already selected" to viewers who had an active request
     // that was displaced. A fresh user with no request should see "Request to Join".
@@ -2961,7 +3028,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         planStatus == 'partner_already_selected';
 
     final bool isMatchedWithAnother = !isMyPost && !isMyRequestConfirmed && hadActiveRequest && (
-      (matchedReqId.isNotEmpty && (_activeRequestId == null || _activeRequestId != matchedReqId)) ||
+      (matchedReqId.isNotEmpty && (_activeRequestId == null || _activeRequestId != matchedReqId) && !isPartnerByPlan) ||
       (partnerId.isNotEmpty && (currentUserId.isEmpty || partnerId != currentUserId)) ||
       _requestStatus == 'cancelled_partner_selected' ||
       plan['reason'] == 'partner_already_selected' ||
@@ -3094,7 +3161,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
                 ),
               )
-            : (_alreadyRequested && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
+            : ((_alreadyRequested || isPartnerByPlan) && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending' || !joinerPaid))
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

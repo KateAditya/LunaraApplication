@@ -1264,10 +1264,14 @@ class ApiService {
       }
 
       String msg = 'Failed to send request.';
+      Map<String, dynamic>? rawResponseData;
       try {
         final data = jsonDecode(response.body);
-        if (data is Map && data['message'] != null) {
-          msg = data['message'].toString();
+        if (data is Map) {
+          rawResponseData = Map<String, dynamic>.from(data);
+          if (data['message'] != null) {
+            msg = data['message'].toString();
+          }
         }
       } catch (_) {}
 
@@ -1281,6 +1285,7 @@ class ApiService {
           alreadyRequested: true,
           isNewRequest: false,
           message: msg,
+          rawData: rawResponseData,
         );
       }
 
@@ -1289,6 +1294,7 @@ class ApiService {
         alreadyRequested: false,
         isNewRequest: false,
         message: msg,
+        rawData: rawResponseData,
       );
     } catch (e) {
       debugPrint('requestToJoinPartyPlan error: $e');
@@ -5589,6 +5595,7 @@ class PartyPlanRequestResult {
   final String message;
   final String? requestId;
   final String? status;
+  final Map<String, dynamic>? rawData;
 
   PartyPlanRequestResult({
     required this.success,
@@ -5597,5 +5604,6 @@ class PartyPlanRequestResult {
     required this.message,
     this.requestId,
     this.status,
+    this.rawData,
   });
 }
