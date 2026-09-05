@@ -897,6 +897,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
                     { status: 'paid' },
                     { status: 'accepted' },
                 ],
+                status: { [Op.notIn]: ['rejected', 'cancelled'] },
             },
         });
         const dynamicParticipantsCount = paidJoinersCount > 0

@@ -1540,6 +1540,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   ) {
     final venueName = meetMap['venueName'] ?? meetMap['venue']?['name'] ?? 'Venue';
     final meetId = meetMap['id']?.toString() ?? meetMap['meetId']?.toString() ?? '';
+    final int confirmedCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['confirmedCount'] ?? meetMap['paymentCount'] ?? 0).toString()) ?? 0;
+    final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+    final String subtitleCount = totalCapacity > 0
+        ? 'Stranger Meet at $venueName • $confirmedCount/$totalCapacity Confirmed'
+        : (confirmedCount > 0 ? 'Stranger Meet at $venueName • $confirmedCount Confirmed' : 'Stranger Meet at $venueName');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1596,7 +1601,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Stranger Meet at $venueName',
+                            subtitleCount,
                             style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 12,
@@ -2018,16 +2023,54 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final pendingReqs = item.rawData['pendingIncomingRequests'];
 
     if (category.contains('stranger') || category.contains('meet')) {
+      final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+      final rawMeetStatus = (meetData['status'] ?? item.rawData['status'] ?? '').toString().toLowerCase();
+      final rawPayStatus = (meetData['paymentStatus'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+      final bool isHost = meetData['isHost'] == true ||
+          meetData['role'] == 'host' ||
+          meetData['userId']?.toString() == ApiService.currentUserId ||
+          (item.userRoleLabel != null && item.userRoleLabel!.contains('Your'));
+
       if (pendingReqs is List && pendingReqs.isNotEmpty) {
-        final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
         _showReviewStrangersMeetRequestsModal(
           Map<String, dynamic>.from(meetData),
           pendingReqs.cast<Map<String, dynamic>>(),
         );
         return;
       }
+
+      // If action required (Admin approved Host deposit OR Host accepted Joiner seat)
+      if (item.badgeText == 'ACTION REQUIRED' ||
+          rawMeetStatus == 'approved' ||
+          rawMeetStatus == 'accepted' ||
+          rawMeetStatus == 'payment_pending' ||
+          (isHost && rawPayStatus == 'unpaid' && rawMeetStatus != 'pending' && rawMeetStatus != 'request_sent' && rawMeetStatus != 'pending_approval')) {
+        try {
+          final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(meetData));
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StrangersMeetPaymentScreen(
+                request: req,
+                onPaymentSuccess: () => _loadFeed(),
+                isJoinPayment: !isHost,
+              ),
+            ),
+          );
+          return;
+        } catch (e) {
+          debugPrint('Error navigating to SM payment screen on card tap: $e');
+        }
+      }
+
+      if (item.actions != null && item.actions!.isNotEmpty) {
+        final actions = item.actions!;
+        final primaryAction = actions.firstWhere((a) => a.isPrimary, orElse: () => actions.first);
+        primaryAction.onTap();
+        return;
+      }
+
       try {
-        final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
         final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetData);
         postMap['type'] = 'strangers_meet';
         postMap['id'] = postMap['id'] ?? item.rawData['id'];
@@ -5906,6 +5949,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
+        final int confirmedCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['confirmedCount'] ?? meetMap['paymentCount'] ?? 0).toString()) ?? 0;
+        final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+        final int pendingCount = pendingIncomingRequests.length;
+        final countSubtitle = totalCapacity > 0
+            ? ' • $confirmedCount/$totalCapacity Confirmed'
+            : (confirmedCount > 0 ? ' • $confirmedCount Confirmed' : '');
+
         if (pendingIncomingRequests.length == 1) {
           final firstReq = pendingIncomingRequests.first;
           final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
@@ -5914,13 +5964,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
           title = '📥 Join Request Received';
           badge = 'NEW REQUEST';
-          body = '$reqUserName requested to join your Stranger Meet at $venueName.';
+          body = '$reqUserName requested to join your Stranger Meet at $venueName.$countSubtitle';
           senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
           avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
 
           partnerUser = reqUser.isNotEmpty ? reqUser : null;
           partnerRoleLabel = 'Request from:';
-          statusSummary = 'Approval Required';
+          statusSummary = totalCapacity > 0
+              ? '1 Pending • $confirmedCount/$totalCapacity Confirmed'
+              : '1 Pending • $confirmedCount Confirmed';
 
           actionsList = [
             NotificationAction(
@@ -5939,12 +5991,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ];
         } else {
           title = '📥 Join Requests Received';
-          badge = 'REQUESTS (${pendingIncomingRequests.length})';
-          body = '${pendingIncomingRequests.length} users requested to join your Stranger Meet at $venueName.';
-          statusSummary = '${pendingIncomingRequests.length} Pending Requests';
+          badge = 'REQUESTS ($pendingCount)';
+          body = '$pendingCount users requested to join your Stranger Meet at $venueName.$countSubtitle';
+          statusSummary = totalCapacity > 0
+              ? '$pendingCount Pending • $confirmedCount/$totalCapacity Confirmed'
+              : '$pendingCount Pending • $confirmedCount Confirmed';
           actionsList = [
             NotificationAction(
-              label: 'Review Requests (${pendingIncomingRequests.length})',
+              label: 'Review Requests ($pendingCount)',
               icon: Icons.people_alt_rounded,
               isPrimary: true,
               onTap: () => _showReviewStrangersMeetRequestsModal(meetMap, pendingIncomingRequests),

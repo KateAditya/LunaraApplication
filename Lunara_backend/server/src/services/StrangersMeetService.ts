@@ -982,10 +982,21 @@ export class StrangersMeetService {
                     { transaction: t }
                 );
 
-                // Decrement slotsFilled if > 0
-                if (Number(request.slotsFilled || 0) > 0) {
-                    await request.decrement('slotsFilled', { by: 1, transaction: t });
-                }
+                // Recalculate accurate confirmed/paid joiners count
+                const activeCount = await StrangersMeetJoiner.count({
+                    where: {
+                        strangersMeetRequestId: meetId,
+                        id: { [Op.ne]: cancellation.joinerId },
+                        [Op.or]: [
+                            { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                            { status: 'paid' },
+                            { status: 'accepted' },
+                        ],
+                        status: { [Op.notIn]: ['rejected', 'cancelled'] },
+                    },
+                    transaction: t,
+                });
+                await request.update({ slotsFilled: activeCount }, { transaction: t });
 
                 // Invalidate joiner ticket (Phase 10)
                 await Ticket.update(
@@ -1032,6 +1043,14 @@ export class StrangersMeetService {
             await cancellation.reload();
             await request.reload();
 
+            // Regenerate ticket PDF with updated reduced participant count
+            try {
+                const { generateTicketForStrangersMeetHelper } = require('./ticketService');
+                await generateTicketForStrangersMeetHelper(meetId);
+            } catch (tErr: any) {
+                logger.warn('[StrangersMeetService] Ticket regeneration after joiner cancellation failed:', tErr);
+            }
+
             // Realtime socket events for live feed & user state
             try {
                 const { io } = require('../server');
@@ -1050,6 +1069,10 @@ export class StrangersMeetService {
                         refundAmount,
                     });
                     io.to(`user_${hostUserId}`).emit('strangers_meet_status_update', {
+                        meetId,
+                        slotsFilled: request.slotsFilled,
+                    });
+                    io.to(`user_${hostUserId}`).emit('strangers_meet_updated', {
                         meetId,
                         slotsFilled: request.slotsFilled,
                     });

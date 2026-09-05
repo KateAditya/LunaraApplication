@@ -109,8 +109,12 @@ function formatRequest(r: StrangersMeetRequest) {
     }
 
     // Dynamic calculations
-    const joinedJoiners = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid');
-    const paidJoiners = joiners.filter((j: any) => j.status === 'paid' || j.paymentStatus === 'paid');
+    const pendingJoiners = joiners.filter((j: any) => j.status === 'pending');
+    const acceptedJoiners = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'approved');
+    const joinedJoiners = joiners.filter((j: any) => (j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid') && j.status !== 'rejected' && j.status !== 'cancelled');
+    const paidJoiners = joiners.filter((j: any) => (j.status === 'paid' || j.paymentStatus === 'paid') && j.status !== 'rejected' && j.status !== 'cancelled');
+    const pendingCount = pendingJoiners.length;
+    const acceptedCount = acceptedJoiners.length;
     const joinedCount = joinedJoiners.length;
     const paymentCount = paidJoiners.length;
     const remainingCount = Math.max(0, r.numberOfPersons - paymentCount);
@@ -162,6 +166,10 @@ function formatRequest(r: StrangersMeetRequest) {
         settlementAmount: r.settlementAmount ? Number(r.settlementAmount) : null,
         settlementDate: r.settlementDate ?? null,
         settlementMethod: r.settlementMethod ?? null,
+        pendingCount,
+        pendingRequestsCount: pendingCount,
+        acceptedCount,
+        confirmedCount: paymentCount,
         joinedCount,
         paymentCount,
         remainingCount,
@@ -2232,6 +2240,7 @@ export const getStrangersMeetTicket = async (req: Request, res: Response): Promi
                     { status: 'paid' },
                     { status: 'accepted' },
                 ],
+                status: { [Op.notIn]: ['rejected', 'cancelled'] },
             },
         });
         const dynamicParticipantsCount = paidJoinersCount > 0
