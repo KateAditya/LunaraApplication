@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { io } from 'socket.io-client';
 import {
     BiSearch,
     BiRefresh,
@@ -32,13 +33,7 @@ export const CancellationRequests: React.FC = () => {
     const [largeParties, setLargeParties] = useState<LargePartyCancellationItem[]>([]);
     const [strangerMeets, setStrangerMeets] = useState<StrangerMeetCancellationItem[]>([]);
 
-    // Selected item for details
-    const [detailItem, setDetailItem] = useState<{
-        tab: TabType;
-        data: GroupPartyCancellationItem | LargePartyCancellationItem | StrangerMeetCancellationItem;
-    } | null>(null);
-
-    // Modals
+    // Action Modal States
     const [markPaidTarget, setMarkPaidTarget] = useState<{
         tab: TabType;
         id: string;
@@ -48,31 +43,35 @@ export const CancellationRequests: React.FC = () => {
         amount: number;
         payoutDetails?: PayoutDetails;
     } | null>(null);
-
     const [utrReference, setUtrReference] = useState<string>('');
     const [payoutNotes, setPayoutNotes] = useState<string>('');
-    const [submittingAction, setSubmittingAction] = useState<boolean>(false);
 
-    // Large Party / Stranger Meet Approve & Reject Modals
     const [approveTarget, setApproveTarget] = useState<{
-        tab: 'large_party' | 'stranger_meet';
+        tab: TabType;
         id: string;
         title: string;
         amount: number;
         guests: number;
     } | null>(null);
     const [approveRefundPercentage, setApproveRefundPercentage] = useState<number>(100);
+    const [approveRefundMethod, setApproveRefundMethod] = useState<string>('ORIGINAL_PAYMENT');
     const [approveNotes, setApproveNotes] = useState<string>('');
-    const [approveRefundMethod, setApproveRefundMethod] = useState<'MANUAL_PAYOUT' | 'WALLET'>('MANUAL_PAYOUT');
 
     const [rejectTarget, setRejectTarget] = useState<{
-        tab: 'large_party' | 'stranger_meet';
+        tab: TabType;
         id: string;
         title: string;
     } | null>(null);
     const [rejectionReason, setRejectionReason] = useState<string>('');
 
-    // Fetch handlers
+    const [detailItem, setDetailItem] = useState<{
+        tab: TabType;
+        data: GroupPartyCancellationItem | LargePartyCancellationItem | StrangerMeetCancellationItem;
+    } | null>(null);
+
+    const [submittingAction, setSubmittingAction] = useState<boolean>(false);
+
+    // Fetch Data
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -90,15 +89,18 @@ export const CancellationRequests: React.FC = () => {
                     search: search.trim() || undefined,
                 });
                 if (res.success) {
-                    setLargeParties(res.items || []);
+                    setLargeParties(res.items || (res as any).data || []);
                 }
             } else if (activeTab === 'stranger_meet') {
                 const res = await cancellationRequestsApi.getStrangerMeetCancellations({
                     status: statusFilter,
                     search: search.trim() || undefined,
                 });
-                if (res.success && res.data) {
-                    setStrangerMeets(res.data.cancellations || []);
+                if (res.success) {
+                    const list = Array.isArray(res.data)
+                        ? res.data
+                        : (res.data?.cancellations || (res as any).cancellations || (res as any).items || (res as any).data || []);
+                    setStrangerMeets(list);
                 }
             }
         } catch (err: any) {
@@ -111,6 +113,72 @@ export const CancellationRequests: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Socket.IO Real-time Updates
+    useEffect(() => {
+        const socketUrl = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:9076');
+        const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+
+        socket.on('connect', () => {
+            socket.emit('join_admin_room');
+        });
+
+        const handleRealtime = () => {
+            fetchData();
+        };
+
+        socket.on('admin_notification_created', handleRealtime);
+        socket.on('admin_notification', handleRealtime);
+        socket.on('strangers_meet_cancellation_created', handleRealtime);
+        socket.on('large_party_cancellation_created', handleRealtime);
+        socket.on('group_party_cancellation_created', handleRealtime);
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [fetchData]);
+
+    // Open detail with complete nested data
+    const openDetail = async (tab: TabType, item: any) => {
+        if (tab === 'stranger_meet') {
+            try {
+                const detailRes = await cancellationRequestsApi.getStrangerMeetCancellationDetail(item.id);
+                if (detailRes.success && detailRes.data) {
+                    const raw: any = detailRes.data;
+                    const combined = {
+                        ...(raw.cancellation || raw),
+                        ...raw,
+                        memberRefunds: raw.cancellation?.memberRefunds || raw.memberRefunds || raw.paidJoiners || [],
+                    };
+                    setDetailItem({ tab, data: combined });
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to load full SM detail:', e);
+            }
+        } else if (tab === 'large_party') {
+            try {
+                const detailRes = await cancellationRequestsApi.getLargePartyCancellationDetail(item.id);
+                if (detailRes.success && detailRes.data) {
+                    setDetailItem({ tab, data: detailRes.data });
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to load LP detail:', e);
+            }
+        } else if (tab === 'group_party') {
+            try {
+                const detailRes = await cancellationRequestsApi.getGroupPartyCancellationDetail(item.id);
+                if (detailRes.success && detailRes.data) {
+                    setDetailItem({ tab, data: detailRes.data });
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to load GP detail:', e);
+            }
+        }
+        setDetailItem({ tab, data: item });
+    };
 
     // Helpers
     const copyToClipboard = (text: string, label: string) => {
@@ -673,7 +741,7 @@ export const CancellationRequests: React.FC = () => {
                                                         <button
                                                             className="btn btn-sm btn-outline-secondary"
                                                             title="View Details"
-                                                            onClick={() => setDetailItem({ tab: 'group_party', data: item })}
+                                                            onClick={() => openDetail('group_party', item)}
                                                         >
                                                             <BiDetail size={15} />
                                                         </button>
@@ -865,7 +933,7 @@ export const CancellationRequests: React.FC = () => {
                                                         <button
                                                             className="btn btn-sm btn-outline-secondary"
                                                             title="View Details"
-                                                            onClick={() => setDetailItem({ tab: 'large_party', data: item })}
+                                                            onClick={() => openDetail('large_party', item)}
                                                         >
                                                             <BiDetail size={15} />
                                                         </button>
@@ -1060,7 +1128,7 @@ export const CancellationRequests: React.FC = () => {
                                                         <button
                                                             className="btn btn-sm btn-outline-secondary"
                                                             title="View Details & Member Refunds"
-                                                            onClick={() => setDetailItem({ tab: 'stranger_meet', data: item })}
+                                                            onClick={() => openDetail('stranger_meet', item)}
                                                         >
                                                             <BiDetail size={15} />
                                                         </button>

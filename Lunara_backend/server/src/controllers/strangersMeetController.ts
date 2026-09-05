@@ -2664,7 +2664,13 @@ export const getAdminHostCancellations = async (req: Request, res: Response): Pr
 
         res.json({
             success: true,
-            ...result,
+            data: result.data,
+            cancellations: result.data,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages: result.totalPages,
+            counts: result.counts,
         });
     } catch (err: any) {
         logger.error('getAdminHostCancellations error:', err);

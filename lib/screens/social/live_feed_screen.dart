@@ -2023,64 +2023,42 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final pendingReqs = item.rawData['pendingIncomingRequests'];
 
     if (category.contains('stranger') || category.contains('meet')) {
-      final meetData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
-      final rawMeetStatus = (meetData['status'] ?? item.rawData['status'] ?? '').toString().toLowerCase();
-      final rawPayStatus = (meetData['paymentStatus'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
-      final bool isHost = meetData['isHost'] == true ||
-          meetData['role'] == 'host' ||
-          meetData['userId']?.toString() == ApiService.currentUserId ||
-          (item.userRoleLabel != null && item.userRoleLabel!.contains('Your'));
+      final meetData = item.rawData['plan'] is Map
+          ? item.rawData['plan']
+          : (item.rawData['meet'] is Map
+              ? item.rawData['meet']
+              : (item.rawData['data'] is Map ? item.rawData['data'] : item.rawData));
 
-      if (pendingReqs is List && pendingReqs.isNotEmpty) {
-        _showReviewStrangersMeetRequestsModal(
-          Map<String, dynamic>.from(meetData),
-          pendingReqs.cast<Map<String, dynamic>>(),
-        );
-        return;
-      }
+      final meetId = meetData['id']?.toString() ??
+          meetData['requestId']?.toString() ??
+          meetData['meetId']?.toString() ??
+          item.rawData['id']?.toString() ??
+          '';
 
-      // If action required (Admin approved Host deposit OR Host accepted Joiner seat)
-      if (item.badgeText == 'ACTION REQUIRED' ||
-          rawMeetStatus == 'approved' ||
-          rawMeetStatus == 'accepted' ||
-          rawMeetStatus == 'payment_pending' ||
-          (isHost && rawPayStatus == 'unpaid' && rawMeetStatus != 'pending' && rawMeetStatus != 'request_sent' && rawMeetStatus != 'pending_approval')) {
-        try {
-          final req = StrangersMeetRequest.fromJson(Map<String, dynamic>.from(meetData));
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => StrangersMeetPaymentScreen(
-                request: req,
-                onPaymentSuccess: () => _loadFeed(),
-                isJoinPayment: !isHost,
-              ),
-            ),
-          );
-          return;
-        } catch (e) {
-          debugPrint('Error navigating to SM payment screen on card tap: $e');
-        }
-      }
+      final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetData);
+      postMap['type'] = 'strangers_meet';
+      postMap['id'] = meetId;
+      if (item.rawData['venue'] is Map) postMap['venue'] = item.rawData['venue'];
+      if (item.rawData['venueName'] != null) postMap['venueName'] = item.rawData['venueName'];
+      if (item.rawData['venueImage'] != null) postMap['venueImage'] = item.rawData['venueImage'];
+      if (item.rawData['venueImageUrl'] != null) postMap['venueImageUrl'] = item.rawData['venueImageUrl'];
+      if (item.rawData['user'] is Map) postMap['user'] = item.rawData['user'];
+      if (item.rawData['host'] is Map) postMap['host'] = item.rawData['host'];
 
-      if (item.actions != null && item.actions!.isNotEmpty) {
-        final actions = item.actions!;
-        final primaryAction = actions.firstWhere((a) => a.isPrimary, orElse: () => actions.first);
-        primaryAction.onTap();
-        return;
-      }
+      final Map<String, dynamic>? venueMap = (postMap['venue'] is Map)
+          ? Map<String, dynamic>.from(postMap['venue'])
+          : (item.rawData['venue'] is Map ? Map<String, dynamic>.from(item.rawData['venue']) : null);
 
       try {
-        final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetData);
-        postMap['type'] = 'strangers_meet';
-        postMap['id'] = postMap['id'] ?? item.rawData['id'];
-
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PostDetailScreen(post: postMap),
+            builder: (_) => PostDetailScreen(
+              post: postMap,
+              venue: venueMap,
+            ),
           ),
-        );
+        ).then((_) => _loadFeed());
       } catch (e) {
         debugPrint('Error opening Strangers Meet detail screen: $e');
       }
@@ -5734,7 +5712,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = 'Request sent to Admin for Stranger Meet at $venueName. Waiting for admin approval.';
         statusSummary = 'Waiting for Admin Approval';
         actionsList = null;
-      } else if (meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending' || (hostPayStatus == 'unpaid' && meetStatus != 'pending' && meetStatus != 'request_sent' && meetStatus != 'pending_approval')) {
+      } else if ((meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending') && (hostPayStatus == 'unpaid' || hostPayStatus == 'pending' || hostPayStatus.isEmpty)) {
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);

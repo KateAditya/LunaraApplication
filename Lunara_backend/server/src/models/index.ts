@@ -954,9 +954,78 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_hour_sent BOOLEAN DEFAULT false;
                 ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiry_notified BOOLEAN DEFAULT false;
                 ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMP WITH TIME ZONE;
+
+                CREATE TABLE IF NOT EXISTS strangers_meet_cancellation_requests (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    meet_id UUID NOT NULL REFERENCES strangers_meet_requests(id) ON DELETE CASCADE,
+                    joiner_id UUID NOT NULL REFERENCES strangers_meet_joiners(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                    reason VARCHAR(255) NOT NULL,
+                    other_reason_text TEXT,
+                    paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    refund_amount DECIMAL(10,2),
+                    wallet_transaction_id UUID,
+                    reject_reason VARCHAR(255),
+                    responded_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS strangers_meet_host_cancellation_requests (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    meet_id UUID NOT NULL REFERENCES strangers_meet_requests(id) ON DELETE CASCADE,
+                    host_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    reason VARCHAR(255) NOT NULL,
+                    reason_text TEXT,
+                    status VARCHAR(50) NOT NULL DEFAULT 'PENDING_ADMIN_REVIEW',
+                    refund_policy_percentage DECIMAL(5,2),
+                    refund_method VARCHAR(30),
+                    total_collected_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    total_refund_amount DECIMAL(10,2),
+                    total_members_count INTEGER NOT NULL DEFAULT 0,
+                    admin_reviewed_by UUID REFERENCES users(id),
+                    admin_reviewed_at TIMESTAMP WITH TIME ZONE,
+                    admin_notes TEXT,
+                    host_deposit_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    host_refund_type VARCHAR(30),
+                    host_refund_percentage DECIMAL(5,2),
+                    host_refund_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    host_refund_destination VARCHAR(30),
+                    host_refund_status VARCHAR(50) DEFAULT 'NONE',
+                    host_payout_details JSONB,
+                    host_settlement_transaction_id VARCHAR(100),
+                    host_settled_at TIMESTAMP WITH TIME ZONE,
+                    host_settled_by UUID,
+                    host_settlement_notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS strangers_meet_member_refunds (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    host_cancellation_request_id UUID NOT NULL REFERENCES strangers_meet_host_cancellation_requests(id) ON DELETE CASCADE,
+                    meet_id UUID NOT NULL REFERENCES strangers_meet_requests(id) ON DELETE CASCADE,
+                    joiner_id UUID NOT NULL REFERENCES strangers_meet_joiners(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    refund_percentage DECIMAL(5,2) NOT NULL DEFAULT 100.00,
+                    refund_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    refund_method VARCHAR(30) NOT NULL DEFAULT 'WALLET',
+                    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+                    wallet_transaction_id VARCHAR(100),
+                    payment_reference VARCHAR(100),
+                    payout_details JSONB,
+                    paid_by_admin_id UUID REFERENCES users(id),
+                    paid_at TIMESTAMP WITH TIME ZONE,
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                );
             `);
         } catch (colErr: any) {
-            console.warn('⚠️ ProfileBoost / UserSubscriptions auto-migration warning:', colErr.message);
+            console.warn('⚠️ Auto-migration tables warning:', colErr.message);
         }
 
         const modelsToSync = [
