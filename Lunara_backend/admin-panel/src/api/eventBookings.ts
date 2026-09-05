@@ -1,19 +1,17 @@
 import apiClient from './client';
 
-export const getPartyEvents = async () => {
-  const { data } = await apiClient.get('/api/admin/event-bookings/events');
-  return data;
+export const getPartyEvents = async (): Promise<any> => {
+  return apiClient.get('/api/admin/event-bookings/events');
 };
 
-export const getEventSummary = async (eventId: string = 'all') => {
+export const getEventSummary = async (eventId: string = 'all'): Promise<any> => {
   const targetId = eventId || 'all';
-  const { data } = await apiClient.get(`/api/admin/event-bookings/${targetId}/summary`);
-  return data;
+  return apiClient.get(`/api/admin/event-bookings/${targetId}/summary`);
 };
 
 export const getEventBookings = async (
   eventId: string = 'all',
-  params: {
+  params?: {
     page?: number;
     limit?: number;
     search?: string;
@@ -22,10 +20,9 @@ export const getEventBookings = async (
     fromDate?: string;
     toDate?: string;
   }
-) => {
+): Promise<any> => {
   const targetId = eventId || 'all';
-  const { data } = await apiClient.get(`/api/admin/event-bookings/${targetId}/bookings`, { params });
-  return data;
+  return apiClient.get(`/api/admin/event-bookings/${targetId}/bookings`, { params });
 };
 
 
