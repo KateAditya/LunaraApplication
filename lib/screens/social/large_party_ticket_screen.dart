@@ -182,7 +182,8 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   void _initCountdown() {
     final bookingDateStr = _freshPartyDate ?? widget.booking['bookingDate'] ?? widget.booking['partyDate'];
     final startTimeStr = _freshStartTime ?? widget.booking['startTime'] ?? '12:00 AM';
-    final DateTime targetDate = _parseEventDateTime(bookingDateStr, startTimeStr);
+    final DateTime eventStart = _parseEventDateTime(bookingDateStr, startTimeStr);
+    final DateTime targetDate = eventStart.add(const Duration(hours: 2));
 
     void update() {
       if (!mounted) return;

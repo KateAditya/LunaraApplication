@@ -2,7 +2,7 @@ import { Transaction, Op } from 'sequelize';
 import sequelize from '../config/database';
 import NightInterest, { NightInterestStatus } from '../models/NightInterest';
 import NightPartnerRequest, { NightPartnerRequestStatus } from '../models/NightPartnerRequest';
-import NightPartnerMatch, { NightPartnerMatchStatus } from '../models/NightPartnerMatch';
+import NightPartnerMatch, { NightPartnerMatchStatus, NightPartnerCancellationStatus } from '../models/NightPartnerMatch';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
@@ -37,6 +37,7 @@ export interface SafePartnerProfile {
     isVerified: boolean;
     trustScore: number;
     compatibilityScore: number;
+    isInterested?: boolean;
     interestId?: string;
     hasPendingInvite?: boolean;
 }
@@ -252,6 +253,25 @@ export class NightPartnerService {
             ];
         }
 
+        const venue = await this.resolveVenue(venueId);
+        const resolvedVenueId = venue ? venue.id : venueId;
+
+        // Fetch all users who have marked interest for this event
+        const interestedRecords = await NightInterest.findAll({
+            where: {
+                venueId: resolvedVenueId,
+                eventDate: new Date(eventDate),
+                status: NightInterestStatus.INTERESTED,
+                userId: { [Op.ne]: hostId },
+            },
+            attributes: ['id', 'userId', 'eventTime'],
+        });
+
+        const interestedMap = new Map<string, string>();
+        for (const item of interestedRecords) {
+            interestedMap.set(item.userId, item.id);
+        }
+
         const candidates = await User.findAll({
             where: userWhere,
             attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
@@ -260,7 +280,7 @@ export class NightPartnerService {
                 { model: UserPhoto, as: 'photos' },
                 { model: UserPreference, as: 'preferences', attributes: ['showMeInMatching'], required: false },
             ],
-            limit: 50,
+            limit: 60,
             order: [['createdAt', 'DESC']],
         });
 
@@ -297,7 +317,7 @@ export class NightPartnerService {
                 where: {
                     hostId,
                     partnerId: u.id,
-                    venueId,
+                    venueId: resolvedVenueId,
                     eventDate: new Date(eventDate),
                     status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
                 },
@@ -315,6 +335,9 @@ export class NightPartnerService {
                 age = Math.abs(ageDate.getUTCFullYear() - 1970);
             }
 
+            const isInterested = interestedMap.has(u.id);
+            const interestId = interestedMap.get(u.id);
+
             available.push({
                 userId: u.id,
                 firstName: u.firstName || 'User',
@@ -327,10 +350,19 @@ export class NightPartnerService {
                 primaryPhoto: primaryPhotoObj?.filePath || null,
                 isVerified: !!u.isVerified,
                 trustScore: u.isVerified ? 4.9 : 4.5,
-                compatibilityScore: 88,
+                compatibilityScore: isInterested ? 94 : 88,
+                isInterested: !!isInterested,
+                interestId,
                 hasPendingInvite: !!existingReq,
             });
         }
+
+        // Sort interested users first, followed by others with high vibe scores
+        available.sort((a, b) => {
+            if (a.isInterested && !b.isInterested) return -1;
+            if (!a.isInterested && b.isInterested) return 1;
+            return (b.compatibilityScore || 0) - (a.compatibilityScore || 0);
+        });
 
         return available;
     }
@@ -453,13 +485,44 @@ export class NightPartnerService {
             });
         }
 
+        // Fetch Host Profile info for rich notification delivery
+        const hostUser = await User.findByPk(hostId, {
+            attributes: ['id', 'firstName', 'lastName', 'isVerified'],
+            include: [
+                { model: UserProfile, as: 'profile' },
+                { model: UserPhoto, as: 'photos' },
+            ],
+        });
+
+        const hostName = hostUser?.firstName || 'A Lunara member';
+        const hostPhotos = (hostUser as any)?.photos || [];
+        const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
+
         // Send Push & Real-time Socket Notification to Partner
-        this.emitNotification(partnerId, {
+        await this.emitNotification(partnerId, {
             type: 'PARTNER_REQUEST_SENT',
+            actorUserId: hostId,
             title: 'New Partner Request! 🎉',
-            body: `Someone wants to join you for an Upcoming Night!`,
+            body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
             entityId: request.id,
-            data: { requestId: request.id, venueId, eventDate },
+            data: {
+                requestId: request.id,
+                nightId: request.id,
+                venueId: venue.id,
+                venueName: venue.name,
+                eventDate,
+                eventTime: eventTime || request.eventTime || '20:00',
+                hostId,
+                hostName,
+                actor: {
+                    id: hostId,
+                    firstName: hostUser?.firstName || 'Host',
+                    lastName: hostUser?.lastName || '',
+                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                    isVerified: !!hostUser?.isVerified,
+                },
+                actions: ['ACCEPT', 'DECLINE'],
+            },
         });
 
         return request;
@@ -844,8 +907,9 @@ export class NightPartnerService {
     public static async cancelUpcomingNight(
         targetId: string,
         callerUserId: string,
-        reason: string = 'Change of plans'
-    ): Promise<{ success: boolean; message: string }> {
+        reason: string = 'Change of plans',
+        action?: 'request' | 'approve' | 'reject' | 'confirm' | 'decline' | 'accept'
+    ): Promise<{ success: boolean; status?: string; message: string }> {
         // Check if target is a Match or a Request
         let match = await NightPartnerMatch.findByPk(targetId);
         let request: NightPartnerRequest | null = null;
@@ -870,7 +934,7 @@ export class NightPartnerService {
                 body: 'The partner request has been cancelled.',
                 entityId: request.id,
             });
-            return { success: true, message: 'Request cancelled successfully' };
+            return { success: true, status: 'CANCELLED', message: 'Request cancelled successfully' };
         }
 
         if (match) {
@@ -878,28 +942,112 @@ export class NightPartnerService {
                 throw new Error('UNAUTHORIZED');
             }
 
-            return await sequelize.transaction(async (t) => {
-                // If match was already confirmed and booking exists, handle atomic refund to wallet
-                if (match!.bookingId) {
-                    const booking = await Booking.findByPk(match!.bookingId, { transaction: t });
-                    if (booking) {
-                        await booking.update({ status: BookingStatus.CANCELLED }, { transaction: t });
+            if (match.status === NightPartnerMatchStatus.CANCELLED) {
+                return { success: true, status: 'CANCELLED', message: 'Upcoming Night is already cancelled' };
+            }
+
+            const isHost = match.hostId === callerUserId;
+            const otherUserId = isHost ? match.partnerId : match.hostId;
+            const callerUser = await User.findByPk(callerUserId).catch(() => null);
+            const callerName = callerUser?.firstName || (isHost ? 'Host' : 'Partner');
+
+            let venueName = 'the venue';
+            try {
+                const venue = await Venue.findByPk(match.venueId);
+                if (venue?.name) venueName = venue.name;
+            } catch (_) {}
+
+            const isConfirmedOrPaid = match.status === NightPartnerMatchStatus.CONFIRMED ||
+                Boolean(match.bookingId) ||
+                Boolean(match.hostPaid) ||
+                Boolean(match.partnerPaid);
+
+            // Normalized action: 'request' | 'approve' | 'reject'
+            const normalizedAction = (action === 'confirm' || action === 'approve' || action === 'accept')
+                ? 'approve'
+                : (action === 'reject' || action === 'decline')
+                    ? 'reject'
+                    : 'request';
+
+            // Branch 1: If not yet confirmed or paid (e.g. MATCHED or PAYMENT_PENDING with 0 payments), allow direct cancellation
+            if (!isConfirmedOrPaid) {
+                return await sequelize.transaction(async (t) => {
+                    await match!.update({
+                        status: NightPartnerMatchStatus.CANCELLED,
+                        cancellationStatus: NightPartnerCancellationStatus.APPROVED,
+                        cancellationReason: reason,
+                        cancelledBy: callerUserId,
+                    }, { transaction: t });
+
+                    this.emitNotification(otherUserId, {
+                        type: 'UPCOMING_NIGHT_CANCELLED',
+                        title: 'Upcoming Night Cancelled ❌',
+                        body: `${callerName} cancelled the upcoming night at ${venueName}. Reason: ${reason}`,
+                        entityId: match!.id,
+                        actorUserId: callerUserId,
+                    });
+
+                    return { success: true, status: 'CANCELLED', message: 'Upcoming Night cancelled successfully' };
+                });
+            }
+
+            // Branch 2: Confirmed or Paid match -> Handle Mutual Cancellation Flow
+
+            // Sub-branch 2A: REJECT CANCELLATION
+            if (normalizedAction === 'reject') {
+                if (match.cancellationStatus !== NightPartnerCancellationStatus.REQUESTED) {
+                    return { success: false, message: 'No active cancellation request to reject.' };
+                }
+
+                await match.update({
+                    cancellationStatus: NightPartnerCancellationStatus.REJECTED,
+                });
+
+                const requesterId = match.cancelledBy || otherUserId;
+                this.emitNotification(requesterId, {
+                    type: 'UPCOMING_NIGHT_CANCELLATION_REJECTED',
+                    title: 'Cancellation Request Declined ❌',
+                    body: `${callerName} declined the cancellation request. Your Upcoming Night at ${venueName} remains confirmed.`,
+                    entityId: match.id,
+                    actorUserId: callerUserId,
+                });
+
+                return { success: true, status: 'REJECTED', message: 'Cancellation request declined. The Upcoming Night remains active.' };
+            }
+
+            // Sub-branch 2B: APPROVE CANCELLATION
+            // If explicit 'approve', or if the OTHER party already requested cancellation and caller submits cancel
+            const isApproving = normalizedAction === 'approve' ||
+                (match.cancellationStatus === NightPartnerCancellationStatus.REQUESTED && match.cancelledBy && match.cancelledBy !== callerUserId);
+
+            if (isApproving) {
+                return await sequelize.transaction(async (t) => {
+                    // 1. Cancel booking if exists
+                    if (match!.bookingId) {
+                        const booking = await Booking.findByPk(match!.bookingId, { transaction: t });
+                        if (booking) {
+                            await booking.update({ status: BookingStatus.CANCELLED }, { transaction: t });
+                        }
                     }
 
-                    // Process Wallet Refunds if paid
-                    const SmartWallet = (await import('../models/SmartWallet')).default;
-                    const WalletTransaction = (await import('../models/WalletTransaction')).default;
+                    // 2. Process Smart Wallet Refunds atomically
+                    try {
+                        const SmartWallet = (await import('../models/SmartWallet')).default;
+                        const WalletTransaction = (await import('../models/WalletTransaction')).default;
 
-                    if (match!.hostPaid && match!.hostAmount && match!.hostAmount > 0) {
-                        const hostWallet = await SmartWallet.findOne({ where: { userId: match!.hostId }, transaction: t });
-                        if (hostWallet) {
-                            const openingBal = Number(hostWallet.balance);
-                            const closingBal = openingBal + Number(match!.hostAmount);
-                            await hostWallet.increment('balance', { by: match!.hostAmount, transaction: t });
+                        if (match!.hostPaid && match!.hostAmount && match!.hostAmount > 0) {
+                            let hostWallet = await SmartWallet.findOne({ where: { userId: match!.hostId }, transaction: t });
+                            if (!hostWallet) {
+                                hostWallet = await SmartWallet.create({ userId: match!.hostId, balance: 0 }, { transaction: t });
+                            }
+                            const openingBal = Number(hostWallet.balance || 0);
+                            const refundAmt = Number(match!.hostAmount);
+                            const closingBal = openingBal + refundAmt;
+                            await hostWallet.increment('balance', { by: refundAmt, transaction: t });
                             await WalletTransaction.create({
                                 walletId: hostWallet.id,
                                 userId: match!.hostId,
-                                amount: match!.hostAmount,
+                                amount: refundAmt,
                                 openingBalance: openingBal,
                                 closingBalance: closingBal,
                                 transactionType: 'refund' as any,
@@ -907,18 +1055,20 @@ export class NightPartnerService {
                                 reference: match!.id,
                             }, { transaction: t });
                         }
-                    }
 
-                    if (match!.partnerPaid && match!.partnerAmount && match!.partnerAmount > 0) {
-                        const partnerWallet = await SmartWallet.findOne({ where: { userId: match!.partnerId }, transaction: t });
-                        if (partnerWallet) {
-                            const openingBal = Number(partnerWallet.balance);
-                            const closingBal = openingBal + Number(match!.partnerAmount);
-                            await partnerWallet.increment('balance', { by: match!.partnerAmount, transaction: t });
+                        if (match!.partnerPaid && match!.partnerAmount && match!.partnerAmount > 0) {
+                            let partnerWallet = await SmartWallet.findOne({ where: { userId: match!.partnerId }, transaction: t });
+                            if (!partnerWallet) {
+                                partnerWallet = await SmartWallet.create({ userId: match!.partnerId, balance: 0 }, { transaction: t });
+                            }
+                            const openingBal = Number(partnerWallet.balance || 0);
+                            const refundAmt = Number(match!.partnerAmount);
+                            const closingBal = openingBal + refundAmt;
+                            await partnerWallet.increment('balance', { by: refundAmt, transaction: t });
                             await WalletTransaction.create({
                                 walletId: partnerWallet.id,
                                 userId: match!.partnerId,
-                                amount: match!.partnerAmount,
+                                amount: refundAmt,
                                 openingBalance: openingBal,
                                 closingBalance: closingBal,
                                 transactionType: 'refund' as any,
@@ -926,26 +1076,84 @@ export class NightPartnerService {
                                 reference: match!.id,
                             }, { transaction: t });
                         }
+                    } catch (walletErr) {
+                        logger.warn(`[NightPartnerService] Wallet refund warning: ${walletErr}`);
                     }
-                }
 
-                await match!.update({
-                    status: NightPartnerMatchStatus.CANCELLED,
-                    cancellationStatus: 'APPROVED' as any,
-                    cancellationReason: reason,
-                    cancelledBy: callerUserId,
-                }, { transaction: t });
+                    // 3. Archive Conversation
+                    if (match!.conversationId) {
+                        try {
+                            const Conversation = (await import('../models/Conversation')).default;
+                            const conv = await Conversation.findByPk(match!.conversationId, { transaction: t });
+                            if (conv) {
+                                await conv.update({ status: ConversationStatus.ARCHIVED }, { transaction: t });
+                            }
+                        } catch (_) {}
+                    }
 
-                const otherId = match!.hostId === callerUserId ? match!.partnerId : match!.hostId;
-                this.emitNotification(otherId, {
-                    type: 'UPCOMING_NIGHT_CANCELLED',
-                    title: 'Upcoming Night Cancelled',
-                    body: `Upcoming Night was cancelled. Reason: ${reason}`,
-                    entityId: match!.id,
+                    // 4. Update match status
+                    await match!.update({
+                        status: NightPartnerMatchStatus.CANCELLED,
+                        cancellationStatus: NightPartnerCancellationStatus.APPROVED,
+                        cancellationReason: reason || match!.cancellationReason || 'Mutual cancellation confirmed',
+                        cancelledBy: match!.cancelledBy || callerUserId,
+                    }, { transaction: t });
+
+                    // 5. Notify both parties
+                    this.emitNotification(match!.hostId, {
+                        type: 'UPCOMING_NIGHT_CANCELLED',
+                        title: 'Upcoming Night Cancelled & Refunded 💳',
+                        body: `Upcoming Night at ${venueName} was cancelled. Any paid ticket amounts have been refunded to your wallet.`,
+                        entityId: match!.id,
+                        actorUserId: callerUserId,
+                    });
+
+                    this.emitNotification(match!.partnerId, {
+                        type: 'UPCOMING_NIGHT_CANCELLED',
+                        title: 'Upcoming Night Cancelled & Refunded 💳',
+                        body: `Upcoming Night at ${venueName} was cancelled. Any paid ticket amounts have been refunded to your wallet.`,
+                        entityId: match!.id,
+                        actorUserId: callerUserId,
+                    });
+
+                    return { success: true, status: 'CANCELLED', message: 'Upcoming Night cancelled and refunded to wallet successfully.' };
                 });
+            }
 
-                return { success: true, message: 'Upcoming Night cancelled and refunded to wallet if applicable.' };
+            // Sub-branch 2C: INITIATE CANCELLATION REQUEST (Waiting for partner approval)
+            if (match.cancellationStatus === NightPartnerCancellationStatus.REQUESTED) {
+                if (match.cancelledBy === callerUserId) {
+                    return { success: true, status: 'REQUESTED', message: 'Cancellation request is already pending partner confirmation.' };
+                }
+            }
+
+            await match.update({
+                cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                cancellationReason: reason,
+                cancelledBy: callerUserId,
             });
+
+            this.emitNotification(otherUserId, {
+                type: 'UPCOMING_NIGHT_CANCELLATION_REQUESTED',
+                title: 'Upcoming Night Cancellation Request ⚠️',
+                body: `${callerName} requested to cancel the Upcoming Night at ${venueName}. Reason: "${reason}". Please confirm to process refund.`,
+                entityId: match.id,
+                actorUserId: callerUserId,
+                data: {
+                    matchId: match.id,
+                    requestedById: callerUserId,
+                    requesterName: callerName,
+                    reason,
+                    venueName,
+                    actions: ['ACCEPT_CANCELLATION', 'REJECT_CANCELLATION'],
+                },
+            });
+
+            return {
+                success: true,
+                status: 'REQUESTED',
+                message: 'Cancellation request sent to your partner. Waiting for their confirmation to process refund.',
+            };
         }
 
         return { success: true, message: 'Cancelled' };
@@ -1110,6 +1318,24 @@ export class NightPartnerService {
             const isDeclined = requestRecord && (requestRecord.status === NightPartnerRequestStatus.DECLINED || requestRecord.status === NightPartnerRequestStatus.CANCELLED);
             const isCancelled = isMatch && match!.status === NightPartnerMatchStatus.CANCELLED;
 
+            const otherUserId = isHost ? partnerId : hostId;
+            let otherUser: any = null;
+            try {
+                if (otherUserId) {
+                    otherUser = await User.findByPk(otherUserId, {
+                        attributes: ['id', 'firstName', 'lastName', 'isVerified'],
+                        include: [
+                            { model: UserProfile, as: 'profile', required: false },
+                            { model: UserPhoto, as: 'photos', required: false },
+                        ],
+                    });
+                }
+            } catch (_) {}
+
+            const photos = (otherUser as any)?.photos || [];
+            const primaryPhoto = photos.find((p: any) => p.isPrimary) || photos[0];
+            const otherUserName = otherUser?.firstName || (isHost ? 'Partner' : 'Host');
+
             const reminder2h = isMatch ? (match!.reminder2hSent || false) : (requestRecord?.reminder2hSent || false);
             const reminder1h = isMatch ? (match!.reminder1hSent || false) : (requestRecord?.reminder1hSent || false);
             const reminder30m = isMatch ? (match!.reminder30mSent || false) : (requestRecord?.reminder30mSent || false);
@@ -1131,14 +1357,30 @@ export class NightPartnerService {
             const completedCount = timelineSteps.filter(s => s.completed).length;
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
 
+            const isCancellationRequested = isMatch && match!.cancellationStatus === NightPartnerCancellationStatus.REQUESTED;
+            const isCanceller = isCancellationRequested && match!.cancelledBy === recipientUserId;
+            const isCancellationRecipient = isCancellationRequested && match!.cancelledBy !== recipientUserId;
+
             let title = `Upcoming Night at ${venueName} 🌟`;
             let body = `Your Upcoming Night partner invite at ${venueName}.`;
             let statusText = 'Request Sent';
 
-            if (isCancelled) {
+            if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
+                title = `New Partner Request for ${venueName}! 🎉`;
+                body = `${otherUserName} invited you to join for Upcoming Night at ${venueName}!`;
+                statusText = 'Invite Received';
+            } else if (isCancelled) {
                 title = `Upcoming Night Cancelled ❌`;
-                body = `The event at ${venueName} was cancelled.`;
+                body = `The event at ${venueName} was cancelled and refund processed if applicable.`;
                 statusText = 'Cancelled';
+            } else if (isCancellationRecipient) {
+                title = `Partner Requested Cancellation ⚠️`;
+                body = `${otherUserName} requested to cancel Upcoming Night at ${venueName}. Reason: "${match?.cancellationReason || 'Change of plans'}". Please confirm or keep active.`;
+                statusText = 'Cancellation Request Received';
+            } else if (isCanceller) {
+                title = `Cancellation Requested ⏳`;
+                body = `Waiting for your partner to confirm the cancellation of Upcoming Night at ${venueName}.`;
+                statusText = 'Pending Partner Confirmation';
             } else if (isCompleted) {
                 title = `Upcoming Night Completed ✨`;
                 body = `Hope you had a great time at ${venueName}!`;
@@ -1163,25 +1405,32 @@ export class NightPartnerService {
             }
 
             const actionButtons = [];
-            if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
-                actionButtons.push({ id: 'accept_request', label: 'Accept Request', primary: true, action: 'ACCEPT_REQUEST' });
-                actionButtons.push({ id: 'decline_request', label: 'Decline', primary: false, action: 'DECLINE_REQUEST' });
-            }
-            if (isMatch && match!.status === NightPartnerMatchStatus.MATCHED && isHost) {
-                actionButtons.push({ id: 'pay_now', label: 'Confirm & Pay', primary: true, action: 'PAY_NOW' });
-            }
-            if (isPaymentPending) {
-                const isMyPaymentDue = isHost ? !match?.hostPaid : !match?.partnerPaid;
-                if (isMyPaymentDue) {
-                    actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
+            if (isCancellationRecipient) {
+                actionButtons.push({ id: 'accept_cancellation', label: 'Confirm & Refund', primary: true, action: 'ACCEPT_CANCELLATION' });
+                actionButtons.push({ id: 'reject_cancellation', label: 'Keep Active', primary: false, action: 'REJECT_CANCELLATION' });
+            } else if (isCanceller) {
+                actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
+            } else {
+                if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
+                    actionButtons.push({ id: 'accept_request', label: 'Accept Request', primary: true, action: 'ACCEPT_REQUEST' });
+                    actionButtons.push({ id: 'decline_request', label: 'Decline', primary: false, action: 'DECLINE_REQUEST' });
                 }
+                if (isMatch && match!.status === NightPartnerMatchStatus.MATCHED && isHost) {
+                    actionButtons.push({ id: 'pay_now', label: 'Confirm & Pay', primary: true, action: 'PAY_NOW' });
+                }
+                if (isPaymentPending) {
+                    const isMyPaymentDue = isHost ? !match?.hostPaid : !match?.partnerPaid;
+                    if (isMyPaymentDue) {
+                        actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
+                    }
+                }
+                if (isChatEnabled) {
+                    actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
+                    actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: false, action: 'OPEN_CHAT' });
+                    actionButtons.push({ id: 'cancel_event', label: 'Cancel', primary: false, action: 'CANCEL_EVENT' });
+                }
+                actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
             }
-            if (isChatEnabled) {
-                actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
-                actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: false, action: 'OPEN_CHAT' });
-                actionButtons.push({ id: 'cancel_event', label: 'Cancel', primary: false, action: 'CANCEL_EVENT' });
-            }
-            actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
 
             const updatedIso = isMatch 
                 ? (match!.updatedAt ? match!.updatedAt.toISOString() : new Date().toISOString())
@@ -1196,13 +1445,35 @@ export class NightPartnerService {
                 read: false,
                 isRead: false,
                 category: isPaymentConfirmed ? 'bookings' : 'requests',
+                type: 'upcoming_night_timeline',
+                eventType: (!isHost && requestRecord?.status === NightPartnerRequestStatus.PENDING) ? 'PARTNER_REQUEST_RECEIVED' : 'UPCOMING_NIGHT_TIMELINE',
+                actor: {
+                    id: otherUser?.id || otherUserId,
+                    firstName: otherUser?.firstName || otherUserName,
+                    lastName: otherUser?.lastName || '',
+                    profilePhotoUrl: primaryPhoto?.filePath || null,
+                    isVerified: !!otherUser?.isVerified,
+                },
+                sender: {
+                    id: otherUser?.id || otherUserId,
+                    firstName: otherUser?.firstName || otherUserName,
+                    lastName: otherUser?.lastName || '',
+                    profilePhotoUrl: primaryPhoto?.filePath || null,
+                    isVerified: !!otherUser?.isVerified,
+                },
+                imageUrl: primaryPhoto?.filePath || null,
                 data: {
                     type: 'upcoming_night_timeline',
                     nightId,
+                    requestId: isMatch ? undefined : requestRecord!.id,
+                    matchId: isMatch ? match!.id : undefined,
                     venueName,
                     eventDate,
+                    eventTime: isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00'),
                     isHost,
-                    otherUserId: isHost ? partnerId : hostId,
+                    otherUserId,
+                    otherUserName,
+                    otherUserPhoto: primaryPhoto?.filePath || null,
                     statusText,
                     paymentMode: match?.paymentMode || 'SELF_PAY',
                     hostPaid: match?.hostPaid || false,

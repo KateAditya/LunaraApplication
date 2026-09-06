@@ -292,6 +292,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         innerPlan?['planDateTime']?.toString() ??
         booking['eventStartAt']?.toString() ??
         booking['eventDateTime']?.toString() ??
+        innerPlan?['eventDateTime']?.toString() ??
         booking['bookingDate']?.toString() ??
         booking['partyDate']?.toString() ??
         booking['date']?.toString();
@@ -300,27 +301,52 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['time']?.toString() ??
         innerPlan?['startTime']?.toString() ??
         innerPlan?['time']?.toString();
-    final bool hasIsoTime = dateStr != null && (dateStr.contains('T') || dateStr.contains('Z'));
+    final cleanTime = (startTimeStr != null && startTimeStr.trim().isNotEmpty)
+        ? LunaraDateFormatter.normalizeTimeTo12Hour(startTimeStr)
+        : null;
+
     return LunaraDateFormatter.parseToLocal(
       dateStr,
-      explicitTime: hasIsoTime ? null : startTimeStr,
+      explicitTime: cleanTime,
     );
   }
 
   DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
-    final defaultExp = eventStart?.add(const Duration(hours: 2));
+    if (eventStart == null) return null;
 
-    if (booking['expiresAt'] != null) {
-      final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
-      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
+    // Strangers Meet and standard tickets expire strictly 2 hours after scheduled event start time
+    final defaultExp = eventStart.add(const Duration(hours: 2));
+
+    final isStrangersMeet = booking['isStrangersMeet'] == true ||
+        booking['bookingType'] == 'strangers_meet' ||
+        booking['type'] == 'strangers_meet' ||
+        (booking['tablePackage']?.toString().toUpperCase().contains('STRANGER') == true);
+
+    if (isStrangersMeet) {
+      return defaultExp;
     }
+
     if (booking['ticketExpiresAt'] != null) {
       final dt = DateTime.tryParse(booking['ticketExpiresAt'].toString())?.toLocal();
-      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
+      if (dt != null && dt.isAfter(eventStart)) {
+        if (dt.hour == 0 && dt.minute == 0 && (eventStart.hour != 0 || eventStart.minute != 0)) {
+          return defaultExp;
+        }
+        return dt;
+      }
+    }
+    if (booking['expiresAt'] != null) {
+      final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
+      if (dt != null && dt.isAfter(eventStart)) {
+        if (dt.hour == 0 && dt.minute == 0 && (eventStart.hour != 0 || eventStart.minute != 0)) {
+          return defaultExp;
+        }
+        return dt;
+      }
     }
     if (booking['eventEndAt'] != null) {
       final dt = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
-      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
+      if (dt != null && dt.isAfter(eventStart)) return dt;
     }
 
     return defaultExp;

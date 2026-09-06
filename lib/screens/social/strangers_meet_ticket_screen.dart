@@ -87,9 +87,10 @@ class _StrangersMeetTicketScreenState extends State<StrangersMeetTicketScreen> {
 
   void _initCountdown() {
     final eventDate = _parseEventDateTime(_freshEventDateTime ?? widget.request.eventDateTime, _freshStartTime);
+    final expirationDate = eventDate.add(const Duration(hours: 2));
     void update() {
       if (!mounted) return;
-      final remaining = eventDate.difference(DateTime.now());
+      final remaining = expirationDate.difference(DateTime.now());
       setState(() {
         _timeRemaining = remaining.isNegative ? Duration.zero : remaining;
       });

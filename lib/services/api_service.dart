@@ -4519,11 +4519,16 @@ class ApiService {
   static Future<Map<String, dynamic>?> cancelUpcomingNight({
     required String targetId,
     String reason = 'Change of plans',
+    String? action,
   }) async {
     try {
+      final Map<String, dynamic> requestBody = {'reason': reason};
+      if (action != null) {
+        requestBody['action'] = action;
+      }
       final response = await post(
         '/api/mobile/nights/cancel/$targetId',
-        body: {'reason': reason},
+        body: requestBody,
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

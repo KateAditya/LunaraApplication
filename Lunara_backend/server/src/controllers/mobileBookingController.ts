@@ -27,6 +27,7 @@ import { BookingPolicyType } from '../models/BookingPolicyConfig';
 import { WalletService } from '../services/walletService';
 import { WalletTransactionType } from '../models/WalletTransaction';
 import { parseBookingDateTime } from '../services/EventTimeLockService';
+import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -1219,6 +1220,9 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 profilePhotoUrl: (sm as any).user.profileImageUrl || null,
             } : null;
 
+            const expDt = new Date(eventDt.getTime() + 2 * 60 * 60 * 1000);
+            const formattedStartTime = formatTime12Hour(eventDt);
+
             synthesized.push({
                 id: `strangers_meet_host_${sm.id}`,
                 bookingId: sm.id,
@@ -1230,7 +1234,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 bookedAt: bookedDate,
                 bookingDate: eventDt.toISOString(),
                 eventDateTime: eventDt.toISOString(),
-                startTime: eventDt.toTimeString().substring(0, 5),
+                startTime: formattedStartTime,
+                expiresAt: expDt.toISOString(),
+                eventEndAt: expDt.toISOString(),
+                ticketExpiresAt: expDt.toISOString(),
                 totalAmount: Number(sm.paymentAmount || 0),
                 tablePackage: 'STRANGERS MEET (HOST)',
                 numberOfGuests: sm.numberOfPersons || 2,
@@ -1248,6 +1255,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
             if (!sm) continue;
             const venue = sm.venue;
             const eventDt = sm.eventDateTime ? new Date(sm.eventDateTime) : new Date(sm.createdAt || Date.now());
+            const expDt = new Date(eventDt.getTime() + 2 * 60 * 60 * 1000);
+            const formattedStartTime = formatTime12Hour(eventDt);
             const bookedDate = (joiner as any).createdAt ? new Date((joiner as any).createdAt).toISOString() : (sm.createdAt ? new Date(sm.createdAt).toISOString() : eventDt.toISOString());
             const jUser = (joiner as any).user ? {
                 id: (joiner as any).user.id,
@@ -1271,7 +1280,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 bookedAt: bookedDate,
                 bookingDate: eventDt.toISOString(),
                 eventDateTime: eventDt.toISOString(),
-                startTime: eventDt.toTimeString().substring(0, 5),
+                startTime: formattedStartTime,
+                expiresAt: expDt.toISOString(),
+                eventEndAt: expDt.toISOString(),
+                ticketExpiresAt: expDt.toISOString(),
                 totalAmount: Number(joiner.paymentAmount || sm.chargesPerHead || 0),
                 tablePackage: 'STRANGERS MEET (JOINER)',
                 numberOfGuests: 1,

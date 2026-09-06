@@ -5,6 +5,7 @@ import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
 import 'party_event_booking_sheet.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
+import '../social/plan_hub_screen.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -540,7 +541,60 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                     ),
                   ],
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
+
+                  // Post to Find Partner Button
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: 50,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF7C3AED),
+                            Color(0xFFEC4899),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.campaign_rounded, color: Colors.white, size: 19),
+                            SizedBox(width: 8),
+                            Text(
+                              'POST TO FIND PARTNER',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12.5,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                            SizedBox(width: 5),
+                            Text('✨', style: TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // Action Row: Interested + Invite Partner + Book Now
                   Row(

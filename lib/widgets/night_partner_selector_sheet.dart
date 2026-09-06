@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
+import '../models/user.dart';
+import '../screens/profile/profile_screen.dart';
+import '../screens/social/plan_hub_screen.dart';
 import '../widgets/lunara_profile_image.dart';
 
 class NightPartnerSelectorSheet extends StatefulWidget {
@@ -136,12 +139,41 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     }
   }
 
+  void _openUserProfile(Map<String, dynamic> partner) {
+    final uid = partner['userId']?.toString() ?? '';
+    if (uid.isEmpty) return;
+
+    final userObj = User.fromJson({
+      'id': uid,
+      'firstName': partner['firstName'] ?? 'User',
+      'photos': partner['primaryPhoto'] != null
+          ? [{'url': partner['primaryPhoto']}]
+          : [],
+      'profile': {
+        'city': partner['city'],
+        'gender': partner['gender'],
+        'bio': partner['bio'],
+        'occupation': partner['occupation'],
+        'interests': partner['interests'] ?? [],
+      },
+      'bio': partner['bio'] ?? '',
+    });
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ProfileScreen(user: userObj)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final interestedList = _invitees.where((i) => i['isInterested'] == true).toList();
+    final otherList = _invitees.where((i) => i['isInterested'] != true).toList();
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.82,
+      height: MediaQuery.of(context).size.height * 0.88,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF161622) : Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -165,7 +197,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
           // Header
           Padding(
@@ -206,7 +238,95 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+
+          // Post to Find Partner Banner
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                      LunaraTheme.hotPink.withValues(alpha: 0.08),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.campaign_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Text(
+                                'Share as Post to Find Partner',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  color: LunaraTheme.electricViolet,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Text('✨', style: TextStyle(fontSize: 11)),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Post to Live Feed so anyone interested can request to join you!',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white60 : Colors.black54,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 13,
+                      color: LunaraTheme.electricViolet,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
 
           // Search Box
           Padding(
@@ -226,7 +346,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                 decoration: InputDecoration(
                   hintText: 'Search people to invite...',
                   hintStyle: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13.5,
                     color: isDark ? Colors.white38 : Colors.grey[500],
                   ),
                   icon: const Icon(Icons.search, color: LunaraTheme.electricViolet, size: 20),
@@ -244,7 +364,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // List of available partners
           Expanded(
@@ -275,142 +395,248 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                           ],
                         ),
                       )
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                        itemCount: _invitees.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 16),
-                        itemBuilder: (context, index) {
-                          final partner = _invitees[index];
-                          final partnerId = partner['userId']?.toString() ?? '';
-                          final isSent = _sentInviteUserIds.contains(partnerId);
-                          final isInviting = _loadingUserIds.contains(partnerId);
-                          final name = partner['firstName'] ?? 'User';
-                          final age = partner['age'];
-                          final city = partner['city'] ?? '';
-                          final photo = partner['primaryPhoto'];
-                          final score = partner['compatibilityScore'] ?? 88;
-                          final isVerified = partner['isVerified'] == true;
-
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Stack(
-                                  children: [
-                                    LunaraProfileImage(
-                                      userData: {'profilePhotoUrl': photo},
-                                      radius: 26,
-                                    ),
-                                    if (isVerified)
-                                      Positioned(
-                                        right: 0,
-                                        bottom: 0,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.white,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.verified,
-                                            color: LunaraTheme.cyberCyan,
-                                            size: 14,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        age != null ? '$name, $age' : name,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                          color: isDark ? Colors.white : Colors.black,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Row(
-                                        children: [
-                                          if (city.isNotEmpty) ...[
-                                            Text(
-                                              city,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: isDark ? Colors.white54 : Colors.grey[600],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
-                                            const SizedBox(width: 6),
-                                          ],
-                                          Text(
-                                            '$score% Vibe',
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF15803D),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                SizedBox(
-                                  height: 38,
-                                  child: ElevatedButton(
-                                    onPressed: (isSent || isInviting)
-                                        ? null
-                                        : () => _sendInvite(partner),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: isSent
-                                          ? Colors.green.withValues(alpha: 0.15)
-                                          : LunaraTheme.electricViolet,
-                                      foregroundColor: isSent ? Colors.green : Colors.white,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        side: isSent
-                                            ? const BorderSide(color: Colors.green, width: 1.2)
-                                            : BorderSide.none,
-                                      ),
-                                    ),
-                                    child: isInviting
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : Text(
-                                            isSent ? 'INVITED ✓' : 'INVITE',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 12,
-                                              letterSpacing: 0.8,
-                                              color: isSent ? Colors.green : Colors.white,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                              ],
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                        children: [
+                          if (interestedList.isNotEmpty) ...[
+                            _buildSectionHeader(
+                              'INTERESTED IN THIS NIGHT (${interestedList.length})',
+                              isHighlight: true,
                             ),
-                          );
-                        },
+                            const SizedBox(height: 6),
+                            ...interestedList.map((partner) => _buildPartnerRow(partner, isDark)),
+                            const SizedBox(height: 16),
+                          ],
+                          if (otherList.isNotEmpty) ...[
+                            _buildSectionHeader(
+                              interestedList.isNotEmpty
+                                  ? 'OTHER AVAILABLE PEOPLE (${otherList.length})'
+                                  : 'AVAILABLE TO INVITE (${otherList.length})',
+                              isHighlight: false,
+                            ),
+                            const SizedBox(height: 6),
+                            ...otherList.map((partner) => _buildPartnerRow(partner, isDark)),
+                            const SizedBox(height: 16),
+                          ],
+                        ],
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, {required bool isHighlight}) {
+    return Row(
+      children: [
+        if (isHighlight) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'HOT',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          title,
+          style: TextStyle(
+            color: isHighlight ? const Color(0xFFFF5722) : const Color(0xFF64748B),
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPartnerRow(Map<String, dynamic> partner, bool isDark) {
+    final partnerId = partner['userId']?.toString() ?? '';
+    final isSent = _sentInviteUserIds.contains(partnerId);
+    final isInviting = _loadingUserIds.contains(partnerId);
+    final name = partner['firstName'] ?? 'User';
+    final age = partner['age'];
+    final city = partner['city'] ?? '';
+    final photo = partner['primaryPhoto'];
+    final score = partner['compatibilityScore'] ?? 88;
+    final isVerified = partner['isVerified'] == true;
+    final isInterested = partner['isInterested'] == true;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isInterested
+              ? (isDark ? const Color(0xFF1E1E30) : const Color(0xFFFFF7ED))
+              : (isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFFAFAFC)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isInterested
+                ? const Color(0xFFFFB74D).withValues(alpha: 0.4)
+                : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+            width: isInterested ? 1.2 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => _openUserProfile(partner),
+              child: Stack(
+                children: [
+                  LunaraProfileImage(
+                    userData: {'profilePhotoUrl': photo},
+                    radius: 24,
+                  ),
+                  if (isVerified)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.verified,
+                          color: LunaraTheme.cyberCyan,
+                          size: 13,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _openUserProfile(partner),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            age != null ? '$name, $age' : name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14.5,
+                              color: isDark ? Colors.white : Colors.black,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isInterested) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'INTERESTED 🔥',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        if (city.isNotEmpty) ...[
+                          Text(
+                            city,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: isDark ? Colors.white54 : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          '$score% Vibe',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              height: 36,
+              child: ElevatedButton(
+                onPressed: (isSent || isInviting)
+                    ? null
+                    : () => _sendInvite(partner),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isSent
+                      ? Colors.green.withValues(alpha: 0.15)
+                      : LunaraTheme.electricViolet,
+                  foregroundColor: isSent ? Colors.green : Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: isSent
+                        ? const BorderSide(color: Colors.green, width: 1.2)
+                        : BorderSide.none,
+                  ),
+                ),
+                child: isInviting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        isSent ? 'INVITED ✓' : 'INVITE',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                          letterSpacing: 0.8,
+                          color: isSent ? Colors.green : Colors.white,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

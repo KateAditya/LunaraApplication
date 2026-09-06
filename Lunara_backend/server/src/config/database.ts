@@ -655,6 +655,23 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS bank_holder_name VARCHAR(100)`,
             `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS refund_amount DECIMAL(10,2) DEFAULT 0`,
             `ALTER TABLE "group_parties" ADD COLUMN IF NOT EXISTS refund_status VARCHAR(50) DEFAULT 'NONE'`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20) DEFAULT 'SELF_PAY'`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS host_paid BOOLEAN DEFAULT FALSE`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS partner_paid BOOLEAN DEFAULT FALSE`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS host_amount DECIMAL(10,2)`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS partner_amount DECIMAL(10,2)`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancellation_status VARCHAR(30) DEFAULT 'NONE'`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancellation_reason TEXT`,
+            `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancelled_by UUID`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE`,
+            `CREATE INDEX IF NOT EXISTS idx_npm_host_partner ON night_partner_matches(host_id, partner_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_npm_venue_date ON night_partner_matches(venue_id, event_date)`,
+            `CREATE INDEX IF NOT EXISTS idx_npm_status ON night_partner_matches(status)`,
+            `CREATE INDEX IF NOT EXISTS idx_npr_host_partner ON night_partner_requests(host_id, partner_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_npr_status ON night_partner_requests(status)`,
+            `CREATE INDEX IF NOT EXISTS idx_ni_user_venue_date ON night_interests(user_id, venue_id, event_date)`,
         ];
         for (const colSql of explicitCols) {
             await sequelize.query(colSql).catch(() => {});

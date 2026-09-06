@@ -7,6 +7,9 @@ import { NightPartnerRequestStatus } from '../models/NightPartnerRequest';
 import { NightInterestStatus } from '../models/NightInterest';
 import NightPartnerMatch from '../models/NightPartnerMatch';
 import NightPartnerRequest from '../models/NightPartnerRequest';
+import Booking from '../models/Booking';
+import User from '../models/User';
+import { NotificationService } from '../services/NotificationService';
 import { NightPartnerService } from '../services/NightPartnerService';
 
 describe('Upcoming Nights Architecture & Payment Logic', () => {
@@ -171,6 +174,201 @@ describe('Upcoming Nights Architecture & Payment Logic', () => {
             expect(card).not.toBeNull();
             expect(card.title).toContain('Upcoming Night Cancelled');
             expect(card.data.statusText).toBe('Cancelled');
+        });
+
+        it('should enrich cancellation requested card for recipient with Accept & Reject buttons', async () => {
+            const mockRequestedMatch = {
+                id: 'match_req_canc',
+                hostId: 'host_user_1',
+                partnerId: 'partner_user_2',
+                eventDate: new Date('2026-09-10'),
+                status: NightPartnerMatchStatus.CONFIRMED,
+                cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                cancellationReason: 'Family emergency',
+                cancelledBy: 'host_user_1',
+                venue: { name: 'Illuzion Club' },
+                updatedAt: new Date(),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockRequestedMatch as any);
+
+            // Recipient (partner_user_2) view
+            const partnerCard = await NightPartnerService.enrichUpcomingNightNotificationCard('match_req_canc', 'partner_user_2');
+            expect(partnerCard).not.toBeNull();
+            expect(partnerCard.title).toContain('Partner Requested Cancellation');
+            expect(partnerCard.data.statusText).toBe('Cancellation Request Received');
+            const actionTypes = partnerCard.data.actionButtons.map((b: any) => b.action);
+            expect(actionTypes).toContain('ACCEPT_CANCELLATION');
+            expect(actionTypes).toContain('REJECT_CANCELLATION');
+
+            // Requester (host_user_1) view
+            const hostCard = await NightPartnerService.enrichUpcomingNightNotificationCard('match_req_canc', 'host_user_1');
+            expect(hostCard).not.toBeNull();
+            expect(hostCard.title).toContain('Cancellation Requested');
+            expect(hostCard.data.statusText).toBe('Pending Partner Confirmation');
+        });
+    });
+
+    describe('Mutual Cancellation Execution Flow & Wallet Refunds', () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+            jest.spyOn(Booking, 'findByPk').mockResolvedValue({
+                id: 'bk_1',
+                update: jest.fn().mockResolvedValue(true),
+            } as any);
+            jest.spyOn(User, 'findByPk').mockResolvedValue({
+                id: 'host_1',
+                firstName: 'Alex',
+            } as any);
+            jest.spyOn(NotificationService, 'dispatch').mockResolvedValue({} as any);
+        });
+
+        it('should allow direct cancellation for unconfirmed/unpaid match', async () => {
+            const mockUnconfirmedMatch = {
+                id: 'match_unconfirmed',
+                hostId: 'host_1',
+                partnerId: 'partner_1',
+                status: NightPartnerMatchStatus.MATCHED,
+                cancellationStatus: NightPartnerCancellationStatus.NONE,
+                bookingId: null,
+                hostPaid: false,
+                partnerPaid: false,
+                venueId: 'v1',
+                update: jest.fn().mockResolvedValue(true),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockUnconfirmedMatch as any);
+            jest.spyOn(NightPartnerRequest, 'findByPk').mockResolvedValue(null as any);
+
+            const result = await NightPartnerService.cancelUpcomingNight('match_unconfirmed', 'host_1', 'Plans changed');
+            expect(result.success).toBe(true);
+            expect(result.status).toBe('CANCELLED');
+            expect(mockUnconfirmedMatch.update).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: NightPartnerMatchStatus.CANCELLED,
+                    cancellationStatus: NightPartnerCancellationStatus.APPROVED,
+                }),
+                expect.anything()
+            );
+        });
+
+        it('should transition confirmed match to REQUESTED when host initiates cancellation', async () => {
+            const mockConfirmedMatch = {
+                id: 'match_confirmed',
+                hostId: 'host_1',
+                partnerId: 'partner_1',
+                status: NightPartnerMatchStatus.CONFIRMED,
+                cancellationStatus: NightPartnerCancellationStatus.NONE,
+                bookingId: 'bk_1',
+                hostPaid: true,
+                hostAmount: 1999,
+                partnerPaid: false,
+                venueId: 'v1',
+                update: jest.fn().mockResolvedValue(true),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockConfirmedMatch as any);
+
+            const result = await NightPartnerService.cancelUpcomingNight('match_confirmed', 'host_1', 'Sick today', 'request');
+            expect(result.success).toBe(true);
+            expect(result.status).toBe('REQUESTED');
+            expect(mockConfirmedMatch.update).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                    cancellationReason: 'Sick today',
+                    cancelledBy: 'host_1',
+                })
+            );
+        });
+
+        it('should transition confirmed match to CANCELLED and approve refund when partner confirms cancellation', async () => {
+            const mockRequestedMatch = {
+                id: 'match_confirmed_req',
+                hostId: 'host_1',
+                partnerId: 'partner_1',
+                status: NightPartnerMatchStatus.CONFIRMED,
+                cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                cancellationReason: 'Emergency',
+                cancelledBy: 'host_1',
+                bookingId: 'bk_1',
+                hostPaid: true,
+                hostAmount: 1999,
+                partnerPaid: false,
+                venueId: 'v1',
+                update: jest.fn().mockResolvedValue(true),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockRequestedMatch as any);
+
+            const result = await NightPartnerService.cancelUpcomingNight('match_confirmed_req', 'partner_1', 'I agree to cancel', 'approve');
+            expect(result.success).toBe(true);
+            expect(result.status).toBe('CANCELLED');
+            expect(mockRequestedMatch.update).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: NightPartnerMatchStatus.CANCELLED,
+                    cancellationStatus: NightPartnerCancellationStatus.APPROVED,
+                }),
+                expect.anything()
+            );
+        });
+
+        it('should set cancellationStatus to REJECTED when partner rejects host cancellation request', async () => {
+            const mockRequestedMatch = {
+                id: 'match_confirmed_req',
+                hostId: 'host_1',
+                partnerId: 'partner_1',
+                status: NightPartnerMatchStatus.CONFIRMED,
+                cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                cancellationReason: 'Emergency',
+                cancelledBy: 'host_1',
+                bookingId: 'bk_1',
+                hostPaid: true,
+                hostAmount: 1999,
+                partnerPaid: false,
+                venueId: 'v1',
+                update: jest.fn().mockResolvedValue(true),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockRequestedMatch as any);
+
+            const result = await NightPartnerService.cancelUpcomingNight('match_confirmed_req', 'partner_1', 'I want to go', 'reject');
+            expect(result.success).toBe(true);
+            expect(result.status).toBe('REJECTED');
+            expect(mockRequestedMatch.update).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cancellationStatus: NightPartnerCancellationStatus.REJECTED,
+                })
+            );
+        });
+
+        it('should transition confirmed match to REQUESTED when partner initiates cancellation request to host', async () => {
+            const mockConfirmedMatch = {
+                id: 'match_split_confirmed',
+                hostId: 'host_1',
+                partnerId: 'partner_1',
+                status: NightPartnerMatchStatus.CONFIRMED,
+                cancellationStatus: NightPartnerCancellationStatus.NONE,
+                bookingId: 'bk_1',
+                hostPaid: true,
+                hostAmount: 999.5,
+                partnerPaid: true,
+                partnerAmount: 999.5,
+                venueId: 'v1',
+                update: jest.fn().mockResolvedValue(true),
+            };
+
+            jest.spyOn(NightPartnerMatch, 'findByPk').mockResolvedValue(mockConfirmedMatch as any);
+
+            const result = await NightPartnerService.cancelUpcomingNight('match_split_confirmed', 'partner_1', 'Car broke down', 'request');
+            expect(result.success).toBe(true);
+            expect(result.status).toBe('REQUESTED');
+            expect(mockConfirmedMatch.update).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cancellationStatus: NightPartnerCancellationStatus.REQUESTED,
+                    cancellationReason: 'Car broke down',
+                    cancelledBy: 'partner_1',
+                })
+            );
         });
     });
 });

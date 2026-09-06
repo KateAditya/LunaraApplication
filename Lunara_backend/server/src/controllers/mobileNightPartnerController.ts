@@ -239,14 +239,14 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
 export const cancelUpcomingNight = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { reason } = req.body;
+        const { reason, action } = req.body;
         const userId = req.user!.id;
         if (!id) {
             res.status(400).json({ success: false, message: 'id is required' });
             return;
         }
 
-        const result = await NightPartnerService.cancelUpcomingNight(id, userId, reason);
+        const result = await NightPartnerService.cancelUpcomingNight(id, userId, reason, action);
         res.json(result);
     } catch (err: any) {
         logger.error('cancelUpcomingNight error:', err);

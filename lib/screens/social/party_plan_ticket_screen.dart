@@ -70,9 +70,11 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     final planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
     if (planDateTime == null) return;
 
+    final expirationTime = planDateTime.add(const Duration(hours: 2));
+
     void update() {
       if (!mounted) return;
-      final remaining = planDateTime.difference(DateTime.now());
+      final remaining = expirationTime.difference(DateTime.now());
       setState(() {
         _timeRemaining = remaining.isNegative ? Duration.zero : remaining;
       });

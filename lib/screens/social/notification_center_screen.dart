@@ -276,15 +276,32 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       final entityType = (item['entityType'] ?? payloadData['type'] ?? '')
           .toString();
 
+      final matchId = payloadData['matchId']?.toString() ??
+          payloadData['nightId']?.toString() ??
+          requestId;
+
       if ((entityType == 'night_partner' ||
               entityType == 'NightPartnerRequest' ||
               entityType.contains('PARTNER_REQUEST')) &&
           requestId != null &&
-          requestId.isNotEmpty) {
+          requestId.isNotEmpty &&
+          (action.toUpperCase() == 'ACCEPT' || action.toUpperCase() == 'DECLINE')) {
         final act = action.toUpperCase() == 'ACCEPT' ? 'accept' : 'decline';
         await ApiService.respondToNightPartnerRequest(
           requestId: requestId,
           action: act,
+        );
+      }
+
+      if ((action == 'ACCEPT_CANCELLATION' ||
+              action == 'REJECT_CANCELLATION' ||
+              action == 'DECLINE_CANCELLATION') &&
+          matchId != null &&
+          matchId.isNotEmpty) {
+        final cancAction = action == 'ACCEPT_CANCELLATION' ? 'approve' : 'reject';
+        await ApiService.cancelUpcomingNight(
+          targetId: matchId,
+          action: cancAction,
         );
       }
 
@@ -294,16 +311,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       );
 
       if (response.statusCode == 200 && mounted) {
+        final isCancAccept = action == 'ACCEPT_CANCELLATION';
+        final isCancReject = action == 'REJECT_CANCELLATION' || action == 'DECLINE_CANCELLATION';
+        final isAccept = action.toUpperCase() == 'ACCEPT';
+
+        String snackMsg = 'Action completed';
+        Color snackColor = Colors.green;
+        if (isCancAccept) {
+          snackMsg = '💳 Cancellation approved! Refund added to your wallet.';
+          snackColor = Colors.green;
+        } else if (isCancReject) {
+          snackMsg = 'Cancellation declined. Upcoming Night remains confirmed!';
+          snackColor = LunaraTheme.electricViolet;
+        } else if (isAccept) {
+          snackMsg = '🎉 Invite Accepted!';
+          snackColor = Colors.green;
+        } else {
+          snackMsg = 'Invite Declined';
+          snackColor = Colors.grey[800]!;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              action.toUpperCase() == 'ACCEPT'
-                  ? '🎉 Invite Accepted!'
-                  : 'Invite Declined',
-            ),
-            backgroundColor: action.toUpperCase() == 'ACCEPT'
-                ? Colors.green
-                : Colors.grey[800],
+            content: Text(snackMsg),
+            backgroundColor: snackColor,
           ),
         );
         _fetchNotifications();
@@ -1476,7 +1507,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         titleLower.contains("it's a match")) {
       return _buildMatchCard(item);
     } else if (eventType.contains('PARTY_PLAN_REQUEST_SENT') ||
-        titleLower.contains('request sent')) {
+        (titleLower.contains('request sent') && !titleLower.contains('partner'))) {
       return _buildGenericCard(item);
     } else if (eventType.contains('PARTY_PLAN') ||
         eventType.contains('PLAN_LIVE') ||
@@ -1486,7 +1517,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         titleLower.contains("let's party at")) {
       return _buildPartyPlanPostedCard(item);
     }
-    // ── Generic event types ─────────────────────────────────────
+    // ── Generic & Upcoming Night Event Types ─────────────────────
+    if (eventType.contains('CANCELLATION_REQUEST') ||
+        eventType == 'UPCOMING_NIGHT_CANCELLATION_REQUESTED' ||
+        (data['actions'] is List && (data['actions'] as List).contains('ACCEPT_CANCELLATION')) ||
+        titleLower.contains('cancellation request') ||
+        bodyLower.contains('requested to cancel upcoming night') ||
+        bodyLower.contains('requested to cancel the upcoming night')) {
+      return _buildUpcomingNightCancellationRequestCard(item);
+    }
+
     if (eventType.contains('SUPER_LIKE') ||
         eventType.contains('SUPERLIKE') ||
         titleLower.contains('super like') ||
@@ -1495,8 +1535,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         bodyLower.contains('super like')) {
       return _buildSuperLikeCard(item);
     } else if (eventType.contains('PARTNER_REQUEST') ||
+        type.contains('partner_request') ||
+        type.contains('upcoming_night') ||
+        titleLower.contains('partner request') ||
         titleLower.contains('wants to join') ||
-        titleLower.contains('partner request')) {
+        bodyLower.contains('wants to join you for an upcoming night') ||
+        bodyLower.contains('invited you to join for upcoming night') ||
+        bodyLower.contains('partner invite')) {
       return _buildPartnerRequestCard(item);
     } else if (eventType.contains('INTEREST') ||
         titleLower.contains('interested')) {
@@ -3083,12 +3128,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 1. Partner Request Card Component ──────────────────────────────────────
   Widget _buildPartnerRequestCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
-    final actor = item['actor'] ?? item['sender'] ?? item['actorUserId'];
-    final actorName = actor is Map
-        ? (actor['firstName'] ?? actor['name'] ?? 'User')
-        : 'User';
-    final body = item['body']?.toString() ?? 'Wants to join your event.';
+    final data = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map
+              ? Map<String, dynamic>.from(item['metadata'])
+              : <String, dynamic>{});
+
+    final actor = item['actor'] ??
+        item['sender'] ??
+        data['actor'] ??
+        (data['otherUserId'] != null
+            ? {
+                'id': data['otherUserId'],
+                'firstName': data['otherUserName'] ?? 'Partner',
+                'profilePhotoUrl': data['otherUserPhoto'],
+              }
+            : null);
+
+    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+    final actorName = (actorMap['firstName'] ?? data['hostName'] ?? data['otherUserName'] ?? 'A member').toString();
+    final venueName = (data['venueName'] ?? 'Upcoming Night').toString();
+    final eventDate = (data['eventDate'] ?? '').toString();
+    final body = item['body']?.toString() ?? '$actorName invited you to join for Upcoming Night at $venueName!';
     final timeStr = _formatTimeAgo(item['createdAt']);
+
+    final actionStatus = (item['metadata']?['status'] ?? data['status'] ?? '').toString().toUpperCase();
+    final actionExecuted = (item['metadata']?['actionExecuted'] ?? data['actionExecuted'] ?? '').toString().toUpperCase();
+    final bool isActioned = actionStatus == 'ACTIONED' || actionStatus == 'ACCEPTED' || actionStatus == 'DECLINED' || actionExecuted.isNotEmpty;
+    final bool isAccepted = actionExecuted == 'ACCEPT' || actionStatus == 'ACCEPTED' || data['statusText'] == 'Accepted' || data['statusText'] == 'Confirmed & Chat Unlocked';
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -3096,107 +3163,533 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => _openUserProfile(actor),
-            child: Row(
-              children: [
-                LunaraProfileImage(
-                  userData: actor is Map
-                      ? Map<String, dynamic>.from(actor)
-                      : {},
-                  radius: 20,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '$actorName wants to join your event',
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13.5,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => _openUserProfile(actorMap),
+                child: Stack(
+                  children: [
+                    LunaraProfileImage(
+                      userData: actorMap,
+                      radius: 22,
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.celebration_rounded,
+                          color: LunaraTheme.electricViolet,
+                          size: 12,
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        timeStr,
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                if (isUnread) _buildUnreadDot(),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'PARTNER INVITE',
+                            style: TextStyle(
+                              color: LunaraTheme.electricViolet,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (isUnread) ...[
+                          const SizedBox(width: 6),
+                          _buildUnreadDot(),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'New Partner Request! 🎉',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Text(
             body,
             style: const TextStyle(
-              color: Color(0xFF475569),
-              fontSize: 12,
-              height: 1.3,
+              color: Color(0xFF334155),
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
             ),
           ),
+          if (venueName.isNotEmpty || eventDate.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on_rounded, size: 13, color: LunaraTheme.electricViolet),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      venueName,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (eventDate.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF64748B)),
+                    const SizedBox(width: 4),
+                    Text(
+                      eventDate,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _openUserProfile(actor),
+          if (isActioned)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isAccepted ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                    size: 15,
+                    color: isAccepted ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isAccepted ? 'INVITE ACCEPTED ✓' : 'INVITE DECLINED',
+                    style: TextStyle(
+                      color: isAccepted ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Row(
+              children: [
+                if (actorMap.isNotEmpty) ...[
+                  OutlinedButton(
+                    onPressed: () => _openUserProfile(actorMap),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 38),
+                    ),
+                    child: const Text(
+                      'Profile',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _openUpcomingNightInvite(item),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(0, 38),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_rounded, size: 15, color: Colors.white),
+                        SizedBox(width: 5),
+                        Text(
+                          'ACCEPT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _handleNotificationAction(item, 'DECLINE'),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    backgroundColor: const Color(0xFFF8FAFC),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 38),
                   ),
-                  child: const Text(
-                    'View Profile',
-                    style: TextStyle(
-                      color: Color(0xFF475569),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                      SizedBox(width: 4),
+                      Text(
+                        'DECLINE',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── 1B. Upcoming Night Cancellation Request Card ──────────────────────────
+  Widget _buildUpcomingNightCancellationRequestCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['data'] is Map
+        ? Map<String, dynamic>.from(item['data'])
+        : (item['metadata'] is Map
+              ? Map<String, dynamic>.from(item['metadata'])
+              : <String, dynamic>{});
+
+    final actor = item['actor'] ??
+        item['sender'] ??
+        data['actor'] ??
+        (data['otherUserId'] != null
+            ? {
+                'id': data['otherUserId'],
+                'firstName': data['otherUserName'] ?? 'Partner',
+                'profilePhotoUrl': data['otherUserPhoto'],
+              }
+            : null);
+
+    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+    final actorName = (actorMap['firstName'] ?? data['requesterName'] ?? data['otherUserName'] ?? 'Partner').toString();
+    final venueName = (data['venueName'] ?? 'Upcoming Night').toString();
+    final eventDate = (data['eventDate'] ?? '').toString();
+    final reason = (data['reason'] ?? 'Change of plans').toString();
+    final body = item['body']?.toString() ?? '$actorName requested to cancel Upcoming Night at $venueName. Reason: "$reason".';
+    final timeStr = _formatTimeAgo(item['createdAt']);
+
+    final actionStatus = (item['metadata']?['status'] ?? data['status'] ?? '').toString().toUpperCase();
+    final actionExecuted = (item['metadata']?['actionExecuted'] ?? data['actionExecuted'] ?? '').toString().toUpperCase();
+    final bool isActioned = actionStatus == 'ACTIONED' || actionExecuted.isNotEmpty;
+    final bool isApproved = actionExecuted == 'ACCEPT_CANCELLATION' || actionStatus == 'APPROVED';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => _openUserProfile(actorMap),
+                child: Stack(
+                  children: [
+                    LunaraProfileImage(
+                      userData: actorMap,
+                      radius: 22,
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFE11D48),
+                          size: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton(
-                  onPressed: () => _openUpcomingNightInvite(item),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: LunaraTheme.electricViolet,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFFE4E6)),
+                          ),
+                          child: const Text(
+                            'CANCELLATION REQUEST',
+                            style: TextStyle(
+                              color: Color(0xFFE11D48),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (isUnread) ...[
+                          const SizedBox(width: 6),
+                          _buildUnreadDot(),
+                        ],
+                      ],
                     ),
-                  ),
-                  child: const Text(
-                    'Accept Invite',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cancel Upcoming Night? ⚠️',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(
-                  Icons.close,
-                  color: Color(0xFF94A3B8),
-                  size: 18,
-                ),
-                onPressed: () => _handleNotificationAction(item, 'DECLINE'),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (venueName.isNotEmpty || eventDate.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on_rounded, size: 13, color: LunaraTheme.electricViolet),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      venueName,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (eventDate.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF64748B)),
+                    const SizedBox(width: 4),
+                    Text(
+                      eventDate,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (isActioned)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isApproved ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isApproved ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                    size: 15,
+                    color: isApproved ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isApproved ? 'CANCELLATION CONFIRMED & REFUNDED ✓' : 'KEPT ACTIVE',
+                    style: TextStyle(
+                      color: isApproved ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _handleNotificationAction(item, 'ACCEPT_CANCELLATION'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE11D48),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(0, 38),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_rounded, size: 15, color: Colors.white),
+                        SizedBox(width: 5),
+                        Text(
+                          'CONFIRM & REFUND',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _handleNotificationAction(item, 'REJECT_CANCELLATION'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    backgroundColor: const Color(0xFFF8FAFC),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 38),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                      SizedBox(width: 4),
+                      Text(
+                        'KEEP ACTIVE',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

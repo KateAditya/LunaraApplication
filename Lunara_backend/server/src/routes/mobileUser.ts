@@ -256,10 +256,15 @@ async function getUserNotifications(
                 body,
                 category: sn.category || 'system',
                 type: sn.eventType || 'system_notice',
+                eventType: sn.eventType || 'system_notice',
                 createdAt: sn.createdAt ? sn.createdAt.toISOString() : new Date().toISOString(),
                 read: isRead,
                 isRead: isRead,
                 data: metadata,
+                metadata: metadata,
+                actor: metadata?.actor || null,
+                sender: metadata?.actor || null,
+                imageUrl: sn.imageUrl || metadata?.actor?.profilePhotoUrl || null,
                 deepLink,
                 actionType,
                 entityType: sn.entityType,
@@ -351,11 +356,12 @@ async function getUserNotifications(
         }
     }
 
-    // Filter out raw party plan notifications (they are now unified in timelineCards)
+    // Filter out raw party plan and upcoming night notifications (they are now unified in timelineCards)
     const otherNotifs = notifications.filter(n => {
         const metadata = n.data || {};
         const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
-        return !pId;
+        const isNightPartner = n.entityType === 'night_partner' || n.category === 'night_partner' || (n.eventType && n.eventType.startsWith('PARTNER_REQUEST'));
+        return !pId && !isNightPartner;
     });
 
     // Merge other notifications and unified timeline cards
