@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
 import 'party_event_booking_sheet.dart';
+import '../../widgets/night_partner_selector_sheet.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -541,23 +542,21 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Action Row: Interested + Book Now
+                  // Action Row: Interested + Invite Partner + Book Now
                   Row(
                     children: [
                       // Interested Button
                       Expanded(
-                        flex: 5,
+                        flex: 4,
                         child: InkWell(
                           onTap: _toggleInterest,
                           borderRadius: BorderRadius.circular(16),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            height: 56,
+                            height: 54,
                             decoration: BoxDecoration(
                               color: _isInterested
-                                  ? LunaraTheme.electricViolet.withValues(
-                                      alpha: 0.12,
-                                    )
+                                  ? LunaraTheme.electricViolet.withValues(alpha: 0.12)
                                   : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
@@ -567,17 +566,14 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               boxShadow: _isInterested
                                   ? [
                                       BoxShadow(
-                                        color: LunaraTheme.electricViolet
-                                            .withValues(alpha: 0.25),
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
                                         blurRadius: 10,
                                         offset: const Offset(0, 4),
                                       ),
                                     ]
                                   : [
                                       BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.03,
-                                        ),
+                                        color: Colors.black.withValues(alpha: 0.03),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -606,30 +602,86 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                                 ? Icons.favorite_rounded
                                                 : Icons.favorite_border_rounded,
                                             color: LunaraTheme.electricViolet,
-                                            size: 20,
+                                            size: 18,
                                           ),
                                           const SizedBox(width: 6),
-                                    Text(
-                                      _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
-                                      style: const TextStyle(
-                                        color: LunaraTheme.electricViolet,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 13,
-                                        letterSpacing: 0.8,
+                                          Text(
+                                            _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
+                                            style: const TextStyle(
+                                              color: LunaraTheme.electricViolet,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                              letterSpacing: 0.8,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Invite Partner Button
+                      Expanded(
+                        flex: 4,
+                        child: InkWell(
+                          onTap: () {
+                            NightPartnerSelectorSheet.show(
+                              context,
+                              venueId: widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '',
+                              venueName: venueName,
+                              date: _formatDateIso(widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? ''),
+                              time: widget.party['time']?.toString() ?? '20:00',
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: LunaraTheme.electricViolet,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 6.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.person_add_rounded, color: Colors.white, size: 18),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'INVITE',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 12,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
 
                       // Book Now Button
                       Expanded(
-                        flex: 6,
+                        flex: 4,
                         child: InkWell(
                           onTap: () {
                             showModalBottomSheet(
@@ -646,17 +698,15 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                           },
                           borderRadius: BorderRadius.circular(16),
                           child: Container(
-                            height: 56,
+                            height: 54,
                             decoration: BoxDecoration(
                               gradient: LunaraTheme.primaryGradient,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: LunaraTheme.electricViolet.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
@@ -670,8 +720,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w900,
-                                      fontSize: 14,
-                                      letterSpacing: 1.2,
+                                      fontSize: 12,
+                                      letterSpacing: 1.0,
                                     ),
                                   ),
                                 ),

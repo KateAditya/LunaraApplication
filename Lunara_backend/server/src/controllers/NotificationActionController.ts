@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import Notification from '../models/Notification';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
-import User from '../models/User';
 import { NotificationService } from '../services/NotificationService';
 import { NightPartnerService } from '../services/NightPartnerService';
 import { logger } from '../config/logger';
@@ -173,21 +172,31 @@ export class NotificationActionController {
      */
     public static async markAllAsRead(req: Request, res: Response): Promise<Response> {
         try {
-            const currentUserId = req.user?.id || req.body.userId || req.query.userId;
+            const currentUserId = req.user?.id || req.body?.userId || req.query?.userId;
             if (!currentUserId) {
                 return res.status(401).json({ success: false, message: 'Unauthorized' });
             }
 
             await NotificationService.markAllAsRead(currentUserId);
 
-            // Socket badge emission
+            // Socket badge emission & multi-session broadcast
             const { io } = require('../server');
             if (io) {
-                io.to(`user_${currentUserId}`).emit('badge_updated', { unreadCount: 0 });
+                io.to(`user_${currentUserId}`).emit('badge_updated', {
+                    unreadCount: 0,
+                    liveFeedCount: 0,
+                    totalCount: 0,
+                });
+                io.to(`user_${currentUserId}`).emit('notifications_read_all', {
+                    userId: currentUserId,
+                    unreadCount: 0,
+                    clearedAt: new Date().toISOString(),
+                });
             }
 
             return res.status(200).json({
                 success: true,
+                unreadCount: 0,
                 message: 'All notifications marked as read',
             });
         } catch (error: any) {
@@ -201,28 +210,31 @@ export class NotificationActionController {
      */
     public static async clearAll(req: Request, res: Response): Promise<Response> {
         try {
-            const currentUserId = req.user?.id || req.body.userId || req.query.userId;
+            const currentUserId = req.user?.id || req.body?.userId || req.query?.userId;
             if (!currentUserId) {
                 return res.status(401).json({ success: false, message: 'Unauthorized' });
             }
 
-            // Update user clearedNotificationsAt timestamp
-            await User.update(
-                { clearedNotificationsAt: new Date() },
-                { where: { id: currentUserId } }
-            );
-
-            // Also mark active notifications as read
             await NotificationService.markAllAsRead(currentUserId);
 
-            // Socket badge emission
+            // Socket badge emission & multi-session broadcast
             const { io } = require('../server');
             if (io) {
-                io.to(`user_${currentUserId}`).emit('badge_updated', { unreadCount: 0 });
+                io.to(`user_${currentUserId}`).emit('badge_updated', {
+                    unreadCount: 0,
+                    liveFeedCount: 0,
+                    totalCount: 0,
+                });
+                io.to(`user_${currentUserId}`).emit('notifications_read_all', {
+                    userId: currentUserId,
+                    unreadCount: 0,
+                    clearedAt: new Date().toISOString(),
+                });
             }
 
             return res.status(200).json({
                 success: true,
+                unreadCount: 0,
                 message: 'Notification center cleared',
             });
         } catch (error: any) {

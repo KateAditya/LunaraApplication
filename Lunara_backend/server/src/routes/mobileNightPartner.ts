@@ -153,7 +153,6 @@ router.post(
     [
         authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
-        body('hostId').notEmpty().withMessage('hostId is required'),
         validate,
     ],
     ctrl.initiateMatchPayment
@@ -168,12 +167,33 @@ router.post(
     [
         authenticate,
         param('id').isUUID().withMessage('id must be a UUID'),
-        body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
-        body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
-        body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required'),
         validate,
     ],
     ctrl.verifyMatchPayment
+);
+
+/**
+ * POST /api/mobile/nights/cancel/:id
+ * Cancel an upcoming night match or request
+ */
+router.post(
+    '/cancel/:id',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a UUID'),
+        validate,
+    ],
+    ctrl.cancelUpcomingNight
+);
+
+/**
+ * GET /api/mobile/nights/event-posts
+ * Get list of all event posts with interested count & stats
+ */
+router.get(
+    '/event-posts',
+    [authenticate],
+    ctrl.getEventPosts
 );
 
 export default router;

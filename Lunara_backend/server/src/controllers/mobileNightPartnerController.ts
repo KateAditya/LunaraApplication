@@ -177,19 +177,25 @@ export const cancelRequest = async (req: Request, res: Response): Promise<void> 
 export const initiateMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        const { paymentMode } = req.body;
         const hostId = req.user!.id;
         if (!id) {
             res.status(400).json({ success: false, message: 'matchId is required' });
             return;
         }
 
-        const { match, razorpayOrder } = await NightPartnerService.initiateMatchPayment(id, hostId);
+        const { match, razorpayOrder, amountToPay } = await NightPartnerService.initiateMatchPayment(
+            id,
+            hostId,
+            paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
+        );
         res.json({
             success: true,
             data: match,
             razorpayOrderId: razorpayOrder.id,
             razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
             amount: razorpayOrder.amount,
+            amountToPay,
             currency: razorpayOrder.currency,
         });
     } catch (err: any) {
@@ -201,29 +207,61 @@ export const initiateMatchPayment = async (req: Request, res: Response): Promise
 export const verifyMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, paymentMethod } = req.body;
 
-        if (!id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        if (paymentMethod !== 'wallet' && (!id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
             res.status(400).json({ success: false, message: 'matchId and all Razorpay verification params are required' });
             return;
         }
 
         const result = await NightPartnerService.verifyMatchPayment(
             id,
-            razorpay_order_id,
-            razorpay_payment_id,
-            razorpay_signature,
-            req.user!.id
+            razorpay_order_id || 'wallet_payment',
+            razorpay_payment_id || 'wallet_payment',
+            razorpay_signature || 'mock_signature',
+            req.user!.id,
+            paymentMethod === 'wallet' ? 'wallet' : 'razorpay'
         );
 
         res.json({
             success: true,
-            message: 'Payment verified and booking confirmed! Chat is unlocked.',
+            message: result.isFullyPaid
+                ? 'Payment verified and booking confirmed! Chat is unlocked.'
+                : 'Payment processed! Waiting for partner payment.',
             data: result,
         });
     } catch (err: any) {
         logger.error('verifyMatchPayment error:', err);
         res.status(err.statusCode || 400).json({ success: false, message: err.message || 'Failed to verify payment' });
+    }
+};
+
+export const cancelUpcomingNight = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const userId = req.user!.id;
+        if (!id) {
+            res.status(400).json({ success: false, message: 'id is required' });
+            return;
+        }
+
+        const result = await NightPartnerService.cancelUpcomingNight(id, userId, reason);
+        res.json(result);
+    } catch (err: any) {
+        logger.error('cancelUpcomingNight error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to cancel upcoming night' });
+    }
+};
+
+export const getEventPosts = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+        const eventPosts = await NightPartnerService.getEventPosts(userId);
+        res.json({ success: true, data: eventPosts });
+    } catch (err: any) {
+        logger.error('getEventPosts error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to fetch event posts' });
     }
 };
 
@@ -239,4 +277,6 @@ export default {
     cancelRequest,
     initiateMatchPayment,
     verifyMatchPayment,
+    cancelUpcomingNight,
+    getEventPosts,
 };

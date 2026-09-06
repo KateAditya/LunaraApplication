@@ -10,6 +10,19 @@ export enum NightPartnerMatchStatus {
     EXPIRED = 'EXPIRED',
 }
 
+export enum NightPartnerPaymentMode {
+    SELF_PAY = 'SELF_PAY',
+    SPLIT = 'SPLIT',
+}
+
+export enum NightPartnerCancellationStatus {
+    NONE = 'NONE',
+    REQUESTED = 'REQUESTED',
+    APPROVED = 'APPROVED',
+    REJECTED = 'REJECTED',
+    REFUNDED = 'REFUNDED',
+}
+
 export interface NightPartnerMatchAttributes {
     id: string;
     hostId: string;
@@ -22,9 +35,17 @@ export interface NightPartnerMatchAttributes {
     bookingId?: string;
     conversationId?: string;
     totalAmount?: number;
+    paymentMode?: NightPartnerPaymentMode;
+    hostPaid?: boolean;
+    partnerPaid?: boolean;
+    hostAmount?: number;
+    partnerAmount?: number;
     razorpayOrderId?: string;
     maxPartners: number;
     paymentExpiresAt?: Date;
+    cancellationStatus?: NightPartnerCancellationStatus;
+    cancellationReason?: string;
+    cancelledBy?: string;
     reminder2hSent?: boolean;
     reminder1hSent?: boolean;
     reminder30mSent?: boolean;
@@ -41,9 +62,17 @@ export interface NightPartnerMatchCreationAttributes
         | 'bookingId'
         | 'conversationId'
         | 'totalAmount'
+        | 'paymentMode'
+        | 'hostPaid'
+        | 'partnerPaid'
+        | 'hostAmount'
+        | 'partnerAmount'
         | 'razorpayOrderId'
         | 'maxPartners'
         | 'paymentExpiresAt'
+        | 'cancellationStatus'
+        | 'cancellationReason'
+        | 'cancelledBy'
         | 'reminder2hSent'
         | 'reminder1hSent'
         | 'reminder30mSent'
@@ -65,9 +94,17 @@ class NightPartnerMatch
     public bookingId?: string;
     public conversationId?: string;
     public totalAmount?: number;
+    public paymentMode?: NightPartnerPaymentMode;
+    public hostPaid?: boolean;
+    public partnerPaid?: boolean;
+    public hostAmount?: number;
+    public partnerAmount?: number;
     public razorpayOrderId?: string;
     public maxPartners!: number;
     public paymentExpiresAt?: Date;
+    public cancellationStatus?: NightPartnerCancellationStatus;
+    public cancellationReason?: string;
+    public cancelledBy?: string;
     public reminder2hSent!: boolean;
     public reminder1hSent!: boolean;
     public reminder30mSent!: boolean;
@@ -137,6 +174,31 @@ NightPartnerMatch.init(
             allowNull: true,
             field: 'total_amount',
         },
+        paymentMode: {
+            type: DataTypes.STRING(20),
+            defaultValue: NightPartnerPaymentMode.SELF_PAY,
+            field: 'payment_mode',
+        },
+        hostPaid: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'host_paid',
+        },
+        partnerPaid: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            field: 'partner_paid',
+        },
+        hostAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'host_amount',
+        },
+        partnerAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'partner_amount',
+        },
         razorpayOrderId: {
             type: DataTypes.STRING,
             allowNull: true,
@@ -151,6 +213,22 @@ NightPartnerMatch.init(
             type: DataTypes.DATE,
             allowNull: true,
             field: 'payment_expires_at',
+        },
+        cancellationStatus: {
+            type: DataTypes.STRING(30),
+            defaultValue: NightPartnerCancellationStatus.NONE,
+            field: 'cancellation_status',
+        },
+        cancellationReason: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            field: 'cancellation_reason',
+        },
+        cancelledBy: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'cancelled_by',
+            references: { model: 'users', key: 'id' },
         },
         reminder2hSent: {
             type: DataTypes.BOOLEAN,

@@ -691,7 +691,7 @@ export async function generateTicketForBookingHelper(bookingId: string): Promise
                 }
             } catch (_) {}
         }
-        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const eventEndAt = new Date(eventStartAt.getTime() + 2 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
         const verificationToken = generateHMACSignature(ticketCode, booking.userId, booking.bookingDate.toString());
@@ -786,7 +786,7 @@ export async function generateTicketForGroupPartyHelper(groupPartyId: string): P
         // midnight (which previously expired at noon, hours before an
         // evening party had even started).
         const eventStartAt = parseBookingDateTimeRobust(groupParty.partyDate, groupParty.startTime);
-        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const eventEndAt = new Date(eventStartAt.getTime() + 2 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
         const verificationToken = generateHMACSignature(ticketCode, groupParty.userId, groupParty.partyDate.toString());
@@ -871,7 +871,7 @@ export async function generateTicketForStrangersMeetHelper(requestId: string): P
 
         const ticketCode = request.ticketId || generateUniqueTicketCode('SM');
         const eventStartAt = new Date(request.eventDateTime);
-        const eventEndAt = new Date(eventStartAt.getTime() + 12 * 60 * 60 * 1000);
+        const eventEndAt = new Date(eventStartAt.getTime() + 2 * 60 * 60 * 1000);
         const expiresAt = eventEndAt;
         const storageDeletionAt = new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000);
         const verificationToken = generateHMACSignature(ticketCode, request.userId, request.eventDateTime.toString());

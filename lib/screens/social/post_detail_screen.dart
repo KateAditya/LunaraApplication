@@ -55,7 +55,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final targetPlanId = widget.post['id']?.toString() ?? '';
-    _alreadyRequested = widget.post['hasRequested'] == true || ApiService.isPartyPlanRequestedSync(targetPlanId);
+    _alreadyRequested = widget.post['hasRequested'] == true ||
+        widget.post['isRequested'] == true ||
+        widget.post['requestStatus'] == 'pending' ||
+        widget.post['myRequest'] != null ||
+        ApiService.isPartyPlanRequestedSync(targetPlanId);
 
     RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimePostDetailChanged);
     RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimePostDetailChanged);
@@ -413,8 +417,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (mounted) {
+      final currentUid = ApiService.currentUserId ?? '';
+      bool userRequested = _alreadyRequested;
+      if (req?.joiners != null) {
+        for (var j in req!.joiners!) {
+          if (j is Map && (j['userId']?.toString() == currentUid || j['id']?.toString() == currentUid)) {
+            final st = (j['status'] ?? '').toString().toLowerCase();
+            if (st != 'rejected' && st != 'cancelled' && st != 'declined') {
+              userRequested = true;
+            }
+            break;
+          }
+        }
+      }
       setState(() {
         _meetRequest = req;
+        _alreadyRequested = userRequested;
         _isLoading = false;
       });
     }
@@ -734,6 +752,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             backgroundColor: Colors.green,
           ),
         );
+        _loadStrangersMeetDetails(showFullScreenLoader: false);
       } else {
         setState(() {
           _alreadyRequested = false;
@@ -2578,7 +2597,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           );
-        } else if (jStatus == 'pending') {
+        } else if (jStatus == 'pending' || jStatus == 'requested') {
           return Container(
             width: double.infinity,
             height: 60,
@@ -2588,18 +2607,55 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
             ),
             child: const Center(
-              child: Text(
-                'JOIN REQUEST PENDING APPROVAL',
-                style: TextStyle(
-                  fontFamily: 'AllroundGothic',
-                  color: Colors.orange,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.hourglass_top_rounded, color: Colors.orange, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'JOIN REQUEST PENDING APPROVAL',
+                    style: TextStyle(
+                      fontFamily: 'AllroundGothic',
+                      color: Colors.orange,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
         }
+      }
+
+      if (_alreadyRequested) {
+        return Container(
+          width: double.infinity,
+          height: 60,
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+          ),
+          child: const Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.hourglass_top_rounded, color: Colors.orange, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'JOIN REQUEST PENDING APPROVAL',
+                  style: TextStyle(
+                    fontFamily: 'AllroundGothic',
+                    color: Colors.orange,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       }
 
       // Not requested to join yet

@@ -10,6 +10,8 @@ import '../../core/theme.dart';
 import 'venue_detail_screen.dart';
 import 'all_venues_screen.dart';
 import 'upcoming_party_screen.dart';
+import 'event_posts_screen.dart';
+import '../../widgets/night_partner_selector_sheet.dart';
 import 'booking_process_screen.dart';
 import '../social/all_posts_screen.dart';
 import '../../services/api_service.dart';
@@ -1100,14 +1102,14 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // 2. Upcoming Nights
+                  // 2. Upcoming Nights / Event Posts
                   if (_upcomingNights.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(24, 8, 24, 12),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
+                          const Text(
                             'UPCOMING NIGHTS',
                             style: TextStyle(
                               fontFamily: 'AllroundGothic',
@@ -1115,6 +1117,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               fontWeight: FontWeight.bold,
                               color: Colors.black,
                               fontSize: 15,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const EventPostsScreen()),
+                              );
+                            },
+                            child: const Text(
+                              'VIEW ALL',
+                              style: TextStyle(
+                                fontFamily: 'AllroundGothic',
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.bold,
+                                color: LunaraTheme.electricViolet,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         ],
@@ -1994,6 +2014,45 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 16,
+                      left: 16,
+                      child: GestureDetector(
+                        onTap: () {
+                          NightPartnerSelectorSheet.show(
+                            context,
+                            venueId: night['venueId']?.toString() ?? '',
+                            venueName: night['venue']?.toString() ?? 'Venue',
+                            date: night['rawDate']?.toString() ?? '2026-09-06',
+                            time: night['time']?.toString() ?? '20:00',
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white30),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.person_add_rounded, color: Colors.white, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                'INVITE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

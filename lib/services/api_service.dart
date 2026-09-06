@@ -3768,10 +3768,41 @@ class ApiService {
     }
   }
 
+  /// Mark all notifications as read on backend (sets live feed unread count to 0)
+  static Future<bool> markAllNotificationsAsRead() async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+    _cachedBadgeCounts = {
+      'liveFeedCount': 0,
+      'chatCount': _cachedBadgeCounts?['chatCount'] ?? 0,
+      'totalCount': _cachedBadgeCounts?['chatCount'] ?? 0,
+    };
+    _badgeCountsCacheTime = DateTime.now();
+    try {
+      final response = await post(
+        '/api/mobile/user/notifications/mark-all-read',
+        body: {'userId': userId},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      debugPrint('markAllNotificationsAsRead error: $e');
+    }
+    return false;
+  }
+
   /// Clear all notifications (mark as cleared persistently)
   static Future<bool> clearAllNotifications() async {
     final userId = currentUserId;
     if (userId == null) return false;
+    _cachedBadgeCounts = {
+      'liveFeedCount': 0,
+      'chatCount': _cachedBadgeCounts?['chatCount'] ?? 0,
+      'totalCount': _cachedBadgeCounts?['chatCount'] ?? 0,
+    };
+    _badgeCountsCacheTime = DateTime.now();
     try {
       final response = await post(
         '/api/mobile/user/notifications/clear-all',
@@ -4430,13 +4461,19 @@ class ApiService {
     return false;
   }
 
-  static Future<Map<String, dynamic>?> initiateMatchPayment(String matchId) async {
+  static Future<Map<String, dynamic>?> initiateMatchPayment({
+    required String matchId,
+    String paymentMode = 'SELF_PAY',
+  }) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
       final response = await post(
         '/api/mobile/nights/matches/$matchId/pay',
-        body: {'hostId': userId},
+        body: {
+          'hostId': userId,
+          'paymentMode': paymentMode,
+        },
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -4452,17 +4489,19 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> verifyMatchPayment({
     required String matchId,
-    required String razorpayOrderId,
-    required String razorpayPaymentId,
-    required String razorpaySignature,
+    String? razorpayOrderId,
+    String? razorpayPaymentId,
+    String? razorpaySignature,
+    String paymentMethod = 'razorpay',
   }) async {
     try {
       final response = await post(
         '/api/mobile/nights/matches/$matchId/verify',
         body: {
-          'razorpay_order_id': razorpayOrderId,
-          'razorpay_payment_id': razorpayPaymentId,
-          'razorpay_signature': razorpaySignature,
+          'razorpay_order_id': razorpayOrderId ?? 'wallet_payment',
+          'razorpay_payment_id': razorpayPaymentId ?? 'wallet_payment',
+          'razorpay_signature': razorpaySignature ?? 'mock_signature',
+          'paymentMethod': paymentMethod,
         },
       );
       if (response.statusCode == 200) {
@@ -4475,6 +4514,40 @@ class ApiService {
       debugPrint('verifyMatchPayment error: $e');
     }
     return null;
+  }
+
+  static Future<Map<String, dynamic>?> cancelUpcomingNight({
+    required String targetId,
+    String reason = 'Change of plans',
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/nights/cancel/$targetId',
+        body: {'reason': reason},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return Map<String, dynamic>.from(data);
+      }
+    } catch (e) {
+      debugPrint('cancelUpcomingNight error: $e');
+    }
+    return null;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchEventPosts() async {
+    try {
+      final response = await get('/api/mobile/nights/event-posts');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] is List) {
+          return List<Map<String, dynamic>>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('fetchEventPosts error: $e');
+    }
+    return [];
   }
 
 
@@ -5530,10 +5603,15 @@ class ApiService {
     String? notificationId,
   }) async {
     try {
+      final cleanPlanId = planId.replaceFirst(
+        RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+        '',
+      );
       final response = await _post(
-        '/api/mobile/party-plans/$planId/confirm-arrival',
+        '/api/mobile/party-plans/$cleanPlanId/confirm-arrival',
         {
           'userId': userId,
+          'planId': cleanPlanId,
           'hasArrived': hasArrived,
           'response': hasArrived ? 'YES' : 'NO',
           'stage': stage,
@@ -5542,7 +5620,11 @@ class ApiService {
           if (notificationId != null) 'notificationId': notificationId,
         },
       );
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final dynamic body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) {
+        return body;
+      }
+      return {'success': response.statusCode >= 200 && response.statusCode < 300};
     } catch (e) {
       debugPrint('confirmArrival error: $e');
       return {'success': false, 'message': '$e'};
@@ -5551,8 +5633,16 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getPartyPlanReachStatus(String planId) async {
     try {
-      final response = await _get('/api/mobile/party-plans/$planId/reach-status');
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final cleanPlanId = planId.replaceFirst(
+        RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+        '',
+      );
+      final response = await _get('/api/mobile/party-plans/$cleanPlanId/reach-status');
+      final dynamic body = jsonDecode(response.body);
+      if (body is Map<String, dynamic>) {
+        return body;
+      }
+      return {'success': response.statusCode >= 200 && response.statusCode < 300};
     } catch (e) {
       debugPrint('getPartyPlanReachStatus error: $e');
       return {'success': false, 'message': '$e'};

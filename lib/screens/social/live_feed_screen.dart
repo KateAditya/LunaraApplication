@@ -29,8 +29,9 @@ import '../profile/profile_screen.dart';
 import '../../models/user.dart';
 import '../../dialogs/strangers_meet_start_dialog.dart';
 import '../../dialogs/strangers_meet_end_dialog.dart';
-import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
+import '../../dialogs/strangers_meet_cancellation_dialog.dart';
+import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -315,6 +316,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('notifications_read_all', _onNotificationsReadAll);
   }
 
   void _disposeSocketListeners() {
@@ -380,9 +382,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('notifications_read_all', _onNotificationsReadAll);
   }
 
   bool _hasPendingRefetch = false;
+
+  void _onNotificationsReadAll(dynamic data) {
+    if (!mounted) return;
+    _loadFeed(showLoader: false);
+  }
 
   void _onPartyPlanRequestUpdated(dynamic data) {
     if (!mounted) return;
@@ -571,10 +579,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Future<void> markAllNotificationsAsRead() async {
     final allItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
     for (final item in allItems) {
-      if (item.badgeText == 'ACTION REQUIRED' || item.badgeText == 'INVITE') {
-        continue; // Never mark active action required cards (e.g. Pay Deposit) as read/cleared!
+      if (item.badgeText == 'ACTION REQUIRED' || item.badgeText == 'INVITE' || item.badgeText == 'NEW REQUEST' || item.priority == 'CRITICAL') {
+        continue; // Active action required items keep their action badge
       }
-      final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
+      final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_|venue_booking_timeline_)'), '');
       if (rawId.isNotEmpty) {
         ApiService.localReadRequestIds.add(rawId);
         ApiService.localReadRequestIds.add(item.id);
@@ -590,16 +598,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     await ApiService.saveLocalReadRequestIds();
     await ApiService.saveLocalReadNotificationIds();
+    await ApiService.markAllNotificationsAsRead();
     await ApiService.clearAllNotifications();
 
     if (mounted) {
       _notifications = _notifications
           .map((n) {
-            final String primaryAction = (n['data']?['primaryAction'] ?? n['primaryAction'] ?? '').toString().toLowerCase();
-            final String hostStatus = (n['data']?['hostPaymentStatus'] ?? '').toString().toLowerCase();
-            if (primaryAction.contains('pay') || (hostStatus.isNotEmpty && hostStatus != 'paid' && hostStatus != 'completed')) {
-              return n;
-            }
             return {...n, 'read': true, 'isRead': true};
           })
           .toList();
@@ -2416,6 +2420,68 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return false;
   }
 
+  static bool _isUpcomingNightItem(dynamic item) {
+    if (item == null || item is! Map) return false;
+    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+
+    if (map['isUpcomingNight'] == true) return true;
+    if (map['nightId'] != null || map['nightPartnerId'] != null || map['upcomingNightId'] != null) return true;
+
+    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
+    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match')) return true;
+
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
+    if (rawId.startsWith('upcoming_night') || rawId.startsWith('night_partner') || rawId.startsWith('un_')) return true;
+
+    if (map['booking'] is Map) {
+      if (_isUpcomingNightItem(map['booking'])) return true;
+    }
+    if (map['data'] is Map) {
+      if (_isUpcomingNightItem(map['data'])) return true;
+    }
+    if (map['metadata'] is Map) {
+      if (_isUpcomingNightItem(map['metadata'])) return true;
+    }
+
+    return false;
+  }
+
+  String? _extractUpcomingNightId(Map<String, dynamic> item) {
+    if (item['data'] is Map && item['data']['nightId'] != null) {
+      final id = item['data']['nightId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['nightId'] != null) {
+      final id = item['metadata']['nightId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['nightId'] != null) {
+      final id = item['nightId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['upcomingNightId'] != null) {
+      final id = item['upcomingNightId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['booking'] is Map) {
+      final b = item['booking'] as Map<String, dynamic>;
+      if (b['nightId'] != null) return b['nightId'].toString().trim();
+      if (b['bookingType'] == 'upcoming_night') {
+        final id = b['id']?.toString() ?? '';
+        if (id.isNotEmpty) return id;
+      }
+    }
+    final rawId = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
+    if (rawId.startsWith('upcoming_night_timeline_') || rawId.startsWith('upcoming_night_') || rawId.startsWith('un_')) {
+      return rawId.replaceAll('upcoming_night_timeline_', '').replaceAll('upcoming_night_', '').replaceAll('un_', '');
+    }
+    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
+    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match')) {
+      if (rawId.isNotEmpty) return rawId;
+    }
+    return null;
+  }
+
   String? _extractPartyPlanId(Map<String, dynamic> item) {
     if (item['data'] is Map && item['data']['partyPlanId'] != null) {
       final id = item['data']['partyPlanId'].toString().trim();
@@ -2751,9 +2817,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final List<UnifiedNotificationItem> items = [];
     final currentUserId = ApiService.currentUserId ?? '';
 
-    // 1. Partition entries into Party Plan, Stranger Meet, Group Party, Solo Booking, and General Notifications
+    // 1. Partition entries into Party Plan, Stranger Meet, Upcoming Night, Group Party, Solo Booking, and General Notifications
     final Map<String, List<Map<String, dynamic>>> partyPlanGroups = {};
     final Map<String, List<Map<String, dynamic>>> strangersMeetGroups = {};
+    final Map<String, List<Map<String, dynamic>>> upcomingNightGroups = {};
     final Map<String, List<Map<String, dynamic>>> groupPartyGroups = {};
     final Map<String, List<Map<String, dynamic>>> soloBookingGroups = {};
     final List<Map<String, dynamic>> nonPartyNotifications = [];
@@ -2762,6 +2829,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final n in _notifications) {
       final ppId = _extractPartyPlanId(n);
       final smId = _extractStrangersMeetId(n);
+      final unId = _extractUpcomingNightId(n);
       final gpId = _extractGroupPartyId(n);
       final soloId = _extractSoloBookingId(n);
 
@@ -2769,6 +2837,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         partyPlanGroups.putIfAbsent(ppId, () => []).add(n);
       } else if (smId != null && smId.isNotEmpty) {
         strangersMeetGroups.putIfAbsent(smId, () => []).add(n);
+      } else if (unId != null && unId.isNotEmpty) {
+        upcomingNightGroups.putIfAbsent(unId, () => []).add(n);
       } else if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(n);
       } else if (soloId != null && soloId.isNotEmpty) {
@@ -2781,6 +2851,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final fi in _feedItems) {
       final ppId = _extractPartyPlanId(fi);
       final smId = _extractStrangersMeetId(fi);
+      final unId = _extractUpcomingNightId(fi);
       final gpId = _extractGroupPartyId(fi);
       final soloId = _extractSoloBookingId(fi);
 
@@ -2788,6 +2859,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         partyPlanGroups.putIfAbsent(ppId, () => []).add(fi);
       } else if (smId != null && smId.isNotEmpty) {
         strangersMeetGroups.putIfAbsent(smId, () => []).add(fi);
+      } else if (unId != null && unId.isNotEmpty) {
+        upcomingNightGroups.putIfAbsent(unId, () => []).add(fi);
       } else if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(fi);
       } else if (soloId != null && soloId.isNotEmpty) {
@@ -2798,8 +2871,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _userBookings) {
-      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
-        continue; // Never render party plans or stranger meets as solo/table bookings!
+      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking) || _isUpcomingNightItem(booking)) {
+        continue; // Never render party plans, stranger meets, or upcoming nights as solo/table bookings!
       }
       final dynamic rawGuests = booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 1;
       final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 1);
@@ -2825,7 +2898,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _largePartyBookings) {
-      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking)) {
+      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking) || _isUpcomingNightItem(booking)) {
         continue;
       }
       final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
@@ -2849,6 +2922,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final meetId = entry.key;
       final meetEntries = entry.value;
       final smartCard = _buildAuthoritativeStrangersMeetCard(meetId, meetEntries, currentUserId);
+      if (smartCard != null) {
+        items.add(smartCard);
+      }
+    }
+
+    // 4. Build Exactly ONE Authoritative Smart Card per Upcoming Night
+    for (final entry in upcomingNightGroups.entries) {
+      final nightId = entry.key;
+      final nightEntries = entry.value;
+      final smartCard = _buildAuthoritativeUpcomingNightCard(nightId, nightEntries, currentUserId);
       if (smartCard != null) {
         items.add(smartCard);
       }
@@ -2907,8 +2990,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final String titleLower = (n['title'] ?? '').toString().toLowerCase();
       final String bodyLower = (n['body'] ?? '').toString().toLowerCase();
 
-      // Skip party plan & stranger meet confirmation/reminders — consolidated into their dedicated cards
-      if (_isPartyPlanItem(n) || _isStrangerMeetItem(n) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
+      // Skip party plan, stranger meet & upcoming night confirmation/reminders — consolidated into their dedicated cards
+      if (_isPartyPlanItem(n) || _isStrangerMeetItem(n) || _isUpcomingNightItem(n) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || cat.contains('upcoming_night') || cat.contains('night_partner') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
           goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
         continue;
       }
@@ -3058,8 +3141,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final String titleLower = (fi['title'] ?? '').toString().toLowerCase();
       final String bodyLower = (fi['body'] ?? '').toString().toLowerCase();
 
-      // Skip party plans & stranger meets — they are already rendered in their authoritative smart card
-      if (_isPartyPlanItem(fi) || _isStrangerMeetItem(fi) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') ||
+      // Skip party plans, stranger meets & upcoming nights — they are already rendered in their authoritative smart card
+      if (_isPartyPlanItem(fi) || _isStrangerMeetItem(fi) || _isUpcomingNightItem(fi) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || cat.contains('upcoming_night') || cat.contains('night_partner') ||
           goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
         continue;
       }
@@ -3145,8 +3228,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ));
     }
 
-    // Sort all timeline items descending by createdAt
-    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    // Sort all timeline items:
+    // 1. Action Required / Critical / Invites first
+    // 2. Unread items second
+    // 3. Descending by createdAt (lastActivityAt)
+    items.sort((a, b) {
+      final aAction = (a.badgeText == 'ACTION REQUIRED' || a.badgeText == 'NEW REQUEST' || a.priority == 'CRITICAL' || a.badgeText == 'INVITE') ? 1 : 0;
+      final bAction = (b.badgeText == 'ACTION REQUIRED' || b.badgeText == 'NEW REQUEST' || b.priority == 'CRITICAL' || b.badgeText == 'INVITE') ? 1 : 0;
+      if (aAction != bAction) return bAction - aAction;
+
+      final aUnread = (!a.isRead && !a.isExpired) ? 1 : 0;
+      final bUnread = (!b.isRead && !b.isExpired) ? 1 : 0;
+      if (aUnread != bUnread) return bUnread - aUnread;
+
+      return b.createdAt.compareTo(a.createdAt);
+    });
     return items;
   }
 
@@ -3306,7 +3402,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         hasUnread = true;
       }
 
-      final rawDt = e['updatedAt'] ?? e['createdAt'];
+      final rawDt = e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'];
       if (rawDt != null) {
         try {
           final dt = DateTime.parse(rawDt.toString()).toLocal();
@@ -3320,6 +3416,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           latestTime = dt;
         }
       }
+    }
+    if (partyMap['lastActivityAt'] != null) {
+      try {
+        final dt = DateTime.parse(partyMap['lastActivityAt'].toString()).toLocal();
+        if (dt.isAfter(latestTime)) latestTime = dt;
+      } catch (_) {}
+    }
+    if (_localReadNotificationIds.contains('gp_$partyId') ||
+        _localReadNotificationIds.contains(partyId) ||
+        ApiService.localReadRequestIds.contains('gp_$partyId') ||
+        ApiService.localReadRequestIds.contains(partyId)) {
+      hasUnread = false;
     }
     if (latestTime.millisecondsSinceEpoch == 0) {
       latestTime = DateTime.now();
@@ -3580,7 +3688,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       body: cardBody,
       createdAt: latestTime,
       timeAgo: _formatTimeAgo(latestTime.toIso8601String()),
-      isRead: !hasUnread,
+      isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'PAYMENT REQUIRED') ? false : !hasUnread,
       isExpired: isExpired,
       badgeText: badgeText,
       accentColor: accentColor,
@@ -3865,17 +3973,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
     }
 
-    final createdAt = _parseDateTime(entries.first['createdAt'] ?? entries.first['updatedAt']);
-    final timeAgo = _formatTimeAgo(entries.first['createdAt'] ?? entries.first['updatedAt']);
+    DateTime latestCreatedAt = DateTime.fromMillisecondsSinceEpoch(0);
+    bool hasUnread = false;
+    for (final e in entries) {
+      final eId = e['id']?.toString() ?? '';
+      final isRead = e['read'] == true ||
+          e['isRead'] == true ||
+          _localReadNotificationIds.contains(eId) ||
+          ApiService.localReadRequestIds.contains(eId);
+      if (!isRead) hasUnread = true;
+
+      final rawDt = e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'];
+      if (rawDt != null) {
+        try {
+          final dt = DateTime.parse(rawDt.toString()).toLocal();
+          if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+        } catch (_) {}
+      }
+    }
+    if (bookingMap['lastActivityAt'] != null) {
+      try {
+        final dt = DateTime.parse(bookingMap['lastActivityAt'].toString()).toLocal();
+        if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+      } catch (_) {}
+    }
+    if (latestCreatedAt.millisecondsSinceEpoch == 0) {
+      latestCreatedAt = _parseDateTime(entries.first['createdAt'] ?? entries.first['updatedAt']);
+    }
+    if (_localReadNotificationIds.contains('venue_booking_timeline_$bookingId') ||
+        _localReadNotificationIds.contains(bookingId) ||
+        ApiService.localReadRequestIds.contains('venue_booking_timeline_$bookingId') ||
+        ApiService.localReadRequestIds.contains(bookingId)) {
+      hasUnread = false;
+    }
+    if (badge == 'ACTION REQUIRED' || badge == 'PAYMENT PENDING') {
+      hasUnread = true;
+    }
+    final timeAgo = _formatTimeAgo(latestCreatedAt);
 
     return UnifiedNotificationItem(
       id: 'venue_booking_timeline_$bookingId',
       category: 'booking',
       title: title,
       body: body,
-      createdAt: createdAt,
+      createdAt: latestCreatedAt,
       timeAgo: timeAgo,
-      isRead: false,
+      isRead: !hasUnread,
       isExpired: false,
       badgeText: badge,
       accentColor: accentColor,
@@ -3894,6 +4037,327 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'ticketCode': ticketCode,
       },
       statusSummary: isCancelled ? 'Cancelled' : (isConfirmed ? 'Confirmed' : 'Payment Pending'),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build Authoritative Upcoming Night Smart Card (1 Night = 1 Card)
+  // ─────────────────────────────────────────────────────────────────────────────
+  UnifiedNotificationItem? _buildAuthoritativeUpcomingNightCard(
+    String nightId,
+    List<Map<String, dynamic>> entries,
+    String currentUserId,
+  ) {
+    if (entries.isEmpty) return null;
+
+    Map<String, dynamic> metadata = {};
+    Map<String, dynamic> rawItem = entries.first;
+
+    for (final e in entries) {
+      if (e['metadata'] is Map && (e['metadata'] as Map).isNotEmpty) {
+        metadata.addAll(Map<String, dynamic>.from(e['metadata']));
+      }
+      if (e['data'] is Map && (e['data'] as Map).isNotEmpty) {
+        metadata.addAll(Map<String, dynamic>.from(e['data']));
+      }
+      if (e['id']?.toString().startsWith('upcoming_night_timeline_') == true) {
+        rawItem = e;
+      }
+    }
+
+    final String matchId = (metadata['matchId'] ?? rawItem['matchId'] ?? rawItem['entityId'] ?? nightId).toString();
+    final String status = (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT').toString().toUpperCase();
+    final String stage = (metadata['stage'] ?? rawItem['stage'] ?? 'INVITE_SENT').toString().toUpperCase();
+    final String userRole = (metadata['userRole'] ?? rawItem['userRole'] ?? 'HOST').toString().toUpperCase();
+
+    final Map<String, dynamic> partnerData = metadata['partner'] is Map
+        ? Map<String, dynamic>.from(metadata['partner'])
+        : (rawItem['partner'] is Map
+            ? Map<String, dynamic>.from(rawItem['partner'])
+            : (rawItem['sender'] is Map ? Map<String, dynamic>.from(rawItem['sender']) : <String, dynamic>{}));
+
+    final String partnerName = partnerData['name']?.toString() ??
+        partnerData['firstName']?.toString() ??
+        rawItem['senderName']?.toString() ??
+        'Night Partner';
+    final String? partnerPhoto = partnerData['photo']?.toString() ??
+        partnerData['profilePhotoUrl']?.toString() ??
+        partnerData['profileImageUrl']?.toString() ??
+        rawItem['senderImage']?.toString();
+
+    final Map<String, dynamic> eventData = metadata['event'] is Map
+        ? Map<String, dynamic>.from(metadata['event'])
+        : (rawItem['event'] is Map ? Map<String, dynamic>.from(rawItem['event']) : <String, dynamic>{});
+
+    final String venueName = eventData['venueName']?.toString() ??
+        metadata['venue']?['name']?.toString() ??
+        rawItem['venueName']?.toString() ??
+        'Upcoming Night Venue';
+    final String dateStr = eventData['date']?.toString() ?? metadata['date']?.toString() ?? rawItem['date']?.toString() ?? 'Tonight';
+    final String timeStr = eventData['time']?.toString() ?? metadata['time']?.toString() ?? rawItem['time']?.toString() ?? '8:00 PM';
+    final String? venuePhoto = eventData['coverImageUrl']?.toString() ??
+        metadata['venue']?['coverImageUrl']?.toString() ??
+        _extractVenuePhoto(metadata['venue']) ??
+        _extractVenuePhoto(rawItem);
+
+    final String? ticketId = metadata['ticketId']?.toString() ?? rawItem['ticketCode']?.toString();
+    final String? chatId = metadata['chatId']?.toString() ?? rawItem['conversationId']?.toString();
+
+    Color accentColor = LunaraTheme.electricViolet;
+    String badgeText = 'UPCOMING NIGHT';
+    String cardTitle = 'Upcoming Night 🌙';
+    String cardBody = 'Event at $venueName on $dateStr • $timeStr';
+    List<NotificationAction> actionsList = [];
+
+    DateTime latestTime = _parseDateTime(rawItem['createdAt'] ?? rawItem['updatedAt']);
+
+    if (status == 'CANCELLED' || stage == 'CANCELLED') {
+      accentColor = const Color(0xFFEF4444);
+      badgeText = 'CANCELLED';
+      cardTitle = 'Upcoming Night Cancelled ❌';
+      cardBody = 'The upcoming night at $venueName was cancelled.';
+    } else if (stage == 'FULLY_BOOKED' || status == 'CONFIRMED') {
+      accentColor = const Color(0xFF10B981);
+      badgeText = 'CONFIRMED';
+      cardTitle = 'Upcoming Night Confirmed! 🎉';
+      cardBody = 'You and $partnerName are set for $venueName on $dateStr • $timeStr! Ticket is locked.';
+
+      if (ticketId != null && ticketId.isNotEmpty) {
+        actionsList.add(
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: true,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DigitalTicketScreen(
+                    venue: {
+                      'name': venueName,
+                      'coverImageUrl': venuePhoto,
+                    },
+                    date: dateStr,
+                    time: timeStr,
+                    guests: '2',
+                    ticketId: ticketId,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
+
+      if (chatId != null && chatId.isNotEmpty) {
+        actionsList.add(
+          NotificationAction(
+            label: 'Open Chat',
+            icon: Icons.chat_bubble_outline_rounded,
+            isPrimary: false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(
+                    user: {
+                      'id': partnerData['id'] ?? '',
+                      'firstName': partnerName,
+                      'profilePhotoUrl': partnerPhoto,
+                      'conversationId': chatId,
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
+
+      actionsList.add(
+        NotificationAction(
+          label: 'Cancel Event',
+          icon: Icons.cancel_outlined,
+          isPrimary: false,
+          color: Colors.red[400],
+          onTap: () async {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: const Color(0xFF1E1035),
+                title: const Text('Cancel Upcoming Night?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                content: const Text(
+                  'Are you sure you want to cancel this Upcoming Night booking? Any refundable amount will be credited to your Lunara Wallet.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Keep Booking', style: TextStyle(color: Colors.white54)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                    child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+
+            if (confirm == true) {
+              final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'User requested cancellation');
+              if (res != null && res['success'] == true) {
+                _loadFeed(showLoader: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Upcoming night cancelled and wallet refunded.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not cancel upcoming night. Please contact support.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            }
+          },
+        ),
+      );
+    } else if (stage == 'WAITING_FOR_PAYMENT' || status == 'ACCEPTED') {
+      accentColor = const Color(0xFFF59E0B);
+      badgeText = 'ACTION REQUIRED';
+      cardTitle = 'Invite Accepted! 💳';
+      cardBody = '$partnerName accepted your invite for $venueName! Complete payment to lock your match.';
+
+      actionsList.add(
+        NotificationAction(
+          label: 'Pay & Lock',
+          icon: Icons.payment_rounded,
+          isPrimary: true,
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (_) => UpcomingNightHostConfirmDialog(
+                matchId: matchId,
+                partnerName: partnerName,
+                partnerPhoto: partnerPhoto,
+                venueName: venueName,
+                date: dateStr,
+                time: timeStr,
+              ),
+            );
+          },
+        ),
+      );
+
+      actionsList.add(
+        NotificationAction(
+          label: 'Cancel',
+          icon: Icons.cancel_outlined,
+          isPrimary: false,
+          color: Colors.red[400],
+          onTap: () async {
+            final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'Host cancelled before payment');
+            if (res != null && res['success'] == true) {
+              _loadFeed(showLoader: false);
+            }
+          },
+        ),
+      );
+    } else {
+      // stage == 'INVITE_SENT'
+      if (userRole == 'PARTNER') {
+        accentColor = LunaraTheme.electricViolet;
+        badgeText = 'INVITE';
+        cardTitle = 'Night Partner Invite 🌙';
+        cardBody = '$partnerName invited you to join Upcoming Night at $venueName on $dateStr • $timeStr!';
+
+        actionsList.add(
+          NotificationAction(
+            label: 'Accept',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            onTap: () async {
+              final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'accept');
+              if (ok) {
+                _loadFeed(showLoader: false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Invite accepted! Waiting for booking confirmation.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+          ),
+        );
+
+        actionsList.add(
+          NotificationAction(
+            label: 'Decline',
+            icon: Icons.close_rounded,
+            isPrimary: false,
+            color: Colors.white54,
+            onTap: () async {
+              final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'decline');
+              if (ok) {
+                _loadFeed(showLoader: false);
+              }
+            },
+          ),
+        );
+      } else {
+        accentColor = const Color(0xFF8B5CF6);
+        badgeText = 'INVITE SENT';
+        cardTitle = 'Invite Sent ⏳';
+        cardBody = 'Invited $partnerName to join Upcoming Night at $venueName. Waiting for response.';
+
+        actionsList.add(
+          NotificationAction(
+            label: 'Cancel Invite',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[400],
+            onTap: () async {
+              final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'Host cancelled invite');
+              if (res != null && res['success'] == true) {
+                _loadFeed(showLoader: false);
+              }
+            },
+          ),
+        );
+      }
+    }
+
+    return UnifiedNotificationItem(
+      id: 'upcoming_night_timeline_$nightId',
+      category: 'upcoming_night',
+      title: cardTitle,
+      body: cardBody,
+      createdAt: latestTime,
+      timeAgo: _formatTimeAgo(latestTime.toIso8601String()),
+      isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'INVITE') ? false : true,
+      isExpired: false,
+      badgeText: badgeText,
+      accentColor: accentColor,
+      categoryIcon: Icons.nightlife_rounded,
+      avatarUrl: partnerPhoto ?? venuePhoto,
+      actions: actionsList.isNotEmpty ? actionsList : null,
+      rawData: {
+        ...rawItem,
+        ...metadata,
+        'nightId': nightId,
+        'matchId': matchId,
+        'venueName': venueName,
+        'partnerName': partnerName,
+        'partnerPhoto': partnerPhoto,
+        'ticketId': ticketId,
+        'chatId': chatId,
+      },
+      statusSummary: status,
     );
   }
 
@@ -5168,7 +5632,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     DateTime latestCreatedAt = DateTime(2000);
     bool allRead = true;
     for (final e in entries) {
-      final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
+      final dt = _parseDateTime(e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'] ?? e['postedAt']);
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
       final read = e['read'] == true ||
@@ -5177,13 +5641,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ApiService.localReadRequestIds.contains(eId);
       if (!read) allRead = false;
     }
+    if (planMap['lastActivityAt'] != null) {
+      try {
+        final dt = _parseDateTime(planMap['lastActivityAt']);
+        if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+      } catch (_) {}
+    }
     if (_localReadNotificationIds.contains('pp_$planId') ||
         _localReadNotificationIds.contains(planId) ||
         ApiService.localReadRequestIds.contains('pp_$planId') ||
         ApiService.localReadRequestIds.contains(planId)) {
       allRead = true;
     }
-    if (badge == 'ACTION REQUIRED' || badge == 'INVITE') {
+    if (badge == 'ACTION REQUIRED' || badge == 'INVITE' || badge == 'NEW REQUEST') {
       allRead = false;
     }
 
@@ -6402,7 +6872,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     DateTime latestCreatedAt = DateTime(2000);
     bool allRead = true;
     for (final e in entries) {
-      final dt = _parseDateTime(e['createdAt'] ?? e['postedAt']);
+      final dt = _parseDateTime(e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'] ?? e['postedAt']);
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
       final read = e['read'] == true ||
@@ -6411,13 +6881,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ApiService.localReadRequestIds.contains(eId);
       if (!read) allRead = false;
     }
+    if (meetMap['lastActivityAt'] != null) {
+      try {
+        final dt = _parseDateTime(meetMap['lastActivityAt']);
+        if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
+      } catch (_) {}
+    }
     if (_localReadNotificationIds.contains('sm_$meetId') ||
         _localReadNotificationIds.contains(meetId) ||
         ApiService.localReadRequestIds.contains('sm_$meetId') ||
         ApiService.localReadRequestIds.contains(meetId)) {
       allRead = true;
     }
-    if (badge == 'ACTION REQUIRED' || badge == 'NEW REQUEST') {
+    if (badge == 'ACTION REQUIRED' || badge == 'NEW REQUEST' || badge == 'INVITE') {
       allRead = false;
     }
 

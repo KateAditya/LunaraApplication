@@ -466,6 +466,16 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         widget.request['amountPaid'] ??
         widget.plan['amountPaid'] ??
         99.0;
+    final rawPaymentType = (widget.plan['paymentType'] ??
+            widget.plan['plan']?['paymentType'] ??
+            widget.request['paymentType'] ??
+            widget.request['plan']?['paymentType'] ??
+            'split')
+        .toString()
+        .toLowerCase()
+        .trim();
+    final bool isSelfPay = rawPaymentType == 'self_pay' || rawPaymentType == 'self' || rawPaymentType == 'host_pay';
+
     final double amountPaid = double.tryParse(rawAmount.toString()) ?? 99.0;
 
     final bookingCreatedDate = widget.request['createdAt'] != null
@@ -663,7 +673,9 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                               child: _buildLightDetailBox(
                                 icon: Icons.access_time_rounded,
                                 label: 'TIME',
-                                value: LunaraDateFormatter.formatEventTime(planDateTime),
+                                value: rawTime != null && rawTime.toString().trim().isNotEmpty
+                                    ? LunaraDateFormatter.normalizeTimeTo12Hour(rawTime.toString())
+                                    : LunaraDateFormatter.formatEventTime(planDateTime),
                                 subtext: 'Onwards',
                               ),
                             ),
@@ -921,6 +933,64 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                                   ],
                                 ),
                               ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // ── PARTY EXPENSES NOTE (SPLIT / SELF PAY) ─────────────
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSelfPay ? const Color(0xFFFAF5FF) : const Color(0xFFF0F9FF),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelfPay ? const Color(0xFFE9D5FF) : const Color(0xFFBAE6FD),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isSelfPay ? const Color(0xFFF3E8FF) : const Color(0xFFE0F2FE),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                isSelfPay ? Icons.volunteer_activism_rounded : Icons.call_split_rounded,
+                                color: isSelfPay ? const Color(0xFF9333EA) : const Color(0xFF0284C7),
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isSelfPay ? 'SELF PAY (HOST PAYS)' : 'SPLIT EXPENSES (50-50)',
+                                    style: TextStyle(
+                                      color: isSelfPay ? const Color(0xFF7E22CE) : const Color(0xFF0369A1),
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isSelfPay
+                                        ? 'The total expenses of this party will be paid by the host.'
+                                        : 'The total expenses of this party will be split equally between both participants.',
+                                    style: const TextStyle(
+                                      color: darkTextColor,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),

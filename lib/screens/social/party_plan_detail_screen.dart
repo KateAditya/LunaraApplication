@@ -1719,7 +1719,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
       if (isPartnerByPlan) {
         requested = true;
-        reqStatus = 'confirmed';
+        reqStatus = (isPaidInitial || _isJoinerPaid(widget.plan)) ? 'confirmed' : 'payment_pending';
       } else if (!foundInFreshList && _activeRequestId != null && _alreadyRequested) {
         requested = true;
         reqStatus = _requestStatus;
@@ -2620,7 +2620,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (planJoinerPay == 'unpaid' || planJoinerPay == 'pending') return false;
 
     final reqStatus = (request?['status'] ?? _requestStatus ?? plan['requestStatus'] ?? '').toString().toLowerCase();
-    if (reqStatus == 'payment_pending') return false;
+    if (reqStatus == 'payment_pending' || reqStatus == 'accepted' || reqStatus == 'pending') return false;
     if (reqStatus == 'confirmed' || reqStatus == 'paid') return true;
 
     final life = (plan['lifecycleStatus'] ?? '').toString().toLowerCase();
@@ -3016,7 +3016,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final String partnerId = (plan['partnerId'] ?? plan['partner_id'] ?? '').toString();
     final bool isPartnerByPlan = _isPartnerPlan(plan);
     final bool joinerPaid = _isJoinerPaid(plan);
-    final bool isMyRequestConfirmed = (isPartnerByPlan && joinerPaid) || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'));
+    final bool isMyRequestConfirmed = joinerPaid && (isPartnerByPlan || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid')));
 
     // Only show "partner already selected" to viewers who had an active request
     // that was displaced. A fresh user with no request should see "Request to Join".

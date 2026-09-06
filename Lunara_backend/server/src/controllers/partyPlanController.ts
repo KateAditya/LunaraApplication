@@ -5230,7 +5230,8 @@ export const initiateJoinerPayment = async (req: Request, res: Response): Promis
 export const confirmArrival = async (req: Request, res: Response): Promise<void> => {
     const transaction = await sequelize.transaction();
     try {
-        const id = req.params.id || req.params.planId;
+        const rawId = String(req.params.id || req.params.planId || req.body?.planId || req.body?.partyPlanId || req.query?.planId || '');
+        const id = rawId ? rawId.replace(/^(pp_|party_plan_|party_plan_timeline_)/i, '') : '';
         const { response, hasArrived, latitude, longitude, device, ip } = req.body;
         const userId = (req as any).user?.id || req.body.userId || req.query.userId;
 
@@ -5240,7 +5241,10 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        const plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+        let plan = await PartyPlan.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!plan && rawId && rawId !== id) {
+            plan = await PartyPlan.findByPk(rawId, { transaction, lock: transaction.LOCK.UPDATE });
+        }
         if (!plan) {
             await transaction.rollback();
             res.status(404).json({ success: false, message: 'Party plan not found' });
@@ -5254,10 +5258,19 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        // Server-side authoritative confirmation window: opens ~35 min before scheduled party time
+        const stage = (req.body.stage || plan.reachVerificationStage || 'thirty_min_reach').toString().toLowerCase();
+        const source = (req.body.source || '').toString().toUpperCase();
+        const isPromptOrNotification = Boolean(plan.reachConfirmation30mSent) ||
+            stage === 'thirty_min_reach' ||
+            stage === 'final_check' ||
+            source === 'POPUP' ||
+            source === 'LIVE_FEED' ||
+            source === 'NOTIFICATION';
+
+        // Server-side authoritative confirmation window: opens ~35-45 min before scheduled party time or when prompted
         const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
         const nowMs = Date.now();
-        if (eventTime > 0 && nowMs < eventTime - 35 * 60 * 1000) {
+        if (!isPromptOrNotification && eventTime > 0 && nowMs < eventTime - 45 * 60 * 1000) {
             await transaction.rollback();
             res.status(400).json({ success: false, message: 'Venue reach confirmation opens 30 minutes before the scheduled Party Plan time.' });
             return;
@@ -5270,17 +5283,36 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        const acceptedReq = await PartyPlanRequest.findOne({
-            where: {
-                planId: id,
-                status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] }
-            },
-            transaction,
-            lock: transaction.LOCK.UPDATE
-        });
+        let acceptedReq: PartyPlanRequest | null = null;
+        if (plan.matchedRequestId) {
+            acceptedReq = await PartyPlanRequest.findByPk(plan.matchedRequestId, {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+        }
+        if (!acceptedReq) {
+            const planIdsToSearch: string[] = [id, rawId].filter(Boolean);
+            acceptedReq = await PartyPlanRequest.findOne({
+                where: {
+                    planId: { [Op.in]: planIdsToSearch },
+                    status: {
+                        [Op.in]: [
+                            PartyPlanRequestStatus.ACCEPTED,
+                            'accepted', 'ACCEPTED',
+                            'confirmed', 'CONFIRMED',
+                            'paid', 'PAID',
+                            'payment_pending', 'PAYMENT_PENDING'
+                        ]
+                    }
+                },
+                order: [['updatedAt', 'DESC']],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            });
+        }
 
         const isHost = plan.userId === userId;
-        const isGuest = acceptedReq?.requesterId === userId;
+        const isGuest = acceptedReq ? acceptedReq.requesterId === userId : (plan as any).matchedUserId === userId;
 
         if (!isHost && !isGuest) {
             await transaction.rollback();
@@ -5288,10 +5320,13 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        // Validate that both required payments are verified before arrival confirmation can begin
-        const hostPaid = plan.hostPaymentStatus === 'paid' || plan.hostPaymentStatus === 'refunded';
-        const guestPaid = acceptedReq?.joinerPaymentStatus === 'paid' || acceptedReq?.joinerPaymentStatus === 'refunded';
-        if (!hostPaid || !guestPaid) {
+        // Validate that payments are verified or self-pay
+        const hostStatus = String(plan.hostPaymentStatus || '').toLowerCase();
+        const hostPaid = hostStatus === 'paid' || hostStatus === 'refunded' || hostStatus === 'completed' || plan.paymentType === 'self_pay';
+        const guestStatus = String(acceptedReq?.joinerPaymentStatus || '').toLowerCase();
+        const guestPaid = guestStatus === 'paid' || guestStatus === 'refunded' || guestStatus === 'completed' || plan.paymentType === 'self_pay' || !acceptedReq;
+
+        if (!hostPaid && !guestPaid && plan.paymentType !== 'self_pay') {
             await transaction.rollback();
             res.status(400).json({ success: false, message: 'Arrival confirmation is only available for fully confirmed Party Plans with verified payments.' });
             return;
@@ -5301,7 +5336,6 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
         const isYes = choice === 'YES' || hasArrived === true;
         const targetReachStatus = isYes ? 'REACHED' : 'NOT_REACHED';
         const nowStamp = new Date();
-        const stage = (req.body.stage || 'thirty_min_reach').toString().toLowerCase();
 
         // Idempotent guard: if the user already submitted this same reach choice, return early without re-charging or duplicate events
         if (isHost && plan.hostReachStatus === targetReachStatus) {
@@ -5407,6 +5441,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                     userId: hostUser.id,
                     action: ReliabilityAction.CONFIRMED_ARRIVAL,
                     partyPlanId: plan.id,
+                    transaction,
                 });
             }
 
@@ -5426,6 +5461,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                     userId: guestUser.id,
                     action: ReliabilityAction.CONFIRMED_ARRIVAL,
                     partyPlanId: plan.id,
+                    transaction,
                 });
             }
 
@@ -5460,6 +5496,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: hostUser.id,
                         action: ReliabilityAction.CONFIRMED_ARRIVAL,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 if (guestUser) {
@@ -5467,6 +5504,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: guestUser.id,
                         action: ReliabilityAction.NO_SHOW,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 await plan.update({
@@ -5494,6 +5532,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: guestUser.id,
                         action: ReliabilityAction.CONFIRMED_ARRIVAL,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 if (hostUser) {
@@ -5501,6 +5540,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: hostUser.id,
                         action: ReliabilityAction.NO_SHOW,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 await plan.update({
@@ -5518,6 +5558,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: hostUser.id,
                         action: ReliabilityAction.NO_SHOW,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 if (guestUser) {
@@ -5525,6 +5566,7 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         userId: guestUser.id,
                         action: ReliabilityAction.NO_SHOW,
                         partyPlanId: plan.id,
+                        transaction,
                     });
                 }
                 await plan.update({
@@ -6251,6 +6293,30 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
             secondaryActionUrl,
             countdown: countdownText,
             lastUpdated: plan.updatedAt ? plan.updatedAt.toISOString() : plan.createdAt.toISOString(),
+            lastActivityAt: (() => {
+                let latestActivityTime = new Date(plan.updatedAt || plan.createdAt || Date.now()).getTime();
+                if (plan.createdAt && new Date(plan.createdAt).getTime() > latestActivityTime) {
+                    latestActivityTime = new Date(plan.createdAt).getTime();
+                }
+                if (plan.acceptedAt && new Date(plan.acceptedAt).getTime() > latestActivityTime) {
+                    latestActivityTime = new Date(plan.acceptedAt).getTime();
+                }
+                if (p.requests && Array.isArray(p.requests)) {
+                    for (const req of p.requests) {
+                        if (req.createdAt && new Date(req.createdAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(req.createdAt).getTime();
+                        }
+                        if (req.updatedAt && new Date(req.updatedAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(req.updatedAt).getTime();
+                        }
+                    }
+                }
+                return new Date(latestActivityTime).toISOString();
+            })(),
+            requiresAction: Boolean(
+                (isHost && (p.requests?.some((r: any) => r.status === 'pending') || (plan.hostPaymentStatus !== 'paid' && plan.status === 'active'))) ||
+                (!isHost && viewerRequest && [PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED].includes(viewerRequest.status) && viewerRequest.joinerPaymentStatus !== 'paid')
+            ),
             matchedRequestId: plan.matchedRequestId,
             requestId: matchedRequest?.id || null,
             hostPaymentStatus: plan.hostPaymentStatus,
@@ -6395,7 +6461,8 @@ export async function getPlanSummary(req: Request, res: Response): Promise<Respo
  */
 export const getReachStatus = async (req: Request, res: Response): Promise<void> => {
     try {
-        const id = req.params.id || req.params.planId;
+        const rawId = String(req.params.id || req.params.planId || req.query?.planId || '');
+        const id = rawId ? rawId.replace(/^(pp_|party_plan_|party_plan_timeline_)/i, '') : '';
         const userId = (req as any).user?.id || req.body?.userId || req.query?.userId;
 
         if (!userId) {
@@ -6403,24 +6470,39 @@ export const getReachStatus = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        const plan = await PartyPlan.findByPk(id, {
+        let plan = await PartyPlan.findByPk(id, {
             include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'area'] }]
         });
+        if (!plan && rawId && rawId !== id) {
+            plan = await PartyPlan.findByPk(rawId, {
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'area'] }]
+            });
+        }
         if (!plan) {
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
 
-        const acceptedReq = await PartyPlanRequest.findOne({
-            where: {
-                planId: id,
-                status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] }
-            },
-            include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
-        });
+        let acceptedReq: PartyPlanRequest | null = null;
+        if (plan.matchedRequestId) {
+            acceptedReq = await PartyPlanRequest.findByPk(plan.matchedRequestId, {
+                include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+            });
+        }
+        if (!acceptedReq) {
+            const planIdsToSearch: string[] = [id, rawId].filter(Boolean);
+            acceptedReq = await PartyPlanRequest.findOne({
+                where: {
+                    planId: { [Op.in]: planIdsToSearch },
+                    status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'accepted', 'ACCEPTED', 'confirmed', 'CONFIRMED', 'paid', 'PAID', 'payment_pending', 'PAYMENT_PENDING'] }
+                },
+                order: [['updatedAt', 'DESC']],
+                include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }]
+            });
+        }
 
         const isHost = plan.userId === userId;
-        const isGuest = acceptedReq?.requesterId === userId;
+        const isGuest = acceptedReq ? acceptedReq.requesterId === userId : (plan as any).matchedUserId === userId;
 
         if (!isHost && !isGuest) {
             res.status(403).json({ success: false, message: 'You are not an active participant in this plan' });
@@ -6429,7 +6511,10 @@ export const getReachStatus = async (req: Request, res: Response): Promise<void>
 
         const eventTime = plan.planDateTime ? new Date(plan.planDateTime).getTime() : 0;
         const now = Date.now();
-        const inArrivalWindow = eventTime > 0 && now >= eventTime - 35 * 60 * 1000 && now <= eventTime + 24 * 60 * 60 * 1000;
+        const inArrivalWindow = Boolean(plan.reachConfirmation30mSent) ||
+            plan.reachVerificationStage === 'thirty_min_reach' ||
+            plan.reachVerificationStage === 'final_check' ||
+            (eventTime > 0 && now >= eventTime - 45 * 60 * 1000 && now <= eventTime + 24 * 60 * 60 * 1000);
 
         const hostReachStatus = plan.hostReachStatus || (plan.hostArrivalConfirmed ? 'REACHED' : 'PENDING');
         const partnerReachStatus = acceptedReq?.partnerReachStatus || (acceptedReq?.guestArrivalConfirmed ? 'REACHED' : 'PENDING');

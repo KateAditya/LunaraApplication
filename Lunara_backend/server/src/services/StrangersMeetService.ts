@@ -803,7 +803,53 @@ export class StrangersMeetService {
                 secondaryAction,
                 primaryActionUrl,
                 secondaryActionUrl,
-                updatedAt: request.updatedAt ? request.updatedAt.toISOString() : new Date().toISOString()
+                updatedAt: request.updatedAt ? request.updatedAt.toISOString() : new Date().toISOString(),
+                lastActivityAt: (() => {
+                    let latestActivityTime = new Date(request.updatedAt || request.createdAt || Date.now()).getTime();
+                    if (request.createdAt && new Date(request.createdAt).getTime() > latestActivityTime) {
+                        latestActivityTime = new Date(request.createdAt).getTime();
+                    }
+                    if (request.startedAt && new Date(request.startedAt).getTime() > latestActivityTime) {
+                        latestActivityTime = new Date(request.startedAt).getTime();
+                    }
+                    if (request.endedAt && new Date(request.endedAt).getTime() > latestActivityTime) {
+                        latestActivityTime = new Date(request.endedAt).getTime();
+                    }
+                    if (request.settlementDate && new Date(request.settlementDate).getTime() > latestActivityTime) {
+                        latestActivityTime = new Date(request.settlementDate).getTime();
+                    }
+                    for (const j of joiners) {
+                        if (j.createdAt && new Date(j.createdAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(j.createdAt).getTime();
+                        }
+                        if (j.updatedAt && new Date(j.updatedAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(j.updatedAt).getTime();
+                        }
+                    }
+                    for (const c of pendingCancellations) {
+                        if (c.createdAt && new Date(c.createdAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(c.createdAt).getTime();
+                        }
+                    }
+                    if (myCancellation) {
+                        if (myCancellation.createdAt && new Date(myCancellation.createdAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(myCancellation.createdAt).getTime();
+                        }
+                        if (myCancellation.respondedAt && new Date(myCancellation.respondedAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(myCancellation.respondedAt).getTime();
+                        }
+                    }
+                    if (hostCancellation) {
+                        if (hostCancellation.createdAt && new Date(hostCancellation.createdAt).getTime() > latestActivityTime) {
+                            latestActivityTime = new Date(hostCancellation.createdAt).getTime();
+                        }
+                    }
+                    return new Date(latestActivityTime).toISOString();
+                })(),
+                requiresAction: Boolean(
+                    (isHost && (pendingJoiners.length > 0 || pendingCancellations.length > 0 || (!isHostPaid && isApproved))) ||
+                    (!isHost && userJoiner && (userJoiner.status === 'accepted' || userJoiner.status === 'payment_pending') && userJoiner.paymentStatus !== 'paid')
+                )
             };
         } catch (err) {
             logger.error('[StrangersMeetService] enrichStrangersMeetNotificationCard error:', err);

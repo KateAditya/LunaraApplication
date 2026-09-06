@@ -312,11 +312,14 @@ async function getUserNotifications(
                 });
 
                 const hasUnread = planNotifs.length > 0 ? planNotifs.some(n => !n.read) : false;
-                let maxTime = new Date(card.lastUpdated).getTime();
+                let maxTime = new Date(card.lastActivityAt || card.lastUpdated || Date.now()).getTime();
                 for (const pn of planNotifs) {
                     const pt = new Date(pn.createdAt).getTime();
                     if (pt > maxTime) maxTime = pt;
                 }
+                const lastActivityAt = new Date(maxTime).toISOString();
+                const isCleared = clearedAt > 0 && maxTime <= clearedAt;
+                const isCardRead = (isCleared && !card.requiresAction) || (!hasUnread && !card.requiresAction) || activeReadNotificationIds.has(`party_plan_timeline_${planId}`);
 
                 return {
                     id: `party_plan_timeline_${planId}`,
@@ -324,9 +327,11 @@ async function getUserNotifications(
                     body: card.currentStatus,
                     category: 'events',
                     type: 'party_plan_timeline',
-                    createdAt: new Date(maxTime).toISOString(),
-                    read: !hasUnread,
-                    isRead: !hasUnread,
+                    createdAt: lastActivityAt,
+                    lastActivityAt,
+                    requiresAction: card.requiresAction,
+                    read: isCardRead,
+                    isRead: isCardRead,
                     imageUrl: card.partyImage || card.hostProfilePhotoUrl || card.guestProfilePhotoUrl,
                     host: card.host,
                     creator: card.creator,
@@ -506,12 +511,17 @@ async function getUserNotifications(
                     const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(mId, uId);
                     if (card) {
                         const notificationId = card.id;
-                        const isRead = activeReadNotificationIds.has(notificationId);
+                        const lastActivityAt = card.lastActivityAt || card.updatedAt || new Date().toISOString();
+                        const cardTime = new Date(lastActivityAt).getTime();
+                        const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                        const isRead = (isCleared && !card.requiresAction) || activeReadNotificationIds.has(notificationId);
                         return {
                             id: notificationId,
                             title: card.title,
                             body: `${card.currentStatusText} — ${card.venueName} (${card.venueArea})`,
-                            createdAt: card.updatedAt,
+                            createdAt: lastActivityAt,
+                            lastActivityAt,
+                            requiresAction: card.requiresAction,
                             read: isRead,
                             isRead: isRead,
                             category: 'bookings',
@@ -589,16 +599,28 @@ async function getUserNotifications(
                         const { GroupPartyService } = await import('../services/GroupPartyService');
                         const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
                         if (enrichedCard) {
-                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
+                            const cardTime = new Date(lastActivityAt).getTime();
+                            const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                            const isRead = (isCleared && !enrichedCard.requiresAction) || activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.createdAt = lastActivityAt;
+                            enrichedCard.lastActivityAt = lastActivityAt;
+                            enrichedCard.read = isRead;
+                            enrichedCard.isRead = isRead;
                             return enrichedCard;
                         }
                     } else {
                         const { VenueBookingService } = await import('../services/VenueBookingService');
                         const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
                         if (enrichedCard) {
-                            enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                            enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                            const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
+                            const cardTime = new Date(lastActivityAt).getTime();
+                            const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                            const isRead = (isCleared && !enrichedCard.requiresAction) || activeReadNotificationIds.has(enrichedCard.id);
+                            enrichedCard.createdAt = lastActivityAt;
+                            enrichedCard.lastActivityAt = lastActivityAt;
+                            enrichedCard.read = isRead;
+                            enrichedCard.isRead = isRead;
                             return enrichedCard;
                         }
                     }
@@ -633,8 +655,14 @@ async function getUserNotifications(
                     // Pass preloadedGp to skip redundant GroupParty.findByPk inside enrichGroupPartyNotificationCard
                     const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(gp.id, uId, gp);
                     if (enrichedCard) {
-                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
+                        const cardTime = new Date(lastActivityAt).getTime();
+                        const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                        const isRead = (isCleared && !enrichedCard.requiresAction) || activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.createdAt = lastActivityAt;
+                        enrichedCard.lastActivityAt = lastActivityAt;
+                        enrichedCard.read = isRead;
+                        enrichedCard.isRead = isRead;
                         return enrichedCard;
                     }
                 } catch (err) {
@@ -685,8 +713,14 @@ async function getUserNotifications(
                 try {
                     const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(nId, uId);
                     if (enrichedCard) {
-                        enrichedCard.read = activeReadNotificationIds.has(enrichedCard.id);
-                        enrichedCard.isRead = activeReadNotificationIds.has(enrichedCard.id);
+                        const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
+                        const cardTime = new Date(lastActivityAt).getTime();
+                        const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                        const isRead = isCleared || activeReadNotificationIds.has(enrichedCard.id);
+                        enrichedCard.createdAt = lastActivityAt;
+                        enrichedCard.lastActivityAt = lastActivityAt;
+                        enrichedCard.read = isRead;
+                        enrichedCard.isRead = isRead;
                         return enrichedCard;
                     }
                 } catch (err) {
@@ -700,8 +734,15 @@ async function getUserNotifications(
         console.error('Error fetching upcoming night notifications:', unErr);
     }
 
-    // Sort by createdAt descending
-    notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Sort by actionable priority first, then by lastActivityAt / createdAt descending
+    notifications.sort((a, b) => {
+        const aReq = a.requiresAction ? 1 : 0;
+        const bReq = b.requiresAction ? 1 : 0;
+        if (aReq !== bReq) return bReq - aReq;
+        const aTime = new Date(a.lastActivityAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.lastActivityAt || b.createdAt || 0).getTime();
+        return bTime - aTime;
+    });
 
     // universal deduplication fallback for non-timeline cards
     const entityKeys = new Map<string, any>();
@@ -961,31 +1002,7 @@ router.patch('/notifications/:id/read', authenticate, async (req, res) => {
 /**
  * POST /api/mobile/user/notifications/clear-all
  */
-router.post('/notifications/clear-all', authenticate, async (req, res) => {
-    try {
-        const suppliedUserId = req.body?.userId;
-        const userId = req.user!.id;
-        if (suppliedUserId && suppliedUserId !== userId) {
-            return res.status(403).json({ success: false, message: 'You cannot clear another user\'s notifications.' });
-        }
-
-        const user = await User.findByPk(userId);
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-        user.clearedNotificationsAt = new Date();
-        await user.save();
-
-        await Notification.update(
-            { isRead: true, readAt: new Date() },
-            { where: { recipientUserId: userId, isRead: false } }
-        );
-
-        return res.json({ success: true, message: 'All notifications cleared successfully' });
-    } catch (error: any) {
-        console.error('Error clearing notifications:', error);
-        return res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
-    }
-});
+router.post('/notifications/clear-all', authenticate, NotificationActionController.clearAll);
 
 /**
  * POST /api/mobile/user/notifications/:id/action
@@ -1046,6 +1063,9 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
         const validReadRequestUUIDs = Array.from(activeReadRequestIds).filter(isUUID);
 
+        const user = await User.findByPk(uId, { attributes: ['clearedNotificationsAt'] });
+        const clearedAtTime = user?.clearedNotificationsAt ? new Date(user.clearedNotificationsAt).getTime() : 0;
+
         const partyReqWhere: any = {
             requesterId: uId,
             status: { [Op.in]: ['accepted', 'payment_pending'] },
@@ -1053,6 +1073,9 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         };
         if (validReadRequestUUIDs.length > 0) {
             partyReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
+        }
+        if (user?.clearedNotificationsAt) {
+            partyReqWhere.createdAt = { [Op.gt]: user.clearedNotificationsAt };
         }
 
         const planReqWhere: any = {
@@ -1063,6 +1086,9 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadRequestUUIDs.length > 0) {
             planReqWhere.id = { [Op.notIn]: validReadRequestUUIDs };
         }
+        if (user?.clearedNotificationsAt) {
+            planReqWhere.createdAt = { [Op.gt]: user.clearedNotificationsAt };
+        }
 
         const validReadNotifUUIDs = Array.from(activeReadNotificationIds).filter(isUUID);
         const notifWhere: any = {
@@ -1072,12 +1098,16 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         if (validReadNotifUUIDs.length > 0) {
             notifWhere.id = { [Op.notIn]: validReadNotifUUIDs };
         }
+        if (user?.clearedNotificationsAt) {
+            notifWhere.createdAt = { [Op.gt]: user.clearedNotificationsAt };
+        }
 
         // Execute phase 1 independent queries in parallel using indexed count / id queries
         const [
             unreadNotificationsCount,
             myTablePlans,
             myPartyPlans,
+            myStrangersMeets,
             unreadPartyRequestsCount,
             unreadPlanRequestsCount,
             userConversations
@@ -1085,6 +1115,7 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             Notification.count({ where: notifWhere }),
             Plan.findAll({ where: { userId: uId }, attributes: ['id'] }),
             PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] }),
+            StrangersMeetRequest.findAll({ where: { userId: uId }, attributes: ['id'] }),
             PartyPlanRequest.count({ where: partyReqWhere }),
             PlanJoinRequest.count({ where: planReqWhere }),
             Conversation.findAll({
@@ -1101,6 +1132,7 @@ router.get('/badge-counts', authenticate, async (req, res) => {
 
         const myTablePlanIds = myTablePlans.map(p => p.id);
         const myPartyPlanIds = myPartyPlans.map(p => p.id);
+        const myStrangersMeetIds = myStrangersMeets.map(m => m.id);
 
         let chatCount = 0;
         for (const conv of userConversations) {
@@ -1115,10 +1147,11 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         // Execute phase 2 dependent queries in parallel
         const [
             incomingTableReqs,
-            incomingPartyReqs
+            incomingPartyReqs,
+            incomingStrangerJoiners
         ] = await Promise.all([
             myTablePlanIds.length > 0
-                ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id'] })
+                ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id', 'createdAt'] })
                 : Promise.resolve([]),
             myPartyPlanIds.length > 0
                 ? PartyPlanRequest.findAll({
@@ -1132,15 +1165,26 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                     const isPrivateInvite = Array.isArray(planUsers) && planUsers.includes(r.requesterId);
                     return !isPrivateInvite; // Only voluntary join requests count as incoming requests for host
                 }))
+                : Promise.resolve([]),
+            myStrangersMeetIds.length > 0
+                ? StrangersMeetJoiner.findAll({
+                    where: {
+                        strangersMeetRequestId: { [Op.in]: myStrangersMeetIds },
+                        status: 'pending'
+                    },
+                    attributes: ['id', 'createdAt']
+                })
                 : Promise.resolve([])
         ]);
 
-        const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
-        const unreadIncomingPartyRequestsCount = incomingPartyReqs.filter(r => !activeReadRequestIds.has(r.id)).length;
+        const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id) && (!clearedAtTime || new Date((r as any).createdAt || 0).getTime() > clearedAtTime)).length;
+        const unreadIncomingPartyRequestsCount = incomingPartyReqs.filter(r => !activeReadRequestIds.has(r.id) && (!clearedAtTime || new Date((r as any).createdAt || 0).getTime() > clearedAtTime)).length;
+        const unreadIncomingStrangerRequestsCount = incomingStrangerJoiners.filter(r => !activeReadRequestIds.has(r.id) && (!clearedAtTime || new Date((r as any).createdAt || 0).getTime() > clearedAtTime)).length;
 
         const liveFeedCount = unreadNotificationsCount + 
                               unreadIncomingTableRequestsCount + 
                               unreadIncomingPartyRequestsCount + 
+                              unreadIncomingStrangerRequestsCount +
                               unreadPartyRequestsCount + 
                               unreadPlanRequestsCount;
 

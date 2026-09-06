@@ -308,20 +308,19 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   DateTime? _extractExpirationDateTime(Map<String, dynamic> booking, DateTime? eventStart) {
-    final now = DateTime.now();
-    final defaultExp = eventStart?.add(const Duration(hours: 30));
+    final defaultExp = eventStart?.add(const Duration(hours: 2));
 
     if (booking['expiresAt'] != null) {
       final dt = DateTime.tryParse(booking['expiresAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
+      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
     }
     if (booking['ticketExpiresAt'] != null) {
       final dt = DateTime.tryParse(booking['ticketExpiresAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
+      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
     }
     if (booking['eventEndAt'] != null) {
       final dt = DateTime.tryParse(booking['eventEndAt'].toString())?.toLocal();
-      if (dt != null && dt.isAfter(now) && (eventStart == null || !dt.isBefore(eventStart))) return dt;
+      if (dt != null && (eventStart == null || dt.isAfter(eventStart))) return dt;
     }
 
     return defaultExp;
@@ -448,15 +447,14 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         return true;
       }).toList();
 
-      final listToUse = nonMenuImages.isNotEmpty ? nonMenuImages : images;
-      final img = listToUse[0];
-      if (img is Map) {
-        final path = img['filePath'] ?? img['url'];
-        if (path != null && path.toString().isNotEmpty) {
-          return normalize(path.toString());
+      if (nonMenuImages.isNotEmpty) {
+        final first = nonMenuImages.first;
+        if (first is Map) {
+          final path = first['url'] ?? first['filePath'];
+          if (path != null && path.toString().isNotEmpty) {
+            return normalize(path.toString());
+          }
         }
-      } else if (img is String && img.isNotEmpty) {
-        return normalize(img);
       }
     }
 
@@ -485,20 +483,20 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
   }
 
   String _formatBookingDateTime(String bookingDateStr, String startTimeStr) {
-    final bool hasIsoTime = bookingDateStr.contains('T') || bookingDateStr.contains('Z');
+    final cleanTime = startTimeStr.trim().isNotEmpty
+        ? LunaraDateFormatter.normalizeTimeTo12Hour(startTimeStr)
+        : '';
     final dt = LunaraDateFormatter.parseToLocal(
       bookingDateStr,
-      explicitTime: hasIsoTime ? null : startTimeStr,
+      explicitTime: cleanTime.isNotEmpty ? cleanTime : null,
     );
     if (dt == null) {
-      final cleanTime = LunaraDateFormatter.normalizeTimeTo12Hour(startTimeStr);
       return cleanTime.isNotEmpty ? '$bookingDateStr • $cleanTime' : bookingDateStr;
     }
     final formattedDate = LunaraDateFormatter.formatEventDate(dt, pattern: 'MMM d, yyyy').toUpperCase();
-    final formattedTime = LunaraDateFormatter.formatEventTime(
-      dt,
-      explicitTime: hasIsoTime ? null : startTimeStr,
-    );
+    final formattedTime = cleanTime.isNotEmpty
+        ? cleanTime
+        : LunaraDateFormatter.formatEventTime(dt);
     return '$formattedDate • $formattedTime';
   }
 

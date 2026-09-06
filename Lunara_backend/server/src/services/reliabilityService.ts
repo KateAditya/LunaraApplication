@@ -29,11 +29,12 @@ export class ReliabilityService {
         partyPlanId?: string | null;
         bookingId?: string | null;
         metadata?: object;
+        transaction?: any;
     }): Promise<{ newScore: number; oldScore: number; change: number }> {
         try {
-            const { userId, action, customPoints, partyPlanId, bookingId, metadata } = params;
+            const { userId, action, customPoints, partyPlanId, bookingId, metadata, transaction } = params;
 
-            const user = await User.findByPk(userId);
+            const user = await User.findByPk(userId, { transaction });
             if (!user) {
                 throw new Error(`User ${userId} not found`);
             }
@@ -56,7 +57,7 @@ export class ReliabilityService {
             await user.update({
                 reliabilityScore: newScore,
                 noShowCount,
-            });
+            }, { transaction });
 
             // Log action in AuditLog
             await AuditLog.logAction({

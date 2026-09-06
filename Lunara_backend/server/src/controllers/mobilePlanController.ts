@@ -670,6 +670,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 spotsLeft: p.maxJoiners - p.currentJoiners,
                 matchScore,
                 postedAt: p.createdAt,
+                lastActivityAt: p.updatedAt ? p.updatedAt.toISOString() : p.createdAt.toISOString(),
             };
         });
 
@@ -743,18 +744,19 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 spotsLeft: 1,
                 matchScore,
                 postedAt: p.createdAt,
+                lastActivityAt: p.updatedAt ? p.updatedAt.toISOString() : p.createdAt.toISOString(),
             };
         });
 
         // Plans from people the viewer superliked are boosted to the top of
-        // the feed (above the "they superliked you" case, which is a passive
-        // signal rather than something the viewer actively acted on), then
-        // everything else falls back to plain recency.
+        // the feed, then everything else falls back to latest activity recency.
         const combinedFeed = [...tableFeed, ...partyFeed].sort((a, b) => {
             const aBoost = (a as any).iSuperlikedThem ? 1 : 0;
             const bBoost = (b as any).iSuperlikedThem ? 1 : 0;
             if (aBoost !== bBoost) return bBoost - aBoost;
-            return new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime();
+            const aTime = new Date((a as any).lastActivityAt || a.postedAt).getTime();
+            const bTime = new Date((b as any).lastActivityAt || b.postedAt).getTime();
+            return bTime - aTime;
         });
 
         let myRequests: any[] = [];
@@ -1179,7 +1181,11 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         } : null,
                     };
                 })
-            ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            ].sort((a, b) => {
+                const aTime = new Date(a.lastActivityAt || a.updatedAt || a.createdAt || 0).getTime();
+                const bTime = new Date(b.lastActivityAt || b.updatedAt || b.createdAt || 0).getTime();
+                return bTime - aTime;
+            });
 
             // Build incoming requests
             const incomingTableMapped = incomingTableReqs.map((r: any) => {
@@ -1192,6 +1198,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     planId: r.planId,
                     status: r.status,
                     createdAt: r.createdAt,
+                    lastActivityAt: r.updatedAt ? r.updatedAt.toISOString() : r.createdAt,
                     requester: { ...reqUser?.toJSON(), profileImageUrl },
                 };
             });
@@ -1206,6 +1213,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     planId: r.strangersMeetRequestId,
                     status: r.status,
                     createdAt: r.createdAt,
+                    lastActivityAt: r.updatedAt ? r.updatedAt.toISOString() : r.createdAt,
                     joinerPaymentStatus: r.paymentStatus,
                     requester: {
                         id: reqUser?.id,
@@ -1217,7 +1225,11 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             });
 
             incomingRequests = [...incomingTableMapped, ...formattedIncomingPartyReqs, ...incomingStrangerMapped]
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                .sort((a, b) => {
+                    const aTime = new Date(a.lastActivityAt || a.updatedAt || a.createdAt || 0).getTime();
+                    const bTime = new Date(b.lastActivityAt || b.updatedAt || b.createdAt || 0).getTime();
+                    return bTime - aTime;
+                });
         }
 
         return res.json({

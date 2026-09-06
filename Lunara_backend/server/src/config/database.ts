@@ -499,6 +499,78 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
+
+                    -- night_interests table
+                    CREATE TABLE IF NOT EXISTS night_interests (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        venue_id UUID NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+                        event_date DATE NOT NULL,
+                        event_time VARCHAR(20),
+                        status VARCHAR(20) NOT NULL DEFAULT 'interested',
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        CONSTRAINT unique_user_night_interest UNIQUE (user_id, venue_id, event_date)
+                    );
+
+                    -- night_partner_requests table
+                    CREATE TABLE IF NOT EXISTS night_partner_requests (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        partner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        venue_id UUID NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+                        event_date DATE NOT NULL,
+                        event_time VARCHAR(20) DEFAULT '20:00',
+                        status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                        expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+                        night_interest_id UUID,
+                        reminder_2h_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        reminder_1h_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        reminder_30m_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+
+                    -- night_partner_matches table
+                    CREATE TABLE IF NOT EXISTS night_partner_matches (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        partner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        venue_id UUID NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+                        event_date DATE NOT NULL,
+                        event_time VARCHAR(20),
+                        request_id UUID REFERENCES night_partner_requests(id) ON DELETE CASCADE,
+                        status VARCHAR(30) NOT NULL DEFAULT 'MATCHED',
+                        booking_id UUID REFERENCES bookings(id) ON DELETE SET NULL,
+                        conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+                        total_amount DECIMAL(10,2),
+                        payment_mode VARCHAR(20) DEFAULT 'SELF_PAY',
+                        host_paid BOOLEAN DEFAULT FALSE,
+                        partner_paid BOOLEAN DEFAULT FALSE,
+                        host_amount DECIMAL(10,2),
+                        partner_amount DECIMAL(10,2),
+                        razorpay_order_id VARCHAR(255),
+                        max_partners INTEGER DEFAULT 1,
+                        payment_expires_at TIMESTAMP WITH TIME ZONE,
+                        cancellation_status VARCHAR(30) DEFAULT 'NONE',
+                        cancellation_reason TEXT,
+                        cancelled_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                        reminder_2h_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        reminder_1h_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        reminder_30m_sent BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+
+                    -- night_partner_matches column additions
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='payment_mode') THEN ALTER TABLE night_partner_matches ADD COLUMN payment_mode VARCHAR(20) DEFAULT 'SELF_PAY'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='host_paid') THEN ALTER TABLE night_partner_matches ADD COLUMN host_paid BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='partner_paid') THEN ALTER TABLE night_partner_matches ADD COLUMN partner_paid BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='host_amount') THEN ALTER TABLE night_partner_matches ADD COLUMN host_amount DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='partner_amount') THEN ALTER TABLE night_partner_matches ADD COLUMN partner_amount DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='cancellation_status') THEN ALTER TABLE night_partner_matches ADD COLUMN cancellation_status VARCHAR(30) DEFAULT 'NONE'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='cancellation_reason') THEN ALTER TABLE night_partner_matches ADD COLUMN cancellation_reason TEXT; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='cancelled_by') THEN ALTER TABLE night_partner_matches ADD COLUMN cancelled_by UUID; END IF;
                 END $$;
             `);
 

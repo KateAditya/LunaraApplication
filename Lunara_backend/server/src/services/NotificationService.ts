@@ -1,6 +1,7 @@
 import Notification from '../models/Notification';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
+import { Op } from 'sequelize';
 import { NotificationPayload, NotificationCategory } from '../types/NotificationEventTypes';
 import { sendPushNotification } from './fcmService';
 import { logger } from '../config/logger';
@@ -238,10 +239,17 @@ export class NotificationService {
      * Mark all notifications as read for a recipient
      */
     public static async markAllAsRead(recipientUserId: string): Promise<boolean> {
-        await Notification.update(
-            { isRead: true, readAt: new Date() },
-            { where: { recipientUserId, isRead: false } }
-        );
+        const now = new Date();
+        await Promise.all([
+            Notification.update(
+                { isRead: true, readAt: now },
+                { where: { recipientUserId, isRead: false } }
+            ),
+            User.update(
+                { clearedNotificationsAt: now },
+                { where: { id: recipientUserId } }
+            )
+        ]);
         return true;
     }
 
@@ -249,9 +257,12 @@ export class NotificationService {
      * Get unread count
      */
     public static async getUnreadCount(recipientUserId: string): Promise<number> {
-        return await Notification.count({
-            where: { recipientUserId, isRead: false },
-        });
+        const user = await User.findByPk(recipientUserId, { attributes: ['clearedNotificationsAt'] });
+        const where: any = { recipientUserId, isRead: false };
+        if (user?.clearedNotificationsAt) {
+            where.createdAt = { [Op.gt]: user.clearedNotificationsAt };
+        }
+        return await Notification.count({ where });
     }
 
     /**

@@ -106,8 +106,12 @@ class _PartnerReachConfirmationDialogState
     });
 
     try {
+      final cleanPlanId = widget.planId.replaceFirst(
+        RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+        '',
+      );
       final res = await ApiService.confirmArrival(
-        planId: widget.planId,
+        planId: cleanPlanId,
         userId: currentUid,
         hasArrived: hasReached,
         stage: widget.stage,
@@ -115,7 +119,7 @@ class _PartnerReachConfirmationDialogState
         notificationId: widget.eventKey,
       );
 
-      if (res['success'] == true) {
+      if (res['success'] == true || res['alreadyConfirmed'] == true) {
         // Mark as responded so the popup is never reshown for this plan
         PartnerReachConfirmationDialog._respondedEventKeys.add(widget.eventKey);
 
@@ -126,9 +130,9 @@ class _PartnerReachConfirmationDialogState
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                hasReached
+                res['message'] ?? (hasReached
                     ? '✓ Venue arrival confirmed! Waiting for partner.'
-                    : 'Recorded: Not reached yet.',
+                    : 'Recorded: Not reached yet.'),
                 style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
               ),
               backgroundColor: hasReached ? const Color(0xFF10B981) : const Color(0xFFF59E0B),

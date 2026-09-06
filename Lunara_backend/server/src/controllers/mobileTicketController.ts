@@ -36,13 +36,12 @@ function parseEventStartDateTime(dateVal?: string | Date | null, timeStr?: strin
 }
 
 function getActualExpiration(startAt: Date, endAt?: Date | null, expAt?: Date | null): Date {
-    const now = new Date();
-    const defaultExp = new Date(startAt.getTime() + 30 * 60 * 60 * 1000);
+    const defaultExp = new Date(startAt.getTime() + 2 * 60 * 60 * 1000);
 
-    if (expAt && expAt.getTime() > now.getTime()) {
+    if (expAt && expAt.getTime() > startAt.getTime()) {
         return expAt;
     }
-    if (endAt && endAt.getTime() > now.getTime()) {
+    if (endAt && endAt.getTime() > startAt.getTime()) {
         return endAt;
     }
 

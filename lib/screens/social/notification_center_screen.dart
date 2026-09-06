@@ -228,11 +228,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     if (currentUid.isEmpty) return;
 
     try {
-      final response = await ApiService.post(
-        '/api/mobile/notifications/mark-all-read',
-        body: {'userId': currentUid},
-      );
-      if (response.statusCode == 200 && mounted) {
+      final success = await ApiService.markAllNotificationsAsRead();
+      if (success && mounted) {
         setState(() {
           for (var item in _notifications) {
             item['read'] = true;
@@ -241,7 +238,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('All notifications marked as read'),
+            content: Text('All notifications marked as read ✓'),
             backgroundColor: LunaraTheme.electricViolet,
           ),
         );

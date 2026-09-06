@@ -559,6 +559,8 @@ export class VenueBookingService {
                 body,
                 createdAt: updatedIso,
                 updatedAt: updatedIso,
+                lastActivityAt: updatedIso,
+                requiresAction: Boolean(!isConfirmed && !isCancelled && bookingRecord.paymentStatus !== 'paid'),
                 read: false,
                 isRead: false,
                 category: 'bookings',

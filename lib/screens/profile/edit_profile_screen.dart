@@ -45,6 +45,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   final ImagePicker _picker = ImagePicker();
   Uint8List? _localProfilePhotoBytes;
+  Uint8List? _pendingProfilePhotoBytes;
+  String? _pendingProfilePhotoName;
   bool _photoDeleted = false;
   List<Map<String, String>> _localPhotoDetails = [];
   String? _currentProfilePhotoUrl;
@@ -84,6 +86,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _deletePhoto() async {
+    if (_pendingProfilePhotoBytes != null) {
+      setState(() {
+        _pendingProfilePhotoBytes = null;
+        _pendingProfilePhotoName = null;
+        _localProfilePhotoBytes = null;
+      });
+      return;
+    }
     String? photoId;
     if (_localPhotoDetails.isNotEmpty) {
       final primary = _localPhotoDetails.firstWhere(
@@ -193,6 +203,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (images.isEmpty) return;
 
+      if (isMainProfilePhoto) {
+        final bytes = await images.first.readAsBytes();
+        setState(() {
+          _pendingProfilePhotoBytes = bytes;
+          _pendingProfilePhotoName = images.first.name;
+          _localProfilePhotoBytes = bytes;
+          _photoDeleted = false;
+        });
+        return;
+      }
+
       setState(() => _isLoading = true);
 
       final List<Uint8List> bytesList = [];
@@ -206,17 +227,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final success = await ApiService.uploadProfilePhotos(
         bytesList,
         namesList,
-        isPrimary: isMainProfilePhoto,
+        isPrimary: false,
       );
       
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        if (success && isMainProfilePhoto) {
-          _localProfilePhotoBytes = bytesList.first;
-          _photoDeleted = false;
-        }
-      });
+      setState(() => _isLoading = false);
 
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       if (success) {
@@ -247,6 +262,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
          _localPhotoDetails = List.from(updatedUser.photoDetails);
          _currentProfilePhotoUrl = updatedUser.profilePhoto;
          _localProfilePhotoBytes = null;
+         _pendingProfilePhotoBytes = null;
+         _pendingProfilePhotoName = null;
          _photoDeleted = false;
        });
        ApiService.profileUpdateNotifier.value++;
@@ -587,6 +604,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     
     setState(() => _isLoading = true);
+
+    if (_pendingProfilePhotoBytes != null) {
+      final uploadSuccess = await ApiService.uploadProfilePhotos(
+        [_pendingProfilePhotoBytes!],
+        [_pendingProfilePhotoName ?? 'profile.jpg'],
+        isPrimary: true,
+      );
+      if (!uploadSuccess) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to upload profile picture. Please try again.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      _pendingProfilePhotoBytes = null;
+      _pendingProfilePhotoName = null;
+    }
 
     final int? minBudget = int.tryParse(_minBudgetController.text.trim());
     final int? maxBudget = int.tryParse(_maxBudgetController.text.trim());
@@ -1115,6 +1150,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   bool _hasUnsavedChanges() {
+    if (_pendingProfilePhotoBytes != null) return true;
     final u = widget.user;
     if (_firstNameController.text.trim() != u.firstName) return true;
     if (_lastNameController.text.trim() != u.lastName) return true;
