@@ -7,6 +7,7 @@ import 'edit_profile_screen.dart';
 import '../../services/block_service.dart';
 import '../../services/api_service.dart';
 import '../../services/optimistic_action_guard.dart';
+import '../../services/subscription_provider.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/profile_share_sheet.dart';
 import '../../widgets/subscription_limit_dialog.dart';
@@ -59,6 +60,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   late User _currentUser;
   String? _localSwipedAction;
   bool _isLoadingSwipeStatus = false;
+  bool _isLiking = false;
+  bool _isSuperLiking = false;
 
   @override
   void initState() {
@@ -1097,8 +1100,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
           ],
         ),
         const SizedBox(width: 16),
-
-        // ── Like button ───────────────────────────────────────────────────────
+              // ── Like button ───────────────────────────────────────────────────────
         AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -1140,12 +1142,21 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 child: IconButton(
                   disabledColor: Colors.white,
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: Colors.white,
-                  ),
+                  icon: _isLiking
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Icon(
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: Colors.white,
+                        ),
                   iconSize: isLiked ? 34 : 32,
-                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || likeDisabled)
+                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || likeDisabled || _isLiking)
                       ? null
                       : () async {
                           if (isLiked) {
@@ -1170,12 +1181,27 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                             );
                             return;
                           }
+
+                          // In-memory quota check
+                          final validation = SubscriptionProvider.instance.validateAction(VipAction.like);
+                          if (!validation.allowed) {
+                            showSubscriptionLimitDialog(
+                              context,
+                              feature: SubLimitFeature.dailyLikes,
+                              customMessage: validation.message,
+                            );
+                            return;
+                          }
+
                           if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
                           final prevSwipedAction = _localSwipedAction;
-                          // Optimistic UI: immediately set liked state
+                          
                           setState(() {
+                            _isLiking = true;
                             _localSwipedAction = 'like';
                           });
+                          SubscriptionProvider.instance.optimisticConsume(VipAction.like);
+
                           try {
                             if (widget.onLike != null) {
                               await widget.onLike!.call();
@@ -1184,8 +1210,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               if (!mounted) return;
                               if (res == null || res['limitReached'] == true) {
                                 // Rollback
+                                SubscriptionProvider.instance.rollbackConsume(VipAction.like);
                                 setState(() => _localSwipedAction = prevSwipedAction);
-                                showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes, customMessage: res?['message']);
+                                showSubscriptionLimitDialog(
+                                  context,
+                                  feature: SubLimitFeature.dailyLikes,
+                                  customMessage: res?['message'],
+                                );
                                 return;
                               }
                               if (res['matched'] == true) {
@@ -1208,10 +1239,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               _checkUsageWarning(res);
                             }
                           } catch (e) {
+                            SubscriptionProvider.instance.rollbackConsume(VipAction.like);
                             if (mounted) {
                               setState(() => _localSwipedAction = prevSwipedAction);
                             }
                           } finally {
+                            if (mounted) setState(() => _isLiking = false);
                             OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
                           }
                         },
@@ -1221,8 +1254,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 child: Text(
-                  isLiked ? 'LIKED' : 'Like',
-                  key: ValueKey(isLiked),
+                  _isLiking ? 'Liking...' : (isLiked ? 'LIKED ✓' : 'Like'),
+                  key: ValueKey('${isLiked}_$_isLiking'),
                   style: TextStyle(
                     fontSize: 11,
                     color: isLiked
@@ -1279,11 +1312,20 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                 ),
                 child: IconButton(
                   disabledColor: Colors.white,
-                  icon: Icon(
-                    isSuperLiked ? Icons.star : Icons.star_border,
-                    color: Colors.white,
-                  ),
-                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_SUPER:${_currentUser.id}') || superLikeDisabled)
+                  icon: _isSuperLiking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Icon(
+                          isSuperLiked ? Icons.star : Icons.star_border,
+                          color: Colors.white,
+                        ),
+                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_SUPER:${_currentUser.id}') || superLikeDisabled || _isSuperLiking)
                       ? null
                       : () async {
                           if (isSuperLiked) {
@@ -1297,12 +1339,27 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                             );
                             return;
                           }
+
+                          // In-memory quota check
+                          final validation = SubscriptionProvider.instance.validateAction(VipAction.superlike);
+                          if (!validation.allowed) {
+                            showSubscriptionLimitDialog(
+                              context,
+                              feature: SubLimitFeature.superLike,
+                              customMessage: validation.message,
+                            );
+                            return;
+                          }
+
                           if (!OptimisticActionGuard.start('SWIPE_SUPER:${_currentUser.id}')) return;
                           final prevSwipedAction = _localSwipedAction;
-                          // Optimistic UI: immediately set superliked state
+                          
                           setState(() {
+                            _isSuperLiking = true;
                             _localSwipedAction = 'superlike';
                           });
+                          SubscriptionProvider.instance.optimisticConsume(VipAction.superlike);
+
                           try {
                             if (widget.onSuper != null) {
                               await widget.onSuper!.call();
@@ -1311,8 +1368,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               if (!mounted) return;
                               if (res == null || res['limitReached'] == true) {
                                 // Rollback
+                                SubscriptionProvider.instance.rollbackConsume(VipAction.superlike);
                                 setState(() => _localSwipedAction = prevSwipedAction);
-                                showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike, customMessage: res?['message']);
+                                showSubscriptionLimitDialog(
+                                  context,
+                                  feature: SubLimitFeature.superLike,
+                                  customMessage: res?['message'],
+                                );
                                 return;
                               }
                               if (res['matched'] == true) {
@@ -1335,10 +1397,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               _checkUsageWarning(res);
                             }
                           } catch (e) {
+                            SubscriptionProvider.instance.rollbackConsume(VipAction.superlike);
                             if (mounted) {
                               setState(() => _localSwipedAction = prevSwipedAction);
                             }
                           } finally {
+                            if (mounted) setState(() => _isSuperLiking = false);
                             OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
                           }
                         },
@@ -1348,10 +1412,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 child: Text(
-                  isSuperLiked ? 'SUPER LIKED' : 'Super',
-                  key: ValueKey(isSuperLiked),
+                  _isSuperLiking ? 'Super...' : (isSuperLiked ? 'SUPER LIKED ★' : 'Super'),
+                  key: ValueKey('${isSuperLiked}_$_isSuperLiking'),
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     color: isSuperLiked
                         ? const Color(0xFFFFD700)
                         : (isDark ? Colors.white60 : Colors.black54),

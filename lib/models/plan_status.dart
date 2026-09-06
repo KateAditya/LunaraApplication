@@ -86,15 +86,15 @@ class PlanStatus {
   bool get isPaid => isElite || isPro || isPlus || isCore || (tierRank > 0 && !isFree) || isActive;
 
   int get dailyLikesLimitInt {
-    if (isPaid || dailyLikesLimit == 'unlimited') return 9999;
+    if (dailyLikesLimit == 'unlimited' || dailyLikesLimit == -1) return 9999;
     return int.tryParse(dailyLikesLimit.toString()) ?? 7;
   }
 
-  bool get hasUnlimitedLikes => isPaid || dailyLikesLimit == 'unlimited' || isElite || isPro || isPlus || isCore;
+  bool get hasUnlimitedLikes => dailyLikesLimit == 'unlimited' || dailyLikesLimitInt >= 9999 || dailyLikesLimit == -1;
   int get dailyLikesRemaining =>
       hasUnlimitedLikes ? 9999 : (dailyLikesLimitInt - dailyLikesUsed).clamp(0, 9999);
 
-  bool get canLike => isPaid || hasUnlimitedLikes || dailyLikesRemaining > 0;
+  bool get canLike => hasUnlimitedLikes || dailyLikesRemaining > 0;
   bool get isUnlimitedSuperlikes => isElite || superlikesRemaining >= 9999 || superlikesPerCycle >= 9999;
   bool get canSuperLike => isElite || isUnlimitedSuperlikes || superlikesRemaining > 0;
   bool get isUnlimitedBoosts => isElite || boostsRemaining >= 9999 || boostsPerCycle >= 9999;

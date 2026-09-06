@@ -649,6 +649,12 @@ ChatSubscription.belongsTo(User, { foreignKey: 'paidById', as: 'paidBy' });
 // Exports
 // ============================================================================
 
+// UserLike Associations
+UserLike.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+UserLike.belongsTo(User, { foreignKey: 'targetUserId', as: 'targetUser' });
+User.hasMany(UserLike, { foreignKey: 'userId', as: 'sentLikes' });
+User.hasMany(UserLike, { foreignKey: 'targetUserId', as: 'receivedLikes' });
+
 export {
     User,
     UserRole,

@@ -113,6 +113,9 @@ class SubscriptionProvider extends ChangeNotifier {
               ? _entitlementsSummary!.boostsAvailable
               : _status.boostsRemaining) - _optimisticBoostsOffset).clamp(0, 9999);
 
+  bool get hasUnlimitedLikes => _status.hasUnlimitedLikes;
+  int get likesRemaining => dailyLikesRemaining;
+
   int get dailyLikesRemaining => _status.hasUnlimitedLikes
       ? 9999
       : (_status.dailyLikesRemaining - _optimisticLikesOffset).clamp(0, 9999);
@@ -121,7 +124,7 @@ class SubscriptionProvider extends ChangeNotifier {
       ? 9999
       : (_status.dailyBacktrackRemaining - _optimisticBacktracksOffset).clamp(0, 9999);
 
-  bool get canLike => isPaid || _status.hasUnlimitedLikes || dailyLikesRemaining > 0;
+  bool get canLike => _status.hasUnlimitedLikes || dailyLikesRemaining > 0;
   bool get canSuperLike => isElite || _status.isUnlimitedSuperlikes || superlikesRemaining > 0;
   bool get canBoost => isElite || _status.isUnlimitedBoosts || boostsRemaining > 0;
   bool get canBacktrack => _status.hasUnlimitedBacktracks || dailyBacktrackRemaining > 0;
@@ -133,7 +136,7 @@ class SubscriptionProvider extends ChangeNotifier {
     if (isElite || _status.isElite) return;
     switch (action) {
       case VipAction.like:
-        if (!_status.hasUnlimitedLikes && !isPaid) {
+        if (!_status.hasUnlimitedLikes) {
           _optimisticLikesOffset++;
           notifyListeners();
         }
@@ -207,7 +210,7 @@ class SubscriptionProvider extends ChangeNotifier {
 
     switch (action) {
       case VipAction.like:
-        if (isPaid || _status.hasUnlimitedLikes) {
+        if (_status.hasUnlimitedLikes) {
           return const VipActionValidation(
             allowed: true,
             action: VipAction.like,
@@ -224,7 +227,7 @@ class SubscriptionProvider extends ChangeNotifier {
             code: 'DAILY_LIKES_LIMIT_REACHED',
             limit: _status.dailyLikesLimitInt,
             remaining: 0,
-            message: "You've used all your daily likes (${_status.dailyLikesLimitInt}/${_status.dailyLikesLimitInt}). Upgrade to Lunara VIP for unlimited likes!",
+            message: "You've used all your daily likes (${_status.dailyLikesLimitInt}/${_status.dailyLikesLimitInt}). Upgrade your plan to get more likes!",
           );
         }
         return VipActionValidation(

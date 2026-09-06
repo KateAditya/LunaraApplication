@@ -24,6 +24,9 @@ class SubscriptionPackage extends Model {
     public boostsPerCycle!: number;
     public backtrackLimit!: number;
 
+    public partyPlanLimit!: number;
+    public partyPlanPeriodDays!: number;
+
     // Boolean features
     public hasHideProfile!: boolean;
     public hasPriorityVisibility!: boolean;
@@ -98,6 +101,18 @@ SubscriptionPackage.init(
             allowNull: false,
             defaultValue: 3,
             field: 'backtrack_limit',
+        },
+        partyPlanLimit: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 1, // Default 1 for Free, -1 for unlimited
+            field: 'party_plan_limit',
+        },
+        partyPlanPeriodDays: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 7, // Default 7-day period for Free
+            field: 'party_plan_period_days',
         },
         hasHideProfile: {
             type: DataTypes.BOOLEAN,

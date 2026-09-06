@@ -30,6 +30,8 @@ async function runSchemaFix() {
         `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_status VARCHAR(30) DEFAULT 'pending';`,
         `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS guest_final_check_responded_at TIMESTAMP WITH TIME ZONE;`,
 
+        `ALTER TABLE "SubscriptionPackages" ADD COLUMN IF NOT EXISTS party_plan_limit INTEGER DEFAULT 1;`,
+        `ALTER TABLE "SubscriptionPackages" ADD COLUMN IF NOT EXISTS party_plan_period_days INTEGER DEFAULT 7;`,
         `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN DEFAULT false;`,
         `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_day_sent BOOLEAN DEFAULT false;`,
         `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder8_hour_sent BOOLEAN DEFAULT false;`,

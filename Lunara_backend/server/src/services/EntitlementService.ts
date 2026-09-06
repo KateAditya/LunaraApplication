@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database';
+import '../models';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import SubscriptionUsage from '../models/SubscriptionUsage';
@@ -237,13 +238,10 @@ export class EntitlementService {
                 : (boostsRemaining > 0 ? 0 : 100));
 
         // Party Plans Limit
-        let partyPlansIncluded = 1; // Free tier default
-        if (tier === PackageTier.CORE) partyPlansIncluded = 3;
-        else if (tier === PackageTier.PLUS) partyPlansIncluded = 5;
-        else if (tier === PackageTier.PRO) partyPlansIncluded = 10;
-        else if (tier === PackageTier.ELITE) partyPlansIncluded = 9999;
+        const partyPlansIncluded = (pkg as any)?.partyPlanLimit ?? (tier === PackageTier.FREE ? 1 : (tier === PackageTier.CORE ? 3 : (tier === PackageTier.PLUS ? 5 : (tier === PackageTier.PRO ? 10 : 9999))));
+        const partyPlanPeriodDays = (pkg as any)?.partyPlanPeriodDays ?? (tier === PackageTier.FREE ? 7 : 30);
 
-        const isPartyPlansUnlimited = partyPlansIncluded >= 9999;
+        const isPartyPlansUnlimited = partyPlansIncluded >= 9999 || partyPlansIncluded === -1 || tier === PackageTier.ELITE;
         const partyPlansRemaining = isPartyPlansUnlimited
             ? 9999
             : Math.max(0, partyPlansIncluded - partyPlansCreatedThisMonth);
@@ -252,9 +250,11 @@ export class EntitlementService {
             : Math.min(100, Math.round((partyPlansCreatedThisMonth / partyPlansIncluded) * 100));
 
         // Daily Likes
-        const dailyLikesIncluded = pkg?.dailyLikes || 7;
-        const isDailyLikesUnlimited = tier !== PackageTier.FREE || dailyLikesIncluded >= 9999 || dailyLikesIncluded === -1;
-        const dailyLikesUsed = usageMap['daily_likes_daily'] || 0;
+        const freePkgForDefaults = !pkg ? await SubscriptionPackage.findOne({ where: { tier: PackageTier.FREE, isActive: true }, order: [['createdAt', 'DESC']] }) : null;
+        const resolvedPkg = pkg || freePkgForDefaults;
+        const dailyLikesIncluded = resolvedPkg?.dailyLikes ?? 7;
+        const isDailyLikesUnlimited = dailyLikesIncluded >= 9999 || dailyLikesIncluded === -1;
+        const dailyLikesUsed = usageMap['daily_likes_daily'] || usageMap['daily_likes'] || 0;
         const dailyLikesRemaining = isDailyLikesUnlimited
             ? 9999
             : Math.max(0, dailyLikesIncluded - dailyLikesUsed);
@@ -307,7 +307,7 @@ export class EntitlementService {
                 remainingQuantity: isPartyPlansUnlimited ? -1 : partyPlansRemaining,
                 progressPercentage: partyPlansProgress,
                 isUnlimited: isPartyPlansUnlimited,
-                unit: 'per month',
+                unit: partyPlanPeriodDays === 7 ? 'per week' : (partyPlanPeriodDays === 1 ? 'per day' : 'per month'),
                 isLow: !isPartyPlansUnlimited && partyPlansRemaining <= 1,
             },
             {

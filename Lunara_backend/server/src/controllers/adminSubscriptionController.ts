@@ -19,6 +19,7 @@ import { sendPushNotification } from '../services/fcmService';
 const NON_NEGATIVE_OR_UNLIMITED_FIELDS = [
     'dailyMatchRequests', 'dailyLikes', 'dailyPosts',
     'superlikesPerCycle', 'boostsPerCycle', 'backtrackLimit',
+    'partyPlanLimit', 'partyPlanPeriodDays',
 ];
 
 function validatePackagePayload(body: any, isCreate: boolean): string | null {

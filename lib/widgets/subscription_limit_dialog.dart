@@ -12,6 +12,7 @@ enum SubLimitFeature {
   strangerMeet,
   partyCreation,
   hideProfile,
+  whoLikedMe,
   generic,
 }
 
@@ -37,12 +38,12 @@ class _FeatureConfig {
 const _configs = <SubLimitFeature, _FeatureConfig>{
   SubLimitFeature.dailyLikes: _FeatureConfig(
     emoji: '❤️',
-    title: "You've Used All Your\nDaily Likes",
-    subtitle: "Upgrade to Lunara VIP for unlimited likes every day — never miss a connection!",
+    title: "Daily Like Limit\nReached",
+    subtitle: "You've used all your daily likes for today. Upgrade your plan to get more likes!",
     benefitHeader: "What you get with VIP:",
     benefits: [
-      "♾️ Unlimited daily likes",
-      "⭐ Super likes every week",
+      "♾️ Configured daily likes or unlimited",
+      "⭐ Super likes every cycle",
       "⏪ Backtrack your last swipe",
       "👁️ See who liked you",
       "🚀 Priority visibility boost",
@@ -51,8 +52,8 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
   ),
   SubLimitFeature.superLike: _FeatureConfig(
     emoji: '⭐',
-    title: "No Super Likes\nRemaining",
-    subtitle: "Super Likes show someone you're seriously interested. Get more with a VIP plan!",
+    title: "Super Likes are a\nVIP Feature",
+    subtitle: "Show someone you're especially interested in with priority Super Likes!",
     benefitHeader: "Super likes by plan:",
     benefits: [
       "💙 Core: 3 super likes/week",
@@ -64,9 +65,9 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
     gradientColors: [Color(0xFF7B2FFF), Color(0xFFB44FFF)],
   ),
   SubLimitFeature.boost: _FeatureConfig(
-    emoji: '⚡',
-    title: "No Profile Boosts\nRemaining",
-    subtitle: "Profile Boost puts you in the spotlight for 30 minutes! Get more with Plus, Pro, Elite, or buy a Boost pack.",
+    emoji: '🚀',
+    title: "Boost Your Profile\nwith VIP",
+    subtitle: "Boost your profile to get up to 10x more visibility in discovery feeds tonight.",
     benefitHeader: "Boosts by plan:",
     benefits: [
       "💜 Plus: 2 free boosts per cycle",
@@ -108,16 +109,30 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
   SubLimitFeature.partyCreation: _FeatureConfig(
     emoji: '🎉',
     title: "Party Plan Limit\nReached",
-    subtitle: "Free plan includes 1 Party Plan per calendar month. Upgrade to Lunara VIP to host more party plans and unlock exclusive perks!",
+    subtitle: "Free users can create 1 Party Plan during the current 7-day period. Upgrade to VIP to create more Party Plans!",
     benefitHeader: "VIP Party Plan Benefits:",
     benefits: [
-      "🥂 Unlimited party plans",
+      "🥂 Create multiple party plans",
       "⭐ Priority Live Feed placement",
       "💸 Collect split payments",
       "📲 Direct invites to matches",
       "🎟️ Instant party ticketing",
     ],
     gradientColors: [Color(0xFFFFB703), Color(0xFFFF4B7D)],
+  ),
+  SubLimitFeature.whoLikedMe: _FeatureConfig(
+    emoji: '❤️',
+    title: "People Like You",
+    subtitle: "You have people waiting to connect with you. Upgrade to VIP to see exactly who liked you!",
+    benefitHeader: "Who Liked You Perks:",
+    benefits: [
+      "✓ See who liked you instantly",
+      "✓ Match faster with Like Back",
+      "✓ Unmask all profile photos & bios",
+      "✓ Filter by super likes received",
+      "✓ Full VIP membership benefits",
+    ],
+    gradientColors: [Color(0xFFFF4B7D), Color(0xFF7B2FFF)],
   ),
   SubLimitFeature.hideProfile: _FeatureConfig(
     emoji: '🙈',
@@ -139,11 +154,11 @@ const _configs = <SubLimitFeature, _FeatureConfig>{
     subtitle: "Unlock the full Lunara experience. Premium features are waiting for you!",
     benefitHeader: "VIP includes everything:",
     benefits: [
-      "♾️ Unlimited likes & matches",
-      "⭐ Super likes & boosts",
+      "♾️ Configured daily likes & matches",
+      "⭐ Super likes & profile boosts",
       "🤝 Stranger Meet access",
-      "🎉 Party creation",
-      "👁️ See who viewed you",
+      "🎉 Party creation privileges",
+      "👁️ See who liked you",
     ],
     gradientColors: [Color(0xFF7B2FFF), Color(0xFFFF4B7D)],
   ),
@@ -157,15 +172,20 @@ Future<void> showSubscriptionLimitDialog(
 }) {
   final provider = SubscriptionProvider.instance;
 
-  // ── Top tier (Elite) users have unlimited everything. Suppress all limit popups.
+  // ── Top tier (Elite) users have unlimited everything. Suppress limit popups.
   if (provider.isElite) {
     debugPrint('[SubscriptionLimitDialog] Suppressed limit dialog for Elite VIP user.');
     return Future.value();
   }
 
-  // ── All VIP tiers (Core, Plus, Pro, Elite) have unlimited likes. Suppress dailyLikes popup.
-  if (provider.isPaid && feature == SubLimitFeature.dailyLikes) {
-    debugPrint('[SubscriptionLimitDialog] Suppressed dailyLikes dialog for VIP user.');
+  // ── Suppress dailyLikes popup only if user has unlimited likes
+  if (provider.status.hasUnlimitedLikes && feature == SubLimitFeature.dailyLikes) {
+    debugPrint('[SubscriptionLimitDialog] Suppressed dailyLikes dialog for unlimited user.');
+    return Future.value();
+  }
+
+  // ── Suppress whoLikedMe popup if user already has access
+  if (provider.status.canSeeWhoLiked && feature == SubLimitFeature.whoLikedMe) {
     return Future.value();
   }
 

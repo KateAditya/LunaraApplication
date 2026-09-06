@@ -311,20 +311,22 @@ app.post('/api/admin/party-plans/cancellations/:id/restore', adminRestoreBooking
 
 // Run background auto-approval & expiration check for cancellation requests every 15 minutes
 let isCancellationAutoCheckRunning = false;
-setInterval(async () => {
-    if (isCancellationAutoCheckRunning) {
-        logger.warn('[Cron] Cancellation auto-check is already running. Skipping overlapping execution.');
-        return;
-    }
-    isCancellationAutoCheckRunning = true;
-    try {
-        await checkExpiredOrAutoApprovedRequests();
-    } catch (err) {
-        logger.error('Cancellation auto-check error:', err);
-    } finally {
-        isCancellationAutoCheckRunning = false;
-    }
-}, 15 * 60 * 1000);
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(async () => {
+        if (isCancellationAutoCheckRunning) {
+            logger.warn('[Cron] Cancellation auto-check is already running. Skipping overlapping execution.');
+            return;
+        }
+        isCancellationAutoCheckRunning = true;
+        try {
+            await checkExpiredOrAutoApprovedRequests();
+        } catch (err) {
+            logger.error('Cancellation auto-check error:', err);
+        } finally {
+            isCancellationAutoCheckRunning = false;
+        }
+    }, 15 * 60 * 1000);
+}
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);

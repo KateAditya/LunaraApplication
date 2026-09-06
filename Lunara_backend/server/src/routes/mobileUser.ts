@@ -1215,6 +1215,8 @@ router.post('/unlike', authenticate, mobileUserController.unlikeUser);
  * Fetch all likes/matches for a user
  */
 router.get('/likes-matches', authenticate, mobileUserController.getMyLikesAndMatches);
+router.get('/who-liked-summary', authenticate, mobileUserController.getWhoLikedSummary);
+router.get('/who-liked-me', authenticate, mobileUserController.getPeopleWhoLikedMe);
 
 /**
  * GET /api/mobile/user/swipe-status

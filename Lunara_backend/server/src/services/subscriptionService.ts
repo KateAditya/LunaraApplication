@@ -12,6 +12,7 @@
 
 import { Op, Transaction } from 'sequelize';
 import sequelize from '../config/database';
+import '../models';
 import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
@@ -179,7 +180,7 @@ export class SubscriptionService {
                     }
                 }
             } else {
-                // Fallback: read from legacy columns
+                // Read from package columns (single source of truth)
                 for (const [featureKey, mapping] of Object.entries(LEGACY_COLUMN_MAP)) {
                     const rawVal = (plan as any)[mapping.column];
                     if (mapping.isBoolean) {
@@ -188,48 +189,61 @@ export class SubscriptionService {
                         const numVal = Number(rawVal);
                         features.set(featureKey, {
                             enabled: numVal !== 0,
-                            value: numVal === -1 ? 'unlimited' : numVal,
+                            value: (numVal === -1 || numVal >= 9999) ? 'unlimited' : numVal,
                         });
                     }
                 }
-                // Enable stranger_meet and party_creation for VIP users
-                features.set('stranger_meet', { enabled: true, value: 'unlimited' });
-                features.set('party_creation', { enabled: true, value: 'unlimited' });
             }
 
-            // Guarantee PDF subscription rules for VIP users
-            if ((plan.tier as any) !== PackageTier.FREE && (plan.tier as any) !== 'FREE') {
-                features.set('daily_likes', { enabled: true, value: 'unlimited' });
-                features.set('daily_match_requests', { enabled: true, value: 'unlimited' });
-                features.set('daily_posts', { enabled: true, value: 'unlimited' });
+            // Party plan & stranger meet access
+            const partyLimit = (plan as any).partyPlanLimit ?? (plan.tier === PackageTier.ELITE ? -1 : 3);
+            features.set('party_creation', {
+                enabled: true,
+                value: (partyLimit === -1 || partyLimit >= 9999 || plan.tier === PackageTier.ELITE) ? 'unlimited' : Number(partyLimit),
+                periodDays: (plan as any).partyPlanPeriodDays ?? (plan.tier === PackageTier.ELITE ? 1 : 1),
+            });
+            features.set('stranger_meet', { enabled: true, value: 'unlimited' });
 
-                if ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE') {
-                    features.set('super_likes', { enabled: true, value: 'unlimited' });
-                    features.set('superlike', { enabled: true, value: 'unlimited' });
-                    features.set('boosts', { enabled: true, value: 'unlimited' });
-                    features.set('boost', { enabled: true, value: 'unlimited' });
-                    features.set('profile_boost', { enabled: true, value: 'unlimited' });
-                    features.set('daily_backtracks', { enabled: true, value: 'unlimited' });
-                    features.set('backtrack', { enabled: true, value: 'unlimited' });
-                    features.set('party_creation', { enabled: true, value: 'unlimited' });
-                }
+            // Elite tier overrides for unlimited features
+            if ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE') {
+                features.set('super_likes', { enabled: true, value: 'unlimited' });
+                features.set('superlike', { enabled: true, value: 'unlimited' });
+                features.set('boosts', { enabled: true, value: 'unlimited' });
+                features.set('boost', { enabled: true, value: 'unlimited' });
+                features.set('profile_boost', { enabled: true, value: 'unlimited' });
+                features.set('daily_backtracks', { enabled: true, value: 'unlimited' });
+                features.set('backtrack', { enabled: true, value: 'unlimited' });
+                features.set('party_creation', { enabled: true, value: 'unlimited', periodDays: 1 });
             }
         } else {
             // Unsubscribed users: use the admin-configured FREE tier package
-            // as the source of truth, falling back to hardcoded defaults only
-            // if no FREE package has been seeded at all.
+            // as the source of truth, falling back to configured defaults
             const freePkg = await SubscriptionPackage.findOne({
                 where: { tier: PackageTier.FREE, isActive: true },
+                order: [['createdAt', 'DESC']],
             });
 
-            features.set('daily_likes', { enabled: true, value: freePkg ? freePkg.dailyLikes : 7 });
-            features.set('daily_match_requests', { enabled: true, value: freePkg ? freePkg.dailyMatchRequests : 3 });
-            features.set('daily_posts', { enabled: true, value: freePkg ? freePkg.dailyPosts : 5 });
-            features.set('daily_backtracks', { enabled: true, value: freePkg ? freePkg.backtrackLimit : 3 });
-            features.set('super_likes', { enabled: false, value: 0 });
-            features.set('boosts', { enabled: false, value: 0 });
+            const freeLikes = freePkg ? Number(freePkg.dailyLikes) : 7;
+            const freeSuperlikes = freePkg ? Number(freePkg.superlikesPerCycle) : 0;
+            const freeBoosts = freePkg ? Number(freePkg.boostsPerCycle) : 0;
+            const freePartyLimit = freePkg ? Number((freePkg as any).partyPlanLimit ?? 1) : 1;
+            const freePartyPeriodDays = freePkg ? Number((freePkg as any).partyPlanPeriodDays ?? 7) : 7;
+            const freeMatchReqs = freePkg ? Number(freePkg.dailyMatchRequests) : 3;
+            const freePosts = freePkg ? Number(freePkg.dailyPosts) : 5;
+            const freeBacktracks = freePkg ? Number(freePkg.backtrackLimit) : 3;
+            const freeCanSeeWhoLiked = freePkg ? !!freePkg.canSeeWhoLiked : false;
+
+            features.set('daily_likes', { enabled: freeLikes > 0, value: freeLikes });
+            features.set('daily_match_requests', { enabled: freeMatchReqs > 0, value: freeMatchReqs });
+            features.set('daily_posts', { enabled: freePosts > 0, value: freePosts });
+            features.set('daily_backtracks', { enabled: freeBacktracks > 0, value: freeBacktracks });
+            features.set('super_likes', { enabled: freeSuperlikes > 0, value: freeSuperlikes });
+            features.set('superlike', { enabled: freeSuperlikes > 0, value: freeSuperlikes });
+            features.set('boosts', { enabled: freeBoosts > 0, value: freeBoosts });
+            features.set('profile_boost', { enabled: freeBoosts > 0, value: freeBoosts });
             features.set('stranger_meet', { enabled: true, value: 'unlimited' });
-            features.set('party_creation', { enabled: true, value: 1 }); // 1 party plan per calendar month
+            features.set('party_creation', { enabled: freePartyLimit > 0, value: freePartyLimit, periodDays: freePartyPeriodDays });
+            features.set('who_liked_me', { enabled: freeCanSeeWhoLiked });
         }
 
         const entry: CacheEntry = {
@@ -251,7 +265,7 @@ export class SubscriptionService {
      */
     static async checkPartyPlanLimit(
         userId: string,
-        targetDate: Date = new Date(),
+        _targetDate: Date = new Date(),
         options?: { transaction?: Transaction }
     ): Promise<{
         allowed: boolean;
@@ -280,31 +294,31 @@ export class SubscriptionService {
             const plan: SubscriptionPackage | null = (activeSub as any)?.package || null;
             const tier = plan ? plan.tier : 'FREE';
 
-            const refDate = targetDate instanceof Date && !isNaN(targetDate.getTime()) ? targetDate : new Date();
-
-            // Calendar Day Window (server time)
-            const startOfDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 0, 0, 0, 0);
-            const endOfDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 23, 59, 59, 999);
-            const resetAtDay = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate() + 1, 0, 0, 0, 0);
-
-            // Calendar Month Window (server time)
-            const startOfMonth = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
-            const endOfMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
-            const resetAtMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 1, 0, 0, 0, 0);
-
-            // ── 1. Free Tier Check (1 Party Plan per calendar month) ─────────
+            // ── 1. Free Tier Check (Rolling period from plan config, default 1 per 7 days) ──
             if (!plan || tier === 'FREE') {
-                const freeMonthlyLimit = 1;
-                const monthlyUsed = await PartyPlan.count({
-                    where: {
-                        userId,
-                        createdAt: { [Op.between]: [startOfMonth, endOfMonth] },
-                        status: { [Op.ne]: 'cancelled' },
-                    },
+                const freePkg = await SubscriptionPackage.findOne({
+                    where: { tier: PackageTier.FREE, isActive: true },
+                    order: [['createdAt', 'DESC']],
                     transaction: options?.transaction,
                 });
 
-                if (monthlyUsed >= freeMonthlyLimit) {
+                const freeLimit = freePkg ? Number((freePkg as any).partyPlanLimit ?? 1) : 1;
+                const freePeriodDays = freePkg ? Number((freePkg as any).partyPlanPeriodDays ?? 7) : 7;
+                const rollingWindowStart = new Date(Date.now() - (freePeriodDays * 24 * 60 * 60 * 1000));
+
+                const recentPlans = await PartyPlan.findAll({
+                    where: {
+                        userId,
+                        createdAt: { [Op.gte]: rollingWindowStart },
+                        status: { [Op.ne]: 'cancelled' },
+                    },
+                    order: [['createdAt', 'ASC']],
+                    transaction: options?.transaction,
+                });
+
+                const usedCount = recentPlans.length;
+
+                if (usedCount >= freeLimit) {
                     // Check if user has active party_creation add-on credits
                     try {
                         const UserAddonModel = (await import('../models/UserAddon')).default;
@@ -322,89 +336,87 @@ export class SubscriptionService {
                             return {
                                 allowed: true,
                                 tier: 'FREE (Add-on Active)',
-                                limit: freeMonthlyLimit + activeAddon.remainingQuantity,
-                                used: monthlyUsed,
+                                limit: freeLimit + activeAddon.remainingQuantity,
+                                used: usedCount,
                                 remaining: activeAddon.remainingQuantity,
-                                resetAt: resetAtMonth,
+                                resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                             };
                         }
                     } catch (addonErr) {
                         logger.warn('[checkPartyPlanLimit] Error checking party add-on:', addonErr);
                     }
 
+                    const oldestPlan = recentPlans[0];
+                    const nextAvailableAt = oldestPlan
+                        ? new Date(oldestPlan.createdAt.getTime() + (freePeriodDays * 24 * 60 * 60 * 1000))
+                        : new Date(Date.now() + (freePeriodDays * 24 * 60 * 60 * 1000));
+                    
+                    const daysRemaining = Math.max(1, Math.ceil((nextAvailableAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
                     return {
                         allowed: false,
                         tier: 'FREE',
-                        limit: freeMonthlyLimit,
-                        used: monthlyUsed,
+                        limit: freeLimit,
+                        used: usedCount,
                         remaining: 0,
-                        resetAt: resetAtMonth,
+                        resetAt: nextAvailableAt,
                         code: 'PARTY_PLAN_LIMIT_REACHED',
-                        message: `You have reached your Free Plan limit of ${freeMonthlyLimit} Party Plan for this month. Upgrade to VIP to create more party plans!`,
+                        message: `Free users can create ${freeLimit} Party Plan during the current ${freePeriodDays}-day period. Next plan available in ${daysRemaining} day(s). Upgrade to VIP for more!`,
                     };
                 }
 
                 return {
                     allowed: true,
                     tier: 'FREE',
-                    limit: freeMonthlyLimit,
-                    used: monthlyUsed,
-                    remaining: Math.max(0, freeMonthlyLimit - monthlyUsed),
-                    resetAt: resetAtMonth,
+                    limit: freeLimit,
+                    used: usedCount,
+                    remaining: Math.max(0, freeLimit - usedCount),
+                    resetAt: new Date(Date.now() + (freePeriodDays * 24 * 60 * 60 * 1000)),
                 };
             }
 
             // ── 2. Elite Tier Check (Unlimited Party Plans) ─────────────────
             if (tier === 'ELITE') {
-                const dailyUsed = await PartyPlan.count({
-                    where: {
-                        userId,
-                        createdAt: { [Op.between]: [startOfDay, endOfDay] },
-                        status: { [Op.ne]: 'cancelled' },
-                    },
-                    transaction: options?.transaction,
-                });
-
                 return {
                     allowed: true,
                     tier: 'ELITE',
                     limit: UNLIMITED,
-                    used: dailyUsed,
+                    used: 0,
                     remaining: UNLIMITED,
-                    resetAt: resetAtDay,
+                    resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                 };
             }
 
-            // ── 3. Paid VIP Tier Check (Maximum 3 Party Plans per calendar day) ──
-            let vipDailyLimit: number = 3;
-            const planFeature = await SubscriptionPlanFeature.findOne({
-                where: { packageId: plan.id, isEnabled: true },
-                include: [{
-                    model: SubscriptionFeature,
-                    as: 'feature',
-                    where: { key: 'party_creation' }
-                }],
-                transaction: options?.transaction,
-            });
+            // ── 3. Paid VIP Tier Check (Admin-configured limit and period) ──
+            let vipLimit: FeatureLimit = (plan as any).partyPlanLimit ?? 3;
+            let vipPeriodDays = (plan as any).partyPlanPeriodDays ?? 1;
 
-            if (planFeature && (planFeature as any).value) {
-                const val = (planFeature as any).value;
-                if (val.value !== undefined && val.value !== 'unlimited') {
-                    const num = Number(val.value);
-                    if (!isNaN(num) && num > 0) vipDailyLimit = num;
-                }
+            if (vipLimit === -1 || Number(vipLimit) >= 9999) {
+                return {
+                    allowed: true,
+                    tier,
+                    limit: UNLIMITED,
+                    used: 0,
+                    remaining: UNLIMITED,
+                    resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                };
             }
 
-            const dailyUsed = await PartyPlan.count({
+            const vipWindowStart = new Date(Date.now() - (vipPeriodDays * 24 * 60 * 60 * 1000));
+            const recentVipPlans = await PartyPlan.findAll({
                 where: {
                     userId,
-                    createdAt: { [Op.between]: [startOfDay, endOfDay] },
+                    createdAt: { [Op.gte]: vipWindowStart },
                     status: { [Op.ne]: 'cancelled' },
                 },
+                order: [['createdAt', 'ASC']],
                 transaction: options?.transaction,
             });
 
-            if (dailyUsed >= vipDailyLimit) {
+            const vipUsed = recentVipPlans.length;
+            const numericVipLimit = Number(vipLimit);
+
+            if (vipUsed >= numericVipLimit) {
                 // Check if user has active party_creation add-on credits
                 try {
                     const UserAddonModel = (await import('../models/UserAddon')).default;
@@ -422,35 +434,40 @@ export class SubscriptionService {
                         return {
                             allowed: true,
                             tier: `${tier} (Add-on Active)`,
-                            limit: vipDailyLimit + activeAddon.remainingQuantity,
-                            used: dailyUsed,
+                            limit: numericVipLimit + activeAddon.remainingQuantity,
+                            used: vipUsed,
                             remaining: activeAddon.remainingQuantity,
-                            resetAt: resetAtDay,
+                            resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                         };
                     }
                 } catch (addonErr) {
                     logger.warn('[checkPartyPlanLimit] Error checking party add-on:', addonErr);
                 }
 
+                const oldestVipPlan = recentVipPlans[0];
+                const nextVipAvailableAt = oldestVipPlan
+                    ? new Date(oldestVipPlan.createdAt.getTime() + (vipPeriodDays * 24 * 60 * 60 * 1000))
+                    : new Date(Date.now() + (vipPeriodDays * 24 * 60 * 60 * 1000));
+
                 return {
                     allowed: false,
                     tier,
-                    limit: vipDailyLimit,
-                    used: dailyUsed,
+                    limit: numericVipLimit,
+                    used: vipUsed,
                     remaining: 0,
-                    resetAt: resetAtDay,
-                    code: 'PARTY_PLAN_DAILY_LIMIT_REACHED',
-                    message: `You have reached today's Party Plan creation limit of ${vipDailyLimit}. You can schedule more plans tomorrow!`,
+                    resetAt: nextVipAvailableAt,
+                    code: 'PARTY_PLAN_LIMIT_REACHED',
+                    message: `You have reached your limit of ${numericVipLimit} Party Plan(s) for the current ${vipPeriodDays}-day period.`,
                 };
             }
 
             return {
                 allowed: true,
                 tier,
-                limit: vipDailyLimit,
-                used: dailyUsed,
-                remaining: Math.max(0, vipDailyLimit - dailyUsed),
-                resetAt: resetAtDay,
+                limit: numericVipLimit,
+                used: vipUsed,
+                remaining: Math.max(0, numericVipLimit - vipUsed),
+                resetAt: new Date(Date.now() + (vipPeriodDays * 24 * 60 * 60 * 1000)),
             };
         } catch (err) {
             logger.error('SubscriptionService.checkPartyPlanLimit error:', err);
@@ -517,22 +534,16 @@ export class SubscriptionService {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
             const plan = entry.plan;
 
-            if (plan && (plan.tier as any) !== PackageTier.FREE && (plan.tier as any) !== 'FREE') {
-                // All VIP plans have unlimited likes, match requests, and posts
-                if (featureKey === 'daily_likes' || featureKey === 'daily_match_requests' || featureKey === 'daily_posts') {
+            // Elite tier overrides for unlimited features
+            if (plan && ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE')) {
+                if (['super_likes', 'superlike', 'boosts', 'boost', 'profile_boost', 'daily_backtracks', 'backtrack', 'party_creation', 'party_plan'].includes(featureKey)) {
                     return UNLIMITED;
-                }
-                // Elite tier has unlimited superlikes, boosts, backtracks, and party plans
-                if ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE') {
-                    if (['super_likes', 'superlike', 'boosts', 'boost', 'profile_boost', 'daily_backtracks', 'backtrack', 'party_creation', 'party_plan'].includes(featureKey)) {
-                        return UNLIMITED;
-                    }
                 }
             }
 
             const featureValue = entry.features.get(featureKey);
             if (!featureValue || !featureValue.enabled) return 0;
-            if (featureValue.value === 'unlimited') return UNLIMITED;
+            if (featureValue.value === 'unlimited' || featureValue.value === -1 || featureValue.value >= 9999) return UNLIMITED;
             if (typeof featureValue.value === 'number') return featureValue.value;
             return featureValue.enabled ? UNLIMITED : 0;
         } catch (err) {
@@ -854,14 +865,16 @@ export class SubscriptionService {
                 hasEliteBadge: plan?.hasEliteBadge ?? (tier === 'ELITE'),
                 canSeeWhoLiked: plan?.canSeeWhoLiked ?? (['CORE', 'PLUS', 'PRO', 'ELITE'].includes(tier)),
                 hasHideProfile: plan?.hasHideProfile ?? (['PLUS', 'PRO', 'ELITE'].includes(tier)),
-                dailyLikesLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_likes']?.limit ?? 7),
+                dailyLikesLimit: featuresOut['daily_likes']?.limit ?? (plan ? ((plan.dailyLikes === -1 || plan.dailyLikes >= 9999) ? 'unlimited' : plan.dailyLikes) : 7),
                 dailyLikesUsed: usageMap['daily_likes'] ?? 0,
-                dailyMatchRequestsLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_match_requests']?.limit ?? 3),
+                dailyMatchRequestsLimit: featuresOut['daily_match_requests']?.limit ?? (plan ? ((plan.dailyMatchRequests === -1 || plan.dailyMatchRequests >= 9999) ? 'unlimited' : plan.dailyMatchRequests) : 3),
                 dailyMatchRequestsUsed: usageMap['daily_match_requests'] ?? 0,
-                dailyPostsLimit: (tier !== 'FREE') ? 'unlimited' : (featuresOut['daily_posts']?.limit ?? 5),
+                dailyPostsLimit: featuresOut['daily_posts']?.limit ?? (plan ? ((plan.dailyPosts === -1 || plan.dailyPosts >= 9999) ? 'unlimited' : plan.dailyPosts) : 5),
                 dailyPostsUsed: usageMap['daily_posts'] ?? 0,
-                dailyBacktrackLimit: (tier === 'ELITE') ? 'unlimited' : (featuresOut['daily_backtracks']?.limit ?? 3),
+                dailyBacktrackLimit: (tier === 'ELITE') ? 'unlimited' : (featuresOut['daily_backtracks']?.limit ?? (plan ? plan.backtrackLimit : 3)),
                 dailyBacktrackUsed: usageMap['daily_backtracks'] ?? 0,
+                partyPlanLimit: featuresOut['party_creation']?.limit ?? (plan ? ((plan.partyPlanLimit === -1 || plan.partyPlanLimit >= 9999) ? 'unlimited' : plan.partyPlanLimit) : 1),
+                partyPlanPeriodDays: featuresOut['party_creation']?.periodDays ?? (plan ? plan.partyPlanPeriodDays : 7),
                 features: featuresOut,
                 usage: usageMap,
             };

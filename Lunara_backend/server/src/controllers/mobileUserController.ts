@@ -1903,7 +1903,7 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
             order: [['createdAt', 'DESC']],
         });
 
-        // Mask sender profile for incoming pending likes if user lacks who_liked_me permission
+        // Strictly protect Free users from receiving sender identity
         const processed = matches.map((m: any) => {
             const json = m.toJSON();
             const isIncomingPendingLike = json.user2Id === userId && json.status === 'pending';
@@ -1911,11 +1911,12 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
             if (isIncomingPendingLike && !canSeeWhoLiked) {
                 return {
                     ...json,
+                    user1Id: 'masked',
                     isMasked: true,
                     user1: {
-                        id: json.user1Id,
-                        firstName: 'Lunara',
-                        lastName: 'Member',
+                        id: 'masked',
+                        firstName: 'Someone',
+                        lastName: '',
                         profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
                     }
                 };
@@ -1930,6 +1931,146 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
     } catch (error: any) {
         logger.error('[MobileUser] Error fetching matches:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch matches' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/who-liked-summary
+// Returns teaser count of people who liked the current user in the last 7 days
+// ─────────────────────────────────────────────────────────────────────────────
+export const getWhoLikedSummary = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.user?.id || (req.query.userId as string);
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'userId is required' });
+        }
+
+        const { SubscriptionService } = require('../services/subscriptionService');
+        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+        // Count incoming likes from user_likes table within 7 days where receiver is this user
+        const count = await UserLike.count({
+            where: {
+                targetUserId: userId,
+                actionType: { [Op.in]: ['like', 'superlike'] },
+                createdAt: { [Op.gte]: sevenDaysAgo },
+            },
+        });
+
+        const superlikesCount = await UserLike.count({
+            where: {
+                targetUserId: userId,
+                actionType: 'superlike',
+                createdAt: { [Op.gte]: sevenDaysAgo },
+            },
+        });
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                count,
+                superlikesCount,
+                periodDays: 7,
+                canSeeWhoLiked,
+            },
+        });
+    } catch (error: any) {
+        logger.error('[MobileUser] Error in getWhoLikedSummary:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mobile/user/who-liked-me
+// Dedicated endpoint for VIP users to view people who liked them
+// ─────────────────────────────────────────────────────────────────────────────
+export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const userId = req.user?.id || (req.query.userId as string);
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'userId is required' });
+        }
+
+        const { SubscriptionService } = require('../services/subscriptionService');
+        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+
+        if (!canSeeWhoLiked) {
+            return res.status(403).json({
+                success: false,
+                code: 'VIP_REQUIRED',
+                message: 'Upgrade to Lunara VIP to see who liked you!',
+            });
+        }
+
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const offset = (page - 1) * limit;
+
+        const { count, rows } = await UserLike.findAndCountAll({
+            where: {
+                targetUserId: userId,
+                actionType: { [Op.in]: ['like', 'superlike'] },
+            },
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'city', 'age', 'occupation', 'interests', 'bio'],
+                },
+            ],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset,
+        });
+
+        // Check mutual match state for each profile
+        const senderIds = rows.map((r: any) => r.userId);
+        const myLikes = await UserLike.findAll({
+            where: {
+                userId,
+                targetUserId: { [Op.in]: senderIds },
+            },
+        });
+        const myLikedSet = new Set(myLikes.map((l: any) => l.targetUserId));
+
+        const data = rows.map((r: any) => {
+            const senderUser = (r as any).user;
+            const senderId = r.userId;
+            const isMutual = myLikedSet.has(senderId);
+
+            return {
+                id: senderUser?.id || senderId,
+                name: `${senderUser?.firstName || ''} ${senderUser?.lastName || ''}`.trim().toUpperCase() || 'LUNARA MEMBER',
+                firstName: senderUser?.firstName || '',
+                lastName: senderUser?.lastName || '',
+                age: senderUser?.age || 25,
+                city: senderUser?.city || '',
+                vibe: (senderUser?.occupation || 'Night Owl').toUpperCase(),
+                image: senderUser?.profileImageUrl || 'https://picsum.photos/400/600',
+                interests: senderUser?.interests || [],
+                bio: senderUser?.bio || '',
+                actionType: r.actionType,
+                likedAt: r.createdAt,
+                isSuperLike: r.actionType === 'superlike',
+                isMutualMatch: isMutual,
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            data,
+            pagination: {
+                page,
+                limit,
+                total: count,
+                totalPages: Math.ceil(count / limit),
+            },
+        });
+    } catch (error: any) {
+        logger.error('[MobileUser] Error in getPeopleWhoLikedMe:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
     }
 };
 
@@ -2273,6 +2414,8 @@ export default {
     swipeUser,
     unlikeUser,
     getMyLikesAndMatches,
+    getWhoLikedSummary,
+    getPeopleWhoLikedMe,
     getSwipeStatus,
     backtrackSwipe,
     deleteAccount,

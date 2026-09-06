@@ -1126,6 +1126,59 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>?> fetchWhoLikedSummary() async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return null;
+
+      final response = await get(
+        '/api/mobile/user/who-liked-summary',
+        queryParameters: {'userId': userId},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching who liked summary: $e');
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>> fetchPeopleWhoLikedMe({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final userId = currentUserId;
+      if (userId == null) return {'users': [], 'pagination': {}, 'locked': false};
+
+      final response = await get(
+        '/api/mobile/user/who-liked-me',
+        queryParameters: {
+          'userId': userId,
+          'page': page.toString(),
+          'limit': limit.toString(),
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+      return {'users': [], 'pagination': {}, 'locked': false};
+    } catch (e) {
+      debugPrint('Error fetching people who liked me: $e');
+      return {'users': [], 'pagination': {}, 'locked': false};
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> fetchStrangersMeetFeed({
     int page = 1,
     int limit = 20,
