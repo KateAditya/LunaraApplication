@@ -7,6 +7,7 @@ import '../../services/subscription_provider.dart';
 import '../../models/vip_entitlement_model.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/top_notification_banner.dart';
+import 'plan_usage_screen.dart';
 
 enum VIPPaymentState {
   initial,
@@ -64,15 +65,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
   int _selectedEliteIndex = 0; // Index of selected Elite duration option
-  int _selectedBoostOption =
-      0; // 0: 1 Boost, 1: 2 Boosts, 2: 3 Boosts, 3: 5 Boosts
-
-  final List<Map<String, dynamic>> _boostOptions = [
-    {'count': 1, 'price': 49, 'label': '1 Boost'},
-    {'count': 2, 'price': 90, 'label': '2 Boosts'},
-    {'count': 3, 'price': 140, 'label': '3 Boosts'},
-    {'count': 5, 'price': 160, 'label': '5 Boosts'},
-  ];
 
   @override
   void initState() {
@@ -213,8 +205,16 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     });
     debugPrint('[VIP] State updated: $_paymentState');
 
-    if (_tabController.index == 0) {
-      // Package Purchase
+    if (_pendingAddonPackageId != null) {
+      // Add-on Purchase via Razorpay (Add-ons tab or hybrid topup from any tab)
+      _confirmAddonPurchase(
+        _pendingAddonPackageId!,
+        response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        response.signature ?? 'mock_signature',
+      );
+    } else {
+      // Package Purchase (VIP Pass)
       final pkg = _selectedPackage;
       if (pkg != null) {
         _confirmPackagePurchase(
@@ -226,25 +226,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           response.signature ?? 'mock_signature',
         );
       }
-    } else if (_pendingAddonPackageId != null) {
-      // Add-on Purchase via Razorpay (tab 2 or hybrid topup from any tab)
-      _confirmAddonPurchase(
-        _pendingAddonPackageId!,
-        response.orderId ?? 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-        response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
-        response.signature ?? 'mock_signature',
-      );
-    } else {
-      // Boost Purchase (tab 1)
-      final boost = _boostOptions[_selectedBoostOption];
-      _confirmBoostPurchase(
-        boost['count'],
-        response.orderId ??
-            'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-        response.paymentId ??
-            'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
-        response.signature ?? 'mock_signature',
-      );
     }
   }
 
@@ -422,130 +403,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     );
   }
 
-  Future<void> _initiateBoostPurchase() async {
-    final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
-    if (isElite) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You have unlimited boosts with your Elite VIP Plan! Just tap "ACTIVATE BOOST NOW". 👑'),
-          backgroundColor: Color(0xFF7C3AED),
-        ),
-      );
-      return;
-    }
-
-    final boost = _boostOptions[_selectedBoostOption];
-    final int count = boost['count'] ?? 1;
-    final double price = (boost['price'] as num).toDouble();
-
-    SmartCheckoutSheet.show(
-      context: context,
-      title: 'Lunara Profile Boost',
-      subtitle: '${boost['label']} ($count Boosts)',
-      itemPrice: price,
-      onWalletPayment: () async {
-        final res = await ApiService.payBoostWithWallet(
-          boostCount: count,
-          price: price,
-        );
-        if (res != null && res['success'] == true) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  res['message'] ?? '$count Profile Boost(s) added! ⚡',
-                ),
-                backgroundColor: const Color(0xFF10B981),
-              ),
-            );
-          }
-          await SubscriptionProvider.instance.refreshAfterPurchase();
-          await _loadData();
-          return true;
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(res?['message'] ?? 'Wallet payment failed'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          }
-          return false;
-        }
-      },
-      onDirectPayment: () async {
-        await _launchRazorpayForBoost(count, price, boost['label'] ?? '');
-      },
-      onHybridPayment: (shortfallAmount) async {
-        final orderData = await ApiService.createWalletRechargeOrder(
-          shortfallAmount,
-        );
-        if (orderData != null) {
-          final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
-          final options = {
-            'key': orderData['keyId'] ?? 'rzp_test_key',
-            'amount': (shortfallAmount * 100).toInt(),
-            'name': 'Lunara Boost Shortfall',
-            'description':
-                'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for $count Profile Boost(s)',
-            'order_id': orderId,
-            'theme': {'color': '#7F00FF'},
-          };
-
-          _razorpay.open(options);
-        }
-      },
-    );
-  }
-
-  Future<void> _launchRazorpayForBoost(int count, double price, String label) async {
-    setState(() => _isProcessing = true);
-    final orderData = await ApiService.createBoostOrder(count);
-    if (orderData == null) {
-      setState(() => _isProcessing = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to initiate boost payment. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final String orderId = orderData['razorpayOrderId'];
-    final int amount = orderData['amount'];
-    final String keyId = orderData['keyId'] ?? 'rzp_test_123';
-
-    var options = {
-      'key': keyId,
-      'amount': amount,
-      'name': 'Lunara Profile Boost',
-      'description': 'Boost Pack - $label',
-      'order_id': orderId,
-      'prefill': {'contact': '8888888888', 'email': 'boost@lunara.com'},
-    };
-
-    bool razorpayOpened = false;
-    try {
-      _razorpay.open(options);
-      razorpayOpened = true;
-    } catch (e) {
-      debugPrint('Error opening Razorpay: $e');
-    }
-
-    if (!razorpayOpened) {
-      Future.delayed(const Duration(seconds: 2), () {
-        _confirmBoostPurchase(
-          count,
-          orderId,
-          'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
-          'mock_signature',
-        );
-      });
-    }
-  }
 
   Future<void> _confirmPackagePurchase(
     String packageId,
@@ -598,84 +455,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     }
   }
 
-  Future<void> _confirmBoostPurchase(
-    int boostCount,
-    String orderId,
-    String paymentId,
-    String signature,
-  ) async {
-    debugPrint('[VIP] Calling boost payment verification API');
-    setState(() {
-      _paymentState = VIPPaymentState.verificationPending;
-    });
-
-    final response = await ApiService.purchaseBoost(
-      boostCount: boostCount,
-      gatewayOrderId: orderId,
-      gatewayPaymentId: paymentId,
-      razorpaySignature: signature,
-    );
-
-    setState(() => _isProcessing = false);
-
-    if (response['success'] == true) {
-      debugPrint('[VIP] Boost activation result: success');
-      setState(() => _paymentState = VIPPaymentState.subscriptionActive);
-
-      SubscriptionProvider.instance.refreshAfterPurchase();
-      _showSuccessDialog(
-        'Boosts Credited!',
-        '${response['message'] ?? '$boostCount profile boosts have been added to your account.'}',
-      );
-      _loadData();
-    } else {
-      debugPrint('[VIP] Boost verification failed');
-      setState(
-        () => _paymentState = VIPPaymentState.subscriptionActivationFailed,
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Payment successful, but boost activation is still processing.\nReason: ${response['message']}\nPlease wait a moment and refresh.',
-          ),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-
-  Future<void> _useActiveBoost() async {
-    setState(() => _isProcessing = true);
-    try {
-      final result = await ApiService.useBoost();
-      setState(() => _isProcessing = false);
-      if (result != null && result['success'] == true) {
-        SubscriptionProvider.instance.refreshAfterPurchase();
-        _showSuccessDialog(
-          'Profile Boosted! ⚡',
-          'Your profile is now boosted for the next 30 minutes! Get ready for more matches and views.',
-        );
-        _loadData();
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to activate boost. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _isProcessing = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
 
   Future<void> _launchRazorpayForAddon(SubscriptionAddonPackageModel addon) async {
     setState(() {
@@ -964,8 +743,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             ),
             tabs: const [
               Tab(text: 'VIP PASSES'),
-              Tab(text: 'PROFILE BOOST'),
               Tab(text: 'ADD-ONS'),
+              Tab(text: 'USAGE & QUOTA'),
               Tab(text: 'PURCHASED PLANS'),
             ],
           ),
@@ -980,8 +759,11 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                 controller: _tabController,
                 children: [
                   _buildVIPPassesTab(),
-                  _buildProfileBoostTab(),
                   _buildAddonsTab(),
+                  PlanUsageContent(
+                    onGoToVIPPasses: () => _tabController.animateTo(0),
+                    onGoToAddons: () => _tabController.animateTo(1),
+                  ),
                   _buildPurchasedPlansTab(),
                 ],
               ),
@@ -1230,377 +1012,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           );
         }),
       ],
-    );
-  }
-
-  Widget _buildProfileBoostTab() {
-    final selectedBoost = _boostOptions[_selectedBoostOption];
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isElite = _activePackageTier == 'ELITE';
-    final hasActiveBoosts = _boostsRemaining > 0 || isElite;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Boost Intro Card
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.purple[900]!, Colors.purple[700]!],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withValues(alpha: 0.2),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'BOOST YOUR VISIBILITY',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Get up to 10x more likes, views, and responses! Your profile goes straight to the top of discovery in your area.',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(width: 16),
-                Icon(Icons.bolt, color: Colors.amber, size: 64),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Active Boost Credit Section — always visible
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [const Color(0xFF2E1A47), const Color(0xFF140D24)]
-                    : [Colors.purple.shade50, Colors.white],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.purple.withValues(alpha: 0.3),
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.purple.withValues(alpha: isDark ? 0.3 : 0.1),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'ACTIVE BOOST CREDITS',
-                          style: TextStyle(
-                            color: Colors.purpleAccent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          isElite
-                              ? 'UNLIMITED BOOSTS'
-                              : _boostsRemaining > 0
-                                  ? '$_boostsRemaining BOOSTS AVAILABLE'
-                                  : '0 BOOSTS AVAILABLE',
-                          style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black87,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withValues(
-                          alpha: hasActiveBoosts ? 0.15 : 0.07,
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.rocket_launch_rounded,
-                        color: hasActiveBoosts
-                            ? Colors.purpleAccent
-                            : Colors.purpleAccent.withValues(alpha: 0.4),
-                        size: 26,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed:
-                        (_isProcessing || !hasActiveBoosts)
-                            ? null
-                            : _useActiveBoost,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          hasActiveBoosts ? Colors.purple : Colors.grey[700],
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      elevation: hasActiveBoosts ? 4 : 0,
-                      shadowColor: Colors.purple.withValues(alpha: 0.5),
-                    ),
-                    child: _isProcessing
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.bolt,
-                                color: hasActiveBoosts
-                                    ? Colors.amber
-                                    : Colors.white54,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                hasActiveBoosts
-                                    ? 'ACTIVATE BOOST NOW'
-                                    : 'NO BOOSTS AVAILABLE',
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-
-          if (isElite) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFFFFB703).withValues(alpha: 0.15),
-                    const Color(0xFFFB8500).withValues(alpha: 0.08),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: const Color(0xFFFFB703).withValues(alpha: 0.4),
-                  width: 1.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFB703).withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.workspace_premium_rounded,
-                      color: Color(0xFFFFB703),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'UNLIMITED BOOSTS ACTIVE',
-                          style: TextStyle(
-                            color: Color(0xFFFFB703),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'You have unlimited profile boosts included with your Elite VIP Plan. Tap "ACTIVATE BOOST NOW" above anytime.',
-                          style: TextStyle(
-                            color: isDark ? Colors.white70 : Colors.black87,
-                            fontSize: 12,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            _buildBoostChecklist(),
-            const SizedBox(height: 20),
-          ] else ...[
-            Text(
-              'SELECT BOOST PACKAGE',
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Boost Selection Grid
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.4,
-              ),
-              itemCount: _boostOptions.length,
-              itemBuilder: (context, index) {
-                final option = _boostOptions[index];
-                final isSelected = _selectedBoostOption == index;
-                final gridItemBg = isSelected
-                    ? Colors.purple.withValues(alpha: 0.15)
-                    : (isDark
-                          ? const Color(0xFF16161E)
-                          : const Color(0xFFF2F2F7));
-                final gridItemBorder = isSelected
-                    ? Colors.purple
-                    : (isDark
-                          ? Colors.white.withValues(alpha: 0.05)
-                          : Colors.black.withValues(alpha: 0.05));
-                final labelColor = isDark ? Colors.white : Colors.black87;
-                final priceColor = isSelected
-                    ? Colors.purpleAccent
-                    : (isDark ? Colors.white70 : Colors.black54);
-
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedBoostOption = index),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: gridItemBg,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: gridItemBorder, width: 2),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            option['label'],
-                            style: TextStyle(
-                              color: labelColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '₹${option['price']}',
-                            style: TextStyle(
-                              color: priceColor,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 40),
-
-            // Boost Benefits Checklist
-            _buildBoostChecklist(),
-            const SizedBox(height: 40),
-
-            // Boost Action Button
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isProcessing ? null : _initiateBoostPurchase,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: _isProcessing
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : Text(
-                        'PURCHASE FOR ₹${selectedBoost['price']}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -1876,17 +1287,25 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
   }
 
   Widget _buildDynamicFeatures(dynamic pkg) {
-    final String tier = pkg['tier'] ?? '';
+    final String tier = (pkg['tier'] ?? '').toString().toUpperCase();
     final Color color = _getPlanThemeColor(pkg);
 
-    // List out benefits based on features in the pkg
+    final dailyLikesLimit = pkg['dailyLikesLimit'] ?? pkg['daily_likes_limit'];
+    final dailyBacktracks = pkg['backtrackLimit'] ?? pkg['backtrack_limit'] ?? pkg['daily_backtracks_limit'];
+    final superlikes = pkg['superlikesPerCycle'] ?? pkg['super_likes_per_cycle'] ?? pkg['superlikes'];
+    final boosts = pkg['boostsPerCycle'] ?? pkg['boosts_per_cycle'] ?? pkg['boosts'];
+    final partyPlans = pkg['partyPlanLimit'] ?? pkg['party_plan_limit'];
+    final matchRequests = pkg['dailyMatchRequestsLimit'] ?? pkg['daily_match_requests_limit'];
+    final dailyPosts = pkg['dailyPostsLimit'] ?? pkg['daily_posts_limit'];
+
     List<Map<String, String>> benefits = [];
 
+    // Parse features map if available from backend
     final featuresMap = pkg['features'] as Map<String, dynamic>?;
     if (featuresMap != null && featuresMap.isNotEmpty) {
-      final sortedKeys = featuresMap.keys.toList();
-      for (final key in sortedKeys) {
-        final val = featuresMap[key];
+      for (final entry in featuresMap.entries) {
+        final key = entry.key;
+        final val = entry.value;
         if (val is Map && val['enabled'] == true) {
           final String name = val['name'] ?? key;
           String desc = val['description'] ?? '';
@@ -1906,12 +1325,18 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             } else if (key == 'boosts') {
               final limit = val['value'] ?? 0;
               desc = 'Includes $limit profile boosts per cycle';
+            } else if (key == 'daily_backtracks' || key == 'backtracks') {
+              final limit = val['value'] ?? 'unlimited';
+              desc = '$limit backtracks/day to undo accidental swipes';
+            } else if (key == 'party_plans') {
+              final limit = val['value'] ?? 'unlimited';
+              desc = 'Create up to $limit active party plans';
             } else if (key == 'hide_profile') {
               desc = 'Browse matches silently and anonymously';
             } else if (key == 'priority_visibility') {
               desc = 'Appear in front of users before non-premium users';
             } else if (key == 'trust_badge') {
-              desc = 'Adds a premium verify check on your profile';
+              desc = 'Adds a premium verified check on your profile';
             } else if (key == 'elite_badge') {
               desc = 'Exclusive elite member badge layout';
             } else if (key == 'who_liked_me') {
@@ -1925,72 +1350,164 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       }
     }
 
-    // Backwards compatibility fallback if no features mapped
+    // Comprehensive Fallback/Augmentation: Ensure all key benefits and quotas are fully shown
     if (benefits.isEmpty) {
-      if (tier == 'CORE' ||
-          tier == 'PLUS' ||
-          tier == 'PRO' ||
-          tier == 'ELITE') {
+      if (tier == 'CORE') {
+        final likesText = dailyLikesLimit != null ? '$dailyLikesLimit Likes per day' : '50 Likes per day';
+        final backtrackText = dailyBacktracks != null ? '$dailyBacktracks Backtracks per day' : '5 Backtracks per day';
+        final requestsText = matchRequests != null ? '$matchRequests Match requests per day' : '30 Requests per day';
+        final postsText = dailyPosts != null ? '$dailyPosts Party/Social posts per day' : '5 Posts per day';
+
         benefits.addAll([
           {
-            'title': 'Send Unlimited Match Requests',
-            'desc': 'No daily swipe restrictions',
+            'title': 'Daily Likes & Swipes',
+            'desc': '$likesText to connect with matches',
           },
           {
-            'title': 'Unlimited Posts & Likes',
-            'desc': 'Share and engage with no limits',
+            'title': 'Backtrack Last Swipe',
+            'desc': '$backtrackText — undo accidental left swipes',
           },
           {
-            'title': 'Who Liked/Viewed Your Profile',
-            'desc': 'Unmask interested users instantly',
+            'title': 'Send Match Requests',
+            'desc': '$requestsText with personalized intro messages',
+          },
+          {
+            'title': 'Party Plans & Event Posts',
+            'desc': '$postsText to invite friends and match partners',
+          },
+          {
+            'title': 'Who Liked & Viewed You',
+            'desc': 'Unmask interested profiles & view visitor history',
+          },
+          {
+            'title': 'Ad-Free Experience',
+            'desc': 'Browse and chat seamlessly without distractions',
           },
         ]);
-      }
-      if (tier == 'PLUS' || tier == 'PRO' || tier == 'ELITE') {
+      } else if (tier == 'PLUS') {
+        final backtrackText = dailyBacktracks != null ? '$dailyBacktracks Backtracks/day' : '10 Backtracks/day';
+        final superlikesText = superlikes != null ? '$superlikes Superlikes per cycle' : '10 Superlikes per cycle';
+        final boostsText = boosts != null ? '$boosts Profile Boosts included' : '2 Free Profile Boosts included';
+        final requestsText = matchRequests != null ? '$matchRequests Match requests per day' : '50 Requests per day';
+
         benefits.addAll([
           {
-            'title': '10 Superlikes Per Cycle',
-            'desc': 'Stand out in their notifications',
+            'title': 'Unlimited Likes & Swipes',
+            'desc': 'No daily swipe restrictions or cooldown timer',
           },
           {
-            'title': '2 Free Profile Boosts',
-            'desc': 'Automatic ranking push in searches',
+            'title': 'Backtrack Last Swipe',
+            'desc': '$backtrackText — rewind and change your decision',
           },
           {
-            'title': 'Hide Profile Mode',
+            'title': 'Superlikes Included',
+            'desc': '$superlikesText to stand out directly in their inbox',
+          },
+          {
+            'title': 'Profile Boosts',
+            'desc': '$boostsText — climb straight to the top of discovery',
+          },
+          {
+            'title': 'Send Match Requests',
+            'desc': '$requestsText with priority delivery',
+          },
+          {
+            'title': 'Who Liked / Viewed My Profile',
+            'desc': 'Instant unmasking of interested profiles and visitors',
+          },
+          {
+            'title': 'Hide Profile Mode (Stealth)',
             'desc': 'Browse matches silently and anonymously',
           },
-        ]);
-      }
-      if (tier == 'PRO' || tier == 'ELITE') {
-        benefits.addAll([
           {
-            'title': 'Priority Visibility',
-            'desc': 'Appear in front of users before non-Pro users',
-          },
-          {
-            'title': '4 Free Profile Boosts',
-            'desc': 'Enhanced package cycle boosts',
-          },
-          {
-            'title': 'Trust Badge',
-            'desc': 'Adds a premium verify check on your profile',
+            'title': 'Expanded Party Plans & Posts',
+            'desc': 'Create and publish multiple active party plans',
           },
         ]);
-      }
-      if (tier == 'ELITE') {
+      } else if (tier == 'PRO') {
+        final backtrackText = dailyBacktracks != null ? '$dailyBacktracks Backtracks/day' : '15 Backtracks/day';
+        final superlikesText = superlikes != null ? '$superlikes Superlikes per cycle' : '25 Superlikes per cycle';
+        final boostsText = boosts != null ? '$boosts Profile Boosts included' : '4 Free Profile Boosts included';
+        final partyPlanText = partyPlans != null ? 'Create up to $partyPlans active party plans' : 'Create & host multiple featured party plans';
+
         benefits.addAll([
           {
-            'title': 'Maximum Profile Boost',
-            'desc': 'Stay at the very top of search feeds',
+            'title': 'Unlimited Likes & Swipes',
+            'desc': 'Infinite swipe deck with zero limits or delays',
           },
           {
-            'title': 'Elite User Badge',
-            'desc': 'Exclusive premium badge layout',
+            'title': 'Backtrack Last Swipe',
+            'desc': '$backtrackText — effortless undo on any swipe',
           },
           {
-            'title': 'Early Access to Pro Features',
-            'desc': 'Test and access new updates first',
+            'title': 'Generous Superlikes Pack',
+            'desc': '$superlikesText with 3x higher match rate',
+          },
+          {
+            'title': 'Monthly Profile Boosts',
+            'desc': '$boostsText for 10x profile visibility',
+          },
+          {
+            'title': 'Priority Match Visibility',
+            'desc': 'Appear in front of users before standard & free members',
+          },
+          {
+            'title': 'Party Plans & Event Creation',
+            'desc': partyPlanText,
+          },
+          {
+            'title': 'Trust Badge on Profile',
+            'desc': 'Verified VIP checkmark next to your name',
+          },
+          {
+            'title': 'Who Liked / Viewed Me',
+            'desc': 'Full access to incoming likes, match requests & profile viewers',
+          },
+          {
+            'title': 'Incognito Stealth Browsing',
+            'desc': 'Browse and interact with complete privacy controls',
+          },
+        ]);
+      } else if (tier == 'ELITE') {
+        final superlikesText = superlikes != null ? '$superlikes Superlikes per cycle' : '50 Superlikes per cycle';
+        final boostsText = (boosts != null && boosts > 10) ? 'Unlimited Profile Boosts' : 'Unlimited / 10+ Profile Boosts';
+
+        benefits.addAll([
+          {
+            'title': 'Unlimited Likes, Swipes & Requests',
+            'desc': 'Maximum freedom — unlimited daily swipes & messages',
+          },
+          {
+            'title': 'Unlimited Backtracks & Rewinds',
+            'desc': 'Undo as many swipes as you want at any time',
+          },
+          {
+            'title': 'VIP Superlikes Pack',
+            'desc': '$superlikesText with guaranteed top highlight',
+          },
+          {
+            'title': 'Continuous Profile Boosting',
+            'desc': '$boostsText to dominate discovery feeds',
+          },
+          {
+            'title': 'Exclusive Elite VIP Crown Badge',
+            'desc': 'Prestigious golden badge shown everywhere across Lunara',
+          },
+          {
+            'title': 'Top Search & Discovery Ranking',
+            'desc': 'Guaranteed #1 placement in city and nightlife search results',
+          },
+          {
+            'title': 'Unlimited Party Plans & VIP Events',
+            'desc': 'Host unlimited public & private party plans with featured badges',
+          },
+          {
+            'title': 'Who Liked / Viewed Me (Real-Time)',
+            'desc': 'Instant real-time notifications and full profiles unmasked',
+          },
+          {
+            'title': 'VIP Concierge & Early Access',
+            'desc': 'Direct priority customer support & early beta features',
           },
         ]);
       }
@@ -2055,50 +1572,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBoostChecklist() {
-    return Column(
-      children: [
-        _boostChecklistItem('Appears at top based on city and location'),
-        _boostChecklistItem('Higher visibility for your active party plans'),
-        _boostChecklistItem('Gold-ring highlighted profile border'),
-        _boostChecklistItem('Guaranteed increase in match requests & views'),
-      ],
-    );
-  }
-
-  Widget _boostChecklistItem(String text) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.purple.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.bolt_rounded,
-              color: Colors.purpleAccent,
-              size: 16,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isDark ? const Color(0xCCFFFFFF) : Colors.black87,
-                fontSize: 13,
-              ),
             ),
           ),
         ],

@@ -135,7 +135,14 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
         res.status(201).json({ success: true, message: 'Partner request sent successfully', data: partnerRequest });
     } catch (err: any) {
         logger.error('sendPartnerRequest error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to send partner request' });
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to send partner request',
+            ...(err.timeLock || {}),
+        });
     }
 };
 
@@ -153,7 +160,14 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
         res.json({ success: true, message: `Request ${action}ed successfully`, data: result });
     } catch (err: any) {
         logger.error('respondToRequest error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to process request response' });
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to process request response',
+            ...(err.timeLock || {}),
+        });
     }
 };
 

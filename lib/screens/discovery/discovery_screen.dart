@@ -60,6 +60,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   bool _sortByDistance = false;
   bool _isProfileCardDismissed = false;
   bool _hasShownAdPopup = false;
+  bool _isLoadingSocialFeeds = true;
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -308,7 +309,12 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   Future<void> _loadVenues({bool showLoading = true}) async {
     if (showLoading && mounted) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        if (_allUsers.isEmpty) {
+          _isLoadingSocialFeeds = true;
+        }
+      });
     }
     try {
       // ── Phase 1: Critical data (venues, profile, ads) ─────────────────────
@@ -454,7 +460,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
   /// the primary screen content has rendered. The 600ms delay staggers the DB
   /// queries on Azure so the server isn't hit with 7 concurrent connections.
   Future<void> _loadSocialFeedsDeferred() async {
-    await Future.delayed(const Duration(milliseconds: 600));
+    if (_allUsers.isNotEmpty) {
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
     if (!mounted) return;
     try {
       final socialResults = await Future.wait([
@@ -732,11 +740,16 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         setState(() {
           _allUsers = allUsersData;
           _partyPlans = combinedPosts;
+          _isLoadingSocialFeeds = false;
         });
       }
     } catch (e) {
       debugPrint('Error in _loadSocialFeedsDeferred: $e');
-      // Social feed failures are non-critical; screen remains functional.
+      if (mounted) {
+        setState(() {
+          _isLoadingSocialFeeds = false;
+        });
+      }
     }
   }
 
@@ -823,9 +836,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   List<Map<String, dynamic>> get _filteredUsers {
     var users = _allUsers;
-    if (ApiService.selectedCity != null) {
+    if (ApiService.selectedCity != null && _allUsers.isNotEmpty) {
       final String targetCity = ApiService.selectedCity!.toLowerCase().trim();
-      users = users.where((u) {
+      final cityUsers = users.where((u) {
         final String? rawCity =
             u['city']?.toString() ??
             (u['profile'] is Map ? u['profile']['city']?.toString() : null);
@@ -834,6 +847,10 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         final String userCity = rawCity.toLowerCase().trim();
         return userCity.contains(targetCity) || targetCity.contains(userCity);
       }).toList();
+
+      if (cityUsers.isNotEmpty) {
+        return cityUsers;
+      }
     }
     return users;
   }
@@ -1103,7 +1120,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   const SizedBox(height: 24),
 
                   // 2. Upcoming Nights / Event Posts
-                  if (_upcomingNights.isNotEmpty) ...[
+                  if (_isLoading && _upcomingNights.isEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(24, 8, 24, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'UPCOMING NIGHTS',
+                            style: TextStyle(
+                              fontFamily: 'AllroundGothic',
+                              letterSpacing: 2,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildUpcomingNightsSkeleton(),
+                    const SizedBox(height: 24),
+                  ] else if (_upcomingNights.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
                       child: Row(
@@ -1890,6 +1928,156 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
   }
 
+  Widget _buildUpcomingNightsSkeleton() {
+    return SizedBox(
+      height: 250,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: 2,
+        itemBuilder: (context, index) {
+          return Container(
+            width: 280,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2A1647),
+                  Color(0xFF1E0E35),
+                  Color(0xFF150A26),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      height: 24,
+                      width: 65,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    Container(
+                      height: 24,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 18,
+                      width: 150,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 12,
+                      width: 110,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNightFallbackBg(Map<String, dynamic> night) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF4A0E4E),
+            Color(0xFF2C0B3B),
+            Color(0xFF160424),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            bottom: -20,
+            child: Icon(
+              Icons.nightlife_rounded,
+              size: 160,
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            top: 40,
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              size: 40,
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNightLoadingBg() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF2C1547),
+            Color(0xFF1E0E35),
+            Color(0xFF150A26),
+          ],
+        ),
+      ),
+      child: const Center(
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+        ),
+      ),
+    );
+  }
+
   Widget _buildUpcomingNights() {
     return SizedBox(
       key: AppTourService.upcomingNightsKey,
@@ -1900,6 +2088,9 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
         itemCount: _upcomingNights.length,
         itemBuilder: (context, index) {
           final night = _upcomingNights[index];
+          final String? imgUrl = night['image']?.toString();
+          final bool hasValidImg = imgUrl != null && imgUrl.trim().isNotEmpty && !imgUrl.startsWith('Instance of');
+
           return RepaintBoundary(
             child: Container(
               width: 280,
@@ -1923,48 +2114,23 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: night['isAsset'] == true
+                      child: night['isAsset'] == true && hasValidImg
                           ? Image.asset(
-                              night['image']!,
+                              imgUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Container(
-                                color: Colors.purple.shade900,
-                                child: const Center(
-                                  child: Icon(Icons.nightlife, color: Colors.white),
-                                ),
-                              ),
+                              errorBuilder: (context, error, stackTrace) => _buildNightFallbackBg(night),
                             )
-                          : Image.network(
-                              night['image']!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Container(
-                                    color: Colors.grey[900],
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: Colors.white54,
-                                        size: 40,
-                                      ),
-                                    ),
-                                  ),
-                              loadingBuilder:
-                                  (context, child, loadingProgress) {
+                          : hasValidImg
+                              ? Image.network(
+                                  imgUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => _buildNightFallbackBg(night),
+                                  loadingBuilder: (context, child, loadingProgress) {
                                     if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Colors.grey[900],
-                                      child: const Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.white,
-                                              ),
-                                        ),
-                                      ),
-                                    );
+                                    return _buildNightLoadingBg();
                                   },
-                            ),
+                                )
+                              : _buildNightFallbackBg(night),
                     ),
                     Positioned.fill(
                       child: Container(
@@ -2980,7 +3146,186 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     );
   }
 
+  Widget _buildTopProfilesSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 32),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                height: 16,
+                width: 130,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 122,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            scrollDirection: Axis.horizontal,
+            itemCount: 4,
+            itemBuilder: (context, index) {
+              return Container(
+                width: 175,
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LunaraTheme.cardGradient,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF7F00FF).withValues(alpha: 0.1),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7F00FF).withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.grey[200],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                height: 13,
+                                width: 70,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                height: 10,
+                                width: 45,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          height: 18,
+                          width: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          height: 18,
+                          width: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyProfilesCard() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        gradient: LunaraTheme.cardGradient,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF7F00FF).withValues(alpha: 0.12),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+            ),
+            child: const Icon(
+              Icons.people_outline_rounded,
+              color: LunaraTheme.electricViolet,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Be the first in your vibe!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Active profiles will appear here as more members join.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopProfiles() {
+    if (_isLoadingSocialFeeds && _allUsers.isEmpty) {
+      return _buildTopProfilesSkeleton();
+    }
+
     // Robust null check and filter out the current user + apply gender filter
     final List<dynamic> users = _filteredUsers.where((u) {
       final isNotMe = u['id']?.toString() != _currentUser?.id;
@@ -3046,17 +3391,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           ),
         ),
         if (displayUsers.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-            child: Text(
-              'No profiles available here at the moment.',
-              style: TextStyle(
-                color: Colors.black54,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          )
+          _buildEmptyProfilesCard()
         else
           SizedBox(
             height: 122,

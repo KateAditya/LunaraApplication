@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/optimistic_action_guard.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class NightPartnerProfileScreen extends StatefulWidget {
   final String partnerId;
@@ -50,13 +51,6 @@ class _NightPartnerProfileScreenState extends State<NightPartnerProfileScreen> {
 
     // Optimistic UI: immediately mark as requested
     setState(() => _isRequested = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Partner request sent to ${_profile?['firstName'] ?? 'User'}! 🎉'),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
 
     try {
       final venueId = widget.venue['id']?.toString() ?? '';
@@ -67,13 +61,36 @@ class _NightPartnerProfileScreenState extends State<NightPartnerProfileScreen> {
         time: widget.time,
       );
 
-      if (res == null) {
+      if (!mounted) return;
+
+      if (res != null && res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Partner request sent to ${_profile?['firstName'] ?? 'User'}! 🎉'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
         // Rollback
-        if (mounted) {
-          setState(() => _isRequested = false);
+        setState(() => _isRequested = false);
+        final msg = res?['message']?.toString() ?? 'Failed to send partner request.';
+        final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+            res?['timeLock'] != null ||
+            res?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+            res?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+            res?['code'] == 'USER_ALREADY_HAS_PLAN' ||
+            res?['code'] == 'HOST_ALREADY_HAS_PLAN';
+
+        if (isTimeLock) {
+          TimeLockBlockedDialog.show(
+            context,
+            errorData: res ?? {'message': msg},
+          );
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to send partner request.'),
+            SnackBar(
+              content: Text(msg),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -83,13 +100,17 @@ class _NightPartnerProfileScreenState extends State<NightPartnerProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isRequested = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (TimeLockBlockedDialog.isConflictError(e)) {
+          TimeLockBlockedDialog.showWithMessage(context, e.toString());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${TimeLockBlockedDialog.cleanErrorMessage(e)}'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } finally {
       OptimisticActionGuard.end('PARTNER_REQ:${widget.partnerId}');

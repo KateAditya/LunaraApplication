@@ -5,6 +5,8 @@ import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
 import '../widgets/lunara_profile_image.dart';
 import 'upcoming_night_post_partner_sheet.dart';
+import 'dialogs/time_lock_blocked_dialog.dart';
+import '../utils/lunara_date_formatter.dart';
 
 class NightPartnerSelectorSheet extends StatefulWidget {
   final String venueId;
@@ -108,19 +110,19 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       partnerId: partnerId,
       venueId: widget.venueId,
       date: widget.date,
-      time: widget.time ?? '20:00',
+      time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
     );
 
     if (!mounted) return;
 
     setState(() {
       _loadingUserIds.remove(partnerId);
-      if (res != null) {
+      if (res != null && res['success'] == true) {
         _sentInviteUserIds.add(partnerId);
       }
     });
 
-    if (res != null) {
+    if (res != null && res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -141,13 +143,27 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not send invite. Please try again.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      final msg = res?['message']?.toString() ?? 'Could not send invite. Please try again.';
+      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+          res?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+          res?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+          res?['code'] == 'USER_ALREADY_HAS_PLAN' ||
+          res?['code'] == 'PLAN_TIME_LOCKED';
+
+      if (isTimeLock) {
+        TimeLockBlockedDialog.show(
+          context,
+          errorData: res is Map<String, dynamic> ? res : {'message': msg},
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -266,14 +282,14 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                     'venueName': widget.venueName,
                     'date': widget.date,
                     'rawDate': widget.date,
-                    'time': widget.time ?? '20:00',
+                    'time': LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
                     'title': widget.eventTitle ?? widget.venueName,
                     'image': widget.bannerImage,
                   },
                   venueId: widget.venueId,
                   venueName: widget.venueName,
                   date: widget.date,
-                  time: widget.time ?? '20:00',
+                  time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
                   bannerImage: widget.bannerImage,
                   eventTitle: widget.eventTitle ?? widget.venueName,
                 );

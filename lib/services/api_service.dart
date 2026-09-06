@@ -87,7 +87,12 @@ class ApiService {
 
   /// Centralized trigger to instantly refresh the Live Feed and associated views across the app.
   static void notifyFeedNeedsRefresh() {
+    _cachedLiveFeedData = null;
+    _liveFeedCacheTime = null;
     planPostedNotifier.value++;
+    RealtimeSyncManager.instance.triggerLiveFeedSync();
+    RealtimeSyncManager.instance.triggerPartyPlanSync();
+    RealtimeSyncManager.instance.triggerStrangerMeetSync();
   }
 
   // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
@@ -1629,6 +1634,7 @@ class ApiService {
         },
       );
       if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
         return true;
       }
     } catch (e) {
@@ -1914,6 +1920,9 @@ class ApiService {
       );
       if (response.body.isNotEmpty) {
         final Map<String, dynamic> decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          notifyFeedNeedsRefresh();
+        }
         return decoded;
       }
     } catch (e) {
@@ -2116,6 +2125,7 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        notifyFeedNeedsRefresh();
         return data['data'];
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to confirm payment';
@@ -2194,6 +2204,7 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        notifyFeedNeedsRefresh();
         return data['data'];
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to confirm join payment';
@@ -2272,6 +2283,8 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to handle join request';
@@ -3889,15 +3902,20 @@ class ApiService {
   }
 
   /// Reject/decline a party plan request
-  static Future<bool> rejectPartyPlanRequest(String reqId) async {
+  static Future<bool> rejectPartyPlanRequest(String reqId, {String? reason}) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/reject',
-        body: {'userId': userId},
+        body: {'userId': userId, 'reason': ?reason},
+        timeout: transactionalTimeout,
       );
-      if (response.statusCode == 200) return true;
+      if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerPartyPlanSync();
+        return true;
+      }
     } catch (e) {
       debugPrint('rejectPartyPlanRequest error: $e');
     }
@@ -3917,7 +3935,11 @@ class ApiService {
       if (response.body.isNotEmpty) {
         try {
           final data = jsonDecode(response.body);
-          if (data is Map<String, dynamic>) return data;
+          if (data is Map<String, dynamic>) {
+            notifyFeedNeedsRefresh();
+            RealtimeSyncManager.instance.triggerPartyPlanSync();
+            return data;
+          }
         } catch (_) {}
       }
     } catch (e) {
@@ -4480,9 +4502,12 @@ class ApiService {
           'eventTime': time ?? '20:00',
         },
       );
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true ? Map<String, dynamic>.from(data) : null;
+        return {'success': true};
       }
     } catch (e) {
       debugPrint('sendNightPartnerRequest error: $e');
@@ -4494,8 +4519,16 @@ class ApiService {
     required String requestId,
     required String action, // 'accept' | 'decline'
   }) async {
+    final res = await respondToNightPartnerRequestDetailed(requestId: requestId, action: action);
+    return res['success'] == true;
+  }
+
+  static Future<Map<String, dynamic>> respondToNightPartnerRequestDetailed({
+    required String requestId,
+    required String action, // 'accept' | 'decline'
+  }) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) return {'success': false, 'message': 'User not logged in'};
     try {
       final response = await patch(
         '/api/mobile/nights/requests/$requestId',
@@ -4504,14 +4537,20 @@ class ApiService {
           'action': action,
         },
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['success'] == true;
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 || (data is Map && data['success'] == true)) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerLiveFeedSync();
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+        return {'success': true};
       }
+      return {'success': false, 'message': data is Map ? (data['message'] ?? 'Failed to respond') : 'Failed to respond'};
     } catch (e) {
       debugPrint('respondToNightPartnerRequest error: $e');
+      return {'success': false, 'message': e.toString()};
     }
-    return false;
   }
 
   static Future<Map<String, dynamic>?> initiateMatchPayment({
@@ -4560,6 +4599,8 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
+          notifyFeedNeedsRefresh();
+          RealtimeSyncManager.instance.triggerLiveFeedSync();
           return Map<String, dynamic>.from(data['data']);
         }
       }
@@ -4584,6 +4625,8 @@ class ApiService {
         body: requestBody,
       );
       if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerLiveFeedSync();
         final data = jsonDecode(response.body);
         return Map<String, dynamic>.from(data);
       }
@@ -4649,11 +4692,17 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          return Map<String, dynamic>.from(data['data'] ?? data);
+          final resData = Map<String, dynamic>.from(data['data'] ?? {});
+          resData['success'] = true;
+          return resData;
         }
       } else if (response.statusCode == 403) {
         final data = jsonDecode(response.body);
-        return {'limitReached': true, 'message': data['message']};
+        return {
+          'success': false,
+          'limitReached': true,
+          'message': data['message'] ?? 'You have reached your daily backtrack limit. Upgrade your plan to get more backtracks!',
+        };
       }
     } catch (e) {
       debugPrint('backtrackSwipe error: $e');

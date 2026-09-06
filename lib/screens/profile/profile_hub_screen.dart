@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import 'vip_membership_screen.dart';
+import 'plan_usage_screen.dart';
 import 'lunara_wallet_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
@@ -316,7 +317,11 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const VIPMembershipScreen()),
+        MaterialPageRoute(
+          builder: (context) => isPaid
+              ? const PlanUsageScreen()
+              : const VIPMembershipScreen(),
+        ),
       ),
       child: Container(
         padding: const EdgeInsets.all(18),

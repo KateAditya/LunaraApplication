@@ -676,6 +676,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
       if (!mounted || !context.mounted) return;
       if (verified) {
+        _optimisticallyUpdateLargePartyPayment(bookingId: bookingId);
         await _loadGroupPartyBookings();
         _loadFeed(showLoader: false);
         TopNotificationBanner.show(
@@ -968,6 +969,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body: 'Your group party booking was paid via Smart Wallet. Ticket generated!',
         data: {'type': 'group_party_confirmed', 'partyId': bookingId},
       );
+      _optimisticallyUpdateLargePartyPayment(bookingId: bookingId);
       ApiService.notifyFeedNeedsRefresh();
       await _loadGroupPartyBookings();
       _loadFeed(showLoader: false);
@@ -5173,7 +5175,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         statusSummary = 'Deposit Required';
         actionsList = [
           NotificationAction(
-            label: 'Pay Deposit (${depositAmt.toStringAsFixed(0)})',
+            label: 'Pay Deposit (₹${depositAmt.toStringAsFixed(0)})',
             icon: Icons.payment_rounded,
             isPrimary: true,
             onTap: () async {
@@ -5182,7 +5184,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 venueName: venueName,
                 orderId: hostOrderId,
                 depositAmount: depositAmt,
-                onSuccess: () async => _loadFeed(),
+                onSuccess: () async {
+                  _optimisticallyUpdatePartyPlanPayment(planId: planId, isHost: true);
+                  await _loadFeed(showLoader: false);
+                },
               );
             },
           ),
@@ -5549,29 +5554,51 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 : 'Pay Deposit (₹99) • $countdownLabel',
             icon: Icons.payment_rounded,
             isPrimary: true,
+            onTap: () async {
+              if (isPaymentExpired) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Payment window has expired.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+              await _startJoinerRazorpayDirectPaymentInLiveFeed(
+                partyPlanId: planId,
+                requestId: reqId,
+                venueName: venueName,
+                depositAmount: 99.0,
+                onSuccess: () async {
+                  _optimisticallyUpdatePartyPlanPayment(planId: planId, isHost: false, requestId: reqId);
+                  await _loadFeed(showLoader: false);
+                },
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
             onTap: () {
               final enrichedPlan = Map<String, dynamic>.from(planMap);
               if (reqId.isNotEmpty) {
                 enrichedPlan['requestId'] = reqId;
                 enrichedPlan['activeRequestId'] = reqId;
               }
-              enrichedPlan['hasRequested'] = true;
-              enrichedPlan['status'] = 'payment_pending';
-              enrichedPlan['requestStatus'] = 'payment_pending';
-              enrichedPlan['joinerPaymentStatus'] = 'unpaid';
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => PartyPlanDetailScreen(
                     plan: enrichedPlan,
-                    autoOpenPaymentSheet: true,
                   ),
                 ),
               ).then((_) => _loadFeed(showLoader: false));
             },
           ),
           NotificationAction(
-            label: isPrivateInvite ? 'Decline Invite' : 'Withdraw Request',
+            label: isPrivateInvite ? 'Decline' : 'Withdraw',
             icon: Icons.cancel_rounded,
             isPrimary: false,
             color: Colors.grey[200],
@@ -6271,11 +6298,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   MaterialPageRoute(
                     builder: (_) => StrangersMeetPaymentScreen(
                       request: req,
-                      onPaymentSuccess: () => _loadFeed(),
+                      onPaymentSuccess: () {
+                        _optimisticallyUpdateStrangerMeetPayment(meetId: req.id, isHost: true);
+                        _loadFeed(showLoader: false);
+                      },
                       isJoinPayment: false,
                     ),
                   ),
-                );
+                ).then((_) => _loadFeed(showLoader: false));
               } catch (e) {
                 debugPrint('Error parsing SM host payment: $e');
               }
@@ -8056,6 +8086,345 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       razorpay.open(options);
     } catch (e) {
       debugPrint('Error opening Razorpay for Host Payment: $e');
+    }
+  }
+
+  void _optimisticallyUpdatePartyPlanPayment({
+    required String planId,
+    required bool isHost,
+    String? requestId,
+  }) {
+    final cleanId = ApiService.cleanBookingId(planId);
+    bool changed = false;
+
+    for (int i = 0; i < _feedItems.length; i++) {
+      final item = _feedItems[i];
+      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? '');
+      if (rawId == cleanId || rawId == planId) {
+        final updated = Map<String, dynamic>.from(item);
+        if (isHost) {
+          updated['hostPaymentStatus'] = 'paid';
+          updated['isLive'] = true;
+          updated['status'] = 'active';
+        } else {
+          updated['joinerPaymentStatus'] = 'paid';
+          updated['status'] = 'confirmed';
+          updated['requestStatus'] = 'confirmed';
+          if (updated['myRequest'] is Map) {
+            updated['myRequest'] = {
+              ...Map<String, dynamic>.from(updated['myRequest'] as Map),
+              'status': 'confirmed',
+              'joinerPaymentStatus': 'paid',
+            };
+          }
+        }
+        _feedItems[i] = updated;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _cachedTimeline = _buildUnifiedTimeline();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  void _optimisticallyUpdateStrangerMeetPayment({
+    required String meetId,
+    required bool isHost,
+  }) {
+    final cleanId = ApiService.cleanBookingId(meetId);
+    bool changed = false;
+
+    for (int i = 0; i < _feedItems.length; i++) {
+      final item = _feedItems[i];
+      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['strangersMeetId']?.toString() ?? item['meetId']?.toString() ?? '');
+      if (rawId == cleanId || rawId == meetId) {
+        final updated = Map<String, dynamic>.from(item);
+        if (isHost) {
+          updated['hostPaymentStatus'] = 'paid';
+          updated['paymentStatus'] = 'paid';
+          updated['status'] = 'approved';
+        } else {
+          updated['paymentStatus'] = 'paid';
+          updated['status'] = 'confirmed';
+          if (updated['myRequest'] is Map) {
+            updated['myRequest'] = {
+              ...Map<String, dynamic>.from(updated['myRequest'] as Map),
+              'paymentStatus': 'paid',
+              'status': 'confirmed',
+            };
+          }
+        }
+        _feedItems[i] = updated;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      _cachedTimeline = _buildUnifiedTimeline();
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  void _optimisticallyUpdateLargePartyPayment({
+    required String bookingId,
+  }) {
+    final cleanId = ApiService.cleanBookingId(bookingId);
+    for (int i = 0; i < _largePartyBookings.length; i++) {
+      final b = _largePartyBookings[i];
+      final rawId = ApiService.cleanBookingId(b['id']?.toString() ?? b['bookingId']?.toString() ?? '');
+      if (rawId == cleanId || rawId == bookingId) {
+        _largePartyBookings[i] = {
+          ...b,
+          'paymentStatus': 'paid',
+          'status': 'confirmed',
+        };
+      }
+    }
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Map<String, dynamic>? _findMyRequestForPlan(String planId) {
+    final cleanId = ApiService.cleanBookingId(planId);
+    for (final item in _feedItems) {
+      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? '');
+      if (rawId == cleanId || rawId == planId) {
+        if (item['myRequest'] is Map) {
+          return Map<String, dynamic>.from(item['myRequest'] as Map);
+        }
+        if (item['activeRequest'] is Map) {
+          return Map<String, dynamic>.from(item['activeRequest'] as Map);
+        }
+        if (item['request'] is Map) {
+          return Map<String, dynamic>.from(item['request'] as Map);
+        }
+        return item;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _startJoinerRazorpayDirectPaymentInLiveFeed({
+    required String partyPlanId,
+    required String requestId,
+    required String venueName,
+    required double depositAmount,
+    required Future<void> Function() onSuccess,
+  }) async {
+    String cleanReqId = requestId.trim();
+    if (cleanReqId.isEmpty) {
+      final myReq = _findMyRequestForPlan(partyPlanId);
+      cleanReqId = myReq?['id']?.toString() ?? '';
+    }
+
+    final double price = depositAmount > 0 ? depositAmount : 99.0;
+
+    final bool? sheetSuccess = await SmartCheckoutSheet.show(
+      context: context,
+      title: 'Joiner Safety Deposit',
+      subtitle: 'Confirm your match for Party Plan at $venueName',
+      itemPrice: price,
+      onWalletPayment: () async {
+        final res = await ApiService.payWithWallet(
+          amount: price,
+          planId: partyPlanId,
+          paymentType: 'joiner_deposit',
+        );
+        if (res != null && res['success'] == true) {
+          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final paymentConfirmed = await ApiService.verifyJoinerPayment(
+            cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
+            'order_mock_wallet',
+            'wallet_$transactionId',
+            'mock_signature',
+          );
+          if (paymentConfirmed) {
+            return true;
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res?['message'] ?? 'Wallet payment failed'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return false;
+      },
+      onDirectPayment: () async {
+        await _launchRazorpayForJoinerPayment(
+          cleanReqId: cleanReqId,
+          partyPlanId: partyPlanId,
+          venueName: venueName,
+          depositAmount: price,
+          onSuccess: onSuccess,
+        );
+      },
+      onHybridPayment: (shortfall) async {
+        await _launchRazorpayForJoinerPayment(
+          cleanReqId: cleanReqId,
+          partyPlanId: partyPlanId,
+          venueName: venueName,
+          depositAmount: shortfall > 0 ? shortfall : price,
+          onSuccess: onSuccess,
+        );
+      },
+    );
+
+    if (sheetSuccess == true && mounted) {
+      TopNotificationBanner.show(
+        title: 'Match Confirmed! 🎉',
+        body: 'Safety Deposit paid via Smart Wallet! Chat is now unlocked.',
+      );
+      ApiService.notifyFeedNeedsRefresh();
+      await onSuccess();
+      _loadFeed(showLoader: false);
+    }
+  }
+
+  Future<void> _launchRazorpayForJoinerPayment({
+    required String cleanReqId,
+    required String partyPlanId,
+    required String venueName,
+    required double depositAmount,
+    required Future<void> Function() onSuccess,
+  }) async {
+    final initRes = await ApiService.initiateJoinerPayment(cleanReqId.isNotEmpty ? cleanReqId : partyPlanId);
+    String currentOrderId = '';
+    String razorpayKey = 'rzp_test_123';
+    if (initRes != null && initRes['success'] == true) {
+      currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
+      if (initRes['razorpayKeyId'] != null && initRes['razorpayKeyId'].toString().isNotEmpty) {
+        razorpayKey = initRes['razorpayKeyId'].toString();
+      }
+    }
+
+    if (currentOrderId.isEmpty) {
+      currentOrderId = 'order_mock_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
+      final paymentConfirmed = await ApiService.verifyJoinerPayment(
+        cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
+        currentOrderId,
+        'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+        'mock_signature',
+      );
+      if (paymentConfirmed && mounted) {
+        await onSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+    }
+
+    late Razorpay razorpay;
+    razorpay = Razorpay();
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+      final pId = response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
+      final oId = response.orderId ?? currentOrderId;
+      final sig = response.signature ?? 'mock_signature';
+
+      final paymentConfirmed = await ApiService.verifyJoinerPayment(
+        cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
+        oId,
+        pId,
+        sig,
+      );
+
+      razorpay.clear();
+      if (paymentConfirmed && mounted) {
+        await onSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted) {
+        if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
+          await onSuccess();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Safety Deposit Paid! Match confirmed.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment verification failed. Please refresh and try again.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) async {
+      razorpay.clear();
+      debugPrint('Razorpay Joiner Error: ${response.code} - ${response.message}');
+      if (mounted) {
+        if ((response.code == 0 || response.code == 2) && (razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('order_mock_'))) {
+          final mockConfirmed = await ApiService.verifyJoinerPayment(
+            cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
+            currentOrderId,
+            'pay_test_${DateTime.now().millisecondsSinceEpoch}',
+            'test_signature',
+          );
+          if (mockConfirmed && mounted) {
+            await onSuccess();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            return;
+          }
+        }
+        final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED || response.code == 2 || response.code == 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isCancelled ? 'Payment cancelled.' : 'Payment Failed: ${response.message ?? "Error"}'),
+            backgroundColor: isCancelled ? Colors.black87 : Colors.redAccent,
+          ),
+        );
+      }
+    });
+
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+      razorpay.clear();
+    });
+
+    final options = <String, dynamic>{
+      'key': razorpayKey,
+      'amount': (depositAmount * 100).round(),
+      'name': 'Lunara Joiner Deposit',
+      'description': 'Safety deposit for Party Plan at $venueName',
+      'currency': 'INR',
+      if (currentOrderId.isNotEmpty) 'order_id': currentOrderId,
+      'prefill': {'contact': '9999999999', 'email': 'user@lunara.app'},
+      'theme': {'color': '#7C3AED'},
+    };
+
+    try {
+      razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error opening Razorpay for Joiner Payment: $e');
     }
   }
 

@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
 import 'upcoming_party_screen.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 class EventPostsScreen extends StatefulWidget {
   const EventPostsScreen({super.key});
@@ -104,7 +105,7 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
       venueId: event['venueId']?.toString() ?? '',
       venueName: vName,
       date: event['rawDate']?.toString() ?? '2026-09-06',
-      time: event['time']?.toString() ?? '20:00',
+      time: LunaraDateFormatter.normalizeTimeTo12Hour(event['time']?.toString() ?? '8:00 PM'),
       bannerImage: flyer?.toString(),
       eventTitle: title?.toString(),
     );
@@ -185,7 +186,7 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
                       final title = event['title'] ?? 'Upcoming Night';
                       final venue = event['venue'] ?? event['venueName'] ?? 'Venue';
                       final date = event['date'] ?? 'Tonight';
-                      final time = event['time'] ?? '9:00 PM';
+                      final time = LunaraDateFormatter.normalizeTimeTo12Hour(event['time']?.toString() ?? '8:00 PM');
                       final location = event['location'] ?? '';
                       final about = event['aboutEvent'] ?? '';
                       final image = event['image'] ?? '';

@@ -50,6 +50,11 @@ class RealtimeSyncManager with WidgetsBindingObserver {
     ApiService.planPostedNotifier.value++;
   }
 
+  void triggerLiveFeedSync() => triggerLocalUpdate('live_feed_update');
+  void triggerPartyPlanSync() => triggerLocalUpdate('party_plan_updated');
+  void triggerStrangerMeetSync() => triggerLocalUpdate('strangers_meet_updated');
+  void triggerGroupPartySync() => triggerLocalUpdate('group_party_updated');
+
   // ── Initialization & Socket Binding ────────────────────────────────────────
   void init() {
     if (_isInitialized) return;

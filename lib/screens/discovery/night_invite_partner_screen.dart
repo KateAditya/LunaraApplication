@@ -5,6 +5,8 @@ import '../../services/api_service.dart';
 import '../../services/optimistic_action_guard.dart';
 import '../../widgets/lunara_profile_image.dart';
 import 'night_partner_profile_screen.dart';
+import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class NightInvitePartnerScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -82,14 +84,6 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
       _invitedUserIds.add(partnerId);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Invitation sent to $name! 🎉'),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-
     try {
       final venueId = widget.venue['id']?.toString() ?? '';
       final res = await ApiService.sendNightPartnerRequest(
@@ -99,15 +93,38 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
         time: widget.time,
       );
 
-      if (res == null) {
+      if (!mounted) return;
+
+      if (res != null && res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Invitation sent to $name! 🎉'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
         // Rollback
-        if (mounted) {
-          setState(() {
-            _invitedUserIds.remove(partnerId);
-          });
+        setState(() {
+          _invitedUserIds.remove(partnerId);
+        });
+        final msg = res?['message']?.toString() ?? 'Failed to send invitation. Please try again.';
+        final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+            res?['timeLock'] != null ||
+            res?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+            res?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+            res?['code'] == 'USER_ALREADY_HAS_PLAN' ||
+            res?['code'] == 'HOST_ALREADY_HAS_PLAN';
+
+        if (isTimeLock) {
+          TimeLockBlockedDialog.show(
+            context,
+            errorData: res ?? {'message': msg},
+          );
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to send invitation. Please try again.'),
+            SnackBar(
+              content: Text(msg),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -119,13 +136,17 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
         setState(() {
           _invitedUserIds.remove(partnerId);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (TimeLockBlockedDialog.isConflictError(e)) {
+          TimeLockBlockedDialog.showWithMessage(context, e.toString());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${TimeLockBlockedDialog.cleanErrorMessage(e)}'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } finally {
       OptimisticActionGuard.end('PARTNER_INVITE:$partnerId');
@@ -182,7 +203,7 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          '${widget.date} • ${widget.time}',
+                          '${widget.date} • ${LunaraDateFormatter.normalizeTimeTo12Hour(widget.time)}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],

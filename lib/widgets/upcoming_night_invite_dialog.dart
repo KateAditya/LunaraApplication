@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../widgets/lunara_profile_image.dart';
+import '../utils/lunara_date_formatter.dart';
+import '../widgets/dialogs/time_lock_blocked_dialog.dart';
 
 class UpcomingNightInviteDialog extends StatefulWidget {
   final String requestId;
@@ -54,7 +56,7 @@ class _UpcomingNightInviteDialogState extends State<UpcomingNightInviteDialog> {
 
   Future<void> _respond(String action) async {
     setState(() => _isLoading = true);
-    final success = await ApiService.respondToNightPartnerRequest(
+    final res = await ApiService.respondToNightPartnerRequestDetailed(
       requestId: widget.requestId,
       action: action,
     );
@@ -64,7 +66,7 @@ class _UpcomingNightInviteDialogState extends State<UpcomingNightInviteDialog> {
 
     Navigator.pop(context);
 
-    if (success) {
+    if (res['success'] == true) {
       if (action == 'accept') {
         if (widget.onAccepted != null) widget.onAccepted!();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -96,13 +98,28 @@ class _UpcomingNightInviteDialogState extends State<UpcomingNightInviteDialog> {
         );
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to process response. Please try again.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      final msg = res['message']?.toString() ?? 'Failed to process response. Please try again.';
+      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+          res['timeLock'] != null ||
+          res['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+          res['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+          res['code'] == 'USER_ALREADY_HAS_PLAN' ||
+          res['code'] == 'HOST_ALREADY_HAS_PLAN';
+
+      if (isTimeLock) {
+        TimeLockBlockedDialog.show(
+          context,
+          errorData: res,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -255,7 +272,7 @@ class _UpcomingNightInviteDialogState extends State<UpcomingNightInviteDialog> {
                       const Icon(Icons.calendar_today_rounded, color: LunaraTheme.electricViolet, size: 16),
                       const SizedBox(width: 8),
                       Text(
-                        '${widget.date} • ${widget.time}',
+                        '${widget.date} • ${LunaraDateFormatter.normalizeTimeTo12Hour(widget.time)}',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey[600],

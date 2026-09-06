@@ -18,6 +18,13 @@ import { NotificationEventType } from '../types/NotificationEventTypes';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { parseTimeParts, format12HourFromParts } from '../utils/dateTimeUtils';
+import { EventTimeLockService, parseBookingDateTime } from './EventTimeLockService';
+
+function normalize12h(timeStr?: string | null): string {
+    const [h, m] = parseTimeParts(timeStr);
+    return format12HourFromParts(h, m);
+}
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -452,6 +459,26 @@ export class NightPartnerService {
             throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
         }
 
+        // ── 4-Hour Time-Lock & Existing Plan Validation (Host & Partner) ───────
+        const eventDateTime = parseBookingDateTime(eventDate, eventTime);
+        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan');
+        if (!hostTimeLock.allowed) {
+            const err: any = new Error(hostTimeLock.message);
+            err.code = 'FOUR_HOUR_TIME_LOCK';
+            err.timeLock = hostTimeLock;
+            throw err;
+        }
+
+        const partnerTimeLock = await EventTimeLockService.validateFourHourGap(partnerId, eventDateTime, 'party_plan');
+        if (!partnerTimeLock.allowed) {
+            const partnerUser = await User.findByPk(partnerId, { attributes: ['firstName', 'lastName'] });
+            const partnerName = partnerUser?.firstName || 'The selected partner';
+            const err: any = new Error(`${partnerName} already has another plan scheduled around this time. Please choose another event or partner.`);
+            err.code = 'USER_ALREADY_HAS_PLAN';
+            err.timeLock = partnerTimeLock;
+            throw err;
+        }
+
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 Hours expiry
 
         const [request, created] = await NightPartnerRequest.findOrCreate({
@@ -512,7 +539,7 @@ export class NightPartnerService {
                 venueName: venue.name,
                 eventName: venue.name,
                 eventDate,
-                eventTime: eventTime || request.eventTime || '20:00',
+                eventTime: normalize12h(eventTime || request.eventTime || '20:00'),
                 hostId,
                 hostName,
                 partnerId,
@@ -598,7 +625,7 @@ export class NightPartnerService {
                 return { request };
             }
 
-            // ACTION: ACCEPT -> Atomic Capacity & Match Creation Check
+            // ACTION: ACCEPT -> Atomic Capacity, Time-Lock & Match Creation Check
             const existingHostMatch = await NightPartnerMatch.findOne({
                 where: {
                     hostId: request.hostId,
@@ -613,6 +640,23 @@ export class NightPartnerService {
             if (existingHostMatch) {
                 await request.update({ status: NightPartnerRequestStatus.DECLINED }, { transaction: t });
                 throw new Error('MATCH_SLOT_FILLED');
+            }
+
+            const eventDateTime = parseBookingDateTime(request.eventDate, request.eventTime);
+            const partnerTimeLock = await EventTimeLockService.validateFourHourGap(partnerId, eventDateTime, 'party_plan', undefined, { transaction: t });
+            if (!partnerTimeLock.allowed) {
+                const err: any = new Error(partnerTimeLock.message);
+                err.code = 'FOUR_HOUR_TIME_LOCK';
+                err.timeLock = partnerTimeLock;
+                throw err;
+            }
+
+            const hostTimeLock = await EventTimeLockService.validateFourHourGap(request.hostId, eventDateTime, 'party_plan', undefined, { transaction: t });
+            if (!hostTimeLock.allowed) {
+                const err: any = new Error(hostTimeLock.message);
+                err.code = 'FOUR_HOUR_TIME_LOCK';
+                err.timeLock = hostTimeLock;
+                throw err;
             }
 
             await request.update({ status: NightPartnerRequestStatus.ACCEPTED }, { transaction: t });
@@ -1291,7 +1335,7 @@ export class NightPartnerService {
                 rawDate: eventDateStr,
                 bannerFromDate: ad.fromDate,
                 bannerToDate: ad.toDate,
-                time: v.openingTime || '20:00',
+                time: normalize12h(v.openingTime || '20:00'),
                 location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
                 aboutEvent: ad.aboutEvent || `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
                 interestedCount,
@@ -1355,7 +1399,7 @@ export class NightPartnerService {
                     image: (v as any).coverImage || (v as any).primaryPhoto || '',
                     date: 'Tonight / Weekend',
                     rawDate: todayStr,
-                    time: v.openingTime || '9:00 PM',
+                    time: normalize12h(v.openingTime || '9:00 PM'),
                     location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
                     aboutEvent: `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
                     interestedCount,
@@ -1634,7 +1678,7 @@ export class NightPartnerService {
                     venueName,
                     eventName: eventTitle,
                     eventDate,
-                    eventTime: isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00'),
+                    eventTime: normalize12h(isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00')),
                     isHost,
                     userRole: isHost ? 'HOST' : 'PARTNER',
                     hostId,
@@ -1666,7 +1710,7 @@ export class NightPartnerService {
                         name: eventTitle,
                         title: eventTitle,
                         date: eventDate,
-                        time: isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00'),
+                        time: normalize12h(isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00')),
                         coverImageUrl: bannerImage,
                     },
                     statusText,

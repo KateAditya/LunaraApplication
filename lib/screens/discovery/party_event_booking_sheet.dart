@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/smart_checkout_sheet.dart';
+import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import 'digital_ticket_screen.dart';
 
 class PartyEventBookingSheet extends StatefulWidget {
@@ -209,9 +210,24 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         _navigateToTicket(ticketCode, 0.0);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(bookingRes?['message'] ?? 'Failed to book event.')),
-          );
+          final msg = bookingRes?['message']?.toString() ?? 'Failed to book event.';
+          final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+              bookingRes?['timeLock'] != null ||
+              bookingRes?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+              bookingRes?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+              bookingRes?['code'] == 'USER_ALREADY_BOOKED' ||
+              bookingRes?['code'] == 'USER_ALREADY_HAS_PLAN';
+
+          if (isTimeLock) {
+            TimeLockBlockedDialog.show(
+              context,
+              errorData: bookingRes ?? {'message': msg},
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg)),
+            );
+          }
         }
       }
       return;
@@ -234,12 +250,27 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
         if (bookingRes == null || bookingRes['success'] != true) {
           if (parentContext.mounted) {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              SnackBar(
-                content: Text(bookingRes?['message'] ?? 'Failed to initialize booking order.'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
+            final msg = bookingRes?['message']?.toString() ?? 'Failed to initialize booking order.';
+            final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+                bookingRes?['timeLock'] != null ||
+                bookingRes?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'USER_ALREADY_BOOKED' ||
+                bookingRes?['code'] == 'USER_ALREADY_HAS_PLAN';
+
+            if (isTimeLock) {
+              TimeLockBlockedDialog.show(
+                parentContext,
+                errorData: bookingRes ?? {'message': msg},
+              );
+            } else {
+              ScaffoldMessenger.of(parentContext).showSnackBar(
+                SnackBar(
+                  content: Text(msg),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
           }
           return false;
         }
@@ -286,12 +317,27 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
         if (bookingRes == null || bookingRes['success'] != true) {
           if (parentContext.mounted) {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              SnackBar(
-                content: Text(bookingRes?['message'] ?? 'Failed to initialize booking.'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
+            final msg = bookingRes?['message']?.toString() ?? 'Failed to initialize booking.';
+            final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+                bookingRes?['timeLock'] != null ||
+                bookingRes?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'USER_ALREADY_BOOKED' ||
+                bookingRes?['code'] == 'USER_ALREADY_HAS_PLAN';
+
+            if (isTimeLock) {
+              TimeLockBlockedDialog.show(
+                parentContext,
+                errorData: bookingRes ?? {'message': msg},
+              );
+            } else {
+              ScaffoldMessenger.of(parentContext).showSnackBar(
+                SnackBar(
+                  content: Text(msg),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
           }
           return;
         }
@@ -328,12 +374,27 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
         if (bookingRes == null || bookingRes['success'] != true) {
           if (parentContext.mounted) {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              SnackBar(
-                content: Text(bookingRes?['message'] ?? 'Failed to initialize booking.'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
+            final msg = bookingRes?['message']?.toString() ?? 'Failed to initialize booking.';
+            final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+                bookingRes?['timeLock'] != null ||
+                bookingRes?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+                bookingRes?['code'] == 'USER_ALREADY_BOOKED' ||
+                bookingRes?['code'] == 'USER_ALREADY_HAS_PLAN';
+
+            if (isTimeLock) {
+              TimeLockBlockedDialog.show(
+                parentContext,
+                errorData: bookingRes ?? {'message': msg},
+              );
+            } else {
+              ScaffoldMessenger.of(parentContext).showSnackBar(
+                SnackBar(
+                  content: Text(msg),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
           }
           return;
         }

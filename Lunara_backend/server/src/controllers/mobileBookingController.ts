@@ -26,7 +26,7 @@ import { BookingPolicyService } from '../services/BookingPolicyService';
 import { BookingPolicyType } from '../models/BookingPolicyConfig';
 import { WalletService } from '../services/walletService';
 import { WalletTransactionType } from '../models/WalletTransaction';
-import { parseBookingDateTime } from '../services/EventTimeLockService';
+import { EventTimeLockService, parseBookingDateTime } from '../services/EventTimeLockService';
 import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
@@ -376,6 +376,57 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
                 res.status(400).json({ success: false, message: 'Not enough seats available.' });
                 return;
             }
+        }
+
+        // Check if user has an existing confirmed or pending booking for this exact party event
+        const existingPartyBooking = await Booking.findOne({
+            where: {
+                userId,
+                partyEventId: ad.id,
+                status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.PENDING] },
+                paymentStatus: { [Op.in]: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID] }
+            }
+        });
+        if (existingPartyBooking) {
+            res.status(400).json({
+                success: false,
+                code: 'USER_ALREADY_BOOKED',
+                reason: 'USER_ALREADY_BOOKED',
+                message: 'You have already booked tickets for this party event.',
+                conflictingEventType: 'PARTY_BOOKING',
+                conflictingEventTitle: ad.title || 'Party Event',
+                conflictingDateTime: ad.eventDate ? new Date(ad.eventDate).toISOString() : new Date().toISOString()
+            });
+            return;
+        }
+
+        // Validate 4-hour gap across all event types
+        const eventDateVal = ad.eventDate as any;
+        const eventDateStr = eventDateVal
+            ? (eventDateVal instanceof Date ? eventDateVal.toISOString().split('T')[0] : String(eventDateVal).split('T')[0])
+            : new Date().toISOString().split('T')[0];
+        const eventTimeStr = (ad as any).time || (ad as any).startTime || '20:00';
+        const partyDateTime = parseBookingDateTime(eventDateStr, eventTimeStr);
+
+        const timeLockCheck = await EventTimeLockService.validateFourHourGap(
+            userId,
+            partyDateTime,
+            'solo_booking'
+        );
+
+        if (!timeLockCheck.allowed) {
+            res.status(400).json({
+                success: false,
+                code: 'FOUR_HOUR_TIME_LOCK',
+                reason: timeLockCheck.reason,
+                message: timeLockCheck.message,
+                conflictingEventType: timeLockCheck.conflictingEventType,
+                conflictingEventTitle: timeLockCheck.conflictingEventTitle,
+                conflictingDateTime: timeLockCheck.conflictingDateTime,
+                nextAvailableTime: timeLockCheck.nextAvailableTime,
+                timeLock: timeLockCheck,
+            });
+            return;
         }
 
         const amount = (ad.entryPrice || 0) * qty;

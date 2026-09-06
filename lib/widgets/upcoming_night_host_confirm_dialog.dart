@@ -3,6 +3,7 @@ import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../widgets/lunara_profile_image.dart';
 import '../screens/discovery/night_match_success_dialog.dart';
+import '../utils/lunara_date_formatter.dart';
 
 class UpcomingNightHostConfirmDialog extends StatefulWidget {
   final String matchId;
@@ -250,7 +251,7 @@ class _UpcomingNightHostConfirmDialogState extends State<UpcomingNightHostConfir
                       const Icon(Icons.calendar_today_rounded, color: LunaraTheme.electricViolet, size: 14),
                       const SizedBox(width: 6),
                       Text(
-                        '${widget.date} • ${widget.time}',
+                        '${widget.date} • ${LunaraDateFormatter.normalizeTimeTo12Hour(widget.time)}',
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.grey[600],

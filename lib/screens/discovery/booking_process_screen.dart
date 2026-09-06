@@ -16,6 +16,7 @@ import '../../widgets/venue_cover_charge_notice.dart';
 import '../../widgets/time_lock_modal.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../../services/notification_navigator.dart';
+import '../../services/realtime_sync_manager.dart';
 
 class BookingProcessScreen extends StatefulWidget {
   final Map<dynamic, dynamic> venue;
@@ -2817,6 +2818,8 @@ class _BookingProcessScreenState extends State<BookingProcessScreen> {
                                     body: 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!',
                                     data: {'type': 'booking_confirmed', 'bookingId': createdBookingId},
                                   );
+                                  ApiService.notifyFeedNeedsRefresh();
+                                  RealtimeSyncManager.instance.triggerLocalUpdate('booking_confirmed');
                                   final navContext = outerContext.mounted ? outerContext : (NotificationNavigator.navigatorKey.currentContext ?? outerContext);
                                   final ticketCode = walletTicketCode ?? createdBookingId!;
                                   final ticketUrl = walletTicketUrl;

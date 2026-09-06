@@ -1012,9 +1012,14 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Create the party plan under a transaction ──
+        const isUpcomingNight = Boolean(req.body.isUpcomingNight || req.body.upcomingNightId || req.body.adId);
+        const planType = isUpcomingNight ? 'upcoming_night_post' : 'party_plan';
+        const isLive = isUpcomingNight ? true : false;
+        const initialPaymentStatus = isUpcomingNight ? PartyPlanPaymentStatus.PAID : PartyPlanPaymentStatus.UNPAID;
+
         const partyPlan = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
-            'party_plan',
+            planType,
             partyDate,
             async (transaction) => {
                 const plan = await PartyPlan.create({
@@ -1028,11 +1033,11 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     visibility: parsedVisibility,
                     selectedUsers: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) ? selectedUsers : null,
                     depositAmount: depositAmount,
-                    hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
+                    hostPaymentStatus: initialPaymentStatus,
                     hostRazorpayOrderId: order.id,
-                    isLive: false, // Unpaid plans must not appear in public feed until host deposit is paid
+                    isLive: isLive, // Upcoming night event posts are published live immediately
                     expiresAt: partyDate,
-                    paymentStatus: 'pending',
+                    paymentStatus: isUpcomingNight ? 'paid' : 'pending',
                     foodPreference: foodPreference || 'Both',
                     drinkPreference: drinkPreference || 'Both',
                     paymentType: parsedPaymentType,
@@ -1042,7 +1047,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     showDateDetails,
                     lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
                 }, { transaction });
-
 
                 return plan;
             }

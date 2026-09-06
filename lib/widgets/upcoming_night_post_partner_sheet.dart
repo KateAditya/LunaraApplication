@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../widgets/top_notification_banner.dart';
-import '../widgets/subscription_limit_dialog.dart';
+import '../widgets/dialogs/time_lock_blocked_dialog.dart';
+import '../utils/lunara_date_formatter.dart';
 
 class UpcomingNightPostPartnerSheet extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -159,23 +160,6 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
     setState(() => _isPosting = true);
 
     try {
-      // 1. Pre-validation check against Party Plan / Post creation limits
-      final limitRes = await ApiService.get('/api/mobile/subscriptions/party-plan-limit');
-      if (limitRes.statusCode == 200) {
-        final limitData = jsonDecode(limitRes.body)['data'];
-        if (limitData != null && limitData['allowed'] == false) {
-          setState(() => _isPosting = false);
-          showSubscriptionLimitDialog(
-            context,
-            feature: SubLimitFeature.partyCreation,
-            customMessage: limitData['message'],
-          );
-          return;
-        }
-      }
-    } catch (_) {}
-
-    try {
       final isoPlanDateTime = _formatToIsoDateTime(widget.date, widget.time);
       final adId = widget.party['adId'] ?? widget.party['upcomingNightId'] ?? widget.party['id'];
 
@@ -229,23 +213,41 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       } else {
         final body = jsonDecode(response.body);
         final msg = body['message'] ?? 'Failed to create partner search post.';
+        final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+            body['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+            body['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+            body['code'] == 'PLAN_TIME_LOCKED' ||
+            body['reason'] == 'PLAN_TIME_LOCKED' ||
+            body['code'] == 'USER_ALREADY_HAS_PLAN';
+
+        if (isTimeLock) {
+          TimeLockBlockedDialog.show(
+            context,
+            errorData: body is Map<String, dynamic> ? Map<String, dynamic>.from(body) : {'message': msg},
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isPosting = false);
+      if (TimeLockBlockedDialog.isConflictError(e)) {
+        TimeLockBlockedDialog.showWithMessage(context, e.toString());
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(msg),
+            content: Text('Network error: $e'),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
-    } catch (e) {
-      setState(() => _isPosting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Network error: $e'),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
   }
 
@@ -417,7 +419,7 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                                   const Icon(Icons.access_time_rounded, size: 12, color: LunaraTheme.hotPink),
                                   const SizedBox(width: 4),
                                   Text(
-                                    widget.time,
+                                    LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
                                     style: const TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,

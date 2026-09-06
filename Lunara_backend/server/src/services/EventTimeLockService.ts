@@ -368,6 +368,36 @@ export class EventTimeLockService {
                 } catch (err: any) {
                     console.error('Error fetching Bookings for time lock:', err?.message || err);
                 }
+            })(),
+
+            // 5. Night Partner Matches (Host & Partner)
+            (async () => {
+                try {
+                    const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
+                    const matches = await NightPartnerMatch.findAll({
+                        where: {
+                            [Op.or]: [{ hostId: userId }, { partnerId: userId }],
+                            eventDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
+                            status: { [Op.in]: ['matched', 'payment_pending', 'confirmed'] },
+                        },
+                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                        transaction,
+                    });
+
+                    for (const m of matches) {
+                        if (excludeEventId && (m.id === excludeEventId || m.requestId === excludeEventId)) continue;
+                        const vName = (m as any).venue?.name;
+                        const matchTime = parseBookingDateTime(m.eventDate, m.eventTime || '20:00');
+                        activeEvents.push({
+                            id: m.id,
+                            type: 'PARTY_PLAN',
+                            title: vName ? `${vName} (Upcoming Night)` : 'Upcoming Night Event',
+                            dateTime: matchTime,
+                        });
+                    }
+                } catch (err: any) {
+                    console.error('Error fetching Night Partner Matches for time lock:', err?.message || err);
+                }
             })()
         ]);
 

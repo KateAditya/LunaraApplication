@@ -403,7 +403,7 @@ class _MatchScreenState extends State<MatchScreen>
     });
   }
 
-  void _rewindLastSwipe() {
+  Future<void> _rewindLastSwipe() async {
     if (_swipedHistory.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -425,11 +425,35 @@ class _MatchScreenState extends State<MatchScreen>
       return;
     }
 
-    SubscriptionProvider.instance.optimisticConsume(VipAction.backtrack);
     final restored = _swipedHistory.removeLast();
+    final targetUserId = (restored['id'] ?? restored['_id'])?.toString() ?? '';
+
+    // Optimistically restore to UI
     setState(() {
       _profiles.insert(0, restored);
     });
+    SubscriptionProvider.instance.optimisticConsume(VipAction.backtrack);
+
+    if (targetUserId.isNotEmpty) {
+      final res = await ApiService.backtrackSwipe(targetUserId);
+      if (res != null && res['limitReached'] == true) {
+        // Rollback
+        SubscriptionProvider.instance.rollbackConsume(VipAction.backtrack);
+        if (mounted) {
+          setState(() {
+            _profiles.remove(restored);
+            _swipedHistory.add(restored);
+          });
+          showSubscriptionLimitDialog(
+            context,
+            feature: SubLimitFeature.backtrack,
+            customMessage: res['message'],
+          );
+        }
+        return;
+      }
+    }
+    SubscriptionProvider.instance.refresh();
   }
 
   void _onBoostTap() {

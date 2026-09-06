@@ -6,6 +6,7 @@ import 'venue_detail_screen.dart';
 import 'party_event_booking_sheet.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
 import '../../widgets/upcoming_night_post_partner_sheet.dart';
+import '../../utils/lunara_date_formatter.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -550,7 +551,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       final vName = venueName;
                       final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
                       final eventDate = _formatDateIso(rawDate);
-                      final eventTime = widget.party['time']?.toString() ?? '20:00';
+                      final eventTime = LunaraDateFormatter.normalizeTimeTo12Hour(widget.party['time']?.toString() ?? '8:00 PM');
                       final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
                       final title = widget.party['title'] ?? widget.party['name'] ?? vName;
 
