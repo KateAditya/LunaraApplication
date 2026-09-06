@@ -3,14 +3,17 @@ import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
-import '../screens/social/plan_hub_screen.dart';
 import '../widgets/lunara_profile_image.dart';
+import 'upcoming_night_post_partner_sheet.dart';
 
 class NightPartnerSelectorSheet extends StatefulWidget {
   final String venueId;
   final String venueName;
   final String date;
   final String? time;
+  final String? bannerImage;
+  final String? eventTitle;
+  final Map<String, dynamic>? party;
 
   const NightPartnerSelectorSheet({
     super.key,
@@ -18,6 +21,9 @@ class NightPartnerSelectorSheet extends StatefulWidget {
     required this.venueName,
     required this.date,
     this.time,
+    this.bannerImage,
+    this.eventTitle,
+    this.party,
   });
 
   static Future<void> show(
@@ -26,6 +32,9 @@ class NightPartnerSelectorSheet extends StatefulWidget {
     required String venueName,
     required String date,
     String? time,
+    String? bannerImage,
+    String? eventTitle,
+    Map<String, dynamic>? party,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -36,6 +45,9 @@ class NightPartnerSelectorSheet extends StatefulWidget {
         venueName: venueName,
         date: date,
         time: time,
+        bannerImage: bannerImage,
+        eventTitle: eventTitle,
+        party: party,
       ),
     );
   }
@@ -246,11 +258,24 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
             child: InkWell(
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(
+                UpcomingNightPostPartnerSheet.show(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
-                  ),
+                  party: widget.party ?? {
+                    'venueId': widget.venueId,
+                    'venue': widget.venueName,
+                    'venueName': widget.venueName,
+                    'date': widget.date,
+                    'rawDate': widget.date,
+                    'time': widget.time ?? '20:00',
+                    'title': widget.eventTitle ?? widget.venueName,
+                    'image': widget.bannerImage,
+                  },
+                  venueId: widget.venueId,
+                  venueName: widget.venueName,
+                  date: widget.date,
+                  time: widget.time ?? '20:00',
+                  bannerImage: widget.bannerImage,
+                  eventTitle: widget.eventTitle ?? widget.venueName,
                 );
               },
               borderRadius: BorderRadius.circular(18),

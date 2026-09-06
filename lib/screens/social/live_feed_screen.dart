@@ -4068,7 +4068,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String matchId = (metadata['matchId'] ?? rawItem['matchId'] ?? rawItem['entityId'] ?? nightId).toString();
     final String status = (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT').toString().toUpperCase();
     final String stage = (metadata['stage'] ?? rawItem['stage'] ?? 'INVITE_SENT').toString().toUpperCase();
-    final String userRole = (metadata['userRole'] ?? rawItem['userRole'] ?? 'HOST').toString().toUpperCase();
+
+    final String hostId = (metadata['hostId'] ?? rawItem['hostId'] ?? rawItem['actorUserId'] ?? rawItem['senderId'] ?? '').toString();
+    final String partnerId = (metadata['partnerId'] ?? rawItem['partnerId'] ?? rawItem['recipientUserId'] ?? '').toString();
+    final String myId = (currentUserId.isNotEmpty ? currentUserId : ApiService.currentUserId ?? '').toString();
+
+    bool isCurrentUserHost = false;
+    if (metadata['isHost'] != null) {
+      isCurrentUserHost = metadata['isHost'] == true;
+    } else if (rawItem['isHost'] != null) {
+      isCurrentUserHost = rawItem['isHost'] == true;
+    } else if (metadata['userRole'] != null) {
+      isCurrentUserHost = metadata['userRole'].toString().toUpperCase() == 'HOST';
+    } else if (rawItem['userRole'] != null) {
+      isCurrentUserHost = rawItem['userRole'].toString().toUpperCase() == 'HOST';
+    } else if (myId.isNotEmpty) {
+      if (hostId.isNotEmpty && hostId == myId) {
+        isCurrentUserHost = true;
+      } else if (partnerId.isNotEmpty && partnerId == myId) {
+        isCurrentUserHost = false;
+      } else if (rawItem['actorUserId'] != null && rawItem['actorUserId'].toString() == myId) {
+        isCurrentUserHost = true;
+      } else if (rawItem['recipientUserId'] != null && rawItem['recipientUserId'].toString() == myId) {
+        isCurrentUserHost = false;
+      }
+    } else {
+      isCurrentUserHost = false;
+    }
 
     final Map<String, dynamic> partnerData = metadata['partner'] is Map
         ? Map<String, dynamic>.from(metadata['partner'])
@@ -4079,23 +4105,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String partnerName = partnerData['name']?.toString() ??
         partnerData['firstName']?.toString() ??
         rawItem['senderName']?.toString() ??
-        'Night Partner';
+        rawItem['otherUserName']?.toString() ??
+        (isCurrentUserHost ? 'Night Partner' : 'Host');
     final String? partnerPhoto = partnerData['photo']?.toString() ??
         partnerData['profilePhotoUrl']?.toString() ??
         partnerData['profileImageUrl']?.toString() ??
-        rawItem['senderImage']?.toString();
+        rawItem['senderImage']?.toString() ??
+        rawItem['otherUserPhoto']?.toString();
 
     final Map<String, dynamic> eventData = metadata['event'] is Map
         ? Map<String, dynamic>.from(metadata['event'])
         : (rawItem['event'] is Map ? Map<String, dynamic>.from(rawItem['event']) : <String, dynamic>{});
 
+    final String eventName = eventData['name']?.toString() ??
+        eventData['title']?.toString() ??
+        metadata['eventName']?.toString() ??
+        metadata['title']?.toString() ??
+        rawItem['eventName']?.toString() ??
+        rawItem['title']?.toString() ??
+        '';
+
     final String venueName = eventData['venueName']?.toString() ??
         metadata['venue']?['name']?.toString() ??
+        metadata['venueName']?.toString() ??
         rawItem['venueName']?.toString() ??
         'Upcoming Night Venue';
-    final String dateStr = eventData['date']?.toString() ?? metadata['date']?.toString() ?? rawItem['date']?.toString() ?? 'Tonight';
-    final String timeStr = eventData['time']?.toString() ?? metadata['time']?.toString() ?? rawItem['time']?.toString() ?? '8:00 PM';
+
+    final String displayTitle = eventName.isNotEmpty && eventName != venueName
+        ? '$eventName • $venueName'
+        : venueName;
+
+    final String dateStr = eventData['date']?.toString() ?? metadata['date']?.toString() ?? metadata['eventDate']?.toString() ?? rawItem['date']?.toString() ?? rawItem['eventDate']?.toString() ?? 'Tonight';
+    final String timeStr = eventData['time']?.toString() ?? metadata['time']?.toString() ?? metadata['eventTime']?.toString() ?? rawItem['time']?.toString() ?? rawItem['eventTime']?.toString() ?? '8:00 PM';
     final String? venuePhoto = eventData['coverImageUrl']?.toString() ??
+        metadata['coverImageUrl']?.toString() ??
         metadata['venue']?['coverImageUrl']?.toString() ??
         _extractVenuePhoto(metadata['venue']) ??
         _extractVenuePhoto(rawItem);
@@ -4106,7 +4149,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Color accentColor = LunaraTheme.electricViolet;
     String badgeText = 'UPCOMING NIGHT';
     String cardTitle = 'Upcoming Night 🌙';
-    String cardBody = 'Event at $venueName on $dateStr • $timeStr';
+    String cardBody = 'Event at $displayTitle on $dateStr • $timeStr';
     List<NotificationAction> actionsList = [];
 
     DateTime latestTime = _parseDateTime(rawItem['createdAt'] ?? rawItem['updatedAt']);
@@ -4120,7 +4163,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       accentColor = const Color(0xFF10B981);
       badgeText = 'CONFIRMED';
       cardTitle = 'Upcoming Night Confirmed! 🎉';
-      cardBody = 'You and $partnerName are set for $venueName on $dateStr • $timeStr! Ticket is locked.';
+      cardBody = 'You and $partnerName are set for $displayTitle on $dateStr • $timeStr! Ticket is locked.';
 
       if (ticketId != null && ticketId.isNotEmpty) {
         actionsList.add(
@@ -4230,7 +4273,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       accentColor = const Color(0xFFF59E0B);
       badgeText = 'ACTION REQUIRED';
       cardTitle = 'Invite Accepted! 💳';
-      cardBody = '$partnerName accepted your invite for $venueName! Complete payment to lock your match.';
+      cardBody = '$partnerName accepted your invite for $displayTitle! Complete payment to lock your match.';
 
       actionsList.add(
         NotificationAction(
@@ -4268,12 +4311,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       );
     } else {
-      // stage == 'INVITE_SENT'
-      if (userRole == 'PARTNER') {
+      // stage == 'INVITE_SENT' or PENDING
+      if (!isCurrentUserHost) {
         accentColor = LunaraTheme.electricViolet;
         badgeText = 'INVITE';
         cardTitle = 'Night Partner Invite 🌙';
-        cardBody = '$partnerName invited you to join Upcoming Night at $venueName on $dateStr • $timeStr!';
+        cardBody = '$partnerName invited you to join for $displayTitle on $dateStr • $timeStr!';
 
         actionsList.add(
           NotificationAction(
@@ -4286,8 +4329,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 _loadFeed(showLoader: false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Invite accepted! Waiting for booking confirmation.'),
+                    content: Text('Invite accepted! Waiting for booking confirmation. 🎉'),
                     backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not accept invite. Match slot may already be filled.'),
+                    backgroundColor: Colors.redAccent,
                   ),
                 );
               }
@@ -4313,7 +4363,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFF8B5CF6);
         badgeText = 'INVITE SENT';
         cardTitle = 'Invite Sent ⏳';
-        cardBody = 'Invited $partnerName to join Upcoming Night at $venueName. Waiting for response.';
+        cardBody = 'Invited $partnerName to join $displayTitle. Waiting for response.';
 
         actionsList.add(
           NotificationAction(

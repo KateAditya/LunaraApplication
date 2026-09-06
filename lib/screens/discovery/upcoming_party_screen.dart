@@ -5,7 +5,7 @@ import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
 import 'party_event_booking_sheet.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
-import '../social/plan_hub_screen.dart';
+import '../../widgets/upcoming_night_post_partner_sheet.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -546,11 +546,23 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                   // Post to Find Partner Button
                   InkWell(
                     onTap: () {
-                      Navigator.push(
+                      final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+                      final vName = venueName;
+                      final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+                      final eventDate = _formatDateIso(rawDate);
+                      final eventTime = widget.party['time']?.toString() ?? '20:00';
+                      final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
+                      final title = widget.party['title'] ?? widget.party['name'] ?? vName;
+
+                      UpcomingNightPostPartnerSheet.show(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
-                        ),
+                        party: widget.party,
+                        venueId: venueId,
+                        venueName: vName,
+                        date: eventDate,
+                        time: eventTime,
+                        bannerImage: flyer?.toString(),
+                        eventTitle: title?.toString(),
                       );
                     },
                     borderRadius: BorderRadius.circular(16),
@@ -682,12 +694,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                         flex: 4,
                         child: InkWell(
                           onTap: () {
+                            final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
+                            final title = widget.party['title'] ?? widget.party['name'] ?? venueName;
                             NightPartnerSelectorSheet.show(
                               context,
+                              party: widget.party,
                               venueId: widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '',
                               venueName: venueName,
                               date: _formatDateIso(widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? ''),
                               time: widget.party['time']?.toString() ?? '20:00',
+                              bannerImage: flyer?.toString(),
+                              eventTitle: title?.toString(),
                             );
                           },
                           borderRadius: BorderRadius.circular(16),

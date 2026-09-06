@@ -95,12 +95,18 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
   }
 
   void _openInvitePartner(Map<String, dynamic> event) {
+    final vName = event['venue']?.toString() ?? event['venueName']?.toString() ?? 'Venue';
+    final flyer = event['image'] ?? event['coverImageUrl'] ?? event['imagePath'];
+    final title = event['title'] ?? event['name'] ?? vName;
     NightPartnerSelectorSheet.show(
       context,
+      party: event,
       venueId: event['venueId']?.toString() ?? '',
-      venueName: event['venue']?.toString() ?? event['venueName']?.toString() ?? 'Venue',
+      venueName: vName,
       date: event['rawDate']?.toString() ?? '2026-09-06',
       time: event['time']?.toString() ?? '20:00',
+      bannerImage: flyer?.toString(),
+      eventTitle: title?.toString(),
     );
   }
 

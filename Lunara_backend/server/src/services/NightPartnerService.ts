@@ -502,7 +502,7 @@ export class NightPartnerService {
         await this.emitNotification(partnerId, {
             type: 'PARTNER_REQUEST_SENT',
             actorUserId: hostId,
-            title: 'New Partner Request! 🎉',
+            title: 'Night Partner Invite 🌙',
             body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
             entityId: request.id,
             data: {
@@ -510,16 +510,44 @@ export class NightPartnerService {
                 nightId: request.id,
                 venueId: venue.id,
                 venueName: venue.name,
+                eventName: venue.name,
                 eventDate,
                 eventTime: eventTime || request.eventTime || '20:00',
                 hostId,
                 hostName,
+                partnerId,
+                recipientUserId: partnerId,
+                actorUserId: hostId,
+                isHost: false,
+                userRole: 'PARTNER',
+                status: 'PENDING',
+                stage: 'INVITE_SENT',
                 actor: {
                     id: hostId,
                     firstName: hostUser?.firstName || 'Host',
                     lastName: hostUser?.lastName || '',
                     profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
                     isVerified: !!hostUser?.isVerified,
+                },
+                sender: {
+                    id: hostId,
+                    firstName: hostUser?.firstName || 'Host',
+                    lastName: hostUser?.lastName || '',
+                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                    isVerified: !!hostUser?.isVerified,
+                },
+                partner: {
+                    id: hostId,
+                    firstName: hostUser?.firstName || 'Host',
+                    name: hostUser?.firstName || 'Host',
+                    photo: hostPrimaryPhoto?.filePath || null,
+                },
+                event: {
+                    venueName: venue.name,
+                    name: venue.name,
+                    date: eventDate,
+                    time: eventTime || request.eventTime || '20:00',
+                    coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
                 },
                 actions: ['ACCEPT', 'DECLINE'],
             },
@@ -600,6 +628,25 @@ export class NightPartnerService {
                 status: NightPartnerMatchStatus.MATCHED,
                 maxPartners: 1,
             }, { transaction: t });
+
+            // Auto-remove / deactivate any open find-partner party plans for host and partner at this venue on this date
+            try {
+                const PartyPlan = (await import('../models/PartyPlan')).default;
+                const { PartyPlanStatus } = await import('../models/PartyPlan');
+                await PartyPlan.update(
+                    { status: PartyPlanStatus.CANCELLED, isLive: false },
+                    {
+                        where: {
+                            userId: { [Op.in]: [request.hostId, request.partnerId] },
+                            venueId: request.venueId,
+                            status: PartyPlanStatus.ACTIVE,
+                        },
+                        transaction: t,
+                    }
+                );
+            } catch (pPlanErr) {
+                logger.warn(`[NightPartnerService] Non-fatal: could not update party plans upon match: ${pPlanErr}`);
+            }
 
             // Notify Host to complete payment
             this.emitNotification(request.hostId, {
@@ -1163,17 +1210,35 @@ export class NightPartnerService {
      * Get all upcoming Event Posts for Home Feed / Event Posts Screen
      */
     public static async getEventPosts(callerUserId?: string): Promise<any[]> {
-        const venues = await Venue.findAll({
-            where: { status: 'live' },
-            attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'primaryPhoto', 'coverImage', 'pricePerCouple', 'entryFee', 'openingTime', 'closingTime'],
-            order: [['createdAt', 'DESC']],
-            limit: 30,
-        });
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        // 1. Fetch active advertisements (Upcoming Nights from Admin Banner Settings)
+        let activeAds: any[] = [];
+        try {
+            const Ad = (await import('../models/Ad')).default;
+            activeAds = await Ad.findAll({
+                where: {
+                    isActive: true,
+                    fromDate: { [Op.lte]: now },
+                    toDate: { [Op.gte]: now },
+                },
+                include: [{ model: Venue, as: 'venue' }],
+                order: [['createdAt', 'DESC']],
+                limit: 30,
+            });
+        } catch (adErr) {
+            logger.warn('[NightPartnerService] Error fetching active ads for event posts:', adErr);
+        }
+
         const eventPosts: any[] = [];
+        const seenVenueIds = new Set<string>();
 
-        for (const v of venues) {
+        for (const ad of activeAds) {
+            const v = (ad as any).venue;
+            if (!v) continue;
+            seenVenueIds.add(v.id);
+
             const interestedCount = await NightInterest.count({
                 where: {
                     venueId: v.id,
@@ -1204,24 +1269,102 @@ export class NightPartnerService {
                 hasActiveMatch = !!match;
             }
 
+            let adImage = ad.imagePath || '';
+            if (adImage && !adImage.startsWith('http') && !adImage.startsWith('/')) {
+                adImage = `/${adImage.replace(/\\/g, '/')}`;
+            }
+
+            const eventDateStr = ad.eventDate ? ad.eventDate.toISOString().split('T')[0] : (ad.toDate ? ad.toDate.toISOString().split('T')[0] : todayStr);
+
             eventPosts.push({
-                id: `event_post_${v.id}`,
+                id: `ad_event_${ad.id}`,
+                adId: ad.id,
+                upcomingNightId: ad.id,
                 venueId: v.id,
-                title: `${v.name} Weekend Night`,
+                title: ad.title || `${v.name} Weekend Night`,
+                name: ad.title || `${v.name} Weekend Night`,
                 venue: v.name,
                 venueName: v.name,
-                image: (v as any).coverImage || (v as any).primaryPhoto || '',
-                date: 'Tonight / Weekend',
-                rawDate: todayStr,
-                time: v.openingTime || '9:00 PM',
+                image: adImage || (v as any).coverImage || (v as any).primaryPhoto || '',
+                coverImageUrl: adImage || (v as any).coverImage || (v as any).primaryPhoto || '',
+                date: eventDateStr,
+                rawDate: eventDateStr,
+                bannerFromDate: ad.fromDate,
+                bannerToDate: ad.toDate,
+                time: v.openingTime || '20:00',
                 location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
-                aboutEvent: `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
+                aboutEvent: ad.aboutEvent || `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
                 interestedCount,
-                price: v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
+                seatLimit: ad.seatLimit,
+                price: ad.entryPrice || v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
                 isInterested,
                 hasActiveMatch,
                 venueMap: v.toJSON(),
             });
+        }
+
+        // 2. Fallback to active venues if few/no ads exist
+        if (eventPosts.length < 5) {
+            const venues = await Venue.findAll({
+                where: {
+                    status: 'live',
+                    id: { [Op.notIn]: Array.from(seenVenueIds) },
+                },
+                attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'primaryPhoto', 'coverImage', 'pricePerCouple', 'entryFee', 'openingTime', 'closingTime'],
+                order: [['createdAt', 'DESC']],
+                limit: 30 - eventPosts.length,
+            });
+
+            for (const v of venues) {
+                const interestedCount = await NightInterest.count({
+                    where: {
+                        venueId: v.id,
+                        status: NightInterestStatus.INTERESTED,
+                    },
+                });
+
+                let isInterested = false;
+                let hasActiveMatch = false;
+
+                if (callerUserId) {
+                    const interest = await NightInterest.findOne({
+                        where: {
+                            userId: callerUserId,
+                            venueId: v.id,
+                            status: NightInterestStatus.INTERESTED,
+                        },
+                    });
+                    isInterested = !!interest;
+
+                    const match = await NightPartnerMatch.findOne({
+                        where: {
+                            [Op.or]: [{ hostId: callerUserId }, { partnerId: callerUserId }],
+                            venueId: v.id,
+                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+                        },
+                    });
+                    hasActiveMatch = !!match;
+                }
+
+                eventPosts.push({
+                    id: `event_post_${v.id}`,
+                    venueId: v.id,
+                    title: `${v.name} Weekend Night`,
+                    venue: v.name,
+                    venueName: v.name,
+                    image: (v as any).coverImage || (v as any).primaryPhoto || '',
+                    date: 'Tonight / Weekend',
+                    rawDate: todayStr,
+                    time: v.openingTime || '9:00 PM',
+                    location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
+                    aboutEvent: `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
+                    interestedCount,
+                    price: v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
+                    isInterested,
+                    hasActiveMatch,
+                    venueMap: v.toJSON(),
+                });
+            }
         }
 
         return eventPosts;
@@ -1287,13 +1430,13 @@ export class NightPartnerService {
     public static async enrichUpcomingNightNotificationCard(nightId: string, recipientUserId: string): Promise<any | null> {
         try {
             let match = await NightPartnerMatch.findByPk(nightId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
+                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
             });
 
             let requestRecord: NightPartnerRequest | null = null;
             if (!match) {
                 requestRecord = await NightPartnerRequest.findByPk(nightId, {
-                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                 });
                 if (!requestRecord) {
                     return null;
@@ -1306,6 +1449,27 @@ export class NightPartnerService {
             const hostId = isMatch ? match!.hostId : requestRecord!.hostId;
             const partnerId = isMatch ? match!.partnerId : requestRecord!.partnerId;
             const isHost = recipientUserId === hostId;
+
+            // Resolve Banner Flyer if available
+            let bannerImage = (match as any)?.venue?.coverImage || (match as any)?.venue?.primaryPhoto || (requestRecord as any)?.venue?.coverImage || (requestRecord as any)?.venue?.primaryPhoto || null;
+            let eventTitle = venueName;
+            try {
+                const Ad = (await import('../models/Ad')).default;
+                const ad = await Ad.findOne({
+                    where: {
+                        venueId: isMatch ? match!.venueId : requestRecord!.venueId,
+                        isActive: true,
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+                if (ad) {
+                    if (ad.imagePath) bannerImage = ad.imagePath;
+                    if (ad.title) eventTitle = ad.title;
+                }
+            } catch (_) {}
+            if (bannerImage && !bannerImage.startsWith('http') && !bannerImage.startsWith('/')) {
+                bannerImage = `/${bannerImage.replace(/\\/g, '/')}`;
+            }
 
             const isPosted = true;
             const isInterested = true;
@@ -1366,7 +1530,7 @@ export class NightPartnerService {
             let statusText = 'Request Sent';
 
             if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
-                title = `New Partner Request for ${venueName}! 🎉`;
+                title = `Night Partner Invite 🌙 - ${venueName}`;
                 body = `${otherUserName} invited you to join for Upcoming Night at ${venueName}!`;
                 statusText = 'Invite Received';
             } else if (isCancelled) {
@@ -1412,7 +1576,7 @@ export class NightPartnerService {
                 actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
             } else {
                 if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
-                    actionButtons.push({ id: 'accept_request', label: 'Accept Request', primary: true, action: 'ACCEPT_REQUEST' });
+                    actionButtons.push({ id: 'accept_request', label: 'Accept', primary: true, action: 'ACCEPT_REQUEST' });
                     actionButtons.push({ id: 'decline_request', label: 'Decline', primary: false, action: 'DECLINE_REQUEST' });
                 }
                 if (isMatch && match!.status === NightPartnerMatchStatus.MATCHED && isHost) {
@@ -1468,12 +1632,43 @@ export class NightPartnerService {
                     requestId: isMatch ? undefined : requestRecord!.id,
                     matchId: isMatch ? match!.id : undefined,
                     venueName,
+                    eventName: eventTitle,
                     eventDate,
                     eventTime: isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00'),
                     isHost,
+                    userRole: isHost ? 'HOST' : 'PARTNER',
+                    hostId,
+                    partnerId,
+                    recipientUserId,
+                    actorUserId: isHost ? hostId : partnerId,
+                    status: isMatch ? match!.status : requestRecord!.status,
+                    stage: isMatch ? match!.status : (requestRecord!.status === NightPartnerRequestStatus.PENDING ? 'INVITE_SENT' : requestRecord!.status),
+                    coverImageUrl: bannerImage,
                     otherUserId,
                     otherUserName,
                     otherUserPhoto: primaryPhoto?.filePath || null,
+                    partner: {
+                        id: otherUserId,
+                        firstName: otherUserName,
+                        name: otherUserName,
+                        photo: primaryPhoto?.filePath || null,
+                        profilePhotoUrl: primaryPhoto?.filePath || null,
+                    },
+                    sender: {
+                        id: otherUserId,
+                        firstName: otherUserName,
+                        name: otherUserName,
+                        photo: primaryPhoto?.filePath || null,
+                        profilePhotoUrl: primaryPhoto?.filePath || null,
+                    },
+                    event: {
+                        venueName,
+                        name: eventTitle,
+                        title: eventTitle,
+                        date: eventDate,
+                        time: isMatch ? (match as any).eventTime : (requestRecord?.eventTime || '20:00'),
+                        coverImageUrl: bannerImage,
+                    },
                     statusText,
                     paymentMode: match?.paymentMode || 'SELF_PAY',
                     hostPaid: match?.hostPaid || false,
