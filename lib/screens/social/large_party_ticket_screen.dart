@@ -23,11 +23,15 @@ enum _LargePartyPaymentState { loading, paid, awaitingPayment, expired }
 class LargePartyTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic> booking;
   final Map<dynamic, dynamic> venue;
+  final bool? isExpired;
+  final bool? isCancelled;
 
   const LargePartyTicketScreen({
     super.key,
     required this.booking,
     required this.venue,
+    this.isExpired,
+    this.isCancelled,
   });
 
   @override
@@ -100,13 +104,40 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     super.dispose();
   }
 
+  bool get _isTicketCancelled {
+    if (widget.isCancelled == true) return true;
+    final b = widget.booking;
+    final status = (b['status'] ?? b['adminApprovalStatus'] ?? '').toString().toLowerCase();
+    final paymentStatus = (_freshPaymentStatus ?? b['paymentStatus'] ?? '').toString().toLowerCase();
+    return status == 'cancelled' || paymentStatus == 'cancelled' || paymentStatus == 'refunded';
+  }
+
+  bool get _isTicketExpired {
+    if (_isTicketCancelled) return false;
+    if (widget.isExpired == true) return true;
+    if (_paymentState == _LargePartyPaymentState.expired) return true;
+    final b = widget.booking;
+    final status = (b['status'] ?? b['adminApprovalStatus'] ?? '').toString().toLowerCase();
+    if (status == 'expired') return true;
+
+    // Check if the event date/time has passed (+ 2 hours duration)
+    final bookingDateStr = _freshPartyDate ?? b['bookingDate'] ?? b['partyDate'] ?? b['eventStartAt'];
+    final startTimeStr = _freshStartTime ?? b['startTime'] ?? '12:00 AM';
+    final DateTime eventStart = _parseEventDateTime(bookingDateStr, startTimeStr);
+    final DateTime eventEnd = eventStart.add(const Duration(hours: 2));
+    if (DateTime.now().isAfter(eventEnd)) {
+      return true;
+    }
+    return false;
+  }
+
   /// Best-effort guess from whatever the caller passed in, shown only until the
   /// authoritative server fetch in [_fetchTicketData] resolves and overwrites it.
   _LargePartyPaymentState _computeInitialStateFromLocalMap() {
     final localStatus = (widget.booking['adminApprovalStatus'] ?? widget.booking['status'])?.toString().toLowerCase();
     final paymentStatus = (widget.booking['paymentStatus'])?.toString().toLowerCase();
     final totalAmount = double.tryParse((widget.booking['totalAmount'] ?? widget.booking['paymentAmount'] ?? '0').toString()) ?? 0.0;
-    if (localStatus == 'expired') return _LargePartyPaymentState.expired;
+    if (widget.isExpired == true || localStatus == 'expired') return _LargePartyPaymentState.expired;
     if (paymentStatus == 'paid' ||
         localStatus == 'payment_done' ||
         localStatus == 'confirmed' ||
@@ -254,11 +285,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
           final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toLowerCase();
           final bookingStatus = booking['status']?.toString().toLowerCase();
           final isFreeBooking = (newTotalAmount == null || newTotalAmount <= 0);
-          final isPaid = newPaymentStatus == 'paid' ||
+          final isExpired = widget.isExpired == true || adminApprovalStatus == 'expired' || bookingStatus == 'expired';
+          final isPaid = !isExpired && (newPaymentStatus == 'paid' ||
                          adminApprovalStatus == 'payment_done' ||
                          (bookingStatus == 'confirmed' && isFreeBooking) ||
-                         (bookingStatus == 'completed' && isFreeBooking);
-          final isExpired = adminApprovalStatus == 'expired' || bookingStatus == 'expired';
+                         (bookingStatus == 'completed' && isFreeBooking));
           final newPaymentState = isPaid
               ? _LargePartyPaymentState.paid
               : isExpired
@@ -344,11 +375,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
 
               final gpStatus = groupParty['status']?.toString().toLowerCase();
               final isFreeGp = (_freshTotalAmount == null || _freshTotalAmount! <= 0);
-              final isPaid = _freshPaymentStatus == 'paid' || 
+              final isExpired = widget.isExpired == true || gpStatus == 'expired';
+              final isPaid = !isExpired && (_freshPaymentStatus == 'paid' || 
                              gpStatus == 'confirmed' ||
                              gpStatus == 'completed' ||
-                             isFreeGp;
-              final isExpired = gpStatus == 'expired';
+                             isFreeGp);
 
               if (isPaid) {
                 _paymentState = _LargePartyPaymentState.paid;
@@ -732,7 +763,34 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
   }
 
   Widget _buildCountdownBadge() {
-    if (_paymentState == _LargePartyPaymentState.expired) {
+    if (_isTicketCancelled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFCA5A5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 12),
+            SizedBox(width: 4),
+            Text(
+              'CANCELLED',
+              style: TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isTicketExpired || _paymentState == _LargePartyPaymentState.expired) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
@@ -814,6 +872,76 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExpiredWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.red.shade600,
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            'EXPIRED',
+            style: TextStyle(
+              color: Colors.red.shade600,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelledWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFEF4444),
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Text(
+            'CANCELLED',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.5,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1021,104 +1149,111 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                       offset: const Offset(0, 8),
                     ),
                   ],
-                topSection: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top Pill & Ticket Code
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                topSection: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF0EBFF),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('🎉 ', style: TextStyle(fontSize: 10)),
-                                  Flexible(
-                                    child: Text(
-                                      'VIP GROUP PARTY',
-                                      style: TextStyle(
-                                        color: Color(0xFF6D28D9),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.8,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                          // Top Pill & Ticket Code
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0EBFF),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerRight,
-                              child: RichText(
-                                text: TextSpan(
-                                  children: [
-                                    const TextSpan(
-                                      text: 'TICKET ID: ',
-                                      style: TextStyle(
-                                        color: Color(0xFF94A3B8),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.5,
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('🎉 ', style: TextStyle(fontSize: 10)),
+                                      Flexible(
+                                        child: Text(
+                                          'VIP GROUP PARTY',
+                                          style: TextStyle(
+                                            color: Color(0xFF6D28D9),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.8,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                    TextSpan(
-                                      text: ticketId.length > 14
-                                          ? ticketId.substring(0, 14)
-                                          : ticketId,
-                                      style: const TextStyle(
-                                        color: Color(0xFF6D28D9),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        fontFamily: 'monospace',
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: RichText(
+                                    text: TextSpan(
+                                      children: [
+                                        const TextSpan(
+                                          text: 'TICKET ID: ',
+                                          style: TextStyle(
+                                            color: Color(0xFF94A3B8),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: ticketId.length > 14
+                                              ? ticketId.substring(0, 14)
+                                              : ticketId,
+                                          style: const TextStyle(
+                                            color: Color(0xFF6D28D9),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Countdown badge
+                          _buildCountdownBadge(),
+                          const SizedBox(height: 16),
+
+                          // Headline
+                          Text(
+                            '🎉 Party at $venueName!',
+                            style: const TextStyle(
+                              color: darkTextColor,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Countdown badge
-                      _buildCountdownBadge(),
-                      const SizedBox(height: 16),
-
-                      // Headline
-                      Text(
-                        '🎉 Party at $venueName!',
-                        style: const TextStyle(
-                          color: darkTextColor,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Get ready for an epic night with your crew.',
-                        style: TextStyle(
-                          color: grayTextColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isTicketCancelled
+                                ? 'This booking has been cancelled.'
+                                : (_isTicketExpired
+                                    ? 'This event has concluded.'
+                                    : 'Get ready for an epic night with your crew.'),
+                            style: const TextStyle(
+                              color: grayTextColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
 
                       // 3-Column Info Details Box
                       Container(
@@ -1165,7 +1300,21 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                     ],
                   ),
                 ),
-                bottomSection: Padding(
+                if (_isTicketCancelled)
+                  Positioned(
+                    top: 24,
+                    right: 16,
+                    child: _buildCancelledWatermark(),
+                  )
+                else if (_isTicketExpired)
+                  Positioned(
+                    top: 24,
+                    right: 16,
+                    child: _buildExpiredWatermark(),
+                  ),
+              ],
+            ),
+            bottomSection: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: Column(
                     children: [
@@ -1660,12 +1809,11 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                     ],
                   ),
                 ),
-                ),
               ),
+            ),
+            const SizedBox(height: 28),
 
-              const SizedBox(height: 28),
-
-              if (isExpired) ...[
+              if (_isTicketExpired) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1802,72 +1950,74 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
-                      final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
-                      final bookingId = (_bookingId ?? widget.booking['id'] ?? widget.booking['bookingId'] ?? '').toString();
-                      final partySubject = (widget.booking['partySubject'] ?? widget.booking['subject'] ?? '$venueName Large Party').toString();
-                      final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
-                      DateTime planDateTime = DateTime.now();
-                      if (rawDate != null) {
-                        try {
-                          planDateTime = DateTime.parse(rawDate.toString()).toLocal();
-                        } catch (_) {}
-                      }
-                      if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
-                      final scheduledDate = DateFormat('EEE, MMM dd, yyyy').format(planDateTime);
-                      final scheduledTime = _freshStartTime ?? (widget.booking['startTime']?.toString() ?? '20:00');
-                      final amountPaid = (_freshTotalAmount ?? (widget.booking['totalAmount'] as num?)?.toDouble() ?? 0.0).toDouble();
+                if (!_isTicketExpired && !_isTicketCancelled) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final venueMap = _freshVenue ?? (widget.venue.isNotEmpty ? Map<String, dynamic>.from(widget.venue) : (widget.booking['venue'] is Map ? Map<String, dynamic>.from(widget.booking['venue']) : <String, dynamic>{}));
+                        final venueName = venueMap['name']?.toString() ?? widget.venue['name']?.toString() ?? 'Venue';
+                        final bookingId = (_bookingId ?? widget.booking['id'] ?? widget.booking['bookingId'] ?? '').toString();
+                        final partySubject = (widget.booking['partySubject'] ?? widget.booking['subject'] ?? '$venueName Large Party').toString();
+                        final rawDate = widget.booking['bookingDate'] ?? widget.booking['partyDate'];
+                        DateTime planDateTime = DateTime.now();
+                        if (rawDate != null) {
+                          try {
+                            planDateTime = DateTime.parse(rawDate.toString()).toLocal();
+                          } catch (_) {}
+                        }
+                        if (_freshPartyDate != null) planDateTime = _freshPartyDate!;
+                        final scheduledDate = DateFormat('EEE, MMM dd, yyyy').format(planDateTime);
+                        final scheduledTime = _freshStartTime ?? (widget.booking['startTime']?.toString() ?? '20:00');
+                        final amountPaid = (_freshTotalAmount ?? (widget.booking['totalAmount'] as num?)?.toDouble() ?? 0.0).toDouble();
 
-                      LargePartyCancellationDialog.show(
-                        context,
-                        bookingId: bookingId,
-                        partySubject: partySubject,
-                        venueName: venueName,
-                        scheduledDate: scheduledDate,
-                        scheduledTime: scheduledTime,
-                        amountPaid: amountPaid,
-                        onSubmitted: () {
-                          Navigator.pop(context);
-                        },
-                      );
-                    },
-                    icon: const Icon(Icons.cancel_presentation_rounded, color: Color(0xFFEF4444), size: 18),
-                    label: const Text(
-                      'CANCEL LARGE PARTY',
-                      style: TextStyle(
-                        color: Color(0xFFEF4444),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        letterSpacing: 0.8,
+                        LargePartyCancellationDialog.show(
+                          context,
+                          bookingId: bookingId,
+                          partySubject: partySubject,
+                          venueName: venueName,
+                          scheduledDate: scheduledDate,
+                          scheduledTime: scheduledTime,
+                          amountPaid: amountPaid,
+                          onSubmitted: () {
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                      icon: const Icon(Icons.cancel_presentation_rounded, color: Color(0xFFEF4444), size: 18),
+                      label: const Text(
+                        'CANCEL LARGE PARTY',
+                        style: TextStyle(
+                          color: Color(0xFFEF4444),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          letterSpacing: 0.8,
+                        ),
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      side: const BorderSide(color: Color(0xFFEF4444)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        side: const BorderSide(color: Color(0xFFEF4444)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                ],
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'CLOSE',
+                    style: TextStyle(
+                      color: grayTextColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 12),
               ],
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'CLOSE',
-                  style: TextStyle(
-                    color: grayTextColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
             ],
           ),

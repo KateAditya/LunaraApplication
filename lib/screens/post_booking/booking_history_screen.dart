@@ -1,12 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
-import '../../models/strangers_meet_request.dart';
 import '../../services/api_service.dart';
-import '../discovery/digital_ticket_screen.dart';
-import '../social/large_party_ticket_screen.dart';
-import '../social/party_plan_ticket_screen.dart';
-import '../social/strangers_meet_ticket_screen.dart';
 import '../../widgets/booking_cancellation_dialog.dart';
 
 enum HistoryFilterType {
@@ -787,8 +782,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
         final id = booking['id']?.toString() ?? '';
         final rating = (id.hashCode.abs() % 3) + 3; // 3, 4, or 5 stars
-        final status = booking['status']?.toString().toUpperCase() ?? 'CONFIRMED';
-        final isCancelled = status.contains('CANCEL');
+        final rawStatus = booking['status']?.toString().toUpperCase() ?? 'CONFIRMED';
+        final isCancelled = rawStatus.contains('CANCEL');
+        final bool isExpired = !isCancelled && (rawStatus == 'EXPIRED' || (eventDt != null && eventDt.isBefore(DateTime.now())));
+        final displayStatus = isCancelled ? 'CANCELLED' : (isExpired ? 'EXPIRED' : rawStatus);
 
         return IntrinsicHeight(
           child: Row(
@@ -803,11 +800,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       width: 12,
                       height: 12,
                       decoration: BoxDecoration(
-                        color: isCancelled ? Colors.grey : LunaraTheme.electricViolet,
+                        color: isCancelled || isExpired ? Colors.grey : LunaraTheme.electricViolet,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: (isCancelled ? Colors.grey : LunaraTheme.electricViolet)
+                            color: (isCancelled || isExpired ? Colors.grey : LunaraTheme.electricViolet)
                                 .withValues(alpha: 0.35),
                             blurRadius: 8,
                           ),
@@ -828,135 +825,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 20),
                   child: GestureDetector(
-                    onTap: () {
-                      if (isPartyPlan) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PartyPlanTicketScreen(
-                              request: booking,
-                              plan: booking,
-                              isHost: true,
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-
-                      if (isGroupParty) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => LargePartyTicketScreen(
-                              booking: booking,
-                              venue: venue ?? {'name': venueName, 'id': booking['venueId']},
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-
-                      if (isStrangersMeet) {
-                        try {
-                          final rawMap = booking['rawRequest'] is Map
-                              ? Map<String, dynamic>.from(booking['rawRequest'])
-                              : Map<String, dynamic>.from(booking);
-                          if (booking['venue'] is Map && rawMap['venue'] == null) {
-                            rawMap['venue'] = booking['venue'];
-                          }
-                          if (booking['user'] is Map && rawMap['user'] == null) {
-                            rawMap['user'] = booking['user'];
-                          }
-                          if (booking['host'] is Map && rawMap['host'] == null) {
-                            rawMap['host'] = booking['host'];
-                          }
-                          if (booking['ticketCode'] != null && rawMap['ticketId'] == null) {
-                            rawMap['ticketId'] = booking['ticketCode'];
-                          }
-                          if (rawMap['ticketCode'] == null && booking['ticketCode'] != null) {
-                            rawMap['ticketCode'] = booking['ticketCode'];
-                          }
-                          final totalAmt = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'];
-                          if (totalAmt != null && (rawMap['paymentAmount'] == null || rawMap['paymentAmount'] == 0)) {
-                            rawMap['paymentAmount'] = totalAmt;
-                          }
-                          if (booking['subject'] != null && rawMap['subject'] == null) {
-                            rawMap['subject'] = booking['subject'];
-                          }
-                          if (booking['tagline'] != null && rawMap['tagline'] == null) {
-                            rawMap['tagline'] = booking['tagline'];
-                          }
-                          if (booking['startTime'] != null && rawMap['startTime'] == null) {
-                            rawMap['startTime'] = booking['startTime'];
-                          }
-                          final req = StrangersMeetRequest.fromJson(rawMap);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => StrangersMeetTicketScreen(request: req),
-                            ),
-                          );
-                          return;
-                        } catch (e) {
-                          debugPrint('Error opening Strangers Meet ticket: $e');
-                        }
-                      }
-
-                      final bool isEventTicketH = booking['isUpcomingNight'] == true ||
-                          booking['isEventBooking'] == true ||
-                          booking['bookingType'] == 'upcoming_night' ||
-                          booking['bookingType'] == 'event_booking';
-
-                      final partyEventH = booking['partyEvent'];
-                      String? resolvedBannerH;
-                      if (partyEventH is Map) {
-                        resolvedBannerH = partyEventH['bannerImageUrl']?.toString().trim().isNotEmpty == true
-                            ? partyEventH['bannerImageUrl'].toString()
-                            : partyEventH['imagePath']?.toString().trim().isNotEmpty == true
-                                ? partyEventH['imagePath'].toString()
-                                : null;
-                      }
-                      resolvedBannerH ??= booking['bannerImageUrl']?.toString().trim().isNotEmpty == true
-                          ? booking['bannerImageUrl'].toString()
-                          : null;
-
-                      String? resolvedTitleH;
-                      if (partyEventH is Map) {
-                        resolvedTitleH = partyEventH['title']?.toString().trim().isNotEmpty == true
-                            ? partyEventH['title'].toString()
-                            : null;
-                      }
-                      resolvedTitleH ??= booking['eventTitle']?.toString().trim().isNotEmpty == true
-                          ? booking['eventTitle'].toString()
-                          : booking['partySubject']?.toString().trim().isNotEmpty == true
-                              ? booking['partySubject'].toString()
-                              : null;
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => DigitalTicketScreen(
-                            venue: venue ?? {'name': venueName, 'imageUrl': imageUrl},
-                            date: '$eventDateStr • $timeStr',
-                            table: table,
-                            guests: (booking['numberOfGuests'] ?? 1).toString(),
-                            package: table,
-                            totalPrice: booking['totalAmount']?.toString() ??
-                                booking['paymentAmount']?.toString(),
-                            ticketId: booking['ticketCode'] ??
-                                (booking['id'] != null
-                                    ? booking['id'].toString().substring(0, 8).toUpperCase()
-                                    : 'TICKET'),
-                            ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
-                            booking: booking,
-                            bannerImageUrl: resolvedBannerH,
-                            eventTitle: resolvedTitleH,
-                            user: booking['user'] ?? booking['host'] ?? ApiService.cachedCurrentUser,
-                            isUpcomingNight: isEventTicketH,
-                          ),
-                        ),
-                      );
-                    },
+                    onTap: () => _showBookingDetailsModal(booking),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -990,7 +859,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if ((isSolo || (isGroupParty && booking['isLargePartyRequest'] != true)) && !isCancelled && status != 'COMPLETED') ...[
+                                  if ((isSolo || (isGroupParty && booking['isLargePartyRequest'] != true)) && !isCancelled && !isExpired && rawStatus != 'COMPLETED') ...[
                                     GestureDetector(
                                       onTap: () {
                                         final bId = booking['id']?.toString() ?? booking['bookingId']?.toString();
@@ -1041,14 +910,26 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: isCancelled
-                                          ? Colors.red.withValues(alpha: 0.1)
-                                          : LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                          ? const Color(0xFFEF4444).withValues(alpha: 0.1)
+                                          : (isExpired
+                                              ? Colors.red.withValues(alpha: 0.1)
+                                              : LunaraTheme.electricViolet.withValues(alpha: 0.1)),
                                       borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isCancelled
+                                            ? const Color(0xFFEF4444).withValues(alpha: 0.3)
+                                            : (isExpired
+                                                ? Colors.red.withValues(alpha: 0.3)
+                                                : LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                                        width: 0.8,
+                                      ),
                                     ),
                                     child: Text(
-                                      status,
+                                      displayStatus,
                                       style: TextStyle(
-                                        color: isCancelled ? Colors.redAccent : LunaraTheme.electricViolet,
+                                        color: isCancelled
+                                            ? const Color(0xFFEF4444)
+                                            : (isExpired ? Colors.red.shade600 : LunaraTheme.electricViolet),
                                         fontSize: 9,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 0.8,
@@ -1159,6 +1040,387 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showBookingDetailsModal(Map<String, dynamic> booking) {
+    final venue = booking['venue'] as Map<String, dynamic>?;
+    final venueName = venue?['name']?.toString() ?? booking['venueName']?.toString() ?? 'VENUE';
+    final venueCity = venue?['city']?.toString() ?? '';
+    final venueArea = venue?['area']?.toString() ?? '';
+    final venueAddress = venue?['address']?.toString() ??
+        venue?['addressLine1']?.toString() ??
+        '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity';
+    final imageUrl = _getVenueImageUrl(venue);
+
+    final bookedDt = _getBookedDateTime(booking);
+    final eventDt = _getEventDateTime(booking);
+
+    final bookedStr = bookedDt != null ? _formatBookedTimestamp(bookedDt) : 'Booked recently';
+    final startTime = booking['startTime']?.toString() ?? '';
+    final eventDateStr = eventDt != null ? _formatEventDate(eventDt) : 'Event Date';
+    final timeStr = _formatBookingTime(startTime);
+
+    final isSolo = booking['isSolo'] == true || booking['goingMode'] == 'solo' || booking['category'] == 'solo' || booking['bookingType'] == 'solo';
+    final isStrangersMeet = !isSolo && (booking['isStrangersMeet'] == true || booking['bookingType'] == 'strangers_meet' || booking['type'] == 'strangers_meet');
+    final isPartyPlan = !isSolo && (booking['isPartyPlan'] == true ||
+        booking['category'] == 'party_plan' ||
+        booking['bookingType'] == 'party_plan' ||
+        booking['type'] == 'party_plan' ||
+        booking['goingMode'] == 'plan' ||
+        (booking['ticketCode'] ?? booking['ticketId'])?.toString().toUpperCase().startsWith('PP-') == true ||
+        booking['plan'] != null ||
+        booking['partyPlanId'] != null ||
+        booking['planId'] != null);
+    final isGroupParty = !isSolo && (booking['isGroupParty'] == true || booking['bookingType'] == 'group_party');
+    final bool isEventTicketH = !isSolo && (booking['isUpcomingNight'] == true ||
+        booking['isEventBooking'] == true ||
+        booking['bookingType'] == 'upcoming_night' ||
+        booking['bookingType'] == 'event_booking');
+
+    final eventTitle = booking['subject']?.toString().trim().isNotEmpty == true
+        ? booking['subject'].toString()
+        : (booking['eventTitle']?.toString().trim().isNotEmpty == true
+            ? booking['eventTitle'].toString()
+            : (booking['partySubject']?.toString().trim().isNotEmpty == true
+                ? booking['partySubject'].toString()
+                : null));
+    final displayTitle = (isStrangersMeet || isPartyPlan || isEventTicketH) && eventTitle != null
+        ? eventTitle
+        : venueName;
+
+    final bookingCategory = isStrangersMeet
+        ? 'STRANGERS MEET'
+        : (isPartyPlan
+            ? 'PARTY PLAN'
+            : (isGroupParty
+                ? 'GROUP PARTY'
+                : (isEventTicketH ? 'EVENT NIGHT' : 'VENUE BOOKING')));
+
+    final table = isStrangersMeet
+        ? 'STRANGER MEET'
+        : (isPartyPlan ? 'PARTY PLAN' : _formatTablePackage(booking['tablePackage']?.toString()));
+
+    final amtRaw = booking['totalAmount'] ?? booking['paymentAmount'] ?? booking['chargesPerHead'] ?? booking['charges'];
+    final amtVal = double.tryParse(amtRaw?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ?? '0') ?? 0.0;
+    final amountStr = amtVal <= 0
+        ? 'FREE'
+        : '₹${NumberFormat('#,##,###').format(amtVal.toInt())}';
+
+    final ticketCode = (booking['ticketCode'] ??
+        booking['ticketId'] ??
+        booking['bookingId'] ??
+        (booking['id'] != null ? booking['id'].toString().substring(0, 8).toUpperCase() : 'TICKET')).toString().toUpperCase();
+
+    final rawStatus = booking['status']?.toString().toUpperCase() ?? 'CONFIRMED';
+    final isCancelled = rawStatus.contains('CANCEL');
+    final bool isExpired = !isCancelled && (rawStatus == 'EXPIRED' || (eventDt != null && eventDt.isBefore(DateTime.now())));
+    final displayStatus = isCancelled ? 'CANCELLED' : (isExpired ? 'EXPIRED' : rawStatus);
+
+    final statusColor = isCancelled
+        ? const Color(0xFFEF4444)
+        : (isExpired ? Colors.red.shade600 : LunaraTheme.electricViolet);
+
+    final guests = booking['numberOfGuests'] ?? (isStrangersMeet ? 2 : (isPartyPlan ? 2 : 1));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle Bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // Header Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'BOOKING DETAILS',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.4), width: 1),
+                  ),
+                  child: Text(
+                    displayStatus,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Venue / Event Card
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      imageUrl,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: 56,
+                        height: 56,
+                        color: Colors.grey.shade200,
+                        child: const Icon(Icons.nightlife_rounded, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayTitle,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (venueAddress.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            venueAddress,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          bookingCategory,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                            color: Color(0xFF7C3AED),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Details Grid
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  _buildDetailRow(
+                    label: 'Booking ID',
+                    value: ticketCode,
+                    valueColor: const Color(0xFF7C3AED),
+                    isMonospace: true,
+                  ),
+                  const Divider(height: 16, thickness: 0.5, color: Color(0xFFE2E8F0)),
+                  _buildDetailRow(
+                    label: 'Event Date & Time',
+                    value: '$eventDateStr • $timeStr',
+                  ),
+                  const Divider(height: 16, thickness: 0.5, color: Color(0xFFE2E8F0)),
+                  _buildDetailRow(
+                    label: 'Booked On',
+                    value: bookedStr,
+                  ),
+                  const Divider(height: 16, thickness: 0.5, color: Color(0xFFE2E8F0)),
+                  _buildDetailRow(
+                    label: 'Table / Package',
+                    value: table,
+                  ),
+                  const Divider(height: 16, thickness: 0.5, color: Color(0xFFE2E8F0)),
+                  _buildDetailRow(
+                    label: 'Guests',
+                    value: '$guests Guests',
+                  ),
+                  const Divider(height: 16, thickness: 0.5, color: Color(0xFFE2E8F0)),
+                  _buildDetailRow(
+                    label: 'Total Amount',
+                    value: amountStr,
+                    valueColor: Colors.black,
+                    isBold: true,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Status Note
+            if (isCancelled)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This booking was cancelled.',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (isExpired)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.event_busy_rounded, color: Color(0xFFDC2626), size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This event has concluded. Preserved in your history records.',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 16),
+
+            // Close Button
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF1F5F9),
+                  side: BorderSide.none,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'CLOSE',
+                  style: TextStyle(
+                    color: Color(0xFF475569),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required String label,
+    required String value,
+    Color? valueColor,
+    bool isBold = false,
+    bool isMonospace = false,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: valueColor ?? const Color(0xFF0F172A),
+              fontSize: 12.5,
+              fontWeight: isBold ? FontWeight.w900 : FontWeight.w700,
+              fontFamily: isMonospace ? 'monospace' : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

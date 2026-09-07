@@ -14,12 +14,16 @@ class PartyPlanTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic> request;
   final Map<dynamic, dynamic> plan;
   final bool isHost;
+  final bool? isExpired;
+  final bool? isCancelled;
 
   const PartyPlanTicketScreen({
     super.key,
     required this.request,
     required this.plan,
     required this.isHost,
+    this.isExpired,
+    this.isCancelled,
   });
 
   @override
@@ -39,6 +43,43 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   Map<String, dynamic>? _freshJoinerUser;
   String? _canonicalTicketCode;
   final GlobalKey _ticketKey = GlobalKey();
+
+  bool get _isTicketCancelled {
+    if (widget.isCancelled == true) return true;
+    final r = widget.request;
+    final p = widget.plan;
+    final status = (r['status'] ?? p['status'] ?? '').toString().toLowerCase();
+    final pStatus = (r['paymentStatus'] ?? p['paymentStatus'] ?? '').toString().toLowerCase();
+    return status == 'cancelled' || pStatus == 'cancelled' || pStatus == 'refunded';
+  }
+
+  bool get _isTicketExpired {
+    if (_isTicketCancelled) return false;
+    if (widget.isExpired == true) return true;
+    final r = widget.request;
+    final p = widget.plan;
+    final status = (r['status'] ?? p['status'] ?? '').toString().toLowerCase();
+    if (status == 'expired') return true;
+
+    final rawDate = p['planDateTime'] ??
+        p['eventStartAt'] ??
+        p['bookingDate'] ??
+        r['planDateTime'] ??
+        r['eventStartAt'] ??
+        r['bookingDate'];
+    final rawTime = p['startTime'] ??
+        p['time'] ??
+        r['startTime'] ??
+        r['time'];
+    final planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
+    if (planDateTime != null) {
+      final expirationTime = planDateTime.add(const Duration(hours: 2));
+      if (DateTime.now().isAfter(expirationTime)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -141,6 +182,60 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Countdown display badge (Light Mode) ──────────────────────────────────
   Widget _buildCountdownBadge() {
+    if (_isTicketCancelled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFCA5A5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 12),
+            SizedBox(width: 4),
+            Text(
+              'CANCELLED',
+              style: TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isTicketExpired) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFCA5A5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.timer_off_rounded, color: Color(0xFFB91C1C), size: 12),
+            SizedBox(width: 4),
+            Text(
+              'EXPIRED',
+              style: TextStyle(
+                color: Color(0xFFB91C1C),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_timeRemaining == Duration.zero) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -201,6 +296,76 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExpiredWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.red.shade600,
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            'EXPIRED',
+            style: TextStyle(
+              color: Colors.red.shade600,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelledWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFEF4444),
+              width: 2.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Text(
+            'CANCELLED',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3.5,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -551,104 +716,111 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                       offset: const Offset(0, 8),
                     ),
                   ],
-                topSection: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top Pill & Ticket Code
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                topSection: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF0EBFF),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text('🎉 ', style: TextStyle(fontSize: 10)),
-                                  Flexible(
-                                    child: Text(
-                                      'LUNARA VIBE',
-                                      style: TextStyle(
-                                        color: Color(0xFF6D28D9),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.8,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                          // Top Pill & Ticket Code
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0EBFF),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerRight,
-                              child: RichText(
-                                text: TextSpan(
-                                  children: [
-                                    const TextSpan(
-                                      text: 'TICKET ID: ',
-                                      style: TextStyle(
-                                        color: Color(0xFF94A3B8),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.5,
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text('🎉 ', style: TextStyle(fontSize: 10)),
+                                      Flexible(
+                                        child: Text(
+                                          'LUNARA VIBE',
+                                          style: TextStyle(
+                                            color: Color(0xFF6D28D9),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.8,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                    TextSpan(
-                                      text: ticketId.length > 12
-                                          ? ticketId.substring(0, 12)
-                                          : ticketId,
-                                      style: const TextStyle(
-                                        color: Color(0xFF6D28D9),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        fontFamily: 'monospace',
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: RichText(
+                                    text: TextSpan(
+                                      children: [
+                                        const TextSpan(
+                                          text: 'TICKET ID: ',
+                                          style: TextStyle(
+                                            color: Color(0xFF94A3B8),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: ticketId.length > 12
+                                              ? ticketId.substring(0, 12)
+                                              : ticketId,
+                                          style: const TextStyle(
+                                            color: Color(0xFF6D28D9),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Countdown badge
+                          _buildCountdownBadge(),
+                          const SizedBox(height: 16),
+
+                          // Party Headline
+                          Text(
+                            '🎉 $headlineText',
+                            style: const TextStyle(
+                              color: darkTextColor,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Countdown badge
-                      _buildCountdownBadge(),
-                      const SizedBox(height: 16),
-
-                      // Party Headline
-                      Text(
-                        '🎉 $headlineText',
-                        style: const TextStyle(
-                          color: darkTextColor,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          height: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Get ready for a night full of vibes and memories.',
-                        style: TextStyle(
-                          color: grayTextColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isTicketCancelled
+                                ? 'This party plan has been cancelled.'
+                                : (_isTicketExpired
+                                    ? 'This event has concluded.'
+                                    : 'Get ready for a night full of vibes and memories.'),
+                            style: const TextStyle(
+                              color: grayTextColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
 
                       // 3-Column Info Details Box
                       Container(
@@ -697,7 +869,21 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                     ],
                   ),
                 ),
-                bottomSection: Padding(
+                if (_isTicketCancelled)
+                  Positioned(
+                    top: 24,
+                    right: 16,
+                    child: _buildCancelledWatermark(),
+                  )
+                else if (_isTicketExpired)
+                  Positioned(
+                    top: 24,
+                    right: 16,
+                    child: _buildExpiredWatermark(),
+                  ),
+              ],
+            ),
+            bottomSection: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: Column(
                     children: [
@@ -1223,10 +1409,9 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
                     ],
                   ),
                 ),
-                ),
               ),
-
-              const SizedBox(height: 28),
+            ),
+            const SizedBox(height: 28),
 
                 SizedBox(
                   width: double.infinity,

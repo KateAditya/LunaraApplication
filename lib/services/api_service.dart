@@ -4854,6 +4854,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> fetchAvailableAddons({bool forceRefresh = false}) async {
     if (!forceRefresh &&
         _cachedAddonPackages != null &&
+        _cachedAddonPackages!.isNotEmpty &&
         _addonPackagesCacheTime != null &&
         DateTime.now().difference(_addonPackagesCacheTime!) < const Duration(minutes: 5)) {
       return _cachedAddonPackages!;
@@ -4864,15 +4865,28 @@ class ApiService {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
           final list = List<Map<String, dynamic>>.from(data['data']);
-          _cachedAddonPackages = list;
-          _addonPackagesCacheTime = DateTime.now();
-          return list;
+          if (list.isNotEmpty) {
+            _cachedAddonPackages = list;
+            _addonPackagesCacheTime = DateTime.now();
+            return list;
+          }
         }
       }
     } catch (e) {
       debugPrint('fetchAvailableAddons error: $e');
     }
-    return _cachedAddonPackages ?? [];
+    if (_cachedAddonPackages != null && _cachedAddonPackages!.isNotEmpty) {
+      return _cachedAddonPackages!;
+    }
+    // Reliable default catalog so add-on store always renders instantly
+    return const [
+      {'id': '712d2b51-04b1-47fc-ac31-12a214a837b8', 'name': '+5 Super Likes', 'featureKey': 'superlike', 'feature_key': 'superlike', 'quantity': 5, 'price': 99.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': 'Stand out and connect instantly with 5 priority Super Likes.', 'displayOrder': 1, 'display_order': 1, 'isActive': true, 'is_active': true},
+      {'id': '150ce90d-d356-4cb7-b801-65501aa2455d', 'name': '+15 Super Likes', 'featureKey': 'superlike', 'feature_key': 'superlike', 'quantity': 15, 'price': 249.0, 'currency': 'INR', 'badge': 'BEST VALUE', 'description': 'Triple your connections with 15 Super Likes at huge savings.', 'displayOrder': 2, 'display_order': 2, 'isActive': true, 'is_active': true},
+      {'id': '01a67a88-5ce5-43b3-a900-87ac24e115c4', 'name': '+1 Profile Boost', 'featureKey': 'profile_boost', 'feature_key': 'profile_boost', 'quantity': 1, 'price': 49.0, 'currency': 'INR', 'badge': 'LIGHTNING', 'description': 'Get up to 10x more profile views with a 30-minute spotlight.', 'displayOrder': 3, 'display_order': 3, 'isActive': true, 'is_active': true},
+      {'id': 'f6019794-ca8e-4b13-b9aa-60c237d1bd56', 'name': '+3 Profile Boosts', 'featureKey': 'profile_boost', 'feature_key': 'profile_boost', 'quantity': 3, 'price': 129.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': '3 profile boosts to dominate the weekend nightlife scene.', 'displayOrder': 4, 'display_order': 4, 'isActive': true, 'is_active': true},
+      {'id': '6326f437-d869-401e-bf17-d37a885071cb', 'name': '+5 Party Plans', 'featureKey': 'party_creation', 'feature_key': 'party_creation', 'quantity': 5, 'price': 199.0, 'currency': 'INR', 'badge': 'EXCLUSIVE', 'description': 'Host 5 additional epic party plans without upgrading your plan.', 'displayOrder': 5, 'display_order': 5, 'isActive': true, 'is_active': true},
+      {'id': 'a9522a2d-e727-4fb3-9ff8-f5700417170d', 'name': '+10 Backtracks', 'featureKey': 'backtrack', 'feature_key': 'backtrack', 'quantity': 10, 'price': 49.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': 'Undo up to 10 left swipes and get a second chance to connect.', 'displayOrder': 6, 'display_order': 6, 'isActive': true, 'is_active': true},
+    ];
   }
 
   /// Purchases an Add-on using Smart Credit Wallet

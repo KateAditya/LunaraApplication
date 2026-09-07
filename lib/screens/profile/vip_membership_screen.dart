@@ -102,6 +102,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     if (SubscriptionProvider.instance.availableAddons.isNotEmpty) {
       _availableAddons = SubscriptionProvider.instance.availableAddons;
       _isLoadingAddons = false;
+    } else {
+      _availableAddons = SubscriptionProvider.defaultAddonPackages;
+      _isLoadingAddons = false;
     }
 
     setState(() => _isLoading = true);
@@ -134,14 +137,16 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     }
   }
 
-  Future<void> _loadAddons({bool force = false}) async {
+  Future<void> _loadAddons({bool force = true}) async {
     if (_isLoadingAddons) return;
     setState(() => _isLoadingAddons = true);
     try {
       await SubscriptionProvider.instance.fetchAvailableAddons(force: force);
       if (mounted) {
         setState(() {
-          _availableAddons = SubscriptionProvider.instance.availableAddons;
+          _availableAddons = SubscriptionProvider.instance.availableAddons.isNotEmpty
+              ? SubscriptionProvider.instance.availableAddons
+              : SubscriptionProvider.defaultAddonPackages;
           _isLoadingAddons = false;
         });
       }
@@ -1689,7 +1694,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       color: LunaraTheme.electricViolet,
       onRefresh: () async {
         await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
-        await _loadAddons();
+        await _loadAddons(force: true);
       },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -2080,7 +2085,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             Text('Add-on packages are being set up.\nCheck back soon!', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), fontSize: 13, height: 1.5)),
             const SizedBox(height: 24),
             OutlinedButton.icon(
-              onPressed: _loadAddons,
+              onPressed: () => _loadAddons(force: true),
               icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(foregroundColor: LunaraTheme.electricViolet, side: BorderSide(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),

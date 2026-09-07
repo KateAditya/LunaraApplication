@@ -137,14 +137,14 @@ class SubscriptionAddonPackageModel {
     return SubscriptionAddonPackageModel(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
-      featureKey: json['featureKey']?.toString() ?? '',
+      featureKey: (json['featureKey'] ?? json['feature_key'] ?? '').toString(),
       quantity: _parseInt(json['quantity'], 1),
       price: _parseDouble(json['price'], 0.0),
       currency: json['currency']?.toString() ?? 'INR',
-      isActive: json['isActive'] != false,
+      isActive: (json['isActive'] ?? json['is_active']) != false,
       badge: json['badge']?.toString(),
       description: json['description']?.toString(),
-      displayOrder: _parseInt(json['displayOrder'], 0),
+      displayOrder: _parseInt(json['displayOrder'] ?? json['display_order'], 0),
     );
   }
 

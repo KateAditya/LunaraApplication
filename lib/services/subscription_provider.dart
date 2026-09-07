@@ -76,7 +76,7 @@ class SubscriptionProvider extends ChangeNotifier {
   // ── State ──────────────────────────────────────────────────────────────────
   PlanStatus _status = PlanStatus.free;
   EntitlementsSummaryModel? _entitlementsSummary;
-  List<SubscriptionAddonPackageModel> _availableAddons = [];
+  List<SubscriptionAddonPackageModel> _availableAddons = List.from(defaultAddonPackages);
   bool _isLoading = false;
   bool _isLoadingEntitlements = false;
   bool _isLoadingAddons = false;
@@ -431,18 +431,92 @@ class SubscriptionProvider extends ChangeNotifier {
     }
   }
 
+  static final List<SubscriptionAddonPackageModel> defaultAddonPackages = [
+    const SubscriptionAddonPackageModel(
+      id: '712d2b51-04b1-47fc-ac31-12a214a837b8',
+      name: '+5 Super Likes',
+      featureKey: 'superlike',
+      quantity: 5,
+      price: 99.0,
+      currency: 'INR',
+      badge: 'POPULAR',
+      description: 'Stand out and connect instantly with 5 priority Super Likes.',
+      displayOrder: 1,
+    ),
+    const SubscriptionAddonPackageModel(
+      id: '150ce90d-d356-4cb7-b801-65501aa2455d',
+      name: '+15 Super Likes',
+      featureKey: 'superlike',
+      quantity: 15,
+      price: 249.0,
+      currency: 'INR',
+      badge: 'BEST VALUE',
+      description: 'Triple your connections with 15 Super Likes at huge savings.',
+      displayOrder: 2,
+    ),
+    const SubscriptionAddonPackageModel(
+      id: '01a67a88-5ce5-43b3-a900-87ac24e115c4',
+      name: '+1 Profile Boost',
+      featureKey: 'profile_boost',
+      quantity: 1,
+      price: 49.0,
+      currency: 'INR',
+      badge: 'LIGHTNING',
+      description: 'Get up to 10x more profile views with a 30-minute spotlight.',
+      displayOrder: 3,
+    ),
+    const SubscriptionAddonPackageModel(
+      id: 'f6019794-ca8e-4b13-b9aa-60c237d1bd56',
+      name: '+3 Profile Boosts',
+      featureKey: 'profile_boost',
+      quantity: 3,
+      price: 129.0,
+      currency: 'INR',
+      badge: 'POPULAR',
+      description: '3 profile boosts to dominate the weekend nightlife scene.',
+      displayOrder: 4,
+    ),
+    const SubscriptionAddonPackageModel(
+      id: '6326f437-d869-401e-bf17-d37a885071cb',
+      name: '+5 Party Plans',
+      featureKey: 'party_creation',
+      quantity: 5,
+      price: 199.0,
+      currency: 'INR',
+      badge: 'EXCLUSIVE',
+      description: 'Host 5 additional epic party plans without upgrading your plan.',
+      displayOrder: 5,
+    ),
+    const SubscriptionAddonPackageModel(
+      id: 'a9522a2d-e727-4fb3-9ff8-f5700417170d',
+      name: '+10 Backtracks',
+      featureKey: 'backtrack',
+      quantity: 10,
+      price: 49.0,
+      currency: 'INR',
+      badge: 'POPULAR',
+      description: 'Undo up to 10 left swipes and get a second chance to connect.',
+      displayOrder: 6,
+    ),
+  ];
+
   /// Fetches available Add-on packs catalog.
   Future<void> fetchAvailableAddons({bool force = false}) async {
     if (_isLoadingAddons) return;
-    if (!force && _availableAddons.isNotEmpty) return;
+    if (!force && _availableAddons.isNotEmpty && _availableAddons != defaultAddonPackages) return;
     _isLoadingAddons = true;
     notifyListeners();
     try {
       final list = await ApiService.fetchAvailableAddons(forceRefresh: force);
-      _availableAddons = list.map((e) => SubscriptionAddonPackageModel.fromJson(e)).toList();
+      if (list.isNotEmpty) {
+        _availableAddons = list.map((e) => SubscriptionAddonPackageModel.fromJson(e)).toList();
+      }
     } catch (e) {
       debugPrint('[SubscriptionProvider] fetchAvailableAddons error: $e');
     } finally {
+      if (_availableAddons.isEmpty) {
+        _availableAddons = List.from(defaultAddonPackages);
+      }
       _isLoadingAddons = false;
       notifyListeners();
     }

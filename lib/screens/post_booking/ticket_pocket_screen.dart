@@ -1438,6 +1438,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final bool isActive = tabIndex == 0;
     final bool isCancelled = tabIndex == 2 || _isCancelledBooking(booking);
     final status = _getBookingStatus(booking, tabIndex);
+    final bool isExpired = status == 'EXPIRED' || tabIndex == 1;
     final statusColor = switch (status) {
       'CONFIRMED' => _lunaraPurple,
       'PENDING' => Colors.amber.shade700,
@@ -1653,6 +1654,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                   request: rawReq.isNotEmpty ? rawReq : (rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking)),
                   plan: rawPlan.isNotEmpty ? rawPlan : Map<String, dynamic>.from(booking),
                   isHost: isHost,
+                  isExpired: isExpired,
+                  isCancelled: isCancelled,
                 ),
               ),
             );
@@ -1681,7 +1684,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
               bookingMap['paymentStatus'] = 'paid';
             }
             if (bookingMap['status'] == null || bookingMap['status'].toString().isEmpty) {
-              bookingMap['status'] = isCancelled ? 'cancelled' : 'confirmed';
+              bookingMap['status'] = isCancelled ? 'cancelled' : (isExpired ? 'expired' : 'confirmed');
             }
             if (bookingMap['ticketCode'] == null && ticketCode.isNotEmpty) {
               bookingMap['ticketCode'] = ticketCode;
@@ -1712,6 +1715,8 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 builder: (_) => LargePartyTicketScreen(
                   booking: bookingMap,
                   venue: venue ?? {'name': venueName, 'id': booking['venueId']},
+                  isExpired: isExpired,
+                  isCancelled: isCancelled,
                 ),
               ),
             );
@@ -1750,13 +1755,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 rawMap['id'] = booking['bookingId'];
               }
               rawMap['paymentStatus'] = 'paid';
-              rawMap['status'] = isCancelled ? 'cancelled' : 'confirmed';
+              rawMap['status'] = isCancelled ? 'cancelled' : (isExpired ? 'expired' : 'confirmed');
 
               final req = StrangersMeetRequest.fromJson(rawMap);
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => StrangersMeetTicketScreen(request: req),
+                  builder: (_) => StrangersMeetTicketScreen(
+                    request: req,
+                    isExpired: isExpired,
+                    isCancelled: isCancelled,
+                  ),
                 ),
               );
               return;
@@ -1810,7 +1819,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                 totalPrice: amountPaid > 0 ? '₹${amountPaid.toStringAsFixed(0)}' : 'FREE',
                 ticketId: ticketCode,
                 ticketUrl: booking['ticketUrl'] ?? booking['ticket_url'],
-                status: status,
+                status: isCancelled ? 'CANCELLED' : (isExpired ? 'EXPIRED' : status),
                 booking: bookingMap,
                 bannerImageUrl: resolvedBannerUrl,
                 eventTitle: resolvedEventTitle,

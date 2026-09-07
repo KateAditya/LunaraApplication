@@ -127,12 +127,19 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     return null;
   }
 
-  bool _isTicketExpired() {
+  bool get _isTicketCancelled {
     final statusStr = (widget.status ?? widget.booking?['status'] ?? '').toString().toLowerCase();
-    if (statusStr == 'expired' || statusStr == 'cancelled') return true;
+    final pStatus = (widget.booking?['paymentStatus'] ?? '').toString().toLowerCase();
+    return statusStr == 'cancelled' || pStatus == 'cancelled' || pStatus == 'refunded';
+  }
+
+  bool _isTicketExpired() {
+    if (_isTicketCancelled) return false;
+    final statusStr = (widget.status ?? widget.booking?['status'] ?? '').toString().toLowerCase();
+    if (statusStr == 'expired' || statusStr == 'used') return true;
     final eventDateTime = _getEventDateTime();
     if (eventDateTime != null) {
-      final expirationTime = eventDateTime.add(const Duration(hours: 30));
+      final expirationTime = eventDateTime.add(const Duration(hours: 2));
       return DateTime.now().isAfter(expirationTime);
     }
     return false;
@@ -978,7 +985,13 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                         ],
                       ),
                     ),
-                    if (_isTicketExpired())
+                    if (_isTicketCancelled)
+                      Positioned(
+                        top: 16,
+                        right: 16,
+                        child: _buildCancelledWatermark(),
+                      )
+                    else if (_isTicketExpired())
                       Positioned(
                         top: 16,
                         right: 16,
@@ -1581,6 +1594,41 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
             'EXPIRED',
             style: TextStyle(
               color: Colors.red.shade600,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 4.0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelledWatermark() {
+    return IgnorePointer(
+      child: Transform.rotate(
+        angle: -0.22,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFEF4444),
+              width: 3.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Text(
+            'CANCELLED',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
               fontSize: 20,
               fontWeight: FontWeight.w900,
               letterSpacing: 4.0,

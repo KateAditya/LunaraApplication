@@ -641,7 +641,7 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                                 'bookingDate': ticket['eventStartAt'],
                                 'partyDate': ticket['eventStartAt'],
                                 'startTime': ticket['startTime'] ?? '08:00 PM',
-                                'status': 'confirmed',
+                                'status': status == 'CANCELLED' ? 'cancelled' : (isExpired ? 'expired' : 'confirmed'),
                                 'paymentStatus': 'paid',
                                 'venue': ticket['venue'] ?? {},
                                 'venueName': ticket['venueName'],
@@ -657,6 +657,8 @@ class _MyTicketsScreenState extends State<MyTicketsScreen>
                               venue: ticket['venue'] is Map
                                   ? Map<dynamic, dynamic>.from(ticket['venue'] as Map)
                                   : {},
+                              isExpired: isExpired,
+                              isCancelled: status == 'CANCELLED',
                             ),
                           ),
                         );
