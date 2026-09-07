@@ -97,38 +97,48 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
   List<dynamic> _userSubscriptions = [];
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool forceRefresh = false}) async {
+    // Instant cache-first display: render add-ons immediately if cached
+    if (SubscriptionProvider.instance.availableAddons.isNotEmpty) {
+      _availableAddons = SubscriptionProvider.instance.availableAddons;
+      _isLoadingAddons = false;
+    }
+
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
-        ApiService.fetchSubscriptionPackages(),
+        ApiService.fetchSubscriptionPackages(forceRefresh: forceRefresh),
         ApiService.fetchUserSubscriptions(),
         ApiService.fetchProfile(),
+        SubscriptionProvider.instance.fetchAvailableAddons(force: forceRefresh),
+        SubscriptionProvider.instance.fetchEntitlementsSummary(force: forceRefresh),
       ]);
 
       if (mounted) {
         setState(() {
           _allPackages = (results[0] as List<dynamic>?) ?? [];
           _userSubscriptions = (results[1] as List<dynamic>?) ?? [];
+          _availableAddons = SubscriptionProvider.instance.availableAddons;
           _isLoading = false;
+          _isLoadingAddons = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading VIP screen data: $e');
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isLoadingAddons = false;
+        });
       }
     }
-    // Load add-ons and entitlements in parallel (non-blocking)
-    _loadAddons();
-    SubscriptionProvider.instance.fetchEntitlementsSummary();
   }
 
-  Future<void> _loadAddons() async {
+  Future<void> _loadAddons({bool force = false}) async {
     if (_isLoadingAddons) return;
     setState(() => _isLoadingAddons = true);
     try {
-      await SubscriptionProvider.instance.fetchAvailableAddons();
+      await SubscriptionProvider.instance.fetchAvailableAddons(force: force);
       if (mounted) {
         setState(() {
           _availableAddons = SubscriptionProvider.instance.availableAddons;
@@ -505,9 +515,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       _pendingAddonPackageId = null;
     });
     if (response['success'] == true) {
-      await SubscriptionProvider.instance.refreshAfterPurchase();
-      await _loadAddons();
-      await _loadData();
+      await Future.wait([
+        SubscriptionProvider.instance.refreshAfterPurchase(),
+        _loadData(forceRefresh: true),
+      ]);
       if (mounted) {
         SubscriptionAddonPackageModel? purchasedAddon;
         for (final a in _availableAddons) {
@@ -2029,10 +2040,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     );
 
     if (sheetSuccess == true && mounted) {
-      await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
-      await SubscriptionProvider.instance.refreshAfterPurchase();
-      await _loadAddons();
-      await _loadData();
+      await Future.wait([
+        SubscriptionProvider.instance.refreshAfterPurchase(),
+        _loadData(forceRefresh: true),
+      ]);
       if (mounted) {
         final newBal = _currentBalance(normKey);
         TopNotificationBanner.show(

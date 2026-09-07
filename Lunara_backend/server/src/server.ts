@@ -37,7 +37,18 @@ const io = new SocketIOServer(httpServer, {
     },
 });
 
-// Middleware
+// 1. CORS — MUST be first before any other middleware or helmet
+app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'x-user-id', 'sentry-trace', 'baggage'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 86400, // 24-hour preflight cache in browsers
+}));
+app.options('*', cors({ origin: true, credentials: true, maxAge: 86400 }));
+
+// 2. Security headers (Helmet)
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: {
@@ -48,7 +59,7 @@ app.use(helmet({
             "connect-src": ["'self'", "*.azurewebsites.net", "*.windows.net", "ws:", "wss:"],
         },
     },
-})); // Security headers
+}));
 
 // Explicit Permissions-Policy to silence the 'unload' violation from Chrome extensions
 app.use((_req, res, next) => {
@@ -56,11 +67,6 @@ app.use((_req, res, next) => {
     next();
 });
 
-app.use(cors({
-    origin: true,
-    credentials: true,
-}));
-app.options('*', cors({ origin: true, credentials: true }));
 app.use(compression({ threshold: 256, level: 6 })); // High-speed gzip compression
 
 // Performance: Cache headers for read-heavy public endpoints (stale-while-revalidate)

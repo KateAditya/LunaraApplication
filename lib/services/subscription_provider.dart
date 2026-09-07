@@ -432,12 +432,13 @@ class SubscriptionProvider extends ChangeNotifier {
   }
 
   /// Fetches available Add-on packs catalog.
-  Future<void> fetchAvailableAddons() async {
+  Future<void> fetchAvailableAddons({bool force = false}) async {
     if (_isLoadingAddons) return;
+    if (!force && _availableAddons.isNotEmpty) return;
     _isLoadingAddons = true;
     notifyListeners();
     try {
-      final list = await ApiService.fetchAvailableAddons();
+      final list = await ApiService.fetchAvailableAddons(forceRefresh: force);
       _availableAddons = list.map((e) => SubscriptionAddonPackageModel.fromJson(e)).toList();
     } catch (e) {
       debugPrint('[SubscriptionProvider] fetchAvailableAddons error: $e');
@@ -451,8 +452,11 @@ class SubscriptionProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> purchaseAddonWithWallet(String addonPackageId, {int count = 1}) async {
     final result = await ApiService.purchaseAddonWithWallet(addonPackageId, count: count);
     if (result['success'] == true) {
-      await refresh();
-      await fetchEntitlementsSummary(force: true);
+      await Future.wait([
+        refresh(),
+        fetchEntitlementsSummary(force: true),
+        fetchAvailableAddons(force: true),
+      ]);
     }
     return result;
   }
@@ -463,18 +467,23 @@ class SubscriptionProvider extends ChangeNotifier {
         DateTime.now().difference(_lastFetched!) < _cacheDuration) {
       return; // Still fresh
     }
-    await refresh();
-    await fetchEntitlementsSummary();
-    await fetchAvailableAddons();
+    await Future.wait([
+      refresh(),
+      fetchEntitlementsSummary(),
+      fetchAvailableAddons(),
+    ]);
   }
 
   /// Called after a purchase to immediately reflect the new subscription.
   Future<void> refreshAfterPurchase() async {
-    // Invalidate cache and force reload
+    // Invalidate cache and force reload concurrently
     _lastFetched = null;
     _lastShownAlertKey = null;
-    await refresh();
-    await fetchEntitlementsSummary(force: true);
+    await Future.wait([
+      refresh(),
+      fetchEntitlementsSummary(force: true),
+      fetchAvailableAddons(force: true),
+    ]);
   }
 
   /// Reset to free state on logout.

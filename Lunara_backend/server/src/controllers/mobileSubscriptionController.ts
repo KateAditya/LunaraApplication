@@ -12,6 +12,7 @@ import { EntitlementService } from '../services/EntitlementService';
 import { logger } from '../config/logger';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import apiCache from '../utils/apiCache';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -59,6 +60,14 @@ async function clearStaleExpirationNotifications(userId: string) {
 // @route GET /api/mobile/subscriptions/packages
 export const getAvailablePackages = async (_req: Request, res: Response): Promise<void> => {
     try {
+        const cacheKey = 'sub:packages';
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+            res.status(200).json(cached);
+            return;
+        }
+
         const packages = await SubscriptionPackage.findAll({
             where: { isActive: true },
             order: [['display_order', 'ASC'], ['price', 'ASC']],
@@ -104,7 +113,11 @@ export const getAvailablePackages = async (_req: Request, res: Response): Promis
                 : null,
         }));
 
-        res.status(200).json({ success: true, data: enriched });
+        const responseData = { success: true, data: enriched };
+        apiCache.set(cacheKey, responseData, 300);
+
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+        res.status(200).json(responseData);
     } catch (error: any) {
         logger.error('Error fetching packages:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -921,6 +934,14 @@ export const getEntitlementsSummary = async (req: Request, res: Response): Promi
 export const getAvailableAddons = async (req: Request, res: Response): Promise<void> => {
     try {
         const { featureKey } = req.query;
+        const cacheKey = `sub:addons:${(featureKey as string || 'all').toLowerCase().trim()}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+            res.status(200).json(cached);
+            return;
+        }
+
         await EntitlementService.seedDefaultAddons();
 
         const where: any = { isActive: true };
@@ -931,7 +952,11 @@ export const getAvailableAddons = async (req: Request, res: Response): Promise<v
             order: [['displayOrder', 'ASC'], ['price', 'ASC']],
         });
 
-        res.status(200).json({ success: true, data: addons });
+        const responseData = { success: true, data: addons };
+        apiCache.set(cacheKey, responseData, 300);
+
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+        res.status(200).json(responseData);
     } catch (error: any) {
         logger.error('Error fetching addon packages:', error);
         res.status(500).json({ success: false, message: 'Server error fetching addons' });

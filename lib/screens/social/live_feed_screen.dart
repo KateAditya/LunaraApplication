@@ -778,7 +778,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           'bookingStatus': 'cancelled',
           'paymentStatus': 'refunded',
           if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
-          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          'refundPercentage': ?refundPercentage,
         };
       }
     }
@@ -793,7 +793,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           'cancelStatus': 'COMPLETED',
           'paymentStatus': 'refunded',
           if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
-          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          'refundPercentage': ?refundPercentage,
         };
       }
     }
@@ -808,13 +808,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           'status': 'cancelled',
           'paymentStatus': 'refunded',
           if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
-          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          'refundPercentage': ?refundPercentage,
           'data': {
             if (n['data'] is Map) ...(n['data'] as Map<String, dynamic>),
             'status': 'cancelled',
             'paymentStatus': 'refunded',
             if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
-            if (refundPercentage != null) 'refundPercentage': refundPercentage,
+            'refundPercentage': ?refundPercentage,
           }
         };
       }
@@ -829,7 +829,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           'status': 'cancelled',
           'paymentStatus': 'refunded',
           if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
-          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          'refundPercentage': ?refundPercentage,
         };
       }
     }

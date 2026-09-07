@@ -922,6 +922,14 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                 CREATE INDEX IF NOT EXISTS idx_user_likes_user_target ON user_likes(user_id, target_user_id);
                 CREATE INDEX IF NOT EXISTS idx_user_photos_user_primary ON user_photos(user_id, is_primary);
                 CREATE INDEX IF NOT EXISTS idx_users_city_active ON users(city, is_active);
+
+                -- High-Performance Feed, Discovery & Catalog Indexes
+                CREATE INDEX IF NOT EXISTS idx_venues_city ON venues(city);
+                CREATE INDEX IF NOT EXISTS idx_venues_city_active_status ON venues(city, is_active, status);
+                CREATE INDEX IF NOT EXISTS idx_ads_active_dates ON ads(is_active, from_date, to_date);
+                CREATE INDEX IF NOT EXISTS idx_ads_city_type_active ON ads(city, type, is_active);
+                CREATE INDEX IF NOT EXISTS idx_sm_requests_status_payment ON strangers_meet_requests(status, payment_status, event_date_time);
+                CREATE INDEX IF NOT EXISTS idx_party_plans_active_feed ON party_plans(status, is_live, host_payment_status, plan_date_time);
             `);
             logger.info('High-performance messaging, matching, and ticket indexes verified successfully.');
         } catch (idxErr: any) {

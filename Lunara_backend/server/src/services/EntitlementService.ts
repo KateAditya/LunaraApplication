@@ -73,11 +73,20 @@ export interface EntitlementsSummaryResponse {
 
 export class EntitlementService {
 
+    private static addonsSeeded = false;
+
     /**
      * Seeds default add-on packages if none exist.
      */
     public static async seedDefaultAddons(): Promise<void> {
+        if (this.addonsSeeded) return;
         try {
+            const count = await SubscriptionAddonPackage.count({ where: { isActive: true } });
+            if (count >= 6) {
+                this.addonsSeeded = true;
+                return;
+            }
+
             const defaults = [
                 {
                     name: '+5 Super Likes',
@@ -150,6 +159,7 @@ export class EntitlementService {
                     await pkg.update({ isActive: true, featureKey: item.featureKey });
                 }
             }
+            this.addonsSeeded = true;
             logger.info('[EntitlementService] Seeded/activated default subscription addon packages');
         } catch (e) {
             logger.warn('[EntitlementService] Error seeding default addons:', e);

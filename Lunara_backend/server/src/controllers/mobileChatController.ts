@@ -64,6 +64,11 @@ async function ensureConversationColumns() {
 
 async function isPartyPlanCancelledForConversation(conv: any, userId: string, otherUserId: string): Promise<boolean> {
     try {
+        // If conversation is not linked to a party plan, skip DB lookups entirely
+        if (conv.contextType !== 'party_plan' && conv.contextType !== 'party' && conv.contextType !== 'plan') {
+            return false;
+        }
+
         const uId = userId.toLowerCase();
         const oId = otherUserId.toLowerCase();
 
@@ -71,7 +76,7 @@ async function isPartyPlanCancelledForConversation(conv: any, userId: string, ot
         const PartyPlanRequestModel = (await import('../models/PartyPlanRequest')).default;
 
         // 1. If explicit contextId is provided
-        if ((conv.contextType === 'party_plan' || conv.contextType === 'party') && conv.contextId) {
+        if (conv.contextId) {
             const plan = await PartyPlanModel.findByPk(conv.contextId);
             if (plan && (plan.status === 'cancelled' || plan.lifecycleStatus === 'cancelled')) {
                 return true;
@@ -93,6 +98,7 @@ async function isPartyPlanCancelledForConversation(conv: any, userId: string, ot
                 });
                 if (cancelledReq) return true;
             }
+            return false;
         }
 
         // 2. Check if all Party Plan connections between uId and oId are cancelled
@@ -100,11 +106,11 @@ async function isPartyPlanCancelledForConversation(conv: any, userId: string, ot
             where: {
                 requesterId: { [Op.in]: [userId, otherUserId] }
             },
-            include: [{ model: PartyPlanModel, as: 'partyPlan' }]
+            include: [{ model: PartyPlanModel, as: 'plan' }]
         });
 
         const relevantPartyReqs = userPartyReqs.filter((r: any) => {
-            const plan = r.partyPlan;
+            const plan = (r as any).plan;
             if (!plan) return false;
             const isMatch = (plan.userId.toLowerCase() === uId && r.requesterId.toLowerCase() === oId) ||
                             (plan.userId.toLowerCase() === oId && r.requesterId.toLowerCase() === uId);
@@ -113,7 +119,7 @@ async function isPartyPlanCancelledForConversation(conv: any, userId: string, ot
 
         if (relevantPartyReqs.length > 0) {
             const hasActiveMatch = relevantPartyReqs.some((r: any) => {
-                const plan = r.partyPlan;
+                const plan = (r as any).plan;
                 const isPlanActive = plan && plan.status !== 'cancelled' && plan.lifecycleStatus !== 'cancelled';
                 const isReqActive = r.status === 'accepted' || r.status === 'payment_pending' || r.status === 'confirmed' || r.status === 'paid';
                 return isPlanActive && isReqActive;
@@ -136,7 +142,7 @@ async function isPartyPlanCancelledForConversation(conv: any, userId: string, ot
             }
         }
     } catch (err: any) {
-        logger.warn('isPartyPlanCancelledForConversation error:', err.message);
+        logger.warn('isPartyPlanCancelledForConversation error:', err?.message || err);
     }
     return false;
 }
@@ -207,8 +213,10 @@ export const getConversations = async (req: Request, res: Response) => {
                 }
             }
 
-            if (await isPartyPlanCancelledForConversation(conv, userId, otherUserId)) {
-                continue; // Skip cancelled Party Plan profile from chat list
+            if (conv.contextType === 'party_plan' || conv.contextType === 'party' || conv.contextType === 'plan') {
+                if (await isPartyPlanCancelledForConversation(conv, userId, otherUserId)) {
+                    continue; // Skip cancelled Party Plan profile from chat list
+                }
             }
 
             const key = otherUserId.toLowerCase();
@@ -227,30 +235,56 @@ export const getConversations = async (req: Request, res: Response) => {
             }
         }
 
-        const list = await Promise.all(Array.from(mapByOtherUser.values()).map(async (conv) => {
+        const activeConvs = Array.from(mapByOtherUser.values());
+        if (activeConvs.length === 0) {
+            return res.json({ success: true, count: 0, data: [] });
+        }
+
+        const convIds = activeConvs.map(c => c.id);
+
+        // ── Single Batch Query for messages across all active conversations (Optimized for 1000+ users) ──
+        const allCandidateMessages = await Message.findAll({
+            where: {
+                conversationId: { [Op.in]: convIds },
+                deletedAt: null as any,
+            },
+            order: [['createdAt', 'DESC']],
+            attributes: [
+                'id', 'conversationId', 'senderId', 'clientMessageId', 'type',
+                'content', 'mediaUrl', 'mediaMimeType', 'duration', 'fileSize',
+                'replyToMessageId', 'invitationRef', 'invitationRefType',
+                'invitationTime', 'invitationStatus', 'status', 'readAt',
+                'deletedForUsers', 'createdAt', 'updatedAt'
+            ],
+        });
+
+        // Group messages by conversation ID
+        const messagesByConv = new Map<string, any[]>();
+        for (const msg of allCandidateMessages) {
+            const list = messagesByConv.get(msg.conversationId) || [];
+            list.push(msg);
+            messagesByConv.set(msg.conversationId, list);
+        }
+
+        const uId = userId.toLowerCase();
+
+        const list = activeConvs.map((conv) => {
             const otherUserId = conv.getOtherParticipant(userId);
             const otherUser = (otherUserId && conv.participantOne && otherUserId.toLowerCase() === conv.participantOne.toLowerCase())
                 ? (conv as any).userOne
                 : (conv as any).userTwo;
 
-            const uId = userId.toLowerCase();
             const isP1 = (conv.participantOne || '').toLowerCase() === uId;
             const clearedTime = isP1
                 ? (conv.clearedAtOne ? new Date(conv.clearedAtOne).getTime() : 0)
                 : (conv.clearedAtTwo ? new Date(conv.clearedAtTwo).getTime() : 0);
 
-            // Fetch candidate messages to find the latest valid non-deleted, non-blocked message for THIS user
-            const candidateMessages = await Message.findAll({
-                where: {
-                    conversationId: conv.id,
-                    deletedAt: null as any,
-                    ...(clearedTime > 0 ? { createdAt: { [Op.gt]: new Date(clearedTime) } } : {})
-                },
-                order: [['createdAt', 'DESC']],
-                limit: 25,
-            });
+            const convMessages = messagesByConv.get(conv.id) || [];
 
-            const userValidMessages = candidateMessages.filter(m => {
+            const userValidMessages = convMessages.filter(m => {
+                if (clearedTime > 0 && m.createdAt) {
+                    if (new Date(m.createdAt).getTime() <= clearedTime) return false;
+                }
                 const dfu = (m as any).deletedForUsers;
                 if (!dfu) return true;
                 if (Array.isArray(dfu)) {
@@ -284,7 +318,7 @@ export const getConversations = async (req: Request, res: Response) => {
                 contextType:         conv.contextType,
                 contextId:           conv.contextId,
             };
-        }));
+        });
 
         return res.json({ success: true, count: list.length, data: list });
     } catch (err: any) {

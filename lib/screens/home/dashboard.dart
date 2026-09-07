@@ -76,10 +76,29 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           _isInitialized = true;
         });
         PushNotificationService.setAppReady();
+        _prewarmBackgroundScreens();
       }
     }
     // Soft-ask for notifications after login if not already granted
     _maybeAskNotificationPermission();
+  }
+
+  /// Gently pre-warms background tabs (Live Feed, Chat, Plans) after active screen renders
+  void _prewarmBackgroundScreens() {
+    Future.delayed(const Duration(milliseconds: 600), () async {
+      if (!mounted) return;
+      try {
+        final userId = ApiService.currentUserId;
+        await Future.wait([
+          ApiService.fetchLiveFeedData(),
+          if (userId != null) ApiService.fetchConversations(userId),
+          ApiService.fetchSubscriptionPackages(),
+          ApiService.fetchAvailableAddons(),
+        ]);
+      } catch (e) {
+        debugPrint('Background prewarm note: $e');
+      }
+    });
   }
 
   /// Shows a friendly in-app notification permission prompt if the user hasn't

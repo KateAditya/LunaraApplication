@@ -23,6 +23,7 @@ import Booking, { BookingStatus, GoingMode, PaymentStatus as BookingPaymentStatu
 import Ticket, { TicketStatus } from '../models/Ticket';
 import Payment, { PaymentMethod, PaymentStatus } from '../models/Payment';
 import { generateTicketForBookingHelper } from '../services/ticketService';
+import apiCache from '../utils/apiCache';
 import { NotificationService } from '../services/NotificationService';
 import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
@@ -1093,6 +1094,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             logger.warn('Socket emission failed for party_plan_created:', socketErr);
         }
 
+        apiCache.invalidatePrefix('pp_feed');
+
         res.status(201).json({
             success: true,
             message: 'Party plan created successfully. Complete deposit payment to activate.',
@@ -1524,9 +1527,17 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             ];
         }
 
+        const currentUserId = (req as any).user?.id || (requesterId as string);
         const pageNum = Math.max(1, parseInt(page as string));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
+
+        const cacheKey = `pp_feed:${status}:${pageNum}:${limitNum}:${venueId || 'all'}:${currentUserId || 'none'}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            res.json(cached);
+            return;
+        }
 
         const { count, rows: plans } = await PartyPlan.findAndCountAll({
             where,
@@ -1568,9 +1579,6 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             limit: limitNum,
             offset,
         });
-
-        // Verified token identity wins over the legacy ?requesterId= param.
-        const currentUserId = (req as any).user?.id || (requesterId as string);
 
         // Batch-resolve which of these plans the current user has been accepted
         // into, in one query, instead of one query per plan.
@@ -1622,15 +1630,17 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
             };
         });
 
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-        res.json({
+        const responseData = {
             success: true,
             total: count,
             page: pageNum,
             limit: limitNum,
             pages: Math.ceil(count / limitNum),
             data,
-        });
+        };
+
+        apiCache.set(cacheKey, responseData, 30);
+        res.json(responseData);
     } catch (err: any) {
         logger.error('getAllPartyPlans error:', err);
         res.status(500).json({ success: false, message: 'Failed to fetch party plans', error: err.message });
@@ -4302,6 +4312,8 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
                 logger.warn('Socket/Notification dispatch failed on cancel:', socketErr);
             }
         });
+
+        apiCache.invalidatePrefix('pp_feed');
 
         res.json({
             success: true,

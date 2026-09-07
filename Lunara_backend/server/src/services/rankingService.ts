@@ -18,6 +18,7 @@ import { PartyPlanStatus } from '../models/PartyPlan';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { GroupPartyStatus } from '../models/GroupParty';
 import { logger } from '../config/logger';
+import apiCache from '../utils/apiCache';
 
 export interface ScoreExplanation {
     userId: string;
@@ -57,6 +58,12 @@ export class RankingService {
     public static async computeRankings(candidateUserIds: string[]): Promise<ScoreExplanation[]> {
         if (!candidateUserIds || candidateUserIds.length === 0) {
             return [];
+        }
+
+        const cacheKey = `rankings:${candidateUserIds.length}:${candidateUserIds.slice(0, 10).join('_')}`;
+        const cached = apiCache.get<ScoreExplanation[]>(cacheKey);
+        if (cached) {
+            return cached;
         }
 
         const now = new Date();
@@ -238,6 +245,7 @@ export class RankingService {
 
             // Sort descending by finalRankScore
             rankings.sort((a, b) => b.finalRankScore - a.finalRankScore);
+            apiCache.set(cacheKey, rankings, 60);
             return rankings;
         } catch (err: any) {
             logger.error('[RankingService] Error computing rankings:', err);
@@ -262,6 +270,10 @@ export class RankingService {
                 },
             }));
         }
+    }
+
+    public static invalidateCache(): void {
+        apiCache.invalidatePrefix('rankings');
     }
 }
 

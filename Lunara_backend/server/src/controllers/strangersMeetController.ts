@@ -20,6 +20,7 @@ import { EventTimeLockService } from '../services/EventTimeLockService';
 import { TimeLockError } from '../utils/bookingLimitValidator';
 import sequelize from '../config/database';
 import { formatTime12Hour } from '../utils/dateTimeUtils';
+import apiCache from '../utils/apiCache';
 
 
 
@@ -276,6 +277,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             }
         });
 
+        apiCache.invalidatePrefix('sm_feed');
         res.status(201).json({
             success: true,
             message: 'Request submitted successfully! Admin will review and get back to you. 🎉',
@@ -808,6 +810,13 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
+        const cacheKey = `sm_feed:${pageNum}:${limitNum}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            res.json(cached);
+            return;
+        }
+
         const now = new Date();
         const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
         const feedWhere = {
@@ -841,14 +850,18 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             });
         }
 
-        res.json({
+        const responseData = {
             success: true,
             total: count,
             page: pageNum,
             limit: limitNum,
             pages: Math.ceil(count / limitNum),
             data: rows.map(formatRequest),
-        });
+        };
+
+        apiCache.set(cacheKey, responseData, 30);
+
+        res.json(responseData);
     } catch (err: any) {
         logger.error('getFeedRequests error:', err);
         res.status(500).json({ success: false, message: 'Failed to fetch feed', error: err.message });

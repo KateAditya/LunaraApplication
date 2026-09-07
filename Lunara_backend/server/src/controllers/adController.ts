@@ -7,6 +7,7 @@ import User from '../models/User';
 import { sendMulticastPushNotification } from '../services/fcmService';
 import { compressImageTo300KB } from '../utils/imageProcessor';
 import { logger } from '../config/logger';
+import apiCache from '../utils/apiCache';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/ads
@@ -54,6 +55,19 @@ export const getAds = async (_req: Request, res: Response): Promise<Response> =>
 export const getActiveAds = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { city, area, venueId, type } = req.query;
+
+        const normalizedCity = (typeof city === 'string' ? city.trim().toLowerCase() : 'all');
+        const normalizedArea = (typeof area === 'string' ? area.trim().toLowerCase() : 'all');
+        const normalizedVenue = (typeof venueId === 'string' ? venueId.trim().toLowerCase() : 'all');
+        const normalizedType = (typeof type === 'string' ? type.trim() : 'all');
+
+        const cacheKey = `ads:active:${normalizedCity}:${normalizedArea}:${normalizedVenue}:${normalizedType}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+            return res.status(200).json(cached);
+        }
+
         const now = new Date();
 
         const whereClause: any = {
@@ -116,8 +130,11 @@ export const getActiveAds = async (req: Request, res: Response): Promise<Respons
             };
         });
 
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-        return res.status(200).json({ success: true, data });
+        const responseData = { success: true, data };
+        apiCache.set(cacheKey, responseData, 60);
+
+        res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+        return res.status(200).json(responseData);
     } catch (error) {
         logger.error('[AdController] Error fetching active ads:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch active ads.' });
@@ -205,6 +222,8 @@ export const createAd = async (req: Request, res: Response): Promise<Response> =
             aboutEvent: getValidValue(aboutEvent),
             socialLinks,
         });
+
+        apiCache.invalidatePrefix('ads');
 
         // Broadcast real-time WebSocket event and System Notification
         try {
@@ -377,6 +396,8 @@ export const updateAd = async (req: Request, res: Response): Promise<Response> =
 
         await ad.save();
 
+        apiCache.invalidatePrefix('ads');
+
         return res.status(200).json({ success: true, message: 'Ad updated successfully', data: ad });
     } catch (error) {
         logger.error('[AdController] Error updating ad:', error);
@@ -398,6 +419,8 @@ export const deleteAd = async (req: Request, res: Response): Promise<Response> =
 
         const oldPath = ad.imagePath;
         await ad.destroy();
+
+        apiCache.invalidatePrefix('ads');
 
         if (oldPath && !oldPath.startsWith('http') && fs.existsSync(oldPath)) {
             fs.unlink(oldPath, (err) => {

@@ -107,7 +107,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       if (mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         _loadVenues(showLoading: false);
       }

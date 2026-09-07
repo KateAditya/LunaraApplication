@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
+import apiCache from '../utils/apiCache';
 
 // ── Helper: build structured menu & media sections from flat images array ─────
 const buildVenueMediaSections = (images: VenueImage[]) => {
@@ -345,6 +346,7 @@ export const createVenue = async (req: Request, res: Response) => {
         });
 
         if (completeVenue) {
+            apiCache.invalidatePrefix('venues');
             RealtimeEventBroker.emitToCity(completeVenue.city, 'venue_created', 'venue', completeVenue.id, completeVenue);
             RealtimeEventBroker.emitToLiveFeed('venue_created', 'venue', completeVenue.id, completeVenue);
         }
@@ -698,6 +700,7 @@ export const updateVenue = async (req: Request, res: Response) => {
         });
 
         if (completeVenue) {
+            apiCache.invalidatePrefix('venues');
             RealtimeEventBroker.emitToCity(completeVenue.city, 'venue_updated', 'venue', completeVenue.id, completeVenue);
             RealtimeEventBroker.emitToLiveFeed('venue_updated', 'venue', completeVenue.id, completeVenue);
         }
@@ -712,6 +715,13 @@ export const updateVenue = async (req: Request, res: Response) => {
 export const getVenues = async (req: Request, res: Response) => {
     try {
         const { city, status, category, featured, isActive } = req.query;
+
+        const normalizedCity = (city as string || 'all').toLowerCase().trim();
+        const cacheKey = `venues:${normalizedCity}:${status || 'all'}:${category || 'all'}:${featured}:${isActive}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            return res.status(200).json(cached);
+        }
 
         // Build dynamic where clause
         const where: any = {};
@@ -747,12 +757,16 @@ export const getVenues = async (req: Request, res: Response) => {
             return { ...plain, coverImage, gallery, menu, videos };
         });
 
-        return res.status(200).json({
+        const responseData = {
             success: true,
             total:   venuesWithMedia.length,
             filters: { city: city ?? null, status: status ?? null, category: category ?? null },
             venues:  venuesWithMedia,
-        });
+        };
+
+        apiCache.set(cacheKey, responseData, 60);
+
+        return res.status(200).json(responseData);
     } catch (error) {
         console.error('Error fetching venues:', error);
         return res.status(500).json({ success: false, message: 'Error fetching venues' });
@@ -762,6 +776,12 @@ export const getVenues = async (req: Request, res: Response) => {
 export const getVenueById = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
+        const cacheKey = `venues:single:${id}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            return res.status(200).json(cached);
+        }
+
         const venue = await Venue.findByPk(id, {
             include: [{ model: VenueImage, as: 'images' }],
         });
@@ -773,10 +793,14 @@ export const getVenueById = async (req: Request, res: Response) => {
         const plain = venue.toJSON() as any;
         delete plain.images; // remove flat array
 
-        return res.status(200).json({
+        const responseData = {
             success: true,
             venue: { ...plain, coverImage, gallery, menu, videos },
-        });
+        };
+
+        apiCache.set(cacheKey, responseData, 60);
+
+        return res.status(200).json(responseData);
     } catch (error) {
         console.error('Error fetching venue:', error);
         return res.status(500).json({ success: false, message: 'Error fetching venue' });
@@ -811,6 +835,7 @@ export const deleteVenue = async (req: Request, res: Response) => {
         const deletedCity = venue.city;
         await venue.destroy();
 
+        apiCache.invalidatePrefix('venues');
         RealtimeEventBroker.emitToCity(deletedCity, 'venue_deleted', 'venue', deletedId, { id: deletedId });
         RealtimeEventBroker.emitToLiveFeed('venue_deleted', 'venue', deletedId, { id: deletedId });
 

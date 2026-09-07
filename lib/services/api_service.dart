@@ -55,6 +55,9 @@ class ApiService {
   static final Map<String, List<Map<String, dynamic>>> _cachedCustomers = {};
   static final Map<String, DateTime> _customersCacheTimestamps = {};
 
+  static final Map<String, List<Map<String, dynamic>>> _cachedStrangersMeetFeed = {};
+  static final Map<String, DateTime> _strangersMeetFeedCacheTimestamps = {};
+
   static Map<String, dynamic>? _cachedWalletBalance;
   static DateTime? _walletBalanceCacheTime;
 
@@ -66,6 +69,12 @@ class ApiService {
 
   static List<Map<String, dynamic>>? _cachedNotifications;
   static DateTime? _notificationsCacheTime;
+
+  static List<Map<String, dynamic>>? _cachedAddonPackages;
+  static DateTime? _addonPackagesCacheTime;
+
+  static List<dynamic>? _cachedSubscriptionPackages;
+  static DateTime? _subscriptionPackagesCacheTime;
 
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
@@ -104,6 +113,14 @@ class ApiService {
     _bookingsCacheTime = null;
     _cachedBadgeCounts = null;
     _badgeCountsCacheTime = null;
+    _cachedAddonPackages = null;
+    _addonPackagesCacheTime = null;
+    _cachedSubscriptionPackages = null;
+    _subscriptionPackagesCacheTime = null;
+    _cachedStrangersMeetFeed.clear();
+    _strangersMeetFeedCacheTimestamps.clear();
+    _cachedPartyPlans.clear();
+    _partyPlansCacheTimestamps.clear();
   }
 
   // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
@@ -135,6 +152,10 @@ class ApiService {
     _walletBalanceCacheTime = null;
     _cachedWalletData = null;
     _walletDataCacheTime = null;
+    _cachedAddonPackages = null;
+    _addonPackagesCacheTime = null;
+    _cachedSubscriptionPackages = null;
+    _subscriptionPackagesCacheTime = null;
   }
 
   /// Synchronously returns whether the current user has requested to join a given party plan.
@@ -537,7 +558,7 @@ class ApiService {
 
     if (!forceRefresh && _cachedVenuesByCity.containsKey(cacheKey)) {
       final cacheTime = _venuesCacheTimestamps[cacheKey];
-      if (cacheTime != null && now.difference(cacheTime).inSeconds < 30) {
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 60) {
         return _cachedVenuesByCity[cacheKey]!;
       }
     }
@@ -597,7 +618,7 @@ class ApiService {
 
     if (!forceRefresh && _cachedAds.containsKey(cacheKey)) {
       final cacheTime = _adsCacheTimestamps[cacheKey];
-      if (cacheTime != null && now.difference(cacheTime).inSeconds < 45) {
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 60) {
         return _cachedAds[cacheKey]!;
       }
     }
@@ -646,7 +667,7 @@ class ApiService {
 
     if (!forceRefresh && _cachedCustomers.containsKey(cacheKey)) {
       final cacheTime = _customersCacheTimestamps[cacheKey];
-      if (cacheTime != null && now.difference(cacheTime).inSeconds < 20) {
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 60) {
         return _cachedCustomers[cacheKey]!;
       }
     }
@@ -748,7 +769,7 @@ class ApiService {
 
     if (!forceRefresh && _cachedPartyPlans.containsKey(cacheKey)) {
       final cacheTime = _partyPlansCacheTimestamps[cacheKey];
-      if (cacheTime != null && now.difference(cacheTime).inSeconds < 8) {
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 45) {
         return _cachedPartyPlans[cacheKey]!;
       }
     }
@@ -848,7 +869,7 @@ class ApiService {
     if (userId == null) return null;
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedBookings != null && _bookingsCacheTime != null && now.difference(_bookingsCacheTime!).inSeconds < 4) {
+    if (!forceRefresh && _cachedBookings != null && _bookingsCacheTime != null && now.difference(_bookingsCacheTime!).inSeconds < 30) {
       return _cachedBookings;
     }
 
@@ -995,7 +1016,7 @@ class ApiService {
     if (userId == null) return [];
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedTickets != null && _ticketsCacheTime != null && now.difference(_ticketsCacheTime!).inSeconds < 6) {
+    if (!forceRefresh && _cachedTickets != null && _ticketsCacheTime != null && now.difference(_ticketsCacheTime!).inSeconds < 30) {
       return _cachedTickets!;
     }
 
@@ -1214,7 +1235,18 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> fetchStrangersMeetFeed({
     int page = 1,
     int limit = 20,
+    bool forceRefresh = false,
   }) async {
+    final cacheKey = '${page}_$limit';
+    final now = DateTime.now();
+
+    if (!forceRefresh && _cachedStrangersMeetFeed.containsKey(cacheKey)) {
+      final cacheTime = _strangersMeetFeedCacheTimestamps[cacheKey];
+      if (cacheTime != null && now.difference(cacheTime).inSeconds < 45) {
+        return _cachedStrangersMeetFeed[cacheKey]!;
+      }
+    }
+
     try {
       final response = await get(
         '/api/mobile/strangers-meet/feed',
@@ -1223,14 +1255,19 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          _cachedStrangersMeetFeed[cacheKey] = list;
+          _strangersMeetFeedCacheTimestamps[cacheKey] = DateTime.now();
+          return list;
         }
       }
-      return [];
     } catch (e) {
       debugPrint('Error fetching strangers meet feed: $e');
-      return [];
     }
+    if (_cachedStrangersMeetFeed.containsKey(cacheKey)) {
+      return _cachedStrangersMeetFeed[cacheKey]!;
+    }
+    return [];
   }
   // â”€â”€â”€ City APIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1259,7 +1296,7 @@ class ApiService {
   }) async {
     final now = DateTime.now();
     if (!forceRefresh && venueId == null && date == null && _cachedLiveFeedData != null && _liveFeedCacheTime != null) {
-      if (now.difference(_liveFeedCacheTime!).inSeconds < 4) {
+      if (now.difference(_liveFeedCacheTime!).inSeconds < 30) {
         return _cachedLiveFeedData!;
       }
     }
@@ -2840,7 +2877,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
 
@@ -3072,7 +3109,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.put(
@@ -3094,7 +3131,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.post(
@@ -3116,7 +3153,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final response = await _httpClient.patch(
@@ -3138,7 +3175,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
     final request = http.Request('DELETE', uri);
@@ -3741,7 +3778,7 @@ class ApiService {
 
     final now = DateTime.now();
     if (!forceRefresh && _cachedNotifications != null && _notificationsCacheTime != null) {
-      if (now.difference(_notificationsCacheTime!).inSeconds < 4) {
+      if (now.difference(_notificationsCacheTime!).inSeconds < 20) {
         return _cachedNotifications!;
       }
     }
@@ -3806,7 +3843,7 @@ class ApiService {
     final now = DateTime.now();
     if (forceRefresh) {
       _badgeCountsCacheTime = null;
-    } else if (_cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 3) {
+    } else if (_cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 15) {
       return _cachedBadgeCounts!;
     }
 
@@ -4813,20 +4850,29 @@ class ApiService {
     return {};
   }
 
-  /// Fetches available Add-on packages catalog
-  static Future<List<Map<String, dynamic>>> fetchAvailableAddons() async {
+  /// Fetches available Add-on packages catalog with in-memory caching (5-min TTL)
+  static Future<List<Map<String, dynamic>>> fetchAvailableAddons({bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _cachedAddonPackages != null &&
+        _addonPackagesCacheTime != null &&
+        DateTime.now().difference(_addonPackagesCacheTime!) < const Duration(minutes: 5)) {
+      return _cachedAddonPackages!;
+    }
     try {
       final response = await get('/api/mobile/subscriptions/addons');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          _cachedAddonPackages = list;
+          _addonPackagesCacheTime = DateTime.now();
+          return list;
         }
       }
     } catch (e) {
       debugPrint('fetchAvailableAddons error: $e');
     }
-    return [];
+    return _cachedAddonPackages ?? [];
   }
 
   /// Purchases an Add-on using Smart Credit Wallet
@@ -4840,6 +4886,10 @@ class ApiService {
         },
       );
       final data = jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _cachedAddonPackages = null;
+        _addonPackagesCacheTime = null;
+      }
       return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Unknown response'};
     } catch (e) {
       debugPrint('purchaseAddonWithWallet error: $e');
@@ -5098,19 +5148,28 @@ class ApiService {
 
   // â”€â”€ Subscription API Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  static Future<List<dynamic>> fetchSubscriptionPackages() async {
+  static Future<List<dynamic>> fetchSubscriptionPackages({bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _cachedSubscriptionPackages != null &&
+        _subscriptionPackagesCacheTime != null &&
+        DateTime.now().difference(_subscriptionPackagesCacheTime!) < const Duration(minutes: 5)) {
+      return _cachedSubscriptionPackages!;
+    }
     try {
       final response = await get('/api/mobile/subscriptions/packages');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return List<dynamic>.from(data['data']);
+          final list = List<dynamic>.from(data['data']);
+          _cachedSubscriptionPackages = list;
+          _subscriptionPackagesCacheTime = DateTime.now();
+          return list;
         }
       }
     } catch (e) {
       debugPrint('fetchSubscriptionPackages error: $e');
     }
-    return [];
+    return _cachedSubscriptionPackages ?? [];
   }
 
   static Future<Map<String, dynamic>?> createSubscriptionOrder(String packageId) async {
@@ -5516,7 +5575,7 @@ class ApiService {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
     };
     if (_authToken != null) {
       headers['Authorization'] = 'Bearer $_authToken';

@@ -1,14 +1,15 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import * as ctrl from '../controllers/mobileSubscriptionController';
 
 const router = Router();
 
-// All routes require mobile user auth
-router.use(authenticate);
+// ── Public / Semi-Public Plan & Addon Listing (Allow discovery pre-warming) ───
+router.get('/packages', optionalAuth, ctrl.getAvailablePackages);
+router.get('/addons', optionalAuth, ctrl.getAvailableAddons);
 
-// ── Plan Listing ───────────────────────────────────────────────────────────────
-router.get('/packages', ctrl.getAvailablePackages);
+// All subsequent routes require mobile user auth
+router.use(authenticate);
 
 // ── Current Subscription ───────────────────────────────────────────────────────
 router.get('/current', ctrl.getCurrentSubscription);
@@ -39,7 +40,6 @@ router.get('/party-plan-limit', ctrl.checkPartyPlanLimit);
 router.get('/entitlements', ctrl.getEntitlementsSummary);
 
 // ── Addon Store & Purchases ──────────────────────────────────────────────────
-router.get('/addons', ctrl.getAvailableAddons);
 router.post('/addons/create-order', ctrl.createAddonOrder);
 router.post('/addons/purchase', ctrl.purchaseAddon);
 router.post('/addons/pay-wallet', ctrl.payAddonWithWallet);
