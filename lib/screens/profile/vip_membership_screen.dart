@@ -59,9 +59,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     return status.isActive ? status.tier : null;
   }
 
-  int get _boostsRemaining => SubscriptionProvider.instance.boostsRemaining;
-  int get _superlikesRemaining => SubscriptionProvider.instance.superlikesRemaining;
-
   // Selected Options
   int _selectedPlanIndex = 0; // 0: Core, 1: Plus, 2: Pro, 3: Elite
   int _selectedEliteIndex = 0; // Index of selected Elite duration option
@@ -341,7 +338,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     dynamic pkg,
     double price,
   ) async {
-    SmartCheckoutSheet.show(
+    final success = await SmartCheckoutSheet.show(
       context: context,
       title: 'Lunara VIP - ${pkg['name'] ?? pkg['tier']}',
       subtitle: '$actionText to ${pkg['tier']} Tier',
@@ -353,18 +350,6 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           price: price,
         );
         if (res != null && res['success'] == true) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Successfully upgraded to ${pkg['name'] ?? pkg['tier']}! 🎉',
-                ),
-                backgroundColor: const Color(0xFF10B981),
-              ),
-            );
-          }
-          await SubscriptionProvider.instance.refreshAfterPurchase();
-          await _loadData();
           return true;
         } else {
           if (mounted) {
@@ -394,13 +379,25 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             'description':
                 'Recharge ₹${shortfallAmount.toStringAsFixed(0)} for ${pkg['name'] ?? pkg['tier']}',
             'order_id': orderId,
-            'theme': {'color': '#7F00FF'},
+            'theme': {'color': '#7C3AED'},
           };
 
           _razorpay.open(options);
         }
       },
     );
+
+    if (success == true && mounted) {
+      await SubscriptionProvider.instance.refreshAfterPurchase();
+      await _loadData();
+      _showSuccessDialog(
+        'Subscription Activated! 🎉',
+        'You have successfully upgraded to ${pkg['name'] ?? pkg['tier']}.',
+        itemName: pkg['name'] ?? pkg['tier'],
+        icon: Icons.workspace_premium_rounded,
+        iconColor: const Color(0xFF7C3AED),
+      );
+    }
   }
 
 
@@ -1650,15 +1647,22 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     final norm = _normalizeFeatureKey(featureKey);
     final summary = SubscriptionProvider.instance.entitlementsSummary;
     if (summary == null) {
-      if (norm == 'superlike') return _superlikesRemaining;
-      if (norm == 'boost') return _boostsRemaining;
+      if (norm == 'superlike') return SubscriptionProvider.instance.superlikesRemaining;
+      if (norm == 'boost') return SubscriptionProvider.instance.boostsRemaining;
+      if (norm == 'undo') return SubscriptionProvider.instance.backtracksRemaining;
+      if (norm == 'party_plan') return SubscriptionProvider.instance.partyPlansRemaining;
       return 0;
     }
     switch (norm) {
       case 'superlike': return summary.superlikesAvailable;
       case 'boost': return summary.boostsAvailable;
-      case 'like': return summary.likesAvailable;
-      case 'party_plan': return summary.partyPlansAvailable;
+      case 'like':
+        final l = summary.likesAvailable;
+        return l is int ? l : (int.tryParse(l?.toString() ?? '0') ?? 7);
+      case 'party_plan':
+        final p = summary.partyPlansAvailable;
+        return p is int ? p : (int.tryParse(p?.toString() ?? '0') ?? 0);
+      case 'undo': return summary.backtracksAvailable;
       default:
         final t = summary.totals['${norm}Available'] ?? summary.totals['${featureKey}Available'];
         if (t is int) return t;
@@ -1724,10 +1728,16 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                         Colors.amber,
                       ),
                       _addonBalanceBadge(
-                        Icons.swipe_rounded,
-                        isElite ? 'Unlimited' : '${_currentBalance('swipe')}',
-                        'Swipes',
-                        const Color(0xFF67E8F9),
+                        Icons.undo_rounded,
+                        isElite ? 'Unlimited' : '${_currentBalance('undo')}',
+                        'Backtracks',
+                        const Color(0xFFF59E0B),
+                      ),
+                      _addonBalanceBadge(
+                        Icons.celebration_rounded,
+                        isElite ? 'Unlimited' : '${_currentBalance('party_plan')}',
+                        'Party Plans',
+                        const Color(0xFFA78BFA),
                       ),
                     ],
                   ),
@@ -1757,7 +1767,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Your Elite VIP Plan includes unlimited boosts, superlikes, and swipes!',
+                        'Your Elite VIP Plan includes unlimited boosts, superlikes, backtracks, and party plans!',
                         style: TextStyle(
                           color: isDark ? Colors.white : Colors.black87,
                           fontSize: 12,
@@ -1956,7 +1966,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     );
   }
 
-  void _purchaseAddon(SubscriptionAddonPackageModel addon) {
+  void _purchaseAddon(SubscriptionAddonPackageModel addon) async {
     final normKey = _normalizeFeatureKey(addon.featureKey);
     final isElite = _activePackageTier == 'ELITE' || SubscriptionProvider.instance.status.isElite;
     final bool isUnlimitedForUser = isElite &&
@@ -1964,6 +1974,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
             normKey == 'superlike' ||
             normKey == 'swipe' ||
             normKey == 'like' ||
+            normKey == 'undo' ||
             normKey == 'party_plan');
 
     if (isUnlimitedForUser) {
@@ -1976,7 +1987,9 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       return;
     }
 
-    SmartCheckoutSheet.show(
+    String? walletSuccessMsg;
+
+    final sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: addon.name,
       subtitle: '+${addon.quantity} ${_addonUnit(normKey)} · Instant credit',
@@ -1984,30 +1997,17 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       onWalletPayment: () async {
         final result = await SubscriptionProvider.instance.purchaseAddonWithWallet(addon.id);
         if (result['success'] == true) {
-          if (mounted) {
-            await SubscriptionProvider.instance.refreshAfterPurchase();
-            await _loadAddons();
-            await _loadData();
-            if (mounted) {
-              final newBal = _currentBalance(normKey);
-              TopNotificationBanner.show(
-                title: 'Purchase Successful! 🎉',
-                body: '${addon.name} added to your account.',
-                iconData: _addonIcon(normKey),
-              );
-              _showSuccessDialog(
-                'Purchase Successful! 🎉',
-                result['message'] ?? 'Successfully added ${addon.name} to your account.',
-                itemName: addon.name,
-                balanceInfo: '$newBal ${_addonUnit(normKey)}',
-                icon: _addonIcon(normKey),
-                iconColor: _addonColor(normKey),
-              );
-            }
-          }
+          walletSuccessMsg = result['message'];
           return true;
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'Wallet payment failed.'), backgroundColor: Colors.redAccent));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['message'] ?? 'Wallet payment failed.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
           return false;
         }
       },
@@ -2016,10 +2016,40 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
         final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
         if (orderData != null) {
           _pendingAddonPackageId = addon.id;
-          _razorpay.open({'key': orderData['keyId'] ?? 'rzp_test_key', 'amount': (shortfallAmount * 100).toInt(), 'name': 'Lunara Top-Up', 'description': 'Top up for ${addon.name}', 'order_id': orderData['orderId'] ?? orderData['id'] ?? '', 'theme': {'color': '#7C3AED'}});
+          _razorpay.open({
+            'key': orderData['keyId'] ?? 'rzp_test_key',
+            'amount': (shortfallAmount * 100).toInt(),
+            'name': 'Lunara Top-Up',
+            'description': 'Top up for ${addon.name}',
+            'order_id': orderData['orderId'] ?? orderData['id'] ?? '',
+            'theme': {'color': '#7C3AED'},
+          });
         }
       },
     );
+
+    if (sheetSuccess == true && mounted) {
+      await SubscriptionProvider.instance.fetchEntitlementsSummary(force: true);
+      await SubscriptionProvider.instance.refreshAfterPurchase();
+      await _loadAddons();
+      await _loadData();
+      if (mounted) {
+        final newBal = _currentBalance(normKey);
+        TopNotificationBanner.show(
+          title: 'Purchase Successful! 🎉',
+          body: '${addon.name} added to your account.',
+          iconData: _addonIcon(normKey),
+        );
+        _showSuccessDialog(
+          'Purchase Successful! 🎉',
+          walletSuccessMsg ?? 'Successfully added ${addon.name} to your account.',
+          itemName: addon.name,
+          balanceInfo: '$newBal ${_addonUnit(normKey)}',
+          icon: _addonIcon(normKey),
+          iconColor: _addonColor(normKey),
+        );
+      }
+    }
   }
 
   Widget _buildAddonsEmptyState(bool isDark) {

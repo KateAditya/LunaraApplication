@@ -16,7 +16,7 @@ import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage'
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 import Booking, { AdminApprovalStatus, BookingStatus } from '../models/Booking';
 import GroupParty, { GroupPartyStatus } from '../models/GroupParty';
-import { formatTime12Hour } from '../utils/dateTimeUtils';
+import { formatTime12Hour, parseEventDateTimeToUTC } from '../utils/dateTimeUtils';
 
 /**
  * Sweeps large-party Bookings and small GroupParty requests that were approved
@@ -1249,96 +1249,79 @@ export const startPartyPlanCron = () => {
                 const { GroupPartyService } = await import('../services/GroupPartyService');
                 const { sendPushNotification } = require('../services/fcmService');
 
-                // 2 Hours Before Reminder
-                const gpNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
-                const gpNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
-                const gp2hParties = await GroupParty.findAll({
+                // ── 2.6 Group Party Automated Reminder Engine (2h, 1h, 30m) ─────
+                const gpParties = await GroupParty.findAll({
                     where: {
                         status: GroupPartyStatus.CONFIRMED,
                         paymentStatus: GroupPartyPaymentStatus.PAID,
-                        reminder2hSent: false,
-                        partyDate: { [Op.between]: [gpNext2h15, gpNext2h5] }
+                        [Op.or]: [
+                            { reminder2hSent: false },
+                            { reminder1hSent: false },
+                            { reminder30mSent: false }
+                        ]
                     }
                 });
 
-                for (const party of gp2hParties) {
-                    await party.update({ reminder2hSent: true });
-                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Group Party Reminder (2 Hours)',
-                            body: 'Your Group Party starts in 2 hours.',
-                            data: { type: 'gp_reminder_2h', partyId: party.id }
-                        }).catch(() => {});
+                for (const party of gpParties) {
+                    const partyDateTime = parseEventDateTimeToUTC(party.partyDate, party.startTime || (party as any).partyTime);
+                    if (!partyDateTime || isNaN(partyDateTime.getTime())) continue;
+                    const diffMinutes = (partyDateTime.getTime() - now.getTime()) / (60 * 1000);
+
+                    // 2 Hours Before Reminder
+                    if (diffMinutes <= 135 && diffMinutes >= 105 && !party.reminder2hSent) {
+                        await party.update({ reminder2hSent: true });
+                        const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Group Party Reminder (2 Hours)',
+                                body: 'Your Group Party starts in 2 hours.',
+                                data: { type: 'gp_reminder_2h', partyId: party.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_2h' });
+                        }
                     }
 
-                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_2h' });
-                    }
-                }
-
-                // 1 Hour Before Reminder
-                const gpNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
-                const gpNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
-                const gp1hParties = await GroupParty.findAll({
-                    where: {
-                        status: GroupPartyStatus.CONFIRMED,
-                        paymentStatus: GroupPartyPaymentStatus.PAID,
-                        reminder1hSent: false,
-                        partyDate: { [Op.between]: [gpNext1h45, gpNext1h15] }
-                    }
-                });
-
-                for (const party of gp1hParties) {
-                    await party.update({ reminder1hSent: true });
-                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Group Party Reminder (1 Hour)',
-                            body: 'Your Group Party starts in 1 hour.',
-                            data: { type: 'gp_reminder_1h', partyId: party.id }
-                        }).catch(() => {});
+                    // 1 Hour Before Reminder
+                    if (diffMinutes <= 75 && diffMinutes >= 45 && !party.reminder1hSent) {
+                        await party.update({ reminder1hSent: true });
+                        const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Group Party Reminder (1 Hour)',
+                                body: 'Your Group Party starts in 1 hour.',
+                                data: { type: 'gp_reminder_1h', partyId: party.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_1h' });
+                        }
                     }
 
-                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_1h' });
-                    }
-                }
-
-                // 30 Minutes Before Departure Reminder
-                const gpNext35m = new Date(now.getTime() + 35 * 60 * 1000);
-                const gpNext25m = new Date(now.getTime() + 25 * 60 * 1000);
-                const gp30mParties = await GroupParty.findAll({
-                    where: {
-                        status: GroupPartyStatus.CONFIRMED,
-                        paymentStatus: GroupPartyPaymentStatus.PAID,
-                        reminder30mSent: false,
-                        partyDate: { [Op.between]: [gpNext25m, gpNext35m] }
-                    }
-                });
-
-                for (const party of gp30mParties) {
-                    await party.update({ reminder30mSent: true });
-                    const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '🚗 Time to Leave!',
-                            body: "It's time to leave for your Group Party.",
-                            data: { type: 'gp_reminder_30m', partyId: party.id }
-                        }).catch(() => {});
-                    }
-
-                    const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_30m' });
+                    // 30 Minutes Before Departure Reminder
+                    if (diffMinutes <= 35 && diffMinutes >= 15 && !party.reminder30mSent) {
+                        await party.update({ reminder30mSent: true });
+                        const user = await User.findByPk(party.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '🚗 Time to Leave!',
+                                body: "It's time to leave for your Group Party.",
+                                data: { type: 'gp_reminder_30m', partyId: party.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichGroupPartyNotificationCard(party.id, party.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${party.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${party.userId}`).emit('group_party_status_update', { partyId: party.id, eventType: 'gp_reminder_30m' });
+                        }
                     }
                 }
             } catch (gpCronErr) {
@@ -1360,99 +1343,79 @@ export const startPartyPlanCron = () => {
                 const { GroupPartyService } = await import('../services/GroupPartyService');
                 const { sendPushNotification } = require('../services/fcmService');
 
-                // 2 Hours Before Reminder
-                const lpNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
-                const lpNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
-                const lp2hBookings = await Booking.findAll({
+                const lpBookings = await Booking.findAll({
                     where: {
                         isLargePartyRequest: true,
                         status: BookingStatus.CONFIRMED,
                         paymentStatus: PaymentStatus.PAID,
-                        reminder2hSent: false,
-                        bookingDate: { [Op.between]: [lpNext2h15, lpNext2h5] }
+                        [Op.or]: [
+                            { reminder2hSent: false },
+                            { reminder1hSent: false },
+                            { reminder30mSent: false }
+                        ]
                     }
                 });
 
-                for (const booking of lp2hBookings) {
-                    await booking.update({ reminder2hSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Large Party Reminder (2 Hours)',
-                            body: 'Your Large Party starts in 2 hours.',
-                            data: { type: 'lp_reminder_2h', bookingId: booking.id }
-                        }).catch(() => {});
+                for (const booking of lpBookings) {
+                    const bookingDateTime = parseEventDateTimeToUTC(booking.bookingDate, booking.startTime || (booking as any).bookingTime);
+                    if (!bookingDateTime || isNaN(bookingDateTime.getTime())) continue;
+                    const diffMinutes = (bookingDateTime.getTime() - now.getTime()) / (60 * 1000);
+
+                    // 2 Hours Before Reminder
+                    if (diffMinutes <= 135 && diffMinutes >= 105 && !booking.reminder2hSent) {
+                        await booking.update({ reminder2hSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Large Party Reminder (2 Hours)',
+                                body: 'Your Large Party starts in 2 hours.',
+                                data: { type: 'lp_reminder_2h', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_2h' });
+                        }
                     }
 
-                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_2h' });
-                    }
-                }
-
-                // 1 Hour Before Reminder
-                const lpNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
-                const lpNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
-                const lp1hBookings = await Booking.findAll({
-                    where: {
-                        isLargePartyRequest: true,
-                        status: BookingStatus.CONFIRMED,
-                        paymentStatus: PaymentStatus.PAID,
-                        reminder1hSent: false,
-                        bookingDate: { [Op.between]: [lpNext1h45, lpNext1h15] }
-                    }
-                });
-
-                for (const booking of lp1hBookings) {
-                    await booking.update({ reminder1hSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Large Party Reminder (1 Hour)',
-                            body: 'Your Large Party starts in 1 hour.',
-                            data: { type: 'lp_reminder_1h', bookingId: booking.id }
-                        }).catch(() => {});
+                    // 1 Hour Before Reminder
+                    if (diffMinutes <= 75 && diffMinutes >= 45 && !booking.reminder1hSent) {
+                        await booking.update({ reminder1hSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Large Party Reminder (1 Hour)',
+                                body: 'Your Large Party starts in 1 hour.',
+                                data: { type: 'lp_reminder_1h', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_1h' });
+                        }
                     }
 
-                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_1h' });
-                    }
-                }
-
-                // 30 Minutes Before Departure Reminder
-                const lpNext35m = new Date(now.getTime() + 35 * 60 * 1000);
-                const lpNext25m = new Date(now.getTime() + 25 * 60 * 1000);
-                const lp30mBookings = await Booking.findAll({
-                    where: {
-                        isLargePartyRequest: true,
-                        status: BookingStatus.CONFIRMED,
-                        paymentStatus: PaymentStatus.PAID,
-                        reminder30mSent: false,
-                        bookingDate: { [Op.between]: [lpNext25m, lpNext35m] }
-                    }
-                });
-
-                for (const booking of lp30mBookings) {
-                    await booking.update({ reminder30mSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '🚗 Time to Leave!',
-                            body: "It's time to leave for your Large Party.",
-                            data: { type: 'lp_reminder_30m', bookingId: booking.id }
-                        }).catch(() => {});
-                    }
-
-                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_30m' });
+                    // 30 Minutes Before Departure Reminder
+                    if (diffMinutes <= 35 && diffMinutes >= 15 && !booking.reminder30mSent) {
+                        await booking.update({ reminder30mSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '🚗 Time to Leave!',
+                                body: "It's time to leave for your Large Party.",
+                                data: { type: 'lp_reminder_30m', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('large_party_status_update', { bookingId: booking.id, eventType: 'lp_reminder_30m' });
+                        }
                     }
                 }
             } catch (lpCronErr) {
@@ -1473,101 +1436,85 @@ export const startPartyPlanCron = () => {
                 const { NightPartnerService } = await import('../services/NightPartnerService');
                 const { sendPushNotification } = require('../services/fcmService');
 
-                // 2 Hours Before Reminder
-                const unNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
-                const unNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
-                const un2hMatches = await NightPartnerMatch.findAll({
+                const unMatches = await NightPartnerMatch.findAll({
                     where: {
                         status: NightPartnerMatchStatus.CONFIRMED,
-                        reminder2hSent: false,
-                        eventDate: { [Op.between]: [unNext2h15, unNext2h5] }
+                        [Op.or]: [
+                            { reminder2hSent: false },
+                            { reminder1hSent: false },
+                            { reminder30mSent: false }
+                        ]
                     }
                 });
 
-                for (const match of un2hMatches) {
-                    await match.update({ reminder2hSent: true });
-                    const participants = [match.hostId, match.partnerId];
-                    for (const pId of participants) {
-                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
-                        if (user && user.fcmToken) {
-                            await sendPushNotification(user.fcmToken, {
-                                title: '⏳ Upcoming Night Reminder (2 Hours)',
-                                body: 'Your Upcoming Night starts in 2 hours.',
-                                data: { type: 'un_reminder_2h', matchId: match.id }
-                            }).catch(() => {});
-                        }
+                for (const match of unMatches) {
+                    const matchDateTime = parseEventDateTimeToUTC(match.eventDate, match.eventTime);
+                    if (!matchDateTime || isNaN(matchDateTime.getTime())) continue;
+                    const diffMinutes = (matchDateTime.getTime() - now.getTime()) / (60 * 1000);
 
-                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
-                        const { io } = require('../server');
-                        if (io) {
-                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
-                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_2h' });
-                        }
-                    }
-                }
-
-                // 1 Hour Before Reminder
-                const unNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
-                const unNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
-                const un1hMatches = await NightPartnerMatch.findAll({
-                    where: {
-                        status: NightPartnerMatchStatus.CONFIRMED,
-                        reminder1hSent: false,
-                        eventDate: { [Op.between]: [unNext1h45, unNext1h15] }
-                    }
-                });
-
-                for (const match of un1hMatches) {
-                    await match.update({ reminder1hSent: true });
-                    const participants = [match.hostId, match.partnerId];
-                    for (const pId of participants) {
-                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
-                        if (user && user.fcmToken) {
-                            await sendPushNotification(user.fcmToken, {
-                                title: '⏳ Upcoming Night Reminder (1 Hour)',
-                                body: 'Your Upcoming Night starts in 1 hour.',
-                                data: { type: 'un_reminder_1h', matchId: match.id }
-                            }).catch(() => {});
-                        }
-
-                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
-                        const { io } = require('../server');
-                        if (io) {
-                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
-                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_1h' });
+                    // 2 Hours Before Reminder
+                    if (diffMinutes <= 135 && diffMinutes >= 105 && !match.reminder2hSent) {
+                        await match.update({ reminder2hSent: true });
+                        const participants = [match.hostId, match.partnerId];
+                        for (const pId of participants) {
+                            const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                            if (user && user.fcmToken) {
+                                await sendPushNotification(user.fcmToken, {
+                                    title: '⏳ Upcoming Night Reminder (2 Hours)',
+                                    body: 'Your Upcoming Night starts in 2 hours.',
+                                    data: { type: 'un_reminder_2h', matchId: match.id }
+                                }).catch(() => {});
+                            }
+                            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                            const { io } = require('../server');
+                            if (io) {
+                                io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                                io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_2h' });
+                            }
                         }
                     }
-                }
 
-                // 30 Minutes Before Departure Reminder
-                const unNext35m = new Date(now.getTime() + 35 * 60 * 1000);
-                const unNext25m = new Date(now.getTime() + 25 * 60 * 1000);
-                const un30mMatches = await NightPartnerMatch.findAll({
-                    where: {
-                        status: NightPartnerMatchStatus.CONFIRMED,
-                        reminder30mSent: false,
-                        eventDate: { [Op.between]: [unNext25m, unNext35m] }
-                    }
-                });
-
-                for (const match of un30mMatches) {
-                    await match.update({ reminder30mSent: true });
-                    const participants = [match.hostId, match.partnerId];
-                    for (const pId of participants) {
-                        const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
-                        if (user && user.fcmToken) {
-                            await sendPushNotification(user.fcmToken, {
-                                title: '🚗 Time to Leave!',
-                                body: "It's time to leave for your Upcoming Night.",
-                                data: { type: 'un_reminder_30m', matchId: match.id }
-                            }).catch(() => {});
+                    // 1 Hour Before Reminder
+                    if (diffMinutes <= 75 && diffMinutes >= 45 && !match.reminder1hSent) {
+                        await match.update({ reminder1hSent: true });
+                        const participants = [match.hostId, match.partnerId];
+                        for (const pId of participants) {
+                            const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                            if (user && user.fcmToken) {
+                                await sendPushNotification(user.fcmToken, {
+                                    title: '⏳ Upcoming Night Reminder (1 Hour)',
+                                    body: 'Your Upcoming Night starts in 1 hour.',
+                                    data: { type: 'un_reminder_1h', matchId: match.id }
+                                }).catch(() => {});
+                            }
+                            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                            const { io } = require('../server');
+                            if (io) {
+                                io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                                io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_1h' });
+                            }
                         }
+                    }
 
-                        const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
-                        const { io } = require('../server');
-                        if (io) {
-                            io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
-                            io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_30m' });
+                    // 30 Minutes Before Departure Reminder
+                    if (diffMinutes <= 35 && diffMinutes >= 15 && !match.reminder30mSent) {
+                        await match.update({ reminder30mSent: true });
+                        const participants = [match.hostId, match.partnerId];
+                        for (const pId of participants) {
+                            const user = await User.findByPk(pId, { attributes: ['id', 'fcmToken'] });
+                            if (user && user.fcmToken) {
+                                await sendPushNotification(user.fcmToken, {
+                                    title: '🚗 Time to Leave!',
+                                    body: "It's time to leave for your Upcoming Night.",
+                                    data: { type: 'un_reminder_30m', matchId: match.id }
+                                }).catch(() => {});
+                            }
+                            const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(match.id, pId);
+                            const { io } = require('../server');
+                            if (io) {
+                                io.to(`user_${pId}`).emit('notification_updated', enrichedCard);
+                                io.to(`user_${pId}`).emit('upcoming_night_status_update', { matchId: match.id, eventType: 'un_reminder_30m' });
+                            }
                         }
                     }
                 }
@@ -1583,102 +1530,80 @@ export const startPartyPlanCron = () => {
                 const { VenueBookingService } = await import('../services/VenueBookingService');
                 const { sendPushNotification } = require('../services/fcmService');
 
-                // 2 Hours Before Reminder
-                const vbNext2h5 = new Date(now.getTime() + 135 * 60 * 1000);
-                const vbNext2h15 = new Date(now.getTime() + 105 * 60 * 1000);
-                const vb2hBookings = await Booking.findAll({
+                const vbBookings = await Booking.findAll({
                     where: {
                         isGroupBooking: false,
                         isLargePartyRequest: false,
                         status: BookingStatus.CONFIRMED,
                         paymentStatus: PaymentStatus.PAID,
-                        reminder2hSent: false,
-                        bookingDate: { [Op.between]: [vbNext2h15, vbNext2h5] }
+                        [Op.or]: [
+                            { reminder2hSent: false },
+                            { reminder1hSent: false },
+                            { reminder30mSent: false }
+                        ]
                     }
                 });
 
-                for (const booking of vb2hBookings) {
-                    await booking.update({ reminder2hSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Venue Booking Reminder (2 Hours)',
-                            body: 'Your Venue Booking starts in 2 hours.',
-                            data: { type: 'vb_reminder_2h', bookingId: booking.id }
-                        }).catch(() => {});
+                for (const booking of vbBookings) {
+                    const bookingDateTime = parseEventDateTimeToUTC(booking.bookingDate, booking.startTime || (booking as any).bookingTime);
+                    if (!bookingDateTime || isNaN(bookingDateTime.getTime())) continue;
+                    const diffMinutes = (bookingDateTime.getTime() - now.getTime()) / (60 * 1000);
+
+                    // 2 Hours Before Reminder
+                    if (diffMinutes <= 135 && diffMinutes >= 105 && !booking.reminder2hSent) {
+                        await booking.update({ reminder2hSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Venue Booking Reminder (2 Hours)',
+                                body: 'Your Venue Booking starts in 2 hours.',
+                                data: { type: 'vb_reminder_2h', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_2h' });
+                        }
                     }
 
-                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_2h' });
-                    }
-                }
-
-                // 1 Hour Before Reminder
-                const vbNext1h15 = new Date(now.getTime() + 75 * 60 * 1000);
-                const vbNext1h45 = new Date(now.getTime() + 45 * 60 * 1000);
-                const vb1hBookings = await Booking.findAll({
-                    where: {
-                        isGroupBooking: false,
-                        isLargePartyRequest: false,
-                        status: BookingStatus.CONFIRMED,
-                        paymentStatus: PaymentStatus.PAID,
-                        reminder1hSent: false,
-                        bookingDate: { [Op.between]: [vbNext1h45, vbNext1h15] }
-                    }
-                });
-
-                for (const booking of vb1hBookings) {
-                    await booking.update({ reminder1hSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '⏳ Venue Booking Reminder (1 Hour)',
-                            body: 'Your Venue Booking starts in 1 hour.',
-                            data: { type: 'vb_reminder_1h', bookingId: booking.id }
-                        }).catch(() => {});
+                    // 1 Hour Before Reminder
+                    if (diffMinutes <= 75 && diffMinutes >= 45 && !booking.reminder1hSent) {
+                        await booking.update({ reminder1hSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '⏳ Venue Booking Reminder (1 Hour)',
+                                body: 'Your Venue Booking starts in 1 hour.',
+                                data: { type: 'vb_reminder_1h', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_1h' });
+                        }
                     }
 
-                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_1h' });
-                    }
-                }
-
-                // 30 Minutes Before Departure Reminder
-                const vbNext35m = new Date(now.getTime() + 35 * 60 * 1000);
-                const vbNext25m = new Date(now.getTime() + 25 * 60 * 1000);
-                const vb30mBookings = await Booking.findAll({
-                    where: {
-                        isGroupBooking: false,
-                        isLargePartyRequest: false,
-                        status: BookingStatus.CONFIRMED,
-                        paymentStatus: PaymentStatus.PAID,
-                        reminder30mSent: false,
-                        bookingDate: { [Op.between]: [vbNext25m, vbNext35m] }
-                    }
-                });
-
-                for (const booking of vb30mBookings) {
-                    await booking.update({ reminder30mSent: true });
-                    const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-                    if (user && user.fcmToken) {
-                        await sendPushNotification(user.fcmToken, {
-                            title: '🚗 Time to Leave!',
-                            body: "It's time to leave for your Venue Booking.",
-                            data: { type: 'vb_reminder_30m', bookingId: booking.id }
-                        }).catch(() => {});
-                    }
-
-                    const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
-                    const { io } = require('../server');
-                    if (io) {
-                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                        io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_30m' });
+                    // 30 Minutes Before Departure Reminder
+                    if (diffMinutes <= 35 && diffMinutes >= 15 && !booking.reminder30mSent) {
+                        await booking.update({ reminder30mSent: true });
+                        const user = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
+                        if (user && user.fcmToken) {
+                            await sendPushNotification(user.fcmToken, {
+                                title: '🚗 Time to Leave!',
+                                body: "It's time to leave for your Venue Booking.",
+                                data: { type: 'vb_reminder_30m', bookingId: booking.id }
+                            }).catch(() => {});
+                        }
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);
+                        const { io } = require('../server');
+                        if (io) {
+                            io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                            io.to(`user_${booking.userId}`).emit('venue_booking_status_update', { bookingId: booking.id, eventType: 'vb_reminder_30m' });
+                        }
                     }
                 }
             } catch (vbCronErr) {

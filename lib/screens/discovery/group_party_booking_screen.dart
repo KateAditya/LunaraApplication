@@ -1867,12 +1867,13 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
                           if (mounted) {
                             Navigator.of(context, rootNavigator: true).pop();
                           }
-                          // Close booking bottom sheet
-                          if (mounted) {
-                            Navigator.pop(context);
-                          }
 
                           if (result != null && result['success'] == true) {
+                            // Close booking bottom sheet
+                            if (mounted) {
+                              Navigator.pop(context);
+                            }
+
                             final groupPartyId = (result['data'] is Map)
                                 ? result['data']['id']?.toString()
                                 : result['id']?.toString();

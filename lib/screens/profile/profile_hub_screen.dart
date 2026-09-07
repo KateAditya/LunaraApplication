@@ -24,6 +24,8 @@ class ProfileHubScreen extends StatefulWidget {
 class _ProfileHubScreenState extends State<ProfileHubScreen> {
   User? _currentUser;
   bool _isLoading = true;
+  int _dynamicBookingsCount = 0;
+  int _dynamicMatchesCount = 0;
 
   @override
   void initState() {
@@ -45,7 +47,13 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   }
 
   Future<void> _loadProfile() async {
-    User? user = await ApiService.fetchProfile();
+    final results = await Future.wait([
+      ApiService.fetchProfile(),
+      ApiService.fetchAllUserTickets(forceRefresh: true),
+      ApiService.fetchMyLikesAndMatches(),
+    ]);
+
+    User? user = results[0] as User?;
     user ??= ApiService.cachedCurrentUser;
 
     if (user == null) {
@@ -64,9 +72,26 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
       }
     }
 
+    final tickets = (results[1] as List<Map<String, dynamic>>?) ?? [];
+    final mySwipes = (results[2] as List<Map<String, dynamic>>?) ?? [];
+
+    final myId = user?.id ?? ApiService.currentUserId;
+    final Set<String> matchedUserIds = {};
+    for (var swipe in mySwipes) {
+      final status = swipe['status']?.toString().toLowerCase();
+      if (status == 'connected') {
+        final u1 = swipe['user1Id']?.toString();
+        final u2 = swipe['user2Id']?.toString();
+        if (u1 != null && u1 != myId && u1 != 'masked' && u1.isNotEmpty) matchedUserIds.add(u1);
+        if (u2 != null && u2 != myId && u2 != 'masked' && u2.isNotEmpty) matchedUserIds.add(u2);
+      }
+    }
+
     if (mounted) {
       setState(() {
         _currentUser = user;
+        _dynamicBookingsCount = tickets.length;
+        _dynamicMatchesCount = matchedUserIds.length;
         _isLoading = false;
       });
     }
@@ -417,8 +442,12 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   }
 
   Widget _buildStatsRow() {
-    final bookings = _currentUser?.bookingsCount ?? 0;
-    final matches = _currentUser?.matchesCount ?? 0;
+    final bookings = _dynamicBookingsCount > 0
+        ? _dynamicBookingsCount
+        : (_currentUser?.bookingsCount ?? 0);
+    final matches = _dynamicMatchesCount > 0
+        ? _dynamicMatchesCount
+        : (_currentUser?.matchesCount ?? 0);
     final points = _currentUser?.pointsCount ?? 0;
 
     String pointsStr;
@@ -443,9 +472,19 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
       ),
       child: Row(
         children: [
-          _statItem(bookings.toString(), 'BOOKINGS'),
+          _statItem(
+            bookings.toString(),
+            'BOOKINGS',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
+            ).then((_) => _loadProfile()),
+          ),
           _buildVerticalDivider(),
-          _statItem(matches.toString(), 'MATCHES'),
+          _statItem(
+            matches.toString(),
+            'MATCHES',
+          ),
           _buildVerticalDivider(),
           _statItem(pointsStr, 'POINTS'),
         ],
@@ -457,30 +496,38 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     return Container(height: 30, width: 1, color: Colors.grey[100]);
   }
 
-  Widget _statItem(String value, String label) {
+  Widget _statItem(String value, String label, {VoidCallback? onTap}) {
+    final content = Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 22,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 10,
+            letterSpacing: 2,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+
     return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 22,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 10,
-              letterSpacing: 2,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
+      child: onTap != null
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: content,
+            )
+          : content,
     );
   }
 

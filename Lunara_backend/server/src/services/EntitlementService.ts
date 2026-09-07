@@ -58,6 +58,9 @@ export interface EntitlementsSummaryResponse {
         boostsAvailable: number;
         partyPlansAvailable: number | string;
         likesAvailable: number | string;
+        backtracksAvailable?: number | string;
+        undoAvailable?: number | string;
+        [key: string]: any;
     };
     smartSuggestions: Array<{
         featureKey: string;
@@ -75,72 +78,79 @@ export class EntitlementService {
      */
     public static async seedDefaultAddons(): Promise<void> {
         try {
-            const activeCount = await SubscriptionAddonPackage.count({ where: { isActive: true } });
-            if (activeCount === 0) {
-                const defaults = [
-                    {
-                        name: '+5 Super Likes',
-                        featureKey: 'superlike',
-                        quantity: 5,
-                        price: 99.00,
-                        badge: 'POPULAR',
-                        description: 'Stand out and connect instantly with 5 priority Super Likes.',
-                        displayOrder: 1,
-                        isActive: true,
-                    },
-                    {
-                        name: '+15 Super Likes',
-                        featureKey: 'superlike',
-                        quantity: 15,
-                        price: 249.00,
-                        badge: 'BEST VALUE',
-                        description: 'Triple your connections with 15 Super Likes at huge savings.',
-                        displayOrder: 2,
-                        isActive: true,
-                    },
-                    {
-                        name: '+1 Profile Boost',
-                        featureKey: 'profile_boost',
-                        quantity: 1,
-                        price: 49.00,
-                        badge: 'LIGHTNING',
-                        description: 'Get up to 10x more profile views with a 30-minute spotlight.',
-                        displayOrder: 3,
-                        isActive: true,
-                    },
-                    {
-                        name: '+3 Profile Boosts',
-                        featureKey: 'profile_boost',
-                        quantity: 3,
-                        price: 129.00,
-                        badge: 'POPULAR',
-                        description: '3 profile boosts to dominate the weekend nightlife scene.',
-                        displayOrder: 4,
-                        isActive: true,
-                    },
-                    {
-                        name: '+5 Party Plans',
-                        featureKey: 'party_creation',
-                        quantity: 5,
-                        price: 199.00,
-                        badge: 'EXCLUSIVE',
-                        description: 'Host 5 additional epic party plans without upgrading your plan.',
-                        displayOrder: 5,
-                        isActive: true,
-                    },
-                ];
+            const defaults = [
+                {
+                    name: '+5 Super Likes',
+                    featureKey: 'superlike',
+                    quantity: 5,
+                    price: 99.00,
+                    badge: 'POPULAR',
+                    description: 'Stand out and connect instantly with 5 priority Super Likes.',
+                    displayOrder: 1,
+                    isActive: true,
+                },
+                {
+                    name: '+15 Super Likes',
+                    featureKey: 'superlike',
+                    quantity: 15,
+                    price: 249.00,
+                    badge: 'BEST VALUE',
+                    description: 'Triple your connections with 15 Super Likes at huge savings.',
+                    displayOrder: 2,
+                    isActive: true,
+                },
+                {
+                    name: '+1 Profile Boost',
+                    featureKey: 'profile_boost',
+                    quantity: 1,
+                    price: 49.00,
+                    badge: 'LIGHTNING',
+                    description: 'Get up to 10x more profile views with a 30-minute spotlight.',
+                    displayOrder: 3,
+                    isActive: true,
+                },
+                {
+                    name: '+3 Profile Boosts',
+                    featureKey: 'profile_boost',
+                    quantity: 3,
+                    price: 129.00,
+                    badge: 'POPULAR',
+                    description: '3 profile boosts to dominate the weekend nightlife scene.',
+                    displayOrder: 4,
+                    isActive: true,
+                },
+                {
+                    name: '+5 Party Plans',
+                    featureKey: 'party_creation',
+                    quantity: 5,
+                    price: 199.00,
+                    badge: 'EXCLUSIVE',
+                    description: 'Host 5 additional epic party plans without upgrading your plan.',
+                    displayOrder: 5,
+                    isActive: true,
+                },
+                {
+                    name: '+10 Backtracks',
+                    featureKey: 'backtrack',
+                    quantity: 10,
+                    price: 49.00,
+                    badge: 'POPULAR',
+                    description: 'Undo up to 10 left swipes and get a second chance to connect.',
+                    displayOrder: 6,
+                    isActive: true,
+                },
+            ];
 
-                for (const item of defaults) {
-                    const [existing] = await SubscriptionAddonPackage.findOrCreate({
-                        where: { name: item.name },
-                        defaults: item,
-                    });
-                    if (existing && !existing.isActive) {
-                        await existing.update({ isActive: true });
-                    }
+            for (const item of defaults) {
+                const [pkg, created] = await SubscriptionAddonPackage.findOrCreate({
+                    where: { name: item.name },
+                    defaults: item,
+                });
+                if (!created && (!pkg.isActive || pkg.featureKey !== item.featureKey)) {
+                    await pkg.update({ isActive: true, featureKey: item.featureKey });
                 }
-                logger.info('[EntitlementService] Seeded/activated default subscription addon packages');
             }
+            logger.info('[EntitlementService] Seeded/activated default subscription addon packages');
         } catch (e) {
             logger.warn('[EntitlementService] Error seeding default addons:', e);
         }
@@ -417,6 +427,7 @@ export class EntitlementService {
         const addonSuperlikes = addonAggregates['superlike']?.remaining || 0;
         const addonBoosts = addonAggregates['profile_boost']?.remaining || 0;
         const addonPartyPlans = addonAggregates['party_creation']?.remaining || 0;
+        const addonBacktracks = addonAggregates['backtrack']?.remaining || addonAggregates['undo']?.remaining || 0;
 
         const totalSuperlikesAvailable = isSuperlikesUnlimited ? 9999 : (superlikesRemaining + addonSuperlikes);
         const totalBoostsAvailable = isBoostsUnlimited ? 9999 : (boostsRemaining + addonBoosts);
@@ -424,6 +435,7 @@ export class EntitlementService {
             ? 'unlimited'
             : partyPlansRemaining + addonPartyPlans;
         const totalLikesAvailable = isDailyLikesUnlimited ? 'unlimited' : dailyLikesRemaining;
+        const totalBacktracksAvailable = isBacktracksUnlimited ? 9999 : (backtracksRemaining + addonBacktracks);
 
         // 9. Generate Smart Contextual Add-on Suggestions
         const smartSuggestions: Array<{
@@ -492,6 +504,8 @@ export class EntitlementService {
                 boostsAvailable: totalBoostsAvailable,
                 partyPlansAvailable: totalPartyPlansAvailable,
                 likesAvailable: totalLikesAvailable,
+                backtracksAvailable: totalBacktracksAvailable,
+                undoAvailable: totalBacktracksAvailable,
             },
             smartSuggestions,
         };
@@ -523,6 +537,8 @@ export class EntitlementService {
     }> {
         const normalizedKey = (featureKey === 'super_likes') ? 'superlike'
             : (featureKey === 'boost' || featureKey === 'boosts') ? 'profile_boost'
+            : (featureKey === 'party_plan' || featureKey === 'party_plans') ? 'party_creation'
+            : (featureKey === 'undo' || featureKey === 'backtracks') ? 'backtrack'
             : featureKey;
 
         const t = await sequelize.transaction();
@@ -531,16 +547,15 @@ export class EntitlementService {
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
+                    status: SubscriptionStatus.ACTIVE,
                     endDate: { [Op.gt]: new Date() },
                 },
-                include: [{ model: SubscriptionPackage, as: 'package' }],
                 transaction: t,
                 lock: t.LOCK.UPDATE,
             });
 
-            const activePkg = (activeSub as any)?.package;
-            const isElite = activePkg && (activePkg.tier === PackageTier.ELITE || activePkg.tier === 'ELITE');
+            const activePkg = activeSub?.packageId ? await SubscriptionPackage.findByPk(activeSub.packageId, { transaction: t }) : null;
+            const isElite = activePkg && ((activePkg.tier as string) === 'ELITE' || (activePkg.tier as string) === 'PRO');
             const isUnlimitedSuperlikes = isElite || (activePkg && (activePkg.superlikesPerCycle === -1 || activePkg.superlikesPerCycle >= 9999)) || (activeSub && (activeSub.superlikesRemaining === -1 || activeSub.superlikesRemaining >= 9999));
             const isUnlimitedBoosts = isElite || (activePkg && (activePkg.boostsPerCycle === -1 || activePkg.boostsPerCycle >= 9999)) || (activeSub && (activeSub.boostsRemaining === -1 || activeSub.boostsRemaining >= 9999));
 
@@ -720,57 +735,42 @@ export class EntitlementService {
             });
 
             if (availableAddon) {
-                const [affected] = await UserAddon.update(
-                    {
-                        usedQuantity: sequelize.literal(`used_quantity + ${amount}`),
-                        remainingQuantity: sequelize.literal(`remaining_quantity - ${amount}`),
-                    },
-                    {
-                        where: {
-                            id: availableAddon.id,
-                            remainingQuantity: { [Op.gte]: amount },
-                        },
-                        transaction: t,
-                    }
-                );
-
-                if (affected > 0) {
-                    const newRemaining = Math.max(0, availableAddon.remainingQuantity - amount);
-                    if (newRemaining === 0) {
-                        await UserAddon.update(
-                            { status: UserAddonStatus.CONSUMED },
-                            { where: { id: availableAddon.id }, transaction: t }
-                        );
-                    }
-
-                    await EntitlementAuditLog.create({
-                        userId,
-                        addonId: availableAddon.id,
-                        feature: normalizedKey,
-                        action: 'ADDON_ENTITLEMENT_CONSUMED',
-                        source: 'ADDON',
-                        quantity: -amount,
-                        oldValue: { remainingQuantity: availableAddon.remainingQuantity },
-                        newValue: { remainingQuantity: newRemaining },
-                        requestId: options.requestId,
-                        metadata: options.metadata,
-                    }, { transaction: t });
-
-                    await t.commit();
-                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
-                        featureKey: normalizedKey,
-                        source: 'ADDON',
-                        remaining: newRemaining,
-                    });
-
-                    return {
-                        success: true,
-                        source: 'ADDON',
-                        consumed: amount,
-                        addonRemaining: newRemaining,
-                        totalRemaining: newRemaining,
-                    };
+                const oldRemaining = Number(availableAddon.remainingQuantity);
+                const newRemaining = Math.max(0, oldRemaining - amount);
+                availableAddon.usedQuantity = Number(availableAddon.usedQuantity) + amount;
+                availableAddon.remainingQuantity = newRemaining;
+                if (newRemaining === 0) {
+                    availableAddon.status = UserAddonStatus.CONSUMED;
                 }
+                await availableAddon.save({ transaction: t });
+
+                await EntitlementAuditLog.create({
+                    userId,
+                    addonId: availableAddon.id,
+                    feature: normalizedKey,
+                    action: 'ADDON_ENTITLEMENT_CONSUMED',
+                    source: 'ADDON',
+                    quantity: -amount,
+                    oldValue: { remainingQuantity: oldRemaining },
+                    newValue: { remainingQuantity: newRemaining },
+                    requestId: options.requestId,
+                    metadata: options.metadata,
+                }, { transaction: t });
+
+                await t.commit();
+                RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                    featureKey: normalizedKey,
+                    source: 'ADDON',
+                    remaining: newRemaining,
+                });
+
+                return {
+                    success: true,
+                    source: 'ADDON',
+                    consumed: amount,
+                    addonRemaining: newRemaining,
+                    totalRemaining: newRemaining,
+                };
             }
 
             await t.rollback();

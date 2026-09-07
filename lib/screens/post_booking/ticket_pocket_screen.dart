@@ -322,7 +322,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['type'] == 'strangers_meet' ||
         (booking['tablePackage']?.toString().toUpperCase().contains('STRANGER') == true);
 
-    if (isStrangersMeet) {
+    final isLargeParty = booking['isLargeParty'] == true ||
+        booking['isLargePartyRequest'] == true ||
+        booking['bookingType'] == 'large_party' ||
+        booking['category'] == 'large_party' ||
+        booking['goingMode'] == 'party_request' ||
+        (booking['numberOfGuests'] != null && int.tryParse(booking['numberOfGuests'].toString()) != null && int.parse(booking['numberOfGuests'].toString()) > 20);
+
+    final isGroupParty = booking['isGroupParty'] == true ||
+        booking['bookingType'] == 'group_party' ||
+        booking['category'] == 'group_party';
+
+    if (isStrangersMeet || isLargeParty || isGroupParty) {
       return defaultExp;
     }
 

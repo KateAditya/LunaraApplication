@@ -143,6 +143,21 @@ class ApiService {
     return Set<String>.from(_cachedRequestedPlanIds);
   }
 
+  static final Map<String, Map<String, dynamic>> _optimisticPartyPlans = {};
+
+  /// Synchronously registers a newly created or updated party plan for 0ms instant display in Live Feed
+  static void registerOptimisticPartyPlan(Map<String, dynamic> planData) {
+    final id = (planData['id'] ?? planData['partyPlanId'] ?? planData['planId'])?.toString() ?? '';
+    if (id.isEmpty) return;
+    _optimisticPartyPlans[id] = Map<String, dynamic>.from(planData);
+    notifyFeedNeedsRefresh();
+  }
+
+  static void removeOptimisticPartyPlan(String planId) {
+    if (planId.isEmpty) return;
+    _optimisticPartyPlans.remove(planId);
+  }
+
   /// Mark a party plan as requested locally for instant UI responsiveness.
   static void markPartyPlanAsRequestedLocal(String planId, [Map<String, dynamic>? requestData]) {
     _ensureLocalStateForCurrentUser();
@@ -165,6 +180,7 @@ class ApiService {
     if (planId.isEmpty) return;
     _cachedRequestedPlanIds.remove(planId);
     _cachedPartyPlanRequests.remove(planId);
+    _optimisticPartyPlans.remove(planId);
     _saveCachedRequestsToPrefs();
   }
 
@@ -1258,8 +1274,24 @@ class ApiService {
               markPartyPlanAsRequestedLocal(pId, req);
             }
           }
+          final feedList = List<Map<String, dynamic>>.from(data['data'] ?? []);
+          final Set<String> existingPlanIds = {};
+          for (final f in feedList) {
+            final pid = (f['id'] ?? f['planId'] ?? f['partyPlanId'])?.toString();
+            if (pid != null) existingPlanIds.add(pid);
+          }
+          for (final r in myReqs) {
+            final pid = (r['partyPlanId'] ?? r['planId'] ?? r['id'] ?? r['plan']?['id'])?.toString();
+            if (pid != null) existingPlanIds.add(pid);
+          }
+          _optimisticPartyPlans.forEach((optId, optPlan) {
+            if (!existingPlanIds.contains(optId)) {
+              feedList.insert(0, optPlan);
+            }
+          });
+
           final result = {
-            'feed': List<Map<String, dynamic>>.from(data['data'] ?? []),
+            'feed': feedList,
             'myRequests': myReqs,
             'incomingRequests': List<Map<String, dynamic>>.from(
               data['incomingRequests'] ?? [],
@@ -1281,7 +1313,9 @@ class ApiService {
     if (venueId == null && date == null && _cachedLiveFeedData != null) {
       return _cachedLiveFeedData!;
     }
-    return {'feed': [], 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
+    final fallbackFeed = <Map<String, dynamic>>[];
+    _optimisticPartyPlans.forEach((_, optPlan) => fallbackFeed.add(optPlan));
+    return {'feed': fallbackFeed, 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
   }
 
   static Future<PartyPlanRequestResult> requestToJoinPartyPlanDetailed(

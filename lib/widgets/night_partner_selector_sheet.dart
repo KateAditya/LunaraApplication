@@ -62,6 +62,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _invitees = [];
   bool _isLoading = true;
+  final bool _showPostPartnerBanner = false;
   final Set<String> _sentInviteUserIds = {};
   final Set<String> _loadingUserIds = {};
 
@@ -79,11 +80,44 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
 
   Future<void> _loadInvitees([String? query]) async {
     setState(() => _isLoading = true);
-    final results = await ApiService.fetchAvailableInvitees(
+    List<Map<String, dynamic>> results = await ApiService.fetchAvailableInvitees(
       venueId: widget.venueId,
       date: widget.date,
       search: query,
     );
+
+    // If results are empty (e.g. initial seed or no venue-matched records yet),
+    // gracefully fall back to active profiles so user never sees an empty screen
+    if (results.isEmpty) {
+      try {
+        final customers = await ApiService.fetchCustomers();
+        final currentUserId = ApiService.currentUserId;
+        if (customers.isNotEmpty) {
+          results = customers
+              .where((u) => u['id']?.toString() != currentUserId)
+              .where((u) {
+                if (query == null || query.trim().isEmpty) return true;
+                final q = query.trim().toLowerCase();
+                final name = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.toLowerCase();
+                return name.contains(q);
+              })
+              .map((u) => {
+                    'userId': u['id']?.toString(),
+                    'firstName': u['firstName'] ?? 'User',
+                    'age': u['age'],
+                    'city': u['city'] ?? 'Pune',
+                    'gender': u['gender'],
+                    'bio': u['bio'] ?? '',
+                    'primaryPhoto': u['profilePhotoUrl'] ?? u['profilePhoto'] ?? u['photoUrl'],
+                    'isVerified': u['isVerified'] == true,
+                    'compatibilityScore': 90,
+                    'isInterested': false,
+                  })
+              .toList();
+        }
+      } catch (_) {}
+    }
+
     if (!mounted) return;
     setState(() {
       _invitees = results;
@@ -268,106 +302,108 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
           ),
           const SizedBox(height: 14),
 
-          // Post to Find Partner Banner
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                UpcomingNightPostPartnerSheet.show(
-                  context,
-                  party: widget.party ?? {
-                    'venueId': widget.venueId,
-                    'venue': widget.venueName,
-                    'venueName': widget.venueName,
-                    'date': widget.date,
-                    'rawDate': widget.date,
-                    'time': LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
-                    'title': widget.eventTitle ?? widget.venueName,
-                    'image': widget.bannerImage,
-                  },
-                  venueId: widget.venueId,
-                  venueName: widget.venueName,
-                  date: widget.date,
-                  time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
-                  bannerImage: widget.bannerImage,
-                  eventTitle: widget.eventTitle ?? widget.venueName,
-                );
-              },
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      LunaraTheme.electricViolet.withValues(alpha: 0.12),
-                      LunaraTheme.hotPink.withValues(alpha: 0.08),
+          // Post to Find Partner Banner (Disabled for now as requested; logic preserved)
+          if (_showPostPartnerBanner) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: InkWell(
+                onTap: () {
+                  Navigator.pop(context);
+                  UpcomingNightPostPartnerSheet.show(
+                    context,
+                    party: widget.party ?? {
+                      'venueId': widget.venueId,
+                      'venue': widget.venueName,
+                      'venueName': widget.venueName,
+                      'date': widget.date,
+                      'rawDate': widget.date,
+                      'time': LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
+                      'title': widget.eventTitle ?? widget.venueName,
+                      'image': widget.bannerImage,
+                    },
+                    venueId: widget.venueId,
+                    venueName: widget.venueName,
+                    date: widget.date,
+                    time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
+                    bannerImage: widget.bannerImage,
+                    eventTitle: widget.eventTitle ?? widget.venueName,
+                  );
+                },
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                        LunaraTheme.hotPink.withValues(alpha: 0.08),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.campaign_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Text(
+                                  'Share as Post to Find Partner',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                    color: LunaraTheme.electricViolet,
+                                  ),
+                                ),
+                                SizedBox(width: 4),
+                                Text('✨', style: TextStyle(fontSize: 11)),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Post to Live Feed so anyone interested can request to join you!',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white60 : Colors.black54,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 13,
+                        color: LunaraTheme.electricViolet,
+                      ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
-                    width: 1.2,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(9),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.campaign_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Text(
-                                'Share as Post to Find Partner',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 13,
-                                  color: LunaraTheme.electricViolet,
-                                ),
-                              ),
-                              SizedBox(width: 4),
-                              Text('✨', style: TextStyle(fontSize: 11)),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Post to Live Feed so anyone interested can request to join you!',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? Colors.white60 : Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 13,
-                      color: LunaraTheme.electricViolet,
-                    ),
-                  ],
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
+          ],
 
           // Search Box
           Padding(
@@ -410,9 +446,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
           // List of available partners
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: LunaraTheme.electricViolet),
-                  )
+                ? _buildInviteesSkeleton(isDark)
                 : _invitees.isEmpty
                     ? Center(
                         child: Column(
@@ -679,6 +713,73 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildInviteesSkeleton(bool isDark) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      itemCount: 6,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFFAFAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white10 : Colors.grey[300],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 120,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white10 : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 80,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white10 : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 70,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white10 : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

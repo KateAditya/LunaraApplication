@@ -56,11 +56,42 @@ class _NightInvitePartnerScreenState extends State<NightInvitePartnerScreen> {
     setState(() => _isLoading = true);
     try {
       final venueId = widget.venue['id']?.toString() ?? '';
-      final res = await ApiService.fetchAvailableInvitees(
+      List<Map<String, dynamic>> res = await ApiService.fetchAvailableInvitees(
         venueId: venueId,
         date: widget.date,
         search: _searchController.text,
       );
+
+      if (res.isEmpty) {
+        try {
+          final customers = await ApiService.fetchCustomers();
+          final currentUserId = ApiService.currentUserId;
+          final query = _searchController.text.trim().toLowerCase();
+          if (customers.isNotEmpty) {
+            res = customers
+                .where((u) => u['id']?.toString() != currentUserId)
+                .where((u) {
+                  if (query.isEmpty) return true;
+                  final name = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.toLowerCase();
+                  return name.contains(query);
+                })
+                .map((u) => {
+                      'userId': u['id']?.toString(),
+                      'firstName': u['firstName'] ?? 'User',
+                      'age': u['age'],
+                      'city': u['city'] ?? 'Pune',
+                      'gender': u['gender'],
+                      'bio': u['bio'] ?? '',
+                      'primaryPhoto': u['profilePhotoUrl'] ?? u['profilePhoto'] ?? u['photoUrl'],
+                      'isVerified': u['isVerified'] == true,
+                      'compatibilityScore': 90,
+                      'isInterested': false,
+                    })
+                .toList();
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
           _invitees = res;

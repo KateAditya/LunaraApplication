@@ -11,7 +11,6 @@ import Venue from '../models/Venue';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } from '../models/Booking';
 import Conversation, { ConversationStatus } from '../models/Conversation';
 import { VenueBookingService } from './VenueBookingService';
-import { checkExistingBookingForDate } from '../utils/bookingLimitValidator';
 import { generateTicketForBookingHelper } from './ticketService';
 import { NotificationService } from './NotificationService';
 import { NotificationEventType } from '../types/NotificationEventTypes';
@@ -248,8 +247,7 @@ export class NightPartnerService {
     ): Promise<SafePartnerProfile[]> {
         const userWhere: any = {
             id: { [Op.ne]: hostId },
-            isActive: true,
-            isDeleted: false,
+            [Op.or]: [{ isDeleted: false }, { isDeleted: null }],
         };
 
         if (search && search.trim().length > 0) {
@@ -263,7 +261,7 @@ export class NightPartnerService {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
 
-        // Fetch all users who have marked interest for this event
+        // 1. Fetch interested users in 1 query
         const interestedRecords = await NightInterest.findAll({
             where: {
                 venueId: resolvedVenueId,
@@ -279,6 +277,33 @@ export class NightPartnerService {
             interestedMap.set(item.userId, item.id);
         }
 
+        // 2. Fetch existing active matches on this date in 1 query
+        const existingMatches = await NightPartnerMatch.findAll({
+            where: {
+                eventDate: new Date(eventDate),
+                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+            },
+            attributes: ['hostId', 'partnerId'],
+        });
+        const busyUserIds = new Set<string>();
+        for (const m of existingMatches) {
+            busyUserIds.add(m.hostId);
+            busyUserIds.add(m.partnerId);
+        }
+
+        // 3. Fetch existing pending/accepted requests from this host for this venue & date in 1 query
+        const existingRequests = await NightPartnerRequest.findAll({
+            where: {
+                hostId,
+                venueId: resolvedVenueId,
+                eventDate: new Date(eventDate),
+                status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
+            },
+            attributes: ['partnerId'],
+        });
+        const pendingInvitePartnerIds = new Set<string>(existingRequests.map(r => r.partnerId));
+
+        // 4. Fetch candidate users
         const candidates = await User.findAll({
             where: userWhere,
             attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
@@ -294,41 +319,15 @@ export class NightPartnerService {
         const available: SafePartnerProfile[] = [];
 
         for (const u of candidates) {
+            if (busyUserIds.has(u.id)) {
+                continue;
+            }
+
             // Respect user's hidden profile preference
             const prefs = (u as any).preferences;
             if (prefs && prefs.showMeInMatching === false) {
                 continue;
             }
-
-            // Check if user already has a plan/booking on this date
-            const conflict = await checkExistingBookingForDate(u.id, eventDate);
-            if (conflict) {
-                // User already has a plan or booking scheduled on this day -> skip!
-                continue;
-            }
-
-            // Check if user already has a confirmed or pending match on this date
-            const matchCount = await NightPartnerMatch.count({
-                where: {
-                    [Op.or]: [{ hostId: u.id }, { partnerId: u.id }],
-                    eventDate: new Date(eventDate),
-                    status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-                },
-            });
-            if (matchCount > 0) {
-                continue;
-            }
-
-            // Check if host already sent a request to this user for this event
-            const existingReq = await NightPartnerRequest.findOne({
-                where: {
-                    hostId,
-                    partnerId: u.id,
-                    venueId: resolvedVenueId,
-                    eventDate: new Date(eventDate),
-                    status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
-                },
-            });
 
             const profile = (u as any).profile;
             const photos = (u as any).photos || [];
@@ -344,6 +343,7 @@ export class NightPartnerService {
 
             const isInterested = interestedMap.has(u.id);
             const interestId = interestedMap.get(u.id);
+            const hasPendingInvite = pendingInvitePartnerIds.has(u.id);
 
             available.push({
                 userId: u.id,
@@ -360,7 +360,7 @@ export class NightPartnerService {
                 compatibilityScore: isInterested ? 94 : 88,
                 isInterested: !!isInterested,
                 interestId,
-                hasPendingInvite: !!existingReq,
+                hasPendingInvite,
             });
         }
 

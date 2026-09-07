@@ -374,11 +374,12 @@ export class EventTimeLockService {
             (async () => {
                 try {
                     const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
+                    const { NightPartnerMatchStatus } = await import('../models/NightPartnerMatch');
                     const matches = await NightPartnerMatch.findAll({
                         where: {
                             [Op.or]: [{ hostId: userId }, { partnerId: userId }],
                             eventDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
-                            status: { [Op.in]: ['matched', 'payment_pending', 'confirmed'] },
+                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
                         },
                         include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
                         transaction,

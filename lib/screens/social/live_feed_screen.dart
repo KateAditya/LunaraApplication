@@ -4526,8 +4526,64 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     String? hostPhoto = rawHostPhoto != null ? ApiService.formatImageUrl(rawHostPhoto) : null;
 
-    final String planHostId = (planMap['userId'] ?? hostCreator['id'] ?? '').toString();
-    final bool isHost = currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host');
+    // Robustly extract planHostId from all possible locations
+    String planHostId = (planMap['userId'] ??
+        planMap['hostId'] ??
+        planMap['creatorId'] ??
+        hostCreator['id'] ??
+        planMap['payActionPayload']?['hostId'] ??
+        planMap['payActionPayload']?['userId'] ??
+        '').toString();
+
+    if (planHostId.isEmpty) {
+      for (final e in entries) {
+        final hid = (e['hostId'] ??
+            e['userId'] ??
+            e['creatorId'] ??
+            e['metadata']?['hostId'] ??
+            e['metadata']?['userId'] ??
+            e['data']?['hostId'] ??
+            e['data']?['userId'] ??
+            e['payActionPayload']?['hostId'] ??
+            e['payActionPayload']?['userId'] ??
+            '').toString();
+        if (hid.isNotEmpty) {
+          planHostId = hid;
+          break;
+        }
+      }
+    }
+
+    final bool isHostExplicit = entries.any((e) =>
+        e['role'] == 'host' ||
+        e['payActionPayload']?['isHost'] == true ||
+        e['requestType'] == 'party_plan_host_deposit' ||
+        e['category'] == 'party_plan_host_deposit' ||
+        e['id']?.toString().startsWith('pending_pp_') == true ||
+        e['id']?.toString().startsWith('pp_host_deposit_') == true ||
+        (e['hostRazorpayOrderId'] != null && e['hostRazorpayOrderId'].toString().isNotEmpty && e['hostPaymentStatus'] != 'paid'));
+
+    final bool isHost = isHostExplicit ||
+        (currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host'));
+
+    if (isHost && (hostCreator.isEmpty || hostName == 'Party Host')) {
+      final cu = ApiService.cachedCurrentUser;
+      if (cu != null) {
+        final cuName = '${cu.firstName} ${cu.lastName}'.trim();
+        final cuPhoto = cu.profilePhoto ?? (cu.photos.isNotEmpty ? cu.photos.first : null);
+        hostCreator = {
+          'id': currentUserId,
+          'firstName': cu.firstName,
+          'lastName': cu.lastName,
+          'profilePhotoUrl': cuPhoto,
+          'profileImageUrl': cuPhoto,
+        };
+        hostName = cuName.isNotEmpty ? cuName : 'You';
+        if (hostPhoto == null || hostPhoto.isEmpty) {
+          hostPhoto = cuPhoto;
+        }
+      }
+    }
 
     final Map<String, dynamic> hostUserObj = {
       'id': planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''),
@@ -5163,11 +5219,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bool isBothPlan = planVis == 'BOTH';
 
       if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
-        final dynamic rawDeposit = planMap['depositAmount'];
+        dynamic rawDeposit = planMap['depositAmount'];
+        if (rawDeposit == null) {
+          for (final e in entries) {
+            if (e['depositAmount'] != null) { rawDeposit = e['depositAmount']; break; }
+            if (e['amountDue'] != null) { rawDeposit = e['amountDue']; break; }
+          }
+        }
         final double depositAmt = rawDeposit is num
             ? rawDeposit.toDouble()
             : (double.tryParse(rawDeposit?.toString() ?? '') ?? 99.0);
-        final hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
+        String hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
+        if (hostOrderId.isEmpty) {
+          for (final e in entries) {
+            final oid = (e['hostRazorpayOrderId'] ?? e['payActionPayload']?['orderId'] ?? e['metadata']?['hostRazorpayOrderId'] ?? e['data']?['hostRazorpayOrderId'])?.toString();
+            if (oid != null && oid.isNotEmpty) {
+              hostOrderId = oid;
+              break;
+            }
+          }
+        }
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);

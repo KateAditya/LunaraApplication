@@ -233,6 +233,13 @@ class EntitlementsSummaryModel {
   dynamic get partyPlansAvailable => totals['partyPlansAvailable'] ?? 0;
   dynamic get likesAvailable => totals['likesAvailable'] ?? 7;
 
+  int get backtracksAvailable {
+    final val = totals['backtracksAvailable'] ?? totals['undoAvailable'] ?? totals['daily_backtracks'];
+    if (val is int) return val;
+    if (val == 'unlimited') return 9999;
+    return int.tryParse(val?.toString() ?? '0') ?? 0;
+  }
+
   factory EntitlementsSummaryModel.fromJson(Map<String, dynamic> json) {
     return EntitlementsSummaryModel(
       planTier: json['planTier']?.toString() ?? 'FREE',

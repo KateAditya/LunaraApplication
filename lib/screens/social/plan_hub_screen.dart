@@ -4008,6 +4008,46 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     if (response.statusCode == 200 ||
                                         response.statusCode == 201) {
                                       if (!mounted) return;
+                                      try {
+                                        final resBody = jsonDecode(response.body);
+                                        final planData = resBody['data'] is Map ? Map<String, dynamic>.from(resBody['data']) : <String, dynamic>{};
+                                        if (planData.isNotEmpty) {
+                                          if (resBody['razorpayOrderId'] != null) {
+                                            planData['hostRazorpayOrderId'] = resBody['razorpayOrderId'];
+                                          }
+                                          planData['role'] = 'host';
+                                          planData['userId'] = userId;
+                                          planData['hostId'] = userId;
+                                          planData['hostPaymentStatus'] = 'pending';
+                                          planData['status'] = 'active';
+                                          planData['isLive'] = false;
+                                          planData['type'] = 'party_plan';
+                                          planData['depositAmount'] = 99.0;
+                                          if (selectedVenue != null) {
+                                            planData['venue'] = {
+                                              'id': selectedVenue!.id,
+                                              'name': selectedVenue!.name,
+                                              'area': selectedVenue!.area,
+                                              'city': selectedVenue!.city,
+                                              'addressLine1': selectedVenue!.addressLine1,
+                                            };
+                                            planData['venueName'] = selectedVenue!.name;
+                                          }
+                                          final cu = ApiService.cachedCurrentUser;
+                                          if (cu != null) {
+                                            final photo = cu.profilePhoto ?? (cu.photos.isNotEmpty ? cu.photos.first : null);
+                                            planData['creator'] = {
+                                              'id': userId,
+                                              'firstName': cu.firstName,
+                                              'lastName': cu.lastName,
+                                              'profileImageUrl': photo,
+                                              'profilePhotoUrl': photo,
+                                            };
+                                          }
+                                          ApiService.registerOptimisticPartyPlan(planData);
+                                        }
+                                      } catch (_) {}
+
                                       ApiService.planPostedNotifier.value++;
                                       ApiService.notifyFeedNeedsRefresh();
 

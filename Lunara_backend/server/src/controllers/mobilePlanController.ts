@@ -288,42 +288,42 @@ export const getLiveFeed = async (req: Request, res: Response) => {
         let mySuperlikedUserIds: string[] = [];
         if (viewerId) {
             try {
-                const blockedConnections = await SocialConnection.findAll({
-                    where: {
-                        [Op.or]: [
-                            { requesterId: viewerId as string, status: ConnectionStatus.BLOCKED },
-                            { receiverId: viewerId as string, status: ConnectionStatus.BLOCKED },
-                        ]
-                    }
-                });
+                const [blockedConnections, superLikes, mySuperlikes] = await Promise.all([
+                    SocialConnection.findAll({
+                        where: {
+                            [Op.or]: [
+                                { requesterId: viewerId as string, status: ConnectionStatus.BLOCKED },
+                                { receiverId: viewerId as string, status: ConnectionStatus.BLOCKED },
+                            ]
+                        },
+                        attributes: ['requesterId', 'receiverId']
+                    }),
+                    UserMatch.findAll({
+                        where: {
+                            user2Id: viewerId as string,
+                            matchReason: 'superlike',
+                        },
+                        attributes: ['user1Id']
+                    }),
+                    UserMatch.findAll({
+                        where: {
+                            user1Id: viewerId as string,
+                            matchReason: 'superlike',
+                        },
+                        attributes: ['user2Id']
+                    })
+                ]);
+
                 const blockedIds = new Set<string>();
                 for (const bc of blockedConnections) {
                     if (bc.requesterId === viewerId) blockedIds.add(bc.receiverId);
                     if (bc.receiverId === viewerId) blockedIds.add(bc.requesterId);
                 }
 
-                const superLikes = await UserMatch.findAll({
-                    where: {
-                        user2Id: viewerId as string,
-                        matchReason: 'superlike',
-                    },
-                    attributes: ['user1Id']
-                });
                 superLikedUserIds = superLikes
                     .map(m => m.user1Id)
                     .filter(id => id && !blockedIds.has(id));
 
-                // The reverse relationship: users the VIEWER has superliked.
-                // When one of them later posts a party plan, it should be
-                // surfaced in the viewer's feed and visually distinguished
-                // from the "they superliked you" case above.
-                const mySuperlikes = await UserMatch.findAll({
-                    where: {
-                        user1Id: viewerId as string,
-                        matchReason: 'superlike',
-                    },
-                    attributes: ['user2Id']
-                });
                 mySuperlikedUserIds = mySuperlikes
                     .map(m => m.user2Id)
                     .filter(id => id && !blockedIds.has(id));
@@ -332,18 +332,18 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             }
         }
 
-        // Party Plans are personal workflow cards, not public Live Feed posts.
+        // Party Plans: The Host MUST ALWAYS see their own party plan (even before paying the deposit so they can pay it).
+        // Other viewers only see public party plans that are live and paid.
         const partyPlansWhere: any = viewerId
             ? {
                 status: PartyPlanStatus.ACTIVE,
-                isLive: true,
                 [Op.or]: [
                     { userId: viewerId as string },
                     ...(superLikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
+                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public', isLive: true, hostPaymentStatus: 'paid' }]
                         : []),
                     ...(mySuperlikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public' }]
+                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public', isLive: true, hostPaymentStatus: 'paid' }]
                         : [])
                 ]
             }
@@ -505,6 +505,7 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         status: { [Op.ne]: PartyPlanStatus.CANCELLED },
                     },
                     include: [
+                        { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
                         { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }
                     ],
                     order: [['createdAt', 'DESC']],
@@ -829,21 +830,28 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             myHostPartyPlans.forEach((p: any) => {
                 const hostPaid = (p.hostPaymentStatus || '').toLowerCase() === 'paid';
                 if (!hostPaid && p.status !== 'cancelled') {
-                    const depositAmt = Number(p.depositAmount) || 1999;
+                    const depositAmt = Number(p.depositAmount) || 99;
                     pendingPaymentItems.push({
                         id: `pending_pp_${p.id}`,
                         planId: p.id,
+                        partyPlanId: p.id,
+                        userId: p.userId,
+                        hostId: p.userId,
                         type: 'pending_payment',
                         requestType: 'party_plan_host_deposit',
                         category: 'party_plan',
                         paymentCategory: 'party_plan',
                         status: 'payment_pending',
                         paymentStatus: p.hostPaymentStatus || 'unpaid',
+                        hostPaymentStatus: p.hostPaymentStatus || 'unpaid',
+                        hostRazorpayOrderId: p.hostRazorpayOrderId,
+                        depositAmount: depositAmt,
                         amountDue: depositAmt,
                         title: '⚡ Party Plan Deposit Required',
                         body: `Pay ₹${depositAmt} host deposit for your plan at ${p.venue?.name || 'Venue'} to make it live!`,
                         venueName: p.venue?.name || 'Venue',
                         venue: p.venue,
+                        creator: p.creator,
                         actionRequired: true,
                         hasPendingPayment: true,
                         createdAt: p.createdAt,
@@ -854,7 +862,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                             venueId: p.venueId,
                             venueName: p.venue?.name,
                             amount: depositAmt,
-                            isHost: true
+                            isHost: true,
+                            orderId: p.hostRazorpayOrderId
                         }
                     });
                 }

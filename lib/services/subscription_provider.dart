@@ -9,6 +9,7 @@
 // Or listen for changes:
 //   context.dependOnInheritedWidgetOfExactType<SubscriptionInheritedWidget>();
 
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/plan_status.dart';
 import '../models/vip_entitlement_model.dart';
@@ -29,8 +30,8 @@ enum VipAction {
 class VipActionValidation {
   final bool allowed;
   final VipAction action;
-  final String? message;
   final String? code;
+  final String? message;
   final dynamic limit;
   final dynamic remaining;
   final bool isUnlimited;
@@ -38,8 +39,8 @@ class VipActionValidation {
   const VipActionValidation({
     required this.allowed,
     required this.action,
-    this.message,
     this.code,
+    this.message,
     this.limit,
     this.remaining,
     this.isUnlimited = false,
@@ -101,17 +102,21 @@ class SubscriptionProvider extends ChangeNotifier {
   bool get isPaid => _status.isPaid;
   bool get isElite => _status.isElite;
 
-  int get superlikesRemaining => (isElite || _status.isUnlimitedSuperlikes)
-      ? 9999
-      : (((_entitlementsSummary != null && _entitlementsSummary!.superlikesAvailable > 0)
-              ? _entitlementsSummary!.superlikesAvailable
-              : _status.superlikesRemaining) - _optimisticSuperlikesOffset).clamp(0, 9999);
+  int get superlikesRemaining {
+    if (isElite || _status.isUnlimitedSuperlikes) return 9999;
+    final fromEntitlements = _entitlementsSummary?.superlikesAvailable ?? 0;
+    final fromStatus = _status.superlikesRemaining;
+    final base = math.max(fromEntitlements, fromStatus);
+    return (base - _optimisticSuperlikesOffset).clamp(0, 9999);
+  }
 
-  int get boostsRemaining => (isElite || _status.isUnlimitedBoosts)
-      ? 9999
-      : (((_entitlementsSummary != null && _entitlementsSummary!.boostsAvailable > 0)
-              ? _entitlementsSummary!.boostsAvailable
-              : _status.boostsRemaining) - _optimisticBoostsOffset).clamp(0, 9999);
+  int get boostsRemaining {
+    if (isElite || _status.isUnlimitedBoosts) return 9999;
+    final fromEntitlements = _entitlementsSummary?.boostsAvailable ?? 0;
+    final fromStatus = _status.boostsRemaining;
+    final base = math.max(fromEntitlements, fromStatus);
+    return (base - _optimisticBoostsOffset).clamp(0, 9999);
+  }
 
   bool get hasUnlimitedLikes => _status.hasUnlimitedLikes;
   int get likesRemaining => dailyLikesRemaining;
@@ -120,15 +125,29 @@ class SubscriptionProvider extends ChangeNotifier {
       ? 9999
       : (_status.dailyLikesRemaining - _optimisticLikesOffset).clamp(0, 9999);
 
-  int get dailyBacktrackRemaining => _status.hasUnlimitedBacktracks
-      ? 9999
-      : (_status.dailyBacktrackRemaining - _optimisticBacktracksOffset).clamp(0, 9999);
+  int get dailyBacktrackRemaining => backtracksRemaining;
+
+  int get backtracksRemaining {
+    if (isElite || _status.hasUnlimitedBacktracks) return 9999;
+    final fromEntitlements = _entitlementsSummary?.backtracksAvailable ?? 0;
+    final fromStatus = _status.dailyBacktrackRemaining;
+    final base = math.max(fromEntitlements, fromStatus);
+    return (base - _optimisticBacktracksOffset).clamp(0, 9999);
+  }
+
+  int get partyPlansRemaining {
+    if (isElite || _status.isUnlimitedPartyPlans) return 9999;
+    final fromEntitlements = _entitlementsSummary?.partyPlansAvailable;
+    if (fromEntitlements == 'unlimited') return 9999;
+    final pVal = fromEntitlements is int ? fromEntitlements : (int.tryParse(fromEntitlements?.toString() ?? '0') ?? 0);
+    return math.max(pVal, 0);
+  }
 
   bool get canLike => _status.hasUnlimitedLikes || dailyLikesRemaining > 0;
   bool get canSuperLike => isElite || _status.isUnlimitedSuperlikes || superlikesRemaining > 0;
   bool get canBoost => isElite || _status.isUnlimitedBoosts || boostsRemaining > 0;
-  bool get canBacktrack => _status.hasUnlimitedBacktracks || dailyBacktrackRemaining > 0;
-  bool get canCreatePartyPlan => true;
+  bool get canBacktrack => _status.hasUnlimitedBacktracks || backtracksRemaining > 0;
+  bool get canCreatePartyPlan => isElite || _status.isUnlimitedPartyPlans || partyPlansRemaining > 0;
 
   // ── Optimistic State Modifiers ───────────────────────────────────────────
 

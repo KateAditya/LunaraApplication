@@ -21,6 +21,7 @@ class UpcomingPartyScreen extends StatefulWidget {
 class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   bool _isInterested = false;
   bool _isToggling = false;
+  final bool _showPostPartnerButton = false;
   Map<String, dynamic>? _venueData;
   Map<String, dynamic>? get currentVenue => _venueData ?? widget.venueMap;
 
@@ -544,70 +545,72 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
 
                   const SizedBox(height: 28),
 
-                  // Post to Find Partner Button
-                  InkWell(
-                    onTap: () {
-                      final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
-                      final vName = venueName;
-                      final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
-                      final eventDate = _formatDateIso(rawDate);
-                      final eventTime = LunaraDateFormatter.normalizeTimeTo12Hour(widget.party['time']?.toString() ?? '8:00 PM');
-                      final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
-                      final title = widget.party['title'] ?? widget.party['name'] ?? vName;
+                  // Post to Find Partner Button (Disabled for now as requested; logic preserved)
+                  if (_showPostPartnerButton) ...[
+                    InkWell(
+                      onTap: () {
+                        final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+                        final vName = venueName;
+                        final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
+                        final eventDate = _formatDateIso(rawDate);
+                        final eventTime = LunaraDateFormatter.normalizeTimeTo12Hour(widget.party['time']?.toString() ?? '8:00 PM');
+                        final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
+                        final title = widget.party['title'] ?? widget.party['name'] ?? vName;
 
-                      UpcomingNightPostPartnerSheet.show(
-                        context,
-                        party: widget.party,
-                        venueId: venueId,
-                        venueName: vName,
-                        date: eventDate,
-                        time: eventTime,
-                        bannerImage: flyer?.toString(),
-                        eventTitle: title?.toString(),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      height: 50,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF7C3AED),
-                            Color(0xFFEC4899),
+                        UpcomingNightPostPartnerSheet.show(
+                          context,
+                          party: widget.party,
+                          venueId: venueId,
+                          venueName: vName,
+                          date: eventDate,
+                          time: eventTime,
+                          bannerImage: flyer?.toString(),
+                          eventTitle: title?.toString(),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF7C3AED),
+                              Color(0xFFEC4899),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.campaign_rounded, color: Colors.white, size: 19),
-                            SizedBox(width: 8),
-                            Text(
-                              'POST TO FIND PARTNER',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12.5,
-                                letterSpacing: 1.0,
+                        child: const Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.campaign_rounded, color: Colors.white, size: 19),
+                              SizedBox(width: 8),
+                              Text(
+                                'POST TO FIND PARTNER',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12.5,
+                                  letterSpacing: 1.0,
+                                ),
                               ),
-                            ),
-                            SizedBox(width: 5),
-                            Text('✨', style: TextStyle(fontSize: 13)),
-                          ],
+                              SizedBox(width: 5),
+                              Text('✨', style: TextStyle(fontSize: 13)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
 
                   // Action Row: Interested + Invite Partner + Book Now
                   Row(

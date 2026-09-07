@@ -11,23 +11,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { generateTicketForBookingHelper, generateTicketForGroupPartyHelper } from '../services/ticketService';
 import { BookingPolicyService } from '../services/BookingPolicyService';
 import { BookingPolicyType } from '../models/BookingPolicyConfig';
+import { parseEventDateTimeToUTC } from '../utils/dateTimeUtils';
 
 /**
- * Combines a DATEONLY (or Date) party date with a "HH:mm" start time (defaulting to
- * 20:00, the same fallback used elsewhere in this file) into a single deadline used
- * for the large-party payment expiry window.
+ * Combines a DATEONLY (or Date) party date with a start time (defaulting to
+ * 20:00) into a canonical UTC Date used for the large-party payment expiry window.
  */
 function computePartyDeadline(partyDate: any, startTime?: string | null): Date | null {
     if (!partyDate) return null;
-    const base = new Date(partyDate);
-    if (isNaN(base.getTime())) return null;
-
-    const timeStr = (startTime && /^\d{1,2}:\d{2}/.test(startTime)) ? startTime : '20:00';
-    const [hoursStr, minutesStr] = timeStr.split(':');
-    const hours = parseInt(hoursStr, 10) || 0;
-    const minutes = parseInt(minutesStr, 10) || 0;
-
-    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), hours, minutes, 0, 0);
+    const timeStr = startTime && startTime.trim().length > 0 ? startTime : '20:00';
+    return parseEventDateTimeToUTC(partyDate, timeStr);
 }
 
 export const getLargePartyRequests = async (_req: Request, res: Response) => {

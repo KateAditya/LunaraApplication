@@ -3,8 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue, Ticket, PartyPlanRequest, StrangersMeetJoiner } from '../models';
 import { PartyPlanStatus } from '../models/PartyPlan';
+import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { GroupPartyStatus } from '../models/GroupParty';
 import Notification from '../models/Notification';
@@ -407,8 +408,14 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             partyPlansCnt,
             strangersMeetCnt,
             groupPartyCnt,
-            bookingsCount,
-            matchesCount,
+            rawTickets,
+            rawBookings,
+            rawGroupParties,
+            rawStrangersHost,
+            rawStrangersJoiner,
+            rawPartyHost,
+            rawPartyJoiner,
+            connectedMatches,
             activeSub,
             existingSwipe,
             existingUserLike,
@@ -444,17 +451,22 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] }
                 }
             }),
-            Booking.count({
-                where: { userId }
-            }),
-            UserMatch.count({
+            Ticket.findAll({ where: { userId }, attributes: ['id', 'bookingId', 'ticketId'] }).catch(() => []),
+            Booking.findAll({ where: { userId }, attributes: ['id', 'status', 'paymentStatus', 'goingMode', 'isLargePartyRequest', 'specialRequests', 'ticketCode'] }).catch(() => []),
+            GroupParty.findAll({ where: { userId }, attributes: ['id', 'ticketCode'] }).catch(() => []),
+            StrangersMeetRequest.findAll({ where: { userId }, attributes: ['id', 'ticketId'] }).catch(() => []),
+            StrangersMeetJoiner.findAll({ where: { userId, status: { [Op.notIn]: ['rejected'] } }, attributes: ['id', 'strangersMeetRequestId'] }).catch(() => []),
+            PartyPlan.findAll({ where: { userId, status: { [Op.ne]: PartyPlanStatus.CANCELLED } }, attributes: ['id'] }).catch(() => []),
+            PartyPlanRequest.findAll({ where: { requesterId: userId, status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] } }, attributes: ['id', 'planId'] }).catch(() => []),
+            UserMatch.findAll({
                 where: {
                     [Op.or]: [
                         { user1Id: userId, status: 'connected' },
                         { user2Id: userId, status: 'connected' }
                     ]
-                }
-            }),
+                },
+                attributes: ['user1Id', 'user2Id']
+            }).catch(() => []),
             UserSubscription.findOne({
                 where: {
                     userId,
@@ -482,9 +494,46 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 : Promise.resolve(null),
         ]);
 
+        // Calculate dynamic total bookings matching Ticket Pocket
+        const seenBookingKeys = new Set<string>();
+        for (const t of rawTickets) {
+            if (t.bookingId) seenBookingKeys.add(`booking_${t.bookingId}`);
+            else if (t.ticketId) seenBookingKeys.add(`ticket_${t.ticketId}`);
+            else seenBookingKeys.add(`ticket_id_${t.id}`);
+        }
+        for (const b of rawBookings) {
+            seenBookingKeys.add(`booking_${b.id}`);
+        }
+        for (const gp of rawGroupParties) {
+            seenBookingKeys.add(`group_party_${gp.id}`);
+        }
+        for (const sm of rawStrangersHost) {
+            seenBookingKeys.add(`strangers_meet_host_${sm.id}`);
+        }
+        for (const smj of rawStrangersJoiner) {
+            seenBookingKeys.add(`strangers_meet_joiner_${smj.id}`);
+        }
+        for (const p of rawPartyHost) {
+            seenBookingKeys.add(`party_plan_host_${p.id}`);
+        }
+        for (const pr of rawPartyJoiner) {
+            seenBookingKeys.add(`party_plan_joiner_${pr.id}`);
+        }
+        const bookingsCount = seenBookingKeys.size;
+
+        // Calculate unique matched profile partners
+        const matchedPartnerIds = new Set<string>();
+        for (const m of connectedMatches) {
+            const partnerId = m.user1Id === userId ? m.user2Id : m.user1Id;
+            if (partnerId && partnerId !== userId && partnerId !== 'masked') {
+                matchedPartnerIds.add(partnerId);
+            }
+        }
+        const matchesCount = matchedPartnerIds.size;
+
         const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
         const plansCount = partyPlansCnt + strangersMeetCnt + groupPartyCnt;
-        const pointsCount = 1000 + (bookingsCount * 250) + (matchesCount * 50);
+        const pointsCount = (user.rewardPoints != null && user.rewardPoints >= 0) ? user.rewardPoints : 0;
 
         const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
         const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };
@@ -1423,7 +1472,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             const activeSub = await UserSubscription.findOne({
                 where: {
                     userId,
-                    status: { [Op.in]: [SubscriptionStatus.ACTIVE, 'ACTIVE', 'active'] },
+                    status: SubscriptionStatus.ACTIVE,
                     endDate: { [Op.gt]: new Date() },
                 },
                 include: [{ model: SubscriptionPackage, as: 'package' }],

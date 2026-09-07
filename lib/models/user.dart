@@ -372,7 +372,13 @@ class User {
           ? int.tryParse(json['pointsCount'].toString()) ?? 0
           : (data['pointsCount'] != null
               ? int.tryParse(data['pointsCount'].toString()) ?? 0
-              : 0),
+              : (json['rewardPoints'] != null
+                  ? int.tryParse(json['rewardPoints'].toString()) ?? 0
+                  : (data['rewardPoints'] != null
+                      ? int.tryParse(data['rewardPoints'].toString()) ?? 0
+                      : (data['reward_points'] != null
+                          ? int.tryParse(data['reward_points'].toString()) ?? 0
+                          : 0)))),
       isLiked: _parseBool(json['isLiked']) || _parseBool(data['isLiked']),
       isSuperLiked: _parseBool(json['isSuperLiked']) || _parseBool(data['isSuperLiked']),
     );

@@ -62,9 +62,9 @@ router.get(
     '/interested-partners',
     [
         authenticate,
-        query('hostId').notEmpty().withMessage('hostId is required'),
-        query('venueId').isUUID().withMessage('venueId must be a UUID'),
-        query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
+        query('hostId').optional(),
+        query('venueId').notEmpty().withMessage('venueId is required'),
+        query('eventDate').notEmpty().withMessage('eventDate is required'),
         validate,
     ],
     ctrl.getInterestedPartners
@@ -78,9 +78,9 @@ router.get(
     '/available-invitees',
     [
         authenticate,
-        query('hostId').notEmpty().withMessage('hostId is required'),
-        query('venueId').isUUID().withMessage('venueId must be a UUID'),
-        query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
+        query('hostId').optional(),
+        query('venueId').notEmpty().withMessage('venueId is required'),
+        query('eventDate').notEmpty().withMessage('eventDate is required'),
         validate,
     ],
     ctrl.getAvailableInvitees
@@ -92,7 +92,7 @@ router.get(
  */
 router.get(
     '/partners/:userId/profile',
-    [authenticate, param('userId').isUUID().withMessage('userId must be a UUID'), validate],
+    [authenticate, param('userId').notEmpty().withMessage('userId is required'), validate],
     ctrl.getPartnerProfilePreview
 );
 
@@ -104,10 +104,10 @@ router.post(
     '/requests',
     [
         authenticate,
-        body('hostId').notEmpty().withMessage('hostId is required'),
-        body('partnerId').isUUID().withMessage('partnerId must be a UUID'),
-        body('venueId').isUUID().withMessage('venueId must be a UUID'),
-        body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
+        body('hostId').optional(),
+        body('partnerId').notEmpty().withMessage('partnerId is required'),
+        body('venueId').notEmpty().withMessage('venueId is required'),
+        body('eventDate').notEmpty().withMessage('eventDate is required'),
         validate,
     ],
     ctrl.sendPartnerRequest
