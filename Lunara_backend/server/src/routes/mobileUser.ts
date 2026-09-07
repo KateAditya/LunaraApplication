@@ -206,6 +206,7 @@ async function getUserNotifications(
 
     const notifications: any[] = [];
     const partyPlanIds = new Set<string>();
+    const nightPartnerIds = new Set<string>();
 
     // 0. Fetch stored DB Notification records
     try {
@@ -229,6 +230,12 @@ async function getUserNotifications(
             const pId = metadata.planId || metadata.partyPlanId || (sn.entityType === 'party_plan' ? sn.entityId : null);
             if (pId) {
                 partyPlanIds.add(pId);
+            }
+
+            // Extract nightPartnerId if present
+            const npId = metadata.nightId || metadata.matchId || metadata.requestId || (sn.entityType === 'night_partner' ? sn.entityId : null);
+            if (npId) {
+                nightPartnerIds.add(npId);
             }
 
             const isLikeCategory = sn.category === 'likes' || sn.category === 'super_like' || sn.eventType === 'like' || sn.eventType === 'super_like';
@@ -301,6 +308,36 @@ async function getUserNotifications(
         console.error('Error fetching recent plans for notifications:', planErr);
     }
 
+    // Fetch active/recent Night Partner requests & matches for the user
+    try {
+        const NightPartnerRequest = (await import('../models/NightPartnerRequest')).default;
+        const NightPartnerMatch = (await import('../models/NightPartnerMatch')).default;
+        const activeRequests = await NightPartnerRequest.findAll({
+            where: {
+                [Op.or]: [{ hostId: uId }, { partnerId: uId }],
+                status: ['PENDING', 'ACCEPTED']
+            },
+            attributes: ['id'],
+            limit: 20
+        }).catch(() => []);
+        for (const req of activeRequests) {
+            nightPartnerIds.add(req.id);
+        }
+
+        const activeMatches = await NightPartnerMatch.findAll({
+            where: {
+                [Op.or]: [{ hostId: uId }, { partnerId: uId }],
+            },
+            attributes: ['id'],
+            limit: 20
+        }).catch(() => []);
+        for (const m of activeMatches) {
+            nightPartnerIds.add(m.id);
+        }
+    } catch (npErr) {
+        console.error('Error fetching active night partner records for notifications:', npErr);
+    }
+
     // Build/Enrich Unified Party Plan Timeline Cards in ONE single batch query
     let timelineCards: any[] = [];
     if (partyPlanIds.size > 0) {
@@ -350,9 +387,38 @@ async function getUserNotifications(
                     deepLink: `/party-plans/${planId}`,
                 };
             });
-            timelineCards = planCardResults.filter(Boolean);
+            timelineCards.push(...planCardResults.filter(Boolean));
         } catch (enrichErr) {
             console.error('Error batch enriching party plans:', enrichErr);
+        }
+    }
+
+    // Build/Enrich Unified Upcoming Night Timeline Cards
+    if (nightPartnerIds.size > 0) {
+        try {
+            const { NightPartnerService } = require('../services/NightPartnerService');
+            for (const npId of nightPartnerIds) {
+                const card = await NightPartnerService.enrichUpcomingNightNotificationCard(npId, uId);
+                if (card) {
+                    const npNotifs = notifications.filter(n => {
+                        const metadata = n.data || {};
+                        return metadata.nightId === npId || metadata.requestId === npId || metadata.matchId === npId || n.entityId === npId;
+                    });
+                    const hasUnread = npNotifs.length > 0 ? npNotifs.some(n => !n.read) : false;
+                    const cardTime = new Date(card.createdAt || card.updatedAt || Date.now()).getTime();
+                    const isCleared = clearedAt > 0 && cardTime <= clearedAt;
+                    const isCardRead = (isCleared && !card.requiresAction) || (!hasUnread && !card.requiresAction) || activeReadNotificationIds.has(`upcoming_night_timeline_${npId}`);
+
+                    timelineCards.push({
+                        ...card,
+                        id: `upcoming_night_timeline_${npId}`,
+                        read: isCardRead,
+                        isRead: isCardRead,
+                    });
+                }
+            }
+        } catch (npCardErr) {
+            console.error('Error enriching upcoming night timeline cards:', npCardErr);
         }
     }
 
@@ -360,8 +426,10 @@ async function getUserNotifications(
     const otherNotifs = notifications.filter(n => {
         const metadata = n.data || {};
         const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
-        const isNightPartner = n.entityType === 'night_partner' || n.category === 'night_partner' || (n.eventType && n.eventType.startsWith('PARTNER_REQUEST'));
-        return !pId && !isNightPartner;
+        const npId = metadata.nightId || metadata.matchId || metadata.requestId || (n.entityType === 'night_partner' ? n.entityId : null);
+        const isUnifiedPartyPlan = !!pId && timelineCards.some(tc => tc.id === `party_plan_timeline_${pId}`);
+        const isUnifiedNight = !!npId && timelineCards.some(tc => tc.id === `upcoming_night_timeline_${npId}`);
+        return !isUnifiedPartyPlan && !isUnifiedNight;
     });
 
     // Merge other notifications and unified timeline cards

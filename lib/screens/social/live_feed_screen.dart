@@ -2695,11 +2695,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (item == null || item is! Map) return false;
     final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
 
-    if (map['isUpcomingNight'] == true) return true;
+    if (map['isUpcomingNight'] == true || map['isNightPartner'] == true) return true;
     if (map['nightId'] != null || map['nightPartnerId'] != null || map['upcomingNightId'] != null) return true;
 
     final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
-    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match')) return true;
+    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match') || cat.contains('partner_request')) return true;
 
     final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
     if (rawId.startsWith('upcoming_night') || rawId.startsWith('night_partner') || rawId.startsWith('un_')) return true;
@@ -2726,8 +2726,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['metadata']['nightId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
+    if (item['data'] is Map && item['data']['matchId'] != null) {
+      final id = item['data']['matchId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['matchId'] != null) {
+      final id = item['metadata']['matchId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['data'] is Map && item['data']['requestId'] != null) {
+      final id = item['data']['requestId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['metadata'] is Map && item['metadata']['requestId'] != null) {
+      final id = item['metadata']['requestId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
     if (item['nightId'] != null) {
       final id = item['nightId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['matchId'] != null) {
+      final id = item['matchId'].toString().trim();
+      if (id.isNotEmpty) return id;
+    }
+    if (item['requestId'] != null) {
+      final id = item['requestId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
     if (item['upcomingNightId'] != null) {
@@ -2747,7 +2771,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return rawId.replaceAll('upcoming_night_timeline_', '').replaceAll('upcoming_night_', '').replaceAll('un_', '');
     }
     final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
-    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match')) {
+    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match') || cat.contains('partner_request')) {
       if (rawId.isNotEmpty) return rawId;
     }
     return null;
