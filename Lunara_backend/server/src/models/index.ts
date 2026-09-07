@@ -1091,6 +1091,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
         }
         try {
             await sequelize.query(`
+                ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20) DEFAULT 'SELF_PAY';
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;

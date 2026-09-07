@@ -1675,6 +1675,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         venueName: venueName,
         date: date,
         time: time,
+        paymentMode: payloadData['paymentMode']?.toString() ?? 'SELF_PAY',
         onAccepted: () {
           _fetchNotifications();
         },

@@ -2,7 +2,7 @@ import { Transaction, Op } from 'sequelize';
 import sequelize from '../config/database';
 import NightInterest, { NightInterestStatus } from '../models/NightInterest';
 import NightPartnerRequest, { NightPartnerRequestStatus } from '../models/NightPartnerRequest';
-import NightPartnerMatch, { NightPartnerMatchStatus, NightPartnerCancellationStatus } from '../models/NightPartnerMatch';
+import NightPartnerMatch, { NightPartnerMatchStatus, NightPartnerPaymentMode, NightPartnerCancellationStatus } from '../models/NightPartnerMatch';
 import User from '../models/User';
 import UserProfile from '../models/UserProfile';
 import UserPhoto from '../models/UserPhoto';
@@ -426,7 +426,8 @@ export class NightPartnerService {
         partnerId: string,
         venueId: string,
         eventDate: string,
-        eventTime?: string
+        eventTime?: string,
+        paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY'
     ): Promise<NightPartnerRequest> {
         if (hostId === partnerId) {
             throw new Error('CANNOT_REQUEST_SELF');
@@ -494,6 +495,7 @@ export class NightPartnerService {
                 venueId,
                 eventDate: new Date(eventDate),
                 eventTime: eventTime || '20:00',
+                paymentMode,
                 status: NightPartnerRequestStatus.PENDING,
                 expiresAt,
                 nightInterestId: interest ? interest.id : undefined,
@@ -509,6 +511,7 @@ export class NightPartnerService {
                 status: NightPartnerRequestStatus.PENDING,
                 expiresAt,
                 eventTime: eventTime || request.eventTime || '20:00',
+                paymentMode,
             });
         }
 
@@ -661,6 +664,22 @@ export class NightPartnerService {
 
             await request.update({ status: NightPartnerRequestStatus.ACCEPTED }, { transaction: t });
 
+            // Auto-cancel other pending requests sent by this host for this venue/date
+            const otherPendingRequests = await NightPartnerRequest.findAll({
+                where: {
+                    hostId: request.hostId,
+                    venueId: request.venueId,
+                    eventDate: request.eventDate,
+                    id: { [Op.ne]: request.id },
+                    status: NightPartnerRequestStatus.PENDING,
+                },
+                transaction: t,
+            });
+
+            for (const otherReq of otherPendingRequests) {
+                await otherReq.update({ status: NightPartnerRequestStatus.CANCELLED }, { transaction: t });
+            }
+
             // Create Match Record
             const match = await NightPartnerMatch.create({
                 hostId: request.hostId,
@@ -669,6 +688,7 @@ export class NightPartnerService {
                 eventDate: request.eventDate,
                 eventTime: request.eventTime,
                 requestId: request.id,
+                paymentMode: (request.paymentMode as any) || NightPartnerPaymentMode.SELF_PAY,
                 status: NightPartnerMatchStatus.MATCHED,
                 maxPartners: 1,
             }, { transaction: t });
@@ -700,6 +720,17 @@ export class NightPartnerService {
                 entityId: match.id,
                 data: { matchId: match.id, venueId: request.venueId, eventDate: request.eventDate },
             });
+
+            // Inform other invited partners that slot was filled
+            for (const otherReq of otherPendingRequests) {
+                this.emitNotification(otherReq.partnerId, {
+                    type: 'PARTNER_REQUEST_EXPIRED',
+                    title: 'Upcoming Night Update',
+                    body: 'Another partner has already joined this upcoming night with the host.',
+                    entityId: otherReq.id,
+                    data: { requestId: otherReq.id, status: 'CANCELLED', reason: 'SLOT_FILLED' },
+                });
+            }
 
             return { request, match };
         });
@@ -976,16 +1007,16 @@ export class NightPartnerService {
                 type: 'BOOKING_CONFIRMED',
                 title: 'Booking Confirmed! 🎉',
                 body: `Your Upcoming Night at ${venueName} is confirmed. Ticket is generated & Chat unlocked!`,
-                entityId: booking.id,
-                data: { bookingId: booking.id, conversationId: conversation.id },
+                entityId: match.id,
+                data: { matchId: match.id, bookingId: booking.id, conversationId: conversation.id },
             });
 
             this.emitNotification(match.partnerId, {
                 type: 'BOOKING_CONFIRMED',
                 title: 'Booking Confirmed! 🎉',
                 body: `Your Upcoming Night at ${venueName} is confirmed with your host. Ticket is generated & Chat unlocked!`,
-                entityId: booking.id,
-                data: { bookingId: booking.id, conversationId: conversation.id },
+                entityId: match.id,
+                data: { matchId: match.id, bookingId: booking.id, conversationId: conversation.id },
             });
 
             return { match, booking, conversation, isFullyPaid: true };
@@ -1473,15 +1504,29 @@ export class NightPartnerService {
      */
     public static async enrichUpcomingNightNotificationCard(nightId: string, recipientUserId: string): Promise<any | null> {
         try {
-            let match = await NightPartnerMatch.findByPk(nightId, {
-                include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
-            });
+            let match: NightPartnerMatch | null = null;
+            try {
+                match = await NightPartnerMatch.findByPk(nightId, {
+                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
+                });
+            } catch (_) {}
+
+            if (!match) {
+                try {
+                    match = await NightPartnerMatch.findOne({
+                        where: { [Op.or]: [{ bookingId: nightId }, { requestId: nightId }] },
+                        include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
+                    });
+                } catch (_) {}
+            }
 
             let requestRecord: NightPartnerRequest | null = null;
             if (!match) {
-                requestRecord = await NightPartnerRequest.findByPk(nightId, {
-                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
-                });
+                try {
+                    requestRecord = await NightPartnerRequest.findByPk(nightId, {
+                        include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
+                    });
+                } catch (_) {}
                 if (!requestRecord) {
                     return null;
                 }
@@ -1602,6 +1647,10 @@ export class NightPartnerService {
                 title = `Payment Required for Upcoming Night 💳`;
                 body = `Request accepted! Complete payment (₹${userAmount}) to confirm your night at ${venueName}.`;
                 statusText = 'Payment Required';
+            } else if (isMatch && match!.status === NightPartnerMatchStatus.MATCHED && !isHost) {
+                title = `Partner Request Accepted! 🎉`;
+                body = `You accepted the invite! Waiting for host (${otherUserName}) to complete payment & confirm booking.`;
+                statusText = 'Waiting for Host Confirmation';
             } else if (isAccepted) {
                 title = `Upcoming Night Invite Accepted! 🎉`;
                 body = `Your partner request for ${venueName} was accepted! Select payment mode to proceed.`;
@@ -1632,9 +1681,11 @@ export class NightPartnerService {
                         actionButtons.push({ id: 'pay_now', label: 'Pay Now', primary: true, action: 'PAY_NOW' });
                     }
                 }
-                if (isChatEnabled) {
+                if (isChatEnabled || isPaymentConfirmed) {
                     actionButtons.push({ id: 'view_ticket', label: 'View Ticket', primary: true, action: 'VIEW_TICKET' });
-                    actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: false, action: 'OPEN_CHAT' });
+                    if (match?.conversationId) {
+                        actionButtons.push({ id: 'open_chat', label: 'Open Chat', primary: false, action: 'OPEN_CHAT' });
+                    }
                     actionButtons.push({ id: 'cancel_event', label: 'Cancel', primary: false, action: 'CANCEL_EVENT' });
                 }
                 actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });

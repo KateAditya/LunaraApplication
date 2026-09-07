@@ -4570,6 +4570,7 @@ class ApiService {
     required String venueId,
     required String date,
     String? time,
+    String paymentMode = 'SELF_PAY',
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -4582,6 +4583,7 @@ class ApiService {
           'venueId': venueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
+          'paymentMode': paymentMode,
         },
       );
       final data = jsonDecode(response.body);

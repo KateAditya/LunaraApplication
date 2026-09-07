@@ -525,16 +525,23 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         : '';
     final dt = LunaraDateFormatter.parseToLocal(
       bookingDateStr,
+      // Only pass explicitTime when we KNOW the event start-time.
+      // If cleanTime is empty, do NOT let parseToLocal use the ISO timestamp's
+      // time component — for party plans that timestamp is a creation/booking
+      // time, not the actual party start time, and would show a wrong value.
       explicitTime: cleanTime.isNotEmpty ? cleanTime : null,
     );
     if (dt == null) {
       return cleanTime.isNotEmpty ? '$bookingDateStr • $cleanTime' : bookingDateStr;
     }
     final formattedDate = LunaraDateFormatter.formatEventDate(dt, pattern: 'MMM d, yyyy').toUpperCase();
-    final formattedTime = cleanTime.isNotEmpty
-        ? cleanTime
-        : LunaraDateFormatter.formatEventTime(dt);
-    return '$formattedDate • $formattedTime';
+    // Only append a time when we have an explicit startTime string.
+    // Falling back to the ISO time component risks showing a creation/system
+    // timestamp (e.g. 4:46 PM) instead of the real event time (10:16 PM).
+    if (cleanTime.isNotEmpty) {
+      return '$formattedDate • $cleanTime';
+    }
+    return formattedDate;
   }
 
   String _formatTablePackage(String? tablePackage) {
@@ -1471,7 +1478,10 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final startTime = booking['startTime']?.toString() ??
         booking['partyTime']?.toString() ??
         booking['time']?.toString() ??
+        booking['eventTime']?.toString() ??
         innerPlan?['startTime']?.toString() ??
+        innerPlan?['partyTime']?.toString() ??
+        innerPlan?['eventTime']?.toString() ??
         innerPlan?['time']?.toString() ??
         '';
     final dateStr = _formatBookingDateTime(bookingDate, startTime);

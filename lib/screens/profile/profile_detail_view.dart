@@ -1246,6 +1246,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                           } finally {
                             if (mounted) setState(() => _isLiking = false);
                             OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
+                            // Background-sync quota counts with backend
+                            SubscriptionProvider.instance.refresh();
                           }
                         },
                 ),
@@ -1404,6 +1406,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                           } finally {
                             if (mounted) setState(() => _isSuperLiking = false);
                             OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
+                            // Background-sync quota counts with backend
+                            SubscriptionProvider.instance.refresh();
                           }
                         },
                 ),

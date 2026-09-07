@@ -11,6 +11,7 @@ class UpcomingNightInviteDialog extends StatefulWidget {
   final String venueName;
   final String date;
   final String time;
+  final String? paymentMode;
   final VoidCallback? onAccepted;
   final VoidCallback? onDeclined;
 
@@ -21,6 +22,7 @@ class UpcomingNightInviteDialog extends StatefulWidget {
     required this.venueName,
     required this.date,
     required this.time,
+    this.paymentMode = 'SELF_PAY',
     this.onAccepted,
     this.onDeclined,
   });
@@ -280,6 +282,40 @@ class _UpcomingNightInviteDialogState extends State<UpcomingNightInviteDialog> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: widget.paymentMode == 'SPLIT'
+                          ? LunaraTheme.electricViolet.withValues(alpha: 0.1)
+                          : const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          widget.paymentMode == 'SPLIT' ? Icons.call_split_rounded : Icons.check_circle_rounded,
+                          size: 14,
+                          color: widget.paymentMode == 'SPLIT' ? LunaraTheme.electricViolet : const Color(0xFF15803D),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            widget.paymentMode == 'SPLIT'
+                                ? 'Split 50/50: Pay your share after accepting'
+                                : 'Ticket Covered by Host 🎉 (₹0 for you)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: widget.paymentMode == 'SPLIT' ? LunaraTheme.electricViolet : const Color(0xFF15803D),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

@@ -5368,16 +5368,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           label: 'View Ticket',
           icon: Icons.confirmation_number_rounded,
           isPrimary: true,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PartyPlanTicketScreen(
-                request: acceptedJoinerRequest ?? myRequest ?? planMap,
-                plan: planMap,
-                isHost: isHost,
+          onTap: () {
+            // Enrich planMap with already-resolved host data so the ticket
+            // screen can render the host profile instantly (no async wait).
+            final enrichedPlan = Map<String, dynamic>.from(planMap);
+            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanTicketScreen(
+                  request: acceptedJoinerRequest ?? myRequest ?? enrichedPlan,
+                  plan: enrichedPlan,
+                  isHost: isHost,
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
         NotificationAction(
           label: 'Chat',
@@ -5550,16 +5557,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           icon: Icons.confirmation_number_rounded,
           isPrimary: myHasResponded,
           color: myHasResponded ? const Color(0xFF6366F1) : Colors.grey[200],
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PartyPlanTicketScreen(
-                request: acceptedJoinerRequest ?? myRequest ?? planMap,
-                plan: planMap,
-                isHost: isHost,
+          onTap: () {
+            // Enrich planMap with already-resolved host data so the ticket
+            // screen can render the host profile instantly (no async wait).
+            final enrichedPlan = Map<String, dynamic>.from(planMap);
+            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanTicketScreen(
+                  request: acceptedJoinerRequest ?? myRequest ?? enrichedPlan,
+                  plan: enrichedPlan,
+                  isHost: isHost,
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       );
 
@@ -5944,16 +5958,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.confirmation_number_rounded,
             isPrimary: false,
             color: Colors.grey[200],
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PartyPlanTicketScreen(
-                  request: myRequest ?? planMap,
-                  plan: planMap,
-                  isHost: false,
+            onTap: () {
+              // Enrich planMap with already-resolved host data so the ticket
+              // screen can render the host profile instantly (no async wait).
+              final enrichedPlan = Map<String, dynamic>.from(planMap);
+              if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+              if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanTicketScreen(
+                    request: myRequest ?? enrichedPlan,
+                    plan: enrichedPlan,
+                    isHost: false,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
           NotificationAction(
             label: 'Cancel Plan',

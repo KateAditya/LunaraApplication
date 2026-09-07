@@ -5,6 +5,7 @@ import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
 import '../widgets/lunara_profile_image.dart';
 import 'upcoming_night_post_partner_sheet.dart';
+import 'upcoming_night_payment_mode_dialog.dart';
 import 'dialogs/time_lock_blocked_dialog.dart';
 import '../utils/lunara_date_formatter.dart';
 
@@ -130,7 +131,35 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     });
   }
 
-  Future<void> _sendInvite(Map<String, dynamic> partner) async {
+  double _resolveTicketPrice() {
+    final party = widget.party;
+    if (party != null) {
+      final rawPrice = party['ticketPrice'] ?? party['price'] ?? party['coupleEntryFee'] ?? party['coverCharges'] ?? party['entryFee'];
+      if (rawPrice != null) {
+        final parsed = double.tryParse(rawPrice.toString().replaceAll(RegExp(r'[^0-9.]'), ''));
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+    return 1000.0;
+  }
+
+  Future<void> _promptAndSendInvite(Map<String, dynamic> partner) async {
+    final selectedMode = await UpcomingNightPaymentModeDialog.show(
+      context,
+      partner: partner,
+      venueName: widget.venueName,
+      date: widget.date,
+      time: widget.time,
+      eventTitle: widget.eventTitle,
+      ticketPrice: _resolveTicketPrice(),
+    );
+
+    if (selectedMode != null) {
+      _sendInvite(partner, selectedMode);
+    }
+  }
+
+  Future<void> _sendInvite(Map<String, dynamic> partner, [String paymentMode = 'SELF_PAY']) async {
     final partnerId = partner['userId']?.toString();
     if (partnerId == null || partnerId.isEmpty) return;
 
@@ -145,6 +174,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       venueId: widget.venueId,
       date: widget.date,
       time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
+      paymentMode: paymentMode,
     );
 
     if (!mounted) return;
@@ -675,7 +705,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
               child: ElevatedButton(
                 onPressed: (isSent || isInviting)
                     ? null
-                    : () => _sendInvite(partner),
+                    : () => _promptAndSendInvite(partner),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isSent
                       ? Colors.green.withValues(alpha: 0.15)

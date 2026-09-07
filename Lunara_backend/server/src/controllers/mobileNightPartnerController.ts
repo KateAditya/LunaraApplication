@@ -118,7 +118,7 @@ export const getPartnerProfilePreview = async (req: Request, res: Response): Pro
 
 export const sendPartnerRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { partnerId, venueId, eventDate, eventTime } = req.body;
+        const { partnerId, venueId, eventDate, eventTime, paymentMode } = req.body;
         const hostId = req.user!.id;
         if (!partnerId || !venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'partnerId, venueId, and eventDate are required' });
@@ -130,7 +130,8 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
             partnerId,
             venueId,
             eventDate,
-            eventTime
+            eventTime,
+            paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
         );
         res.status(201).json({ success: true, message: 'Partner request sent successfully', data: partnerRequest });
     } catch (err: any) {
@@ -222,8 +223,9 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
     try {
         const { id } = req.params;
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature, paymentMethod } = req.body;
+        const isWallet = paymentMethod?.toString().toLowerCase().includes('wallet');
 
-        if (paymentMethod !== 'wallet' && (!id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
+        if (!isWallet && (!id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
             res.status(400).json({ success: false, message: 'matchId and all Razorpay verification params are required' });
             return;
         }
@@ -234,7 +236,7 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
             razorpay_payment_id || 'wallet_payment',
             razorpay_signature || 'mock_signature',
             req.user!.id,
-            paymentMethod === 'wallet' ? 'wallet' : 'razorpay'
+            isWallet ? 'wallet' : 'razorpay'
         );
 
         res.json({

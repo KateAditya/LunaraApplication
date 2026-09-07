@@ -153,8 +153,11 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
               data['creator'] ??
               (planData is Map
                   ? (planData['host'] ?? planData['creator'] ?? planData['user'])
+                  : null) ??
+              (requestData is Map
+                  ? (requestData['host'] ?? requestData['creator'])
                   : null);
-          if (hostObj is Map) {
+          if (hostObj is Map && hostObj.isNotEmpty) {
             _freshHostUser = Map<String, dynamic>.from(hostObj);
           }
 
@@ -168,7 +171,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
               (planData is Map
                   ? (planData['matchedJoiner'] ?? planData['partner'] ?? planData['joiner'])
                   : null);
-          if (joinerObj is Map) {
+          if (joinerObj is Map && joinerObj.isNotEmpty) {
             _freshJoinerUser = Map<String, dynamic>.from(joinerObj);
           }
 
@@ -177,6 +180,39 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
       }
     } catch (e) {
       debugPrint('_fetchTicketData error: $e');
+    }
+
+    // ── Fallback: if host profile is still missing on the joiner side, fetch by userId ──
+    if (!widget.isHost && mounted && (_freshHostUser == null || _freshHostUser!.isEmpty)) {
+      final hostId = widget.plan['userId']?.toString() ??
+          widget.plan['creatorId']?.toString() ??
+          widget.plan['hostId']?.toString() ??
+          widget.request['plan']?['userId']?.toString() ??
+          widget.request['plan']?['creatorId']?.toString() ??
+          widget.request['plan']?['hostId']?.toString() ??
+          widget.request['hostId']?.toString() ??
+          widget.request['creatorId']?.toString();
+      if (hostId != null && hostId.isNotEmpty) {
+        try {
+          final profile = await ApiService.fetchProfile(userId: hostId);
+          if (profile != null && mounted) {
+            setState(() {
+              _freshHostUser = {
+                'id': profile.id,
+                'firstName': profile.firstName,
+                'lastName': profile.lastName,
+                'username': profile.displayName ?? profile.firstName.toLowerCase(),
+                'profilePhotoUrl': profile.profilePhoto,
+                'profileImageUrl': profile.profilePhoto,
+                'image': profile.profilePhoto,
+                'bio': profile.bio,
+              };
+            });
+          }
+        } catch (e) {
+          debugPrint('_fetchTicketData host fallback error: $e');
+        }
+      }
     }
   }
 
@@ -455,17 +491,26 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
       if (p['creator'] is Map && (p['creator'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['creator']);
       if (p['user'] is Map && (p['user'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['user']);
     }
+    // plan['user'] is the HOST's user object only when the current user is the host
+    // (on the joiner side, plan['user'] might be the joiner's own object — skip it here)
     if (widget.plan['user'] is Map && widget.isHost && (widget.plan['user'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(widget.plan['user']);
     }
 
     final myUser = ApiService.cachedCurrentUser;
+    // Only use plan-level userId/creatorId/hostId fields that genuinely point to the HOST.
+    // Deliberately EXCLUDE widget.request['userId'] — for a joiner ticket, that field
+    // is the JOINER's own user-id, not the host's, which would make isMe wrongly = true.
     final planUserId = widget.plan['userId']?.toString() ??
         widget.plan['creatorId']?.toString() ??
+        widget.plan['hostId']?.toString() ??
         widget.request['plan']?['userId']?.toString() ??
         widget.request['plan']?['creatorId']?.toString() ??
-        widget.request['userId']?.toString();
+        widget.request['plan']?['hostId']?.toString() ??
+        widget.request['hostId']?.toString() ??
+        widget.request['creatorId']?.toString();
 
+    // isMe is true ONLY when the current user is confirmed to be the HOST
     final isMe = widget.isHost || (myUser != null && planUserId != null && planUserId == myUser.id);
     if (isMe && myUser != null) {
       return <String, dynamic>{
@@ -480,8 +525,13 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
       };
     }
 
+    // Last static fallback: plan['user'] regardless of role
     if (widget.plan['user'] is Map && (widget.plan['user'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['user']);
+      final cand = Map<String, dynamic>.from(widget.plan['user']);
+      // Only return if it's a different person than the current user (i.e. it's the host)
+      if (myUser == null || cand['id']?.toString() != myUser.id) {
+        return cand;
+      }
     }
 
     return <String, dynamic>{};

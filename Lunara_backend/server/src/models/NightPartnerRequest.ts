@@ -16,6 +16,7 @@ export interface NightPartnerRequestAttributes {
     venueId: string;
     eventDate: Date;
     eventTime?: string;
+    paymentMode?: 'SELF_PAY' | 'SPLIT';
     status: NightPartnerRequestStatus;
     expiresAt: Date;
     nightInterestId?: string;
@@ -29,7 +30,7 @@ export interface NightPartnerRequestAttributes {
 export interface NightPartnerRequestCreationAttributes
     extends Optional<
         NightPartnerRequestAttributes,
-        'id' | 'eventTime' | 'status' | 'nightInterestId' | 'createdAt' | 'updatedAt' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
+        'id' | 'eventTime' | 'paymentMode' | 'status' | 'nightInterestId' | 'createdAt' | 'updatedAt' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
     > {}
 
 class NightPartnerRequest
@@ -41,6 +42,7 @@ class NightPartnerRequest
     public venueId!: string;
     public eventDate!: Date;
     public eventTime?: string;
+    public paymentMode?: 'SELF_PAY' | 'SPLIT';
     public status!: NightPartnerRequestStatus;
     public expiresAt!: Date;
     public nightInterestId?: string;
@@ -85,6 +87,12 @@ NightPartnerRequest.init(
             type: DataTypes.STRING(20),
             allowNull: true,
             field: 'event_time',
+        },
+        paymentMode: {
+            type: DataTypes.STRING(20),
+            allowNull: false,
+            defaultValue: 'SELF_PAY',
+            field: 'payment_mode',
         },
         status: {
             type: DataTypes.ENUM(...Object.values(NightPartnerRequestStatus)),

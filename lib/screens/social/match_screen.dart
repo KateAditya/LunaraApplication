@@ -1087,12 +1087,7 @@ class _MatchScreenState extends State<MatchScreen>
                 badgeText: superLabel,
                 badgeColor: superExhausted ? Colors.grey : LunaraTheme.primaryRich,
               ),
-              _interactionButton(
-                icon: Icons.bolt,
-                color: const Color(0xFF00E5FF),
-                onTap: _onBoostTap,
-                label: 'BOOST',
-              ),
+              _buildBoostButton(provider),
             ],
           ),
         );
@@ -1172,6 +1167,24 @@ class _MatchScreenState extends State<MatchScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBoostButton(SubscriptionProvider provider) {
+    final boostsRemaining = provider.boostsRemaining;
+    final boostIsUnlimited =
+        provider.isElite || provider.status.isUnlimitedBoosts || boostsRemaining >= 9999;
+    final boostLabel = boostIsUnlimited ? '∞' : '$boostsRemaining';
+    final boostExhausted = !boostIsUnlimited && boostsRemaining <= 0;
+    const boostColor = Color(0xFF00E5FF);
+
+    return _interactionButton(
+      icon: Icons.bolt,
+      color: boostExhausted ? boostColor.withValues(alpha: 0.4) : boostColor,
+      onTap: _onBoostTap,
+      label: 'BOOST',
+      badgeText: boostLabel,
+      badgeColor: boostExhausted ? Colors.grey : boostColor,
     );
   }
 }

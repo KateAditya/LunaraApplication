@@ -337,12 +337,33 @@ class SubscriptionProvider extends ChangeNotifier {
         );
 
       case VipAction.partyPlan:
+        if (isElite || _status.isUnlimitedPartyPlans) {
+          return const VipActionValidation(
+            allowed: true,
+            action: VipAction.partyPlan,
+            isUnlimited: true,
+            limit: 'unlimited',
+            remaining: 'unlimited',
+          );
+        }
+        final partyRem = partyPlansRemaining;
+        if (partyRem <= 0) {
+          return VipActionValidation(
+            allowed: false,
+            action: VipAction.partyPlan,
+            code: 'PARTY_PLAN_LIMIT_REACHED',
+            limit: _status.isPaid ? 3 : 1,
+            remaining: 0,
+            message: _status.isPaid
+                ? "You've used all your Party Plan slots for this cycle. Purchase an add-on pack to create more!"
+                : "You can only create 1 Party Plan on the Free tier. Upgrade to VIP for more party plan slots!",
+          );
+        }
         return VipActionValidation(
           allowed: true,
           action: VipAction.partyPlan,
-          isUnlimited: isElite,
-          limit: isElite ? 'unlimited' : (_status.isPaid ? 3 : 1),
-          remaining: isElite ? 'unlimited' : 1,
+          limit: _status.isPaid ? 3 : 1,
+          remaining: partyRem,
         );
 
       case VipAction.matchRequest:
@@ -401,6 +422,10 @@ class SubscriptionProvider extends ChangeNotifier {
         _optimisticSuperlikesOffset = 0;
         _optimisticBoostsOffset = 0;
         _optimisticBacktracksOffset = 0;
+        // Clear stale entitlements so math.max uses the fresh status value
+        // instead of an outdated cached entitlements count.  Will be
+        // re-populated by the background call below.
+        _entitlementsSummary = null;
         _checkAndDispatchExpirationAlert();
       }
     } catch (e) {
@@ -409,6 +434,9 @@ class SubscriptionProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+    // Re-fetch entitlements in the background so addon balances stay accurate.
+    // Not awaited — the status data above is already fresh and shown to the user.
+    fetchEntitlementsSummary();
   }
 
   /// Fetches the full breakdown of plan entitlements, usage, and separated add-on balances.
@@ -420,8 +448,13 @@ class SubscriptionProvider extends ChangeNotifier {
       final data = await ApiService.fetchEntitlementsSummary();
       if (data.isNotEmpty) {
         _entitlementsSummary = EntitlementsSummaryModel.fromJson(data);
+        // Reset ALL optimistic offsets — the server data is now ground truth.
+        // Previously only superlikes/boosts were reset here, leaving likes and
+        // backtracks with stale offset values.
+        _optimisticLikesOffset = 0;
         _optimisticSuperlikesOffset = 0;
         _optimisticBoostsOffset = 0;
+        _optimisticBacktracksOffset = 0;
       }
     } catch (e) {
       debugPrint('[SubscriptionProvider] fetchEntitlementsSummary error: $e');
