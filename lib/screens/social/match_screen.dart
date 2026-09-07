@@ -342,9 +342,14 @@ class _MatchScreenState extends State<MatchScreen>
             );
           }
         }
+
+        // Sync actual quota counts from the server after every swipe
+        // (background, no await — keeps UI snappy while keeping badges accurate)
+        SubscriptionProvider.instance.refresh();
       }
     });
   }
+
 
   void _swipeCard(bool liked, {String? customAction}) {
     if (_profiles.isEmpty || _isAnimating) return;
@@ -1025,50 +1030,73 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Widget _buildActionButtons() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _interactionButton(
-            icon: Icons.replay,
-            color: const Color(0xFFFFB703),
-            onTap: _rewindLastSwipe,
-            label: 'REWIND',
+    return AnimatedBuilder(
+      animation: SubscriptionProvider.instance,
+      builder: (context, _) {
+        final provider = SubscriptionProvider.instance;
+        final superRemaining = provider.superlikesRemaining;
+        final backtrackRemaining = provider.backtracksRemaining;
+        final superIsUnlimited = provider.isElite || provider.status.isUnlimitedSuperlikes || superRemaining >= 9999;
+        final backtrackIsUnlimited = provider.isElite || provider.status.hasUnlimitedBacktracks || backtrackRemaining >= 9999;
+        final superLabel = superIsUnlimited ? '∞' : '$superRemaining';
+        final backtrackLabel = backtrackIsUnlimited ? '∞' : '$backtrackRemaining';
+        final superExhausted = !superIsUnlimited && superRemaining <= 0;
+        final backtrackExhausted = !backtrackIsUnlimited && backtrackRemaining <= 0;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _interactionButton(
+                icon: Icons.replay,
+                color: backtrackExhausted
+                    ? const Color(0xFFFFB703).withValues(alpha: 0.4)
+                    : const Color(0xFFFFB703),
+                onTap: _rewindLastSwipe,
+                label: 'REWIND',
+                badgeText: backtrackLabel,
+                badgeColor: backtrackExhausted ? Colors.grey : const Color(0xFFFFB703),
+              ),
+              _interactionButton(
+                icon: Icons.close,
+                color: LunaraTheme.primaryDeep,
+                onTap: () {
+                  _swipeCard(false, customAction: 'nope');
+                },
+                label: 'NOPE',
+              ),
+              _interactionButton(
+                icon: Icons.favorite,
+                color: LunaraTheme.accentVivid,
+                onTap: () {
+                  _swipeCard(true, customAction: 'like');
+                },
+                isLarge: true,
+                label: 'LIKE',
+              ),
+              _interactionButton(
+                icon: Icons.star,
+                color: superExhausted
+                    ? LunaraTheme.primaryRich.withValues(alpha: 0.4)
+                    : LunaraTheme.primaryRich,
+                onTap: () {
+                  _swipeCard(true, customAction: 'superlike');
+                },
+                label: 'SUPER',
+                badgeText: superLabel,
+                badgeColor: superExhausted ? Colors.grey : LunaraTheme.primaryRich,
+              ),
+              _interactionButton(
+                icon: Icons.bolt,
+                color: const Color(0xFF00E5FF),
+                onTap: _onBoostTap,
+                label: 'BOOST',
+              ),
+            ],
           ),
-          _interactionButton(
-            icon: Icons.close,
-            color: LunaraTheme.primaryDeep,
-            onTap: () {
-              _swipeCard(false, customAction: 'nope');
-            },
-            label: 'NOPE',
-          ),
-          _interactionButton(
-            icon: Icons.favorite,
-            color: LunaraTheme.accentVivid,
-            onTap: () {
-              _swipeCard(true, customAction: 'like');
-            },
-            isLarge: true,
-            label: 'LIKE',
-          ),
-          _interactionButton(
-            icon: Icons.star,
-            color: LunaraTheme.primaryRich,
-            onTap: () {
-              _swipeCard(true, customAction: 'superlike');
-            },
-            label: 'SUPER',
-          ),
-          _interactionButton(
-            icon: Icons.bolt,
-            color: const Color(0xFF00E5FF),
-            onTap: _onBoostTap,
-            label: 'BOOST',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1078,31 +1106,60 @@ class _MatchScreenState extends State<MatchScreen>
     required VoidCallback onTap,
     bool isLarge = false,
     required String label,
+    String? badgeText,
+    Color? badgeColor,
   }) {
     final double size = isLarge ? 74 : 54;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        GestureDetector(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.25),
-                  blurRadius: 15,
-                  spreadRadius: 2,
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            GestureDetector(
+              onTap: onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.25),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
-              ],
+                child: Icon(icon, color: color, size: isLarge ? 30 : 22),
+              ),
             ),
-            child: Icon(icon, color: color, size: isLarge ? 30 : 22),
-          ),
+            // Remaining count badge
+            if (badgeText != null)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (badgeColor ?? color).withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.black, width: 1.5),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 6),
         Text(

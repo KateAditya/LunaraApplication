@@ -271,7 +271,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
       if (widget.initialPartyEvent != null) {
         final ad = widget.initialPartyEvent!;
         final imgUrl = _cleanMediaUrl(ad['imagePath'] ?? ad['image']);
-        String dateStr = ad['toDate'] ?? ad['fromDate'] ?? ad['rawDate'] ?? '';
+        String dateStr = ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? ad['rawDate'] ?? '';
         if (dateStr.isNotEmpty) {
           try {
             final dt = DateTime.parse(dateStr).toLocal();
@@ -284,7 +284,8 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
           'id': ad['id'] ?? 'featured_party',
           'title': ad['title'] ?? ad['description'] ?? 'Special Party Event',
           'date': dateStr,
-          'rawDate': ad['toDate'] ?? ad['fromDate'] ?? '',
+          'rawDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '',
+          'eventDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '',
           'venue': venue['name'] ?? widget.venue['name'] ?? 'Unknown Venue',
           'image': imgUrl,
           'isAsset': false,
@@ -303,7 +304,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
             final venueMap = ad['venue'] as Map<String, dynamic>? ?? {};
             final imageUrl = _cleanMediaUrl(ad['imagePath']);
 
-            String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+            String dateStr = ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '';
             if (dateStr.isNotEmpty) {
               try {
                 final dt = DateTime.parse(dateStr).toLocal();
@@ -317,7 +318,8 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
               'id': ad['id'] ?? 'event_${parsedEvents.length}',
               'title': ad['title'] ?? ad['description'] ?? 'Special Event',
               'date': dateStr,
-              'rawDate': ad['toDate'] ?? ad['fromDate'],
+              'rawDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
+              'eventDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
               'venue': venueMap['name'] ?? venue['name'] ?? 'Unknown Venue',
               'image': imageUrl,
               'isAsset': false,

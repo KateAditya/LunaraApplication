@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
@@ -20,6 +21,8 @@ class PartyEventBookingSheet extends StatefulWidget {
 class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   int _quantity = 1;
   bool _isProcessing = false;
+  late Map<String, dynamic> _liveEvent;
+  String? _inlineWarning;
 
   late Razorpay _razorpay;
   String? _pendingBookingId;
@@ -29,6 +32,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   @override
   void initState() {
     super.initState();
+    _liveEvent = Map<String, dynamic>.from(widget.event);
+    _fetchFreshEventDetails();
     if (!kIsWeb) {
       try {
         _razorpay = Razorpay();
@@ -38,6 +43,51 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       } catch (e) {
         debugPrint('Razorpay init error: $e');
       }
+    }
+  }
+
+  Future<void> _fetchFreshEventDetails() async {
+    final eventId = widget.event['eventId'] ?? widget.event['id'];
+    if (eventId == null) return;
+    try {
+      final res = await ApiService.get('/api/ads/active?type=Party');
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['data'] is List) {
+          final List ads = data['data'];
+          final matching = ads.firstWhere(
+            (a) => a['id']?.toString() == eventId.toString(),
+            orElse: () => null,
+          );
+          if (matching != null && mounted) {
+            final isUnlimited = matching['isUnlimited'] == true;
+            final int seatLimit = matching['seatLimit'] is num
+                ? (matching['seatLimit'] as num).toInt()
+                : (int.tryParse(matching['seatLimit']?.toString() ?? '0') ?? 0);
+            final int filledSeats = matching['filledSeats'] is num
+                ? (matching['filledSeats'] as num).toInt()
+                : (int.tryParse(matching['filledSeats']?.toString() ?? '0') ?? 0);
+            final dynamic rawRem = matching['remainingSeats'];
+            final int rem = rawRem is num
+                ? rawRem.toInt()
+                : (isUnlimited ? 999999 : (seatLimit - filledSeats));
+
+            setState(() {
+              _liveEvent = {
+                ..._liveEvent,
+                ...Map<String, dynamic>.from(matching),
+                'remainingSeats': rem > 0 ? rem : 0,
+                'entryPrice': matching['entryPrice'],
+                'isUnlimited': isUnlimited,
+                'seatLimit': seatLimit,
+                'filledSeats': filledSeats,
+              };
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching fresh event details in booking sheet: $e');
     }
   }
 
@@ -187,8 +237,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   }
 
   void _processBooking() async {
-    final eventId = widget.event['eventId'] ?? widget.event['id'];
-    final rawPrice = widget.event['entryPrice'];
+    final eventId = _liveEvent['eventId'] ?? widget.event['eventId'] ?? _liveEvent['id'] ?? widget.event['id'];
+    final rawPrice = _liveEvent['entryPrice'] ?? widget.event['entryPrice'];
     final double entryPrice = rawPrice is num
         ? rawPrice.toDouble()
         : (double.tryParse(rawPrice?.toString() ?? '0') ?? 0.0);
@@ -196,9 +246,12 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
     if (entryPrice == 0) {
       // Free Event Direct Flow
-      setState(() => _isProcessing = true);
+      setState(() {
+        _isProcessing = true;
+        _inlineWarning = null;
+      });
       final bookingRes = await ApiService.createPartyBooking(
-        partyEventId: eventId,
+        partyEventId: eventId.toString(),
         quantity: _quantity,
       );
       setState(() => _isProcessing = false);
@@ -224,9 +277,9 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
               errorData: bookingRes ?? {'message': msg},
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(msg)),
-            );
+            setState(() {
+              _inlineWarning = msg;
+            });
           }
         }
       }
@@ -234,17 +287,18 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
     }
 
     final parentContext = context;
-    final eventTitle = widget.event['title'] ?? 'Party Event';
+    final eventTitle = _liveEvent['title'] ?? widget.event['title'] ?? 'Party Event';
+    final venueName = (_liveEvent['venue'] ?? widget.event['venue'] ?? 'Event').toString();
     String? createdTicketCode;
 
     final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: parentContext,
       title: eventTitle,
-      subtitle: '$_quantity x Ticket (${widget.event['venue'] ?? 'Event'})',
+      subtitle: '$_quantity x Ticket ($venueName)',
       itemPrice: totalPrice,
       onWalletPayment: () async {
         final bookingRes = await ApiService.createPartyBooking(
-          partyEventId: eventId,
+          partyEventId: eventId.toString(),
           quantity: _quantity,
         );
 
@@ -311,7 +365,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       },
       onDirectPayment: () async {
         final bookingRes = await ApiService.createPartyBooking(
-          partyEventId: eventId,
+          partyEventId: eventId.toString(),
           quantity: _quantity,
         );
 
@@ -368,7 +422,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       },
       onHybridPayment: (shortfallAmount) async {
         final bookingRes = await ApiService.createPartyBooking(
-          partyEventId: eventId,
+          partyEventId: eventId.toString(),
           quantity: _quantity,
         );
 
@@ -438,18 +492,18 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.event['title'] ?? 'Party Event';
-    final rawPrice = widget.event['entryPrice'];
+    final title = _liveEvent['title'] ?? widget.event['title'] ?? 'Party Event';
+    final rawPrice = _liveEvent['entryPrice'] ?? widget.event['entryPrice'];
     final double entryPrice = rawPrice is num
         ? rawPrice.toDouble()
         : (double.tryParse(rawPrice?.toString() ?? '0') ?? 0.0);
-    final rawSeats = widget.event['remainingSeats'];
+    final rawSeats = _liveEvent['remainingSeats'] ?? widget.event['remainingSeats'];
     final int remainingSeats = rawSeats is num
         ? rawSeats.toInt()
         : (int.tryParse(rawSeats?.toString() ?? '') ?? 999999);
-    final isUnlimited = widget.event['isUnlimited'] == true;
+    final isUnlimited = (_liveEvent['isUnlimited'] ?? widget.event['isUnlimited']) == true;
 
-    final maxSeats = isUnlimited ? 10 : (remainingSeats > 10 ? 10 : remainingSeats);
+    final int maxSeats = isUnlimited ? 100 : (remainingSeats > 0 ? remainingSeats : 0);
 
     return Container(
       decoration: BoxDecoration(
@@ -515,7 +569,12 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                       color: _quantity > 1 ? Colors.white : Colors.white24,
                     ),
                     onPressed: _quantity > 1
-                        ? () => setState(() => _quantity--)
+                        ? () {
+                            setState(() {
+                              _quantity--;
+                              _inlineWarning = null;
+                            });
+                          }
                         : null,
                   ),
                   Text(
@@ -525,31 +584,57 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                   IconButton(
                     icon: Icon(
                       Icons.add_circle_outline, 
-                      color: _quantity < maxSeats ? Colors.white : Colors.white24,
+                      color: (maxSeats > 0 && _quantity < maxSeats) ? Colors.white : Colors.white24,
                     ),
-                    onPressed: () {
-                      if (_quantity < maxSeats) {
-                        setState(() => _quantity++);
-                      } else {
-                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              isUnlimited 
-                                  ? 'Maximum 10 tickets per booking.' 
-                                  : 'Only $maxSeats tickets available for this event.',
-                            ),
-                            duration: const Duration(seconds: 2),
-                            backgroundColor: Colors.amber[900],
-                          ),
-                        );
-                      }
-                    },
+                    onPressed: maxSeats <= 0
+                        ? null
+                        : () {
+                            if (_quantity < maxSeats) {
+                              setState(() {
+                                _quantity++;
+                                _inlineWarning = null;
+                              });
+                            } else {
+                              setState(() {
+                                _inlineWarning = isUnlimited
+                                    ? 'Maximum 100 tickets per transaction.'
+                                    : 'All $remainingSeats available seats selected.';
+                              });
+                            }
+                          },
                   ),
                 ],
               ),
             ],
           ),
+          if (_inlineWarning != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.amber, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _inlineWarning!,
+                      style: const TextStyle(
+                        color: Colors.amber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -568,8 +653,12 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
           LunaraActionButton(
             text: _isProcessing 
                 ? 'PROCESSING...' 
-                : (entryPrice == 0 ? 'CONFIRM BOOKING' : 'PROCEED TO PAY'),
-            onPressed: _isProcessing ? () {} : _processBooking,
+                : (!isUnlimited && remainingSeats <= 0)
+                    ? 'SOLD OUT'
+                    : (entryPrice == 0 ? 'CONFIRM BOOKING' : 'PROCEED TO PAY'),
+            onPressed: (_isProcessing || (!isUnlimited && remainingSeats <= 0))
+                ? () {} 
+                : _processBooking,
           ),
           const SizedBox(height: 16),
         ],

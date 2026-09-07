@@ -594,7 +594,7 @@ async function getUserNotifications(
     try {
         const bookings = await Booking.findAll({
             where: { userId: uId },
-            include: [{ model: Venue, as: 'venue', attributes: ['name'] }],
+            include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],
             limit: 30
         });
@@ -617,7 +617,7 @@ async function getUserNotifications(
                         }
                     } else {
                         const { VenueBookingService } = await import('../services/VenueBookingService');
-                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId);
+                        const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, uId, booking);
                         if (enrichedCard) {
                             const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
                             const cardTime = new Date(lastActivityAt).getTime();

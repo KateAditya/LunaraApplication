@@ -43,6 +43,7 @@ class NotificationAction {
   final bool isPrimary;
   final IconData? icon;
   final Color? color;
+  final bool isLoading;
 
   NotificationAction({
     required this.label,
@@ -50,6 +51,7 @@ class NotificationAction {
     this.isPrimary = true,
     this.icon,
     this.color,
+    this.isLoading = false,
   });
 }
 
@@ -142,6 +144,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Razorpay for large party payments
   Razorpay? _razorpay;
   String? _pendingLargePartyBookingId;
+
+  // Active action loaders & payment tracking
+  final Set<String> _activeActionKeys = <String>{};
+  String? _processingPaymentBookingId;
 
   void refreshFeed() {
     _loadFeed(showLoader: false);
@@ -499,10 +505,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  Future<void> _loadFeed({bool showLoader = true}) async {
+  bool _hasPendingForceRefresh = false;
+
+  Future<void> _loadFeed({bool showLoader = true, bool forceRefresh = false}) async {
     final requestUserId = _sessionUserId;
     if (_isFetchingFeed) {
       _hasPendingRefetch = true;
+      if (forceRefresh) _hasPendingForceRefresh = true;
       return;
     }
     _isFetchingFeed = true;
@@ -514,9 +523,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       await ApiService.loadLocalReadIds();
       final responses = await Future.wait([
         ApiService.fetchLiveFeedData(),
-        ApiService.fetchNotifications(),
-        ApiService.fetchMyLargePartyBookings(),
-        ApiService.fetchBookings(),
+        ApiService.fetchNotifications(forceRefresh: forceRefresh),
+        ApiService.fetchMyLargePartyBookings(forceRefresh: forceRefresh),
+        ApiService.fetchBookings(forceRefresh: forceRefresh),
       ]);
 
       final data = responses[0] as Map<String, dynamic>;
@@ -554,8 +563,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } finally {
       _isFetchingFeed = false;
       if (_hasPendingRefetch && mounted) {
+        final pendingForce = _hasPendingForceRefresh;
         _hasPendingRefetch = false;
-        _loadFeed(showLoader: false);
+        _hasPendingForceRefresh = false;
+        _loadFeed(showLoader: false, forceRefresh: pendingForce);
       }
     }
   }
@@ -596,11 +607,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.localReadNotificationIds.add(nId);
       }
     }
-    await ApiService.saveLocalReadRequestIds();
-    await ApiService.saveLocalReadNotificationIds();
-    await ApiService.markAllNotificationsAsRead();
-    await ApiService.clearAllNotifications();
 
+    // ── Instant optimistic local update (0ms UI delay!) ──────────────
     if (mounted) {
       _notifications = _notifications
           .map((n) {
@@ -618,6 +626,217 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       );
     }
+
+    // ── Persist to storage & server asynchronously in background ──────
+    unawaited(() async {
+      try {
+        await Future.wait([
+          ApiService.saveLocalReadRequestIds(),
+          ApiService.saveLocalReadNotificationIds(),
+          ApiService.markAllNotificationsAsRead(),
+          ApiService.clearAllNotifications(),
+        ]);
+      } catch (e) {
+        debugPrint('Background markAllNotificationsAsRead error: $e');
+      }
+    }());
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Instant Optimistic State Mutators
+  // ─────────────────────────────────────────────────────────────────────────────
+  void _optimisticallyUpdatePartyPlanRequest(String reqId, String newStatus) {
+    final cleanReq = ApiService.cleanBookingId(reqId);
+    for (int i = 0; i < _feedItems.length; i++) {
+      final f = _feedItems[i];
+      final rId = (f['id'] ?? f['requestId'] ?? f['data']?['id'] ?? '').toString();
+      final pId = (f['planId'] ?? f['partyPlanId'] ?? '').toString();
+      final cleanF = ApiService.cleanBookingId(rId);
+      final cleanP = ApiService.cleanBookingId(pId);
+
+      if (rId == reqId || cleanF == cleanReq || pId == reqId || cleanP == cleanReq) {
+        final updated = Map<String, dynamic>.from(f);
+        updated['status'] = newStatus;
+        updated['requestStatus'] = newStatus;
+        if (newStatus == 'cancelled') {
+          updated['lifecycleStatus'] = 'cancelled';
+          updated['isCancelled'] = true;
+        }
+        if (updated['myRequest'] is Map) {
+          updated['myRequest'] = {
+            ...Map<String, dynamic>.from(updated['myRequest'] as Map),
+            'status': newStatus,
+          };
+        }
+        if (updated['pendingIncomingRequests'] is List) {
+          final reqs = List<Map<String, dynamic>>.from(updated['pendingIncomingRequests']);
+          reqs.removeWhere((r) => (r['id']?.toString() == reqId || ApiService.cleanBookingId(r['id']?.toString() ?? '') == cleanReq));
+          updated['pendingIncomingRequests'] = reqs;
+        }
+        _feedItems[i] = updated;
+      }
+    }
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
+  }
+
+  void _optimisticallyUpdatePartyPlanInvite(String reqId, String newStatus) {
+    final cleanReq = ApiService.cleanBookingId(reqId);
+    for (int i = 0; i < _feedItems.length; i++) {
+      final f = _feedItems[i];
+      final rId = (f['id'] ?? f['requestId'] ?? f['inviteId'] ?? f['data']?['id'] ?? '').toString();
+      final pId = (f['planId'] ?? f['partyPlanId'] ?? '').toString();
+      final cleanF = ApiService.cleanBookingId(rId);
+      final cleanP = ApiService.cleanBookingId(pId);
+      if (rId == reqId || cleanF == cleanReq || pId == reqId || cleanP == cleanReq) {
+        final updated = Map<String, dynamic>.from(f);
+        updated['status'] = newStatus;
+        updated['inviteStatus'] = newStatus;
+        if (updated['myRequest'] is Map) {
+          updated['myRequest'] = {
+            ...Map<String, dynamic>.from(updated['myRequest'] as Map),
+            'status': newStatus,
+          };
+        }
+        _feedItems[i] = updated;
+      }
+    }
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
+  }
+
+  void _optimisticallyUpdateStrangersMeetJoinRequest(String meetId, String joinerId, String newStatus) {
+    final cleanMeet = ApiService.cleanBookingId(meetId);
+    final cleanJoiner = ApiService.cleanBookingId(joinerId);
+    for (int i = 0; i < _feedItems.length; i++) {
+      final f = _feedItems[i];
+      final mId = (f['meetId'] ?? f['strangersMeetId'] ?? f['data']?['meetId'] ?? f['data']?['strangersMeetId'] ?? f['id'] ?? '').toString();
+      final jId = (f['joinerId'] ?? f['id'] ?? f['data']?['joinerId'] ?? '').toString();
+      final cleanM = ApiService.cleanBookingId(mId);
+      final cleanJ = ApiService.cleanBookingId(jId);
+
+      if ((cleanM == cleanMeet || cleanMeet.isEmpty) && (cleanJ == cleanJoiner || jId == joinerId)) {
+        final updated = Map<String, dynamic>.from(f);
+        updated['status'] = newStatus;
+        updated['joinStatus'] = newStatus;
+        _feedItems[i] = updated;
+      } else if (cleanM == cleanMeet || mId == meetId) {
+        final updated = Map<String, dynamic>.from(f);
+        if (updated['pendingIncomingRequests'] is List) {
+          final list = List<Map<String, dynamic>>.from(updated['pendingIncomingRequests']);
+          list.removeWhere((r) => r['id']?.toString() == joinerId || r['joinerId']?.toString() == joinerId);
+          updated['pendingIncomingRequests'] = list;
+        }
+        _feedItems[i] = updated;
+      }
+    }
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
+  }
+
+  void _optimisticallyUpdateNightPartnerRequest(String matchId, String newStatus) {
+    for (int i = 0; i < _feedItems.length; i++) {
+      final f = _feedItems[i];
+      final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
+      if (id == matchId) {
+        _feedItems[i] = {
+          ...f,
+          'status': newStatus,
+          'stage': newStatus == 'accepted' ? 'WAITING_FOR_PAYMENT' : 'DECLINED',
+        };
+      }
+    }
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? '').toString();
+      if (id == matchId || id.contains(matchId)) {
+        _notifications[i] = {
+          ...n,
+          'status': newStatus,
+          'stage': newStatus == 'accepted' ? 'WAITING_FOR_PAYMENT' : 'DECLINED',
+        };
+      }
+    }
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
+  }
+
+  void _optimisticallyMarkBookingCancelled(String rawBookingId, {double? refundAmount, int? refundPercentage}) {
+    final cleanId = ApiService.cleanBookingId(rawBookingId);
+    if (cleanId.isEmpty) return;
+
+    for (int i = 0; i < _userBookings.length; i++) {
+      final bId = ApiService.cleanBookingId((_userBookings[i]['id'] ?? _userBookings[i]['bookingId'] ?? '').toString());
+      if (bId == cleanId) {
+        _userBookings[i] = {
+          ..._userBookings[i],
+          'status': 'cancelled',
+          'bookingStatus': 'cancelled',
+          'paymentStatus': 'refunded',
+          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+        };
+      }
+    }
+
+    for (int i = 0; i < _largePartyBookings.length; i++) {
+      final bId = ApiService.cleanBookingId((_largePartyBookings[i]['id'] ?? _largePartyBookings[i]['bookingId'] ?? '').toString());
+      if (bId == cleanId) {
+        _largePartyBookings[i] = {
+          ..._largePartyBookings[i],
+          'status': 'cancelled',
+          'overallStatus': 'cancelled',
+          'cancelStatus': 'COMPLETED',
+          'paymentStatus': 'refunded',
+          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+        };
+      }
+    }
+
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final nId = ApiService.cleanBookingId((n['id'] ?? '').toString());
+      final entityId = ApiService.cleanBookingId((n['entityId'] ?? n['data']?['bookingId'] ?? '').toString());
+      if (nId.contains(cleanId) || entityId == cleanId) {
+        _notifications[i] = {
+          ...n,
+          'status': 'cancelled',
+          'paymentStatus': 'refunded',
+          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          'data': {
+            if (n['data'] is Map) ...(n['data'] as Map<String, dynamic>),
+            'status': 'cancelled',
+            'paymentStatus': 'refunded',
+            if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+            if (refundPercentage != null) 'refundPercentage': refundPercentage,
+          }
+        };
+      }
+    }
+
+    for (int i = 0; i < _feedItems.length; i++) {
+      final f = _feedItems[i];
+      final fId = ApiService.cleanBookingId((f['id'] ?? f['bookingId'] ?? '').toString());
+      if (fId == cleanId) {
+        _feedItems[i] = {
+          ...f,
+          'status': 'cancelled',
+          'paymentStatus': 'refunded',
+          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundPercentage != null) 'refundPercentage': refundPercentage,
+        };
+      }
+    }
+
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -709,11 +928,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final bookingId = ApiService.cleanBookingId(rawBookingId);
     if (bookingId.isEmpty) return;
 
-    final venueName = booking['venue']?['name'] ?? booking['venueName'] ?? 'Venue';
-    final rawAmount = booking['totalAmount'] ?? booking['adminPaymentAmount'] ?? booking['amount'] ?? booking['price'] ?? 1999.0;
-    final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
+    final trackingId = bookingId.isNotEmpty ? bookingId : rawBookingId;
+    if (_processingPaymentBookingId != null) return;
+    setState(() => _processingPaymentBookingId = trackingId);
 
-    final bool? sheetSuccess = await SmartCheckoutSheet.show(
+    try {
+      final venueName = booking['venue']?['name'] ?? booking['venueName'] ?? 'Venue';
+      final rawAmount = booking['totalAmount'] ?? booking['adminPaymentAmount'] ?? booking['amount'] ?? booking['price'] ?? 1999.0;
+      final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
+
+      final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Group Party Booking',
       subtitle: 'Deposit payment for Group Party at $venueName',
@@ -985,7 +1209,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       }
     }
+  } catch (e) {
+    debugPrint('[LiveFeed] Error in _initiateLargePartyPayment: $e');
+  } finally {
+    if (mounted) {
+      setState(() => _processingPaymentBookingId = null);
+    }
   }
+}
 
   Future<void> _initiatePendingBookingPayment(Map<String, dynamic> payPayload) async {
     final type = (payPayload['type'] ?? '').toString();
@@ -1016,90 +1247,100 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (cleanBookingId.isEmpty) return;
 
-    final bool? sheetSuccess = await SmartCheckoutSheet.show(
-      context: context,
-      title: 'Complete Booking Payment',
-      subtitle: 'Reservation at $venueName',
-      itemPrice: amount,
-      onWalletPayment: () async {
-        final res = await ApiService.payWithWallet(
-          amount: amount,
-          bookingId: cleanBookingId,
-          paymentType: 'booking',
-        );
-        if (res != null && res['success'] == true) {
-          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
-          final confirmRes = await ApiService.payNowBooking(
-            cleanBookingId,
-            paymentMethod: 'wallet',
-            transactionId: transactionId,
-          );
-          if (confirmRes != null) {
-            return true;
-          }
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(res?['message'] ?? 'Wallet payment failed'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
-        return false;
-      },
-      onDirectPayment: () async {
-        await _launchRazorpayForPendingBooking(
-          bookingId: cleanBookingId,
-          venueName: venueName,
-          amount: amount,
-          mobileNumber: payPayload['mobileNumber']?.toString(),
-        );
-      },
-      onHybridPayment: (shortfall) async {
-        final walletAmount = amount - shortfall;
-        if (walletAmount > 0) {
-          final wRes = await ApiService.payWithWallet(
-            amount: walletAmount,
+    final trackingId = cleanBookingId.isNotEmpty ? cleanBookingId : rawBookingId;
+    if (_processingPaymentBookingId != null) return;
+    setState(() => _processingPaymentBookingId = trackingId);
+
+    try {
+      final bool? sheetSuccess = await SmartCheckoutSheet.show(
+        context: context,
+        title: 'Complete Booking Payment',
+        subtitle: 'Reservation at $venueName',
+        itemPrice: amount,
+        onWalletPayment: () async {
+          final res = await ApiService.payWithWallet(
+            amount: amount,
             bookingId: cleanBookingId,
             paymentType: 'booking',
           );
-          if (wRes == null || wRes['success'] != true) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(wRes?['message'] ?? 'Wallet deduction failed'),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
+          if (res != null && res['success'] == true) {
+            final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+            final confirmRes = await ApiService.payNowBooking(
+              cleanBookingId,
+              paymentMethod: 'wallet',
+              transactionId: transactionId,
+            );
+            if (confirmRes != null) {
+              return true;
             }
-            return;
           }
-        }
-        await _launchRazorpayForPendingBooking(
-          bookingId: cleanBookingId,
-          venueName: venueName,
-          amount: shortfall > 0 ? shortfall : amount,
-          mobileNumber: payPayload['mobileNumber']?.toString(),
-          isHybrid: true,
-        );
-      },
-    );
-
-    if (sheetSuccess == true && mounted) {
-      TopNotificationBanner.show(
-        title: 'Booking Confirmed! 🎉',
-        body: 'Your booking at $venueName was paid via Smart Wallet. Ticket is ready in Ticket Pocket!',
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res?['message'] ?? 'Wallet payment failed'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          return false;
+        },
+        onDirectPayment: () async {
+          await _launchRazorpayForPendingBooking(
+            bookingId: cleanBookingId,
+            venueName: venueName,
+            amount: amount,
+            mobileNumber: payPayload['mobileNumber']?.toString(),
+          );
+        },
+        onHybridPayment: (shortfall) async {
+          final walletAmount = amount - shortfall;
+          if (walletAmount > 0) {
+            final wRes = await ApiService.payWithWallet(
+              amount: walletAmount,
+              bookingId: cleanBookingId,
+              paymentType: 'booking',
+            );
+            if (wRes == null || wRes['success'] != true) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(wRes?['message'] ?? 'Wallet deduction failed'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+              return;
+            }
+          }
+          await _launchRazorpayForPendingBooking(
+            bookingId: cleanBookingId,
+            venueName: venueName,
+            amount: shortfall > 0 ? shortfall : amount,
+            mobileNumber: payPayload['mobileNumber']?.toString(),
+            isHybrid: true,
+          );
+        },
       );
-      ApiService.notifyFeedNeedsRefresh();
-      _loadFeed(showLoader: false);
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const TicketPocketScreen(),
-          ),
+
+      if (sheetSuccess == true && mounted) {
+        TopNotificationBanner.show(
+          title: 'Booking Confirmed! 🎉',
+          body: 'Your booking at $venueName was paid via Smart Wallet. Ticket is ready in Ticket Pocket!',
         );
+        ApiService.notifyFeedNeedsRefresh();
+        _loadFeed(showLoader: false);
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const TicketPocketScreen(),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _processingPaymentBookingId = null);
       }
     }
   }
@@ -1254,17 +1495,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _handleAcceptPartyPlan(String reqId) async {
-    if (!OptimisticActionGuard.start('FEED_ACCEPT_PARTY:$reqId')) return;
+    final actionKey = 'accept_party_$reqId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
+
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Request accepted successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
       final res = await ApiService.acceptPartyPlanRequest(reqId);
       if (res != null) {
-        _loadFeed(showLoader: false);
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request accepted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1273,7 +1518,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } catch (e) {
       debugPrint('Error accepting request: $e');
@@ -1284,25 +1529,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } finally {
-      OptimisticActionGuard.end('FEED_ACCEPT_PARTY:$reqId');
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 
   Future<void> _handleRejectPartyPlan(String reqId) async {
-    if (!OptimisticActionGuard.start('FEED_REJECT_PARTY:$reqId')) return;
+    final actionKey = 'reject_party_$reqId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
+
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Request declined.'),
-          backgroundColor: Colors.grey,
-        ),
-      );
       final success = await ApiService.rejectPartyPlanRequest(reqId);
       if (success) {
-        _loadFeed(showLoader: false);
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request declined.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1311,7 +1560,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } catch (e) {
       debugPrint('Error rejecting request: $e');
@@ -1322,10 +1571,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } finally {
-      OptimisticActionGuard.end('FEED_REJECT_PARTY:$reqId');
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 
@@ -1800,19 +2049,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   /// Accept a private invite sent by the host (calls accept-invite endpoint)
   Future<void> _handleAcceptPartyPlanInvite(String reqId) async {
-    if (!OptimisticActionGuard.start('FEED_ACCEPT_INVITE:$reqId')) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Invite accepted! Proceed to pay deposit.'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    final actionKey = 'accept_invite_$reqId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
 
     try {
       final res = await ApiService.acceptPartyPlanInvite(reqId);
       if (res != null) {
-        _loadFeed(showLoader: false);
+        _optimisticallyUpdatePartyPlanInvite(reqId, 'accepted');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invite accepted! Proceed to pay deposit.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1821,7 +2072,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } catch (e) {
       debugPrint('Error accepting invite: $e');
@@ -1832,27 +2083,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } finally {
-      OptimisticActionGuard.end('FEED_ACCEPT_INVITE:$reqId');
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 
   Future<void> _handleStrangersMeetJoinAction(String meetId, String joinerId, String action) async {
-    if (!OptimisticActionGuard.start('FEED_SM_JOIN:$meetId:$joinerId')) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
-        backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
-      ),
-    );
+    final actionKey = 'sm_join_${action}_$joinerId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
 
     try {
       final success = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, action);
       if (success) {
-        _loadFeed(showLoader: false);
+        _optimisticallyUpdateStrangersMeetJoinRequest(meetId, joinerId, action == 'accept' ? 'accepted' : 'rejected');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
+            backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
+          ),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1861,7 +2114,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } catch (e) {
       if (mounted) {
@@ -1871,10 +2124,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        _loadFeed(showLoader: false, forceRefresh: true);
       }
     } finally {
-      OptimisticActionGuard.end('FEED_SM_JOIN:$meetId:$joinerId');
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 
@@ -1905,7 +2158,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         rejectReason: rejectReason,
       );
       if (result['success'] == true) {
-        _loadFeed(showLoader: false);
+        final cleanMeet = ApiService.cleanBookingId(meetId);
+        for (int i = 0; i < _feedItems.length; i++) {
+          final item = _feedItems[i];
+          final mId = (item['id'] ?? item['meetId'] ?? item['strangersMeetId'] ?? '').toString();
+          if (mId == meetId || ApiService.cleanBookingId(mId) == cleanMeet) {
+            final updated = Map<String, dynamic>.from(item);
+            if (updated['pendingCancellationRequests'] is List) {
+              final list = List<Map<String, dynamic>>.from(updated['pendingCancellationRequests']);
+              list.removeWhere((c) => c['cancellationId']?.toString() == cancellationId || c['id']?.toString() == cancellationId);
+              updated['pendingCancellationRequests'] = list;
+            }
+            _feedItems[i] = updated;
+          }
+        }
+        _cachedTimeline = _buildUnifiedTimeline();
+        if (mounted) setState(() {});
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3641,11 +3910,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     List<NotificationAction>? actions;
     if (!isExpired && actionButtonText != null && onActionTap != null) {
+      final bool isProcessingPay = (actionButtonText == 'Pay Now' && _processingPaymentBookingId == partyId);
       actions = [
         NotificationAction(
-          label: actionButtonText,
-          onTap: onActionTap,
+          label: isProcessingPay ? 'Processing...' : actionButtonText,
+          onTap: isProcessingPay ? () {} : onActionTap,
           isPrimary: true,
+          isLoading: isProcessingPay,
           icon: actionButtonText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
         ),
       ];
@@ -3673,7 +3944,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 initialDate: dateStr,
                 initialTime: timeStr,
                 initialAmountPaid: totalAmount,
-                onCancelled: () => _loadFeed(),
+                onCancelled: () {
+                  _optimisticallyMarkBookingCancelled(cleanPartyId.isNotEmpty ? cleanPartyId : partyId);
+                  ApiService.clearBookingCache();
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                },
               );
             },
           ),
@@ -3858,13 +4133,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isPending = false;
     }
 
+    // Extract refund amount and refund percentage
+    double refundAmount = 0.0;
+    int? refundPercentage;
+    for (final e in entries) {
+      final rawRefund = e['refundAmount'] ?? e['data']?['refundAmount'] ?? e['booking']?['refundAmount'];
+      if (rawRefund is num && rawRefund > 0) {
+        refundAmount = rawRefund.toDouble();
+        break;
+      } else if (rawRefund != null) {
+        final parsed = double.tryParse(rawRefund.toString());
+        if (parsed != null && parsed > 0) {
+          refundAmount = parsed;
+          break;
+        }
+      }
+    }
+    for (final e in entries) {
+      final rawPct = e['refundPercentage'] ?? e['data']?['refundPercentage'] ?? e['booking']?['refundPercentage'];
+      if (rawPct is num && rawPct > 0) {
+        refundPercentage = rawPct.toInt();
+        break;
+      } else if (rawPct != null) {
+        final parsed = int.tryParse(rawPct.toString());
+        if (parsed != null && parsed > 0) {
+          refundPercentage = parsed;
+          break;
+        }
+      }
+    }
+
+    if (refundAmount <= 0 && isRefunded && totalAmount > 0) {
+      final pct = refundPercentage ?? 100;
+      refundAmount = (totalAmount * pct / 100.0);
+    }
+
+    final int effectivePct = refundPercentage ?? ((totalAmount > 0 && refundAmount > 0) ? ((refundAmount / totalAmount) * 100).round() : 100);
+
     final bool isSolo = guestCount <= 1;
     final String bookingTypeLabel = isSolo ? 'Solo Booking' : 'Table Booking ($guestCount Guests)';
     String title = '$bookingTypeLabel at $venueName 🎟';
     String body = isConfirmed
         ? 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!'
         : (isCancelled
-            ? ((isRefunded || totalAmount > 0) ? 'Your booking was cancelled. 80% (₹${totalAmount > 0 ? (totalAmount * 0.8).toStringAsFixed(0) : '0'}) refunded to your Lunara Wallet.' : 'Your booking was cancelled.')
+            ? ((refundAmount > 0 || isRefunded)
+                ? 'Your booking was cancelled. $effectivePct% (₹${refundAmount.toStringAsFixed(0)}) refunded to your Lunara Wallet.'
+                : 'Your booking was cancelled.')
             : (isCompleted
                 ? 'Hope you enjoyed your experience at $venueName!'
                 : 'Complete payment of ₹${totalAmount.toStringAsFixed(0)} to secure your table reservation.'));
@@ -3950,21 +4264,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               initialDate: dateStr,
               initialTime: timeStr,
               initialAmountPaid: totalAmount,
-              onCancelled: () => _loadFeed(),
+              onCancelled: () {
+                _optimisticallyMarkBookingCancelled(bookingId, refundAmount: refundAmount > 0 ? refundAmount : null, refundPercentage: effectivePct);
+                ApiService.clearBookingCache();
+                _loadFeed(showLoader: false, forceRefresh: true);
+              },
             );
           },
         ),
       );
     } else if (isPending && !isCancelled) {
+      final isProcessingPayment = _processingPaymentBookingId == bookingId;
       actionsList.add(
         NotificationAction(
-          label: 'Pay Now',
+          label: isProcessingPayment ? 'Processing...' : 'Pay Now',
           icon: Icons.credit_card_rounded,
           isPrimary: true,
-          onTap: () => _initiatePendingBookingPayment(bookingMap),
+          isLoading: isProcessingPayment,
+          onTap: isProcessingPayment ? () {} : () => _initiatePendingBookingPayment(bookingMap),
         ),
       );
-    } else if (isCancelled && (isRefunded || totalAmount > 0)) {
+    } else if (isCancelled && (isRefunded || refundAmount > 0 || totalAmount > 0)) {
       actionsList.add(
         NotificationAction(
           label: 'View Wallet',
@@ -4320,28 +4640,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         cardTitle = 'Night Partner Invite 🌙';
         cardBody = '$partnerName invited you to join for $displayTitle on $dateStr • $timeStr!';
 
+        final acceptKey = 'accept_np_$matchId';
+        final declineKey = 'decline_np_$matchId';
+        final isAccepting = _activeActionKeys.contains(acceptKey);
+        final isDeclining = _activeActionKeys.contains(declineKey);
+
         actionsList.add(
           NotificationAction(
-            label: 'Accept',
+            label: isAccepting ? 'Accepting...' : 'Accept',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
-            onTap: () async {
-              final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'accept');
-              if (ok) {
-                _loadFeed(showLoader: false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Invite accepted! Waiting for booking confirmation. 🎉'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Could not accept invite. Match slot may already be filled.'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
+            isLoading: isAccepting,
+            onTap: (isAccepting || isDeclining) ? () {} : () async {
+              setState(() => _activeActionKeys.add(acceptKey));
+              try {
+                final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'accept');
+                if (ok) {
+                  _optimisticallyUpdateNightPartnerRequest(matchId, 'accepted');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Invite accepted! Waiting for booking confirmation. 🎉'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Could not accept invite. Match slot may already be filled.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(acceptKey));
               }
             },
           ),
@@ -4349,14 +4682,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         actionsList.add(
           NotificationAction(
-            label: 'Decline',
+            label: isDeclining ? 'Declining...' : 'Decline',
             icon: Icons.close_rounded,
             isPrimary: false,
+            isLoading: isDeclining,
             color: Colors.white54,
-            onTap: () async {
-              final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'decline');
-              if (ok) {
-                _loadFeed(showLoader: false);
+            onTap: (isAccepting || isDeclining) ? () {} : () async {
+              setState(() => _activeActionKeys.add(declineKey));
+              try {
+                final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'decline');
+                if (ok) {
+                  _optimisticallyUpdateNightPartnerRequest(matchId, 'rejected');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Invite declined.'),
+                      backgroundColor: Colors.grey,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Could not decline invite.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(declineKey));
               }
             },
           ),
@@ -4896,13 +5250,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '⚠️ Cancellation Requested';
         body = '$requesterName has requested to cancel this Party Plan at $venueName.\nReason: "$reasonText"';
         statusSummary = 'Approval Required';
+        final acceptCancelKey = 'accept_cancel_pp_$planId';
+        final keepPlanKey = 'keep_plan_pp_$planId';
+        final isAcceptingCancel = _activeActionKeys.contains(acceptCancelKey);
+        final isKeepingPlan = _activeActionKeys.contains(keepPlanKey);
+
         actionsList = [
           NotificationAction(
-            label: 'Accept Cancellation',
+            label: isAcceptingCancel ? 'Accepting...' : 'Accept Cancellation',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
+            isLoading: isAcceptingCancel,
             color: Colors.redAccent,
-            onTap: () async {
+            onTap: (isAcceptingCancel || isKeepingPlan) ? () {} : () async {
               if (cancelReqId.isEmpty) {
                 Navigator.push(
                   context,
@@ -4910,28 +5270,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ).then((_) => _loadFeed(showLoader: false));
                 return;
               }
-              final res = await ApiService.respondToPartyPlanCancellationRequest(
-                planId: planId,
-                requestId: cancelReqId,
-                action: 'approve',
-              );
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposit credited to wallet!'),
-                    backgroundColor: Colors.green,
-                  ),
+              setState(() => _activeActionKeys.add(acceptCancelKey));
+              try {
+                final res = await ApiService.respondToPartyPlanCancellationRequest(
+                  planId: planId,
+                  requestId: cancelReqId,
+                  action: 'approve',
                 );
-                _loadFeed(showLoader: false);
+                _optimisticallyUpdatePartyPlanRequest(planId, 'cancelled');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposit credited to wallet!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(acceptCancelKey));
               }
             },
           ),
           NotificationAction(
-            label: 'Keep Plan',
+            label: isKeepingPlan ? 'Keeping...' : 'Keep Plan',
             icon: Icons.shield_rounded,
             isPrimary: false,
+            isLoading: isKeepingPlan,
             color: Colors.grey[200],
-            onTap: () async {
+            onTap: (isAcceptingCancel || isKeepingPlan) ? () {} : () async {
               if (cancelReqId.isEmpty) {
                 Navigator.push(
                   context,
@@ -4939,19 +5306,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ).then((_) => _loadFeed(showLoader: false));
                 return;
               }
-              final res = await ApiService.respondToPartyPlanCancellationRequest(
-                planId: planId,
-                requestId: cancelReqId,
-                action: 'reject',
-              );
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(res['message'] ?? 'Cancellation declined. Party Plan remains active.'),
-                    backgroundColor: Colors.grey.shade800,
-                  ),
+              setState(() => _activeActionKeys.add(keepPlanKey));
+              try {
+                final res = await ApiService.respondToPartyPlanCancellationRequest(
+                  planId: planId,
+                  requestId: cancelReqId,
+                  action: 'reject',
                 );
-                _loadFeed(showLoader: false);
+                _optimisticallyUpdatePartyPlanRequest(planId, 'active');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res['message'] ?? 'Cancellation declined. Party Plan remains active.'),
+                      backgroundColor: Colors.grey.shade800,
+                    ),
+                  );
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(keepPlanKey));
               }
             },
           ),
@@ -5078,13 +5451,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       // If user hasn't responded yet, render YES and NO confirmation buttons directly on the card
       if (!myHasResponded) {
+        final reachYesKey = 'reach_yes_$planId';
+        final reachNoKey = 'reach_no_$planId';
+        final isReachYes = _activeActionKeys.contains(reachYesKey);
+        final isReachNo = _activeActionKeys.contains(reachNoKey);
+
         actionsList.add(
           NotificationAction(
-            label: 'YES, REACHED',
+            label: isReachYes ? 'Confirming...' : 'YES, REACHED',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
+            isLoading: isReachYes,
             color: const Color(0xFF10B981),
-            onTap: () async {
+            onTap: (isReachYes || isReachNo) ? () {} : () async {
+              setState(() => _activeActionKeys.add(reachYesKey));
               try {
                 final res = await ApiService.confirmArrival(
                   planId: planId,
@@ -5116,6 +5496,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     SnackBar(content: Text('Failed to confirm arrival: $e')),
                   );
                 }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(reachYesKey));
               }
             },
           ),
@@ -5123,11 +5505,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         actionsList.add(
           NotificationAction(
-            label: 'NO, NOT REACHED',
+            label: isReachNo ? 'Updating...' : 'NO, NOT REACHED',
             icon: Icons.cancel_outlined,
             isPrimary: false,
+            isLoading: isReachNo,
             color: Colors.grey[200],
-            onTap: () async {
+            onTap: (isReachYes || isReachNo) ? () {} : () async {
+              setState(() => _activeActionKeys.add(reachNoKey));
               try {
                 final res = await ApiService.confirmArrival(
                   planId: planId,
@@ -5151,6 +5535,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     SnackBar(content: Text('Failed to update status: $e')),
                   );
                 }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(reachNoKey));
               }
             },
           ),
@@ -5684,19 +6070,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
         statusSummary = 'Private Invite';
 
+        final isAcceptingInvite = _activeActionKeys.contains('accept_invite_$reqId');
+        final isDecliningInvite = _activeActionKeys.contains('reject_party_$reqId');
         actionsList = [
           NotificationAction(
-            label: 'Accept',
+            label: isAcceptingInvite ? 'Accepting...' : 'Accept',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
-            onTap: () => _handleAcceptPartyPlanInvite(reqId),
+            isLoading: isAcceptingInvite,
+            onTap: (isAcceptingInvite || isDecliningInvite) ? () {} : () => _handleAcceptPartyPlanInvite(reqId),
           ),
           NotificationAction(
-            label: 'Decline',
+            label: isDecliningInvite ? 'Declining...' : 'Decline',
             icon: Icons.cancel_rounded,
             isPrimary: false,
+            isLoading: isDecliningInvite,
             color: Colors.grey[200],
-            onTap: () => _handleRejectPartyPlan(reqId),
+            onTap: (isAcceptingInvite || isDecliningInvite) ? () {} : () => _handleRejectPartyPlan(reqId),
           ),
         ];
       } else if (myStatus == 'pending') {
@@ -6538,19 +6928,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accent = const Color(0xFFF59E0B);
         body = '$cName requested cancellation from your Stranger Meet$cPaid.';
         statusSummary = 'Host Approval Required';
+        final smAcceptCancelKey = 'sm_cancel_accept_$cId';
+        final smRejectCancelKey = 'sm_cancel_reject_$cId';
+        final isSmAcceptingCancel = _activeActionKeys.contains(smAcceptCancelKey);
+        final isSmRejectingCancel = _activeActionKeys.contains(smRejectCancelKey);
+
         actionsList = [
           NotificationAction(
-            label: 'Accept Cancellation',
+            label: isSmAcceptingCancel ? 'Accepting...' : 'Accept Cancellation',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
-            onTap: () => _handleStrangersMeetCancellationAction(meetId, cId, 'accept'),
+            isLoading: isSmAcceptingCancel,
+            onTap: (isSmAcceptingCancel || isSmRejectingCancel) ? () {} : () async {
+              setState(() => _activeActionKeys.add(smAcceptCancelKey));
+              try {
+                await _handleStrangersMeetCancellationAction(meetId, cId, 'accept');
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(smAcceptCancelKey));
+              }
+            },
           ),
           NotificationAction(
-            label: 'Reject',
+            label: isSmRejectingCancel ? 'Rejecting...' : 'Reject',
             icon: Icons.cancel_rounded,
             isPrimary: false,
+            isLoading: isSmRejectingCancel,
             color: Colors.grey[200],
-            onTap: () => _handleStrangersMeetCancellationAction(meetId, cId, 'reject'),
+            onTap: (isSmAcceptingCancel || isSmRejectingCancel) ? () {} : () async {
+              setState(() => _activeActionKeys.add(smRejectCancelKey));
+              try {
+                await _handleStrangersMeetCancellationAction(meetId, cId, 'reject');
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(smRejectCancelKey));
+              }
+            },
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
@@ -6579,19 +6990,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ? '1 Pending • $confirmedCount/$totalCapacity Confirmed'
               : '1 Pending • $confirmedCount Confirmed';
 
+          final isAcceptingSm = _activeActionKeys.contains('sm_join_accept_$joinerId');
+          final isDecliningSm = _activeActionKeys.contains('sm_join_reject_$joinerId');
           actionsList = [
             NotificationAction(
-              label: 'Accept',
+              label: isAcceptingSm ? 'Accepting...' : 'Accept',
               icon: Icons.check_circle_rounded,
               isPrimary: true,
-              onTap: () => _handleStrangersMeetJoinAction(meetId, joinerId, 'accept'),
+              isLoading: isAcceptingSm,
+              onTap: (isAcceptingSm || isDecliningSm) ? () {} : () => _handleStrangersMeetJoinAction(meetId, joinerId, 'accept'),
             ),
             NotificationAction(
-              label: 'Decline',
+              label: isDecliningSm ? 'Declining...' : 'Decline',
               icon: Icons.cancel_rounded,
               isPrimary: false,
+              isLoading: isDecliningSm,
               color: Colors.grey[200],
-              onTap: () => _handleStrangersMeetJoinAction(meetId, joinerId, 'reject'),
+              onTap: (isAcceptingSm || isDecliningSm) ? () {} : () => _handleStrangersMeetJoinAction(meetId, joinerId, 'reject'),
             ),
           ];
         } else {
@@ -7871,16 +8286,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 final isPrimary = action.isPrimary;
                                 final btnColor = action.color ?? (isPrimary ? item.accentColor : Colors.grey[200]!);
                                 final textColor = isPrimary ? Colors.white : Colors.black87;
+                                final isLoading = action.isLoading;
 
                                 return ElevatedButton.icon(
-                                  onPressed: action.onTap,
-                                  icon: action.icon != null
-                                      ? Icon(action.icon, size: 15, color: textColor)
-                                      : const SizedBox.shrink(),
+                                  onPressed: isLoading ? null : action.onTap,
+                                  icon: isLoading
+                                      ? SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              isPrimary ? Colors.white : LunaraTheme.electricViolet,
+                                            ),
+                                          ),
+                                        )
+                                      : (action.icon != null
+                                          ? Icon(action.icon, size: 15, color: textColor)
+                                          : const SizedBox.shrink()),
                                   label: Text(
                                     action.label,
                                     style: TextStyle(
-                                      color: textColor,
+                                      color: isLoading ? textColor.withValues(alpha: 0.6) : textColor,
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -7888,6 +8315,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: btnColor,
                                     foregroundColor: textColor,
+                                    disabledBackgroundColor: btnColor.withValues(alpha: 0.7),
+                                    disabledForegroundColor: textColor.withValues(alpha: 0.7),
                                     elevation: 0,
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     minimumSize: const Size(80, 40),

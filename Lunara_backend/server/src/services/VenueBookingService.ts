@@ -454,9 +454,13 @@ export class VenueBookingService {
      * Consolidates all Venue Booking notifications into ONE single card per booking.
      * Card ID: venue_booking_timeline_${bookingId}
      */
-    public static async enrichVenueBookingNotificationCard(bookingId: string, _recipientUserId: string): Promise<any | null> {
+    public static async enrichVenueBookingNotificationCard(
+        bookingId: string,
+        _recipientUserId: string,
+        preloadedBooking?: any
+    ): Promise<any | null> {
         try {
-            const bookingRecord = await Booking.findByPk(bookingId, {
+            const bookingRecord = preloadedBooking || await Booking.findByPk(bookingId, {
                 include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
@@ -499,6 +503,12 @@ export class VenueBookingService {
             const isSolo = bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1;
             const isLarge = guestCount > 20 || bookingRecord.isLargePartyRequest;
 
+            const refundAmt = Number(bookingRecord.refundAmount || 0);
+            const totalAmt = Number(bookingRecord.totalAmount || bookingRecord.depositAmount || 0);
+            const refundPct = (totalAmt > 0 && refundAmt > 0)
+                ? Math.round((refundAmt / totalAmt) * 100)
+                : ((bookingRecord as any).refundPercentage || 100);
+
             let title = isLarge
                 ? `Large Party at ${venueName} 🎉`
                 : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Group Party at ${venueName} 🎉`);
@@ -521,8 +531,8 @@ export class VenueBookingService {
                 title = isLarge
                     ? `Large Party Cancelled ❌`
                     : (isSolo ? `Solo Booking Cancelled ❌` : `Group Party Cancelled ❌`);
-                body = isRefunded
-                    ? `Your booking for ${venueName} was cancelled. Refund has been credited to your Lunara Wallet.`
+                body = (isRefunded || refundAmt > 0)
+                    ? `Your booking for ${venueName} was cancelled. ${refundPct}% (₹${refundAmt.toFixed(0)}) refunded to your Lunara Wallet.`
                     : `Your booking for ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
             }
@@ -544,7 +554,7 @@ export class VenueBookingService {
                     actionButtons.push({ id: 'cancel_booking', label: 'Cancel Booking', primary: false, action: 'CANCEL_BOOKING' });
                 }
             }
-            if (isCancelled && isRefunded) {
+            if (isCancelled && (isRefunded || refundAmt > 0)) {
                 actionButtons.push({ id: 'view_wallet', label: 'View Wallet', primary: true, action: 'VIEW_WALLET' });
             }
             actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
@@ -567,6 +577,10 @@ export class VenueBookingService {
                 status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isConfirmed ? 'confirmed' : 'pending')),
                 paymentStatus: bookingRecord.paymentStatus || (isConfirmed ? 'paid' : 'pending'),
                 totalAmount: rawTotal,
+                refundAmount: refundAmt,
+                refundPercentage: refundPct,
+                refundStatus: bookingRecord.refundStatus,
+                refundMethod: bookingRecord.refundMethod,
                 ticketCode: bookingRecord.ticketCode || undefined,
                 ticketUrl: (bookingRecord as any).ticketUrl || undefined,
                 data: {
@@ -580,6 +594,10 @@ export class VenueBookingService {
                     paymentStatus: bookingRecord.paymentStatus || (isConfirmed ? 'paid' : 'pending'),
                     totalAmount: rawTotal,
                     amount: rawTotal,
+                    refundAmount: refundAmt,
+                    refundPercentage: refundPct,
+                    refundStatus: bookingRecord.refundStatus,
+                    refundMethod: bookingRecord.refundMethod,
                     ticketCode: bookingRecord.ticketCode || undefined,
                     ticketUrl: (bookingRecord as any).ticketUrl || undefined,
                     venue: (bookingRecord as any).venue ? {

@@ -461,7 +461,7 @@ export class NightPartnerService {
 
         // ── 4-Hour Time-Lock & Existing Plan Validation (Host & Partner) ───────
         const eventDateTime = parseBookingDateTime(eventDate, eventTime);
-        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan');
+        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: venueId });
         if (!hostTimeLock.allowed) {
             const err: any = new Error(hostTimeLock.message);
             err.code = 'FOUR_HOUR_TIME_LOCK';
@@ -651,7 +651,7 @@ export class NightPartnerService {
                 throw err;
             }
 
-            const hostTimeLock = await EventTimeLockService.validateFourHourGap(request.hostId, eventDateTime, 'party_plan', undefined, { transaction: t });
+            const hostTimeLock = await EventTimeLockService.validateFourHourGap(request.hostId, eventDateTime, 'party_plan', undefined, { transaction: t, excludeVenueId: request.venueId });
             if (!hostTimeLock.allowed) {
                 const err: any = new Error(hostTimeLock.message);
                 err.code = 'FOUR_HOUR_TIME_LOCK';

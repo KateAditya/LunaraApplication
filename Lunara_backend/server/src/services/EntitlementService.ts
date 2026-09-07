@@ -401,10 +401,15 @@ export class EntitlementService {
         const addonAggregates: Record<string, { name: string; purchased: number; used: number; remaining: number }> = {};
         for (const ua of userAddons) {
             const key = ua.featureKey;
-            const pkgName = (ua as any).addonPackage?.name || `${key} Add-on`;
             if (!addonAggregates[key]) {
+                // Use a consistent human-readable label for each feature, not the first batch's package name
+                const humanLabel = key === 'superlike' ? 'Super Likes Add-ons'
+                    : key === 'profile_boost' ? 'Profile Boosts Add-ons'
+                    : key === 'party_creation' ? 'Party Plan Add-ons'
+                    : key === 'backtrack' ? 'Backtrack Add-ons'
+                    : `${(ua as any).addonPackage?.name || key} Add-on`;
                 addonAggregates[key] = {
-                    name: pkgName,
+                    name: humanLabel,
                     purchased: 0,
                     used: 0,
                     remaining: 0,
@@ -531,6 +536,7 @@ export class EntitlementService {
         planRemaining?: number;
         addonRemaining?: number;
         totalRemaining?: number;
+        totalGranted?: number;  // Combined plan allotment + addon purchased (for usage warning calc)
         code?: string;
         message?: string;
         availableAddons?: any[];
@@ -672,6 +678,8 @@ export class EntitlementService {
                         consumed: amount,
                         planRemaining: newRemaining,
                         totalRemaining: newRemaining,
+                        // totalGranted = plan cycle allocation + any active addon quantities
+                        totalGranted: (activePkg?.superlikesPerCycle || 0),
                     };
                 }
             }

@@ -79,6 +79,49 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     }
   }
 
+  /// Returns the addon remaining for a given featureKey from the active addons list.
+  int _getAddonRemaining(List<dynamic> addons, String featureKey) {
+    int total = 0;
+    for (final addon in addons) {
+      if (addon.featureKey == featureKey || addon.featureKey == featureKey.replaceAll('_', '')) {
+        total += (addon.remainingQuantity as int);
+      }
+    }
+    return total;
+  }
+
+  IconData _getAddonIcon(String featureKey) {
+    switch (featureKey) {
+      case 'superlike':
+        return Icons.star_rounded;
+      case 'profile_boost':
+      case 'boost':
+        return Icons.bolt_rounded;
+      case 'party_creation':
+        return Icons.celebration_rounded;
+      case 'backtrack':
+        return Icons.replay_rounded;
+      default:
+        return Icons.bolt_rounded;
+    }
+  }
+
+  Color _getAddonColor(String featureKey) {
+    switch (featureKey) {
+      case 'superlike':
+        return LunaraTheme.electricViolet;
+      case 'profile_boost':
+      case 'boost':
+        return const Color(0xFFFFB703);
+      case 'party_creation':
+        return const Color(0xFFFF4B7D);
+      case 'backtrack':
+        return const Color(0xFF00BFA5);
+      default:
+        return LunaraTheme.electricViolet;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -288,9 +331,13 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
                 const SizedBox(height: 12),
 
                 if (benefits.isEmpty)
-                  _buildFallbackBenefits(provider)
+                  _buildFallbackBenefits(provider, addons)
                 else
-                  ...benefits.map((item) => _buildUsageCard(item)),
+                  ...benefits.map((item) {
+                    // Get addon remaining for this feature key
+                    final addonRemaining = _getAddonRemaining(addons, item.featureKey);
+                    return _buildUsageCard(item, addonRemaining: addonRemaining);
+                  }),
 
                 const SizedBox(height: 24),
 
@@ -317,6 +364,8 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
                     ),
                     child: Column(
                       children: addons.map((addon) {
+                        final iconData = _getAddonIcon(addon.featureKey);
+                        final iconColor = _getAddonColor(addon.featureKey);
                         return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Row(
@@ -324,35 +373,53 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                  color: iconColor.withValues(alpha: 0.12),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
-                                  Icons.bolt_rounded,
-                                  color: LunaraTheme.electricViolet,
+                                child: Icon(
+                                  iconData,
+                                  color: iconColor,
                                   size: 18,
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  addon.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      addon.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${addon.usedQuantity} used of ${addon.purchasedQuantity} purchased',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
+                                  color: addon.remainingQuantity > 0
+                                      ? const Color(0xFFDCFCE7)
+                                      : Colors.grey[200],
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
-                                  '${addon.remainingQuantity} Left',
-                                  style: const TextStyle(
-                                    color: Color(0xFF15803D),
+                                  addon.remainingQuantity > 0
+                                      ? '${addon.remainingQuantity} Left'
+                                      : 'Used Up',
+                                  style: TextStyle(
+                                    color: addon.remainingQuantity > 0
+                                        ? const Color(0xFF15803D)
+                                        : Colors.grey[600],
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -391,13 +458,19 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     );
   }
 
-  Widget _buildUsageCard(PlanEntitlementItem item) {
+  Widget _buildUsageCard(PlanEntitlementItem item, {int addonRemaining = 0}) {
     final isUnlimited = item.isUnlimited;
+    // Combine plan remaining with addon remaining for a true total
+    final combinedRemaining = item.remainingQuantity + addonRemaining;
+    final combinedTotal = item.includedQuantity + addonRemaining;
     final progress = (item.progressPercentage / 100.0).clamp(0.0, 1.0);
+    final hasAddon = addonRemaining > 0;
 
     String statusText;
     if (isUnlimited) {
       statusText = 'UNLIMITED';
+    } else if (hasAddon) {
+      statusText = '$combinedRemaining / $combinedTotal left';
     } else {
       statusText = '${item.remainingQuantity} / ${item.includedQuantity} left';
     }
@@ -405,7 +478,7 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     Color progressColor;
     if (isUnlimited) {
       progressColor = const Color(0xFF10B981);
-    } else if (item.isLow) {
+    } else if (item.isLow && !hasAddon) {
       progressColor = Colors.orange;
     } else {
       progressColor = LunaraTheme.electricViolet;
@@ -478,11 +551,11 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
             ],
           ),
           const SizedBox(height: 12),
-          // Progress Bar
+          // Progress Bar — shows combined plan+addon remaining ratio
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: isUnlimited ? 1.0 : (1.0 - progress),
+              value: isUnlimited ? 1.0 : (combinedTotal > 0 ? (combinedRemaining / combinedTotal).clamp(0.0, 1.0) : (1.0 - progress)),
               minHeight: 7,
               backgroundColor: Colors.grey[200],
               valueColor: AlwaysStoppedAnimation<Color>(progressColor),
@@ -494,15 +567,28 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${item.usedQuantity} Used',
+                  hasAddon
+                      ? '${item.usedQuantity} plan used'
+                      : '${item.usedQuantity} Used',
                   style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
+                if (hasAddon)
+                  Text(
+                    '+$addonRemaining add-on',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 Text(
-                  '${item.remainingQuantity} Remaining',
+                  hasAddon
+                      ? '$combinedRemaining total remaining'
+                      : '${item.remainingQuantity} Remaining',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: item.isLow ? Colors.orange[800] : Colors.grey[800],
+                    color: (item.isLow && !hasAddon) ? Colors.orange[800] : Colors.grey[800],
                   ),
                 ),
               ],
@@ -513,8 +599,17 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     );
   }
 
-  Widget _buildFallbackBenefits(SubscriptionProvider provider) {
+  Widget _buildFallbackBenefits(SubscriptionProvider provider, List<dynamic> addons) {
     final status = provider.status;
+    // Get addon remaining for key features
+    final superlikeAddon = _getAddonRemaining(addons, 'superlike');
+    final boostAddon = _getAddonRemaining(addons, 'profile_boost');
+    final backtrackAddon = _getAddonRemaining(addons, 'backtrack');
+
+    final superlikesFromProvider = provider.superlikesRemaining >= 9999 ? 9999 : provider.superlikesRemaining;
+    final boostsFromProvider = provider.boostsRemaining >= 9999 ? 9999 : provider.boostsRemaining;
+    final backtracksFromProvider = provider.backtracksRemaining >= 9999 ? 9999 : provider.backtracksRemaining;
+
     final fallbackItems = [
       PlanEntitlementItem(
         featureKey: 'daily_likes',
@@ -532,8 +627,8 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
         name: 'Super Likes',
         icon: '⭐',
         includedQuantity: status.superlikesPerCycle,
-        usedQuantity: (status.superlikesPerCycle - provider.superlikesRemaining).clamp(0, 9999),
-        remainingQuantity: provider.superlikesRemaining,
+        usedQuantity: (status.superlikesPerCycle - superlikesFromProvider).clamp(0, 9999),
+        remainingQuantity: superlikesFromProvider,
         progressPercentage: status.isElite ? 0 : 50,
         isUnlimited: status.isElite,
         unit: 'per cycle',
@@ -543,8 +638,8 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
         name: 'Profile Boosts',
         icon: '⚡',
         includedQuantity: status.boostsPerCycle,
-        usedQuantity: (status.boostsPerCycle - provider.boostsRemaining).clamp(0, 9999),
-        remainingQuantity: provider.boostsRemaining,
+        usedQuantity: (status.boostsPerCycle - boostsFromProvider).clamp(0, 9999),
+        remainingQuantity: boostsFromProvider,
         progressPercentage: status.isElite ? 0 : 50,
         isUnlimited: status.isElite,
         unit: 'per cycle',
@@ -555,7 +650,7 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
         icon: '⏪',
         includedQuantity: status.dailyBacktrackLimitInt,
         usedQuantity: status.dailyBacktrackUsed,
-        remainingQuantity: status.dailyBacktrackRemaining,
+        remainingQuantity: backtracksFromProvider,
         progressPercentage: status.hasUnlimitedBacktracks ? 0 : 20,
         isUnlimited: status.hasUnlimitedBacktracks,
         unit: 'per day',
@@ -563,7 +658,15 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     ];
 
     return Column(
-      children: fallbackItems.map((item) => _buildUsageCard(item)).toList(),
+      children: [
+        ...fallbackItems.map((item) {
+          int addonRem = 0;
+          if (item.featureKey == 'superlike') addonRem = superlikeAddon;
+          if (item.featureKey == 'profile_boost') addonRem = boostAddon;
+          if (item.featureKey == 'backtrack') addonRem = backtrackAddon;
+          return _buildUsageCard(item, addonRemaining: addonRem);
+        }),
+      ],
     );
   }
 

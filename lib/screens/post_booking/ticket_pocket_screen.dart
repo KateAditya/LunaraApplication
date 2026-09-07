@@ -575,8 +575,15 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           booking['charges']?.toString() ??
           '';
       final double amountPaid = double.tryParse(totalPriceStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
-      final String refundStr = amountPaid > 0 ? '₹${(amountPaid * 0.8).toStringAsFixed(0)} (80%)' : '';
-      final String subtext = amountPaid > 0
+      final double refundAmount = (booking['refundAmount'] is num)
+          ? (booking['refundAmount'] as num).toDouble()
+          : (double.tryParse(booking['refundAmount']?.toString() ?? '') ?? 0.0);
+      final int refundPct = (booking['refundPercentage'] is num)
+          ? (booking['refundPercentage'] as num).toInt()
+          : (int.tryParse(booking['refundPercentage']?.toString() ?? '') ?? (amountPaid > 0 && refundAmount > 0 ? ((refundAmount / amountPaid) * 100).round() : 100));
+      final double effectiveRefund = refundAmount > 0 ? refundAmount : (amountPaid > 0 ? (amountPaid * refundPct / 100.0) : 0.0);
+      final String refundStr = effectiveRefund > 0 ? '₹${effectiveRefund.toStringAsFixed(0)} ($refundPct%)' : '';
+      final String subtext = effectiveRefund > 0
           ? '$refundStr refunded to your Lunara Wallet'
           : 'This booking / ticket has been cancelled.';
 

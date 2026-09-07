@@ -225,7 +225,7 @@ class _BookingCancellationDialogState extends State<BookingCancellationDialog> {
     final paidAmount = double.tryParse(_previewData?['paidAmount']?.toString() ?? widget.initialAmountPaid?.toString() ?? '0') ?? 0.0;
 
     final policy = _previewData?['refundPolicy'];
-    final refundPercentage = policy != null ? (policy['refundPercentage'] ?? 80) : 80;
+    final refundPercentage = policy != null ? (policy['refundPercentage'] ?? 100) : 100;
     final refundAmount = _previewData != null
         ? (double.tryParse(_previewData!['refundAmount']?.toString() ?? '0') ?? 0.0)
         : (paidAmount * refundPercentage / 100);

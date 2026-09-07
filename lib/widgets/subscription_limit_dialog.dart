@@ -273,7 +273,60 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
 
   @override
   Widget build(BuildContext context) {
-    final cfg = _configs[widget.feature] ?? _configs[SubLimitFeature.generic]!;
+    final provider = SubscriptionProvider.instance;
+    final isPaid = provider.isPaid;
+    // For paid users who have run out of superlikes/boosts/backtracks,
+    // show an add-on CTA rather than the generic 'VIP Feature' messaging.
+    final showAddonCta = isPaid &&
+        (widget.feature == SubLimitFeature.superLike ||
+         widget.feature == SubLimitFeature.boost ||
+         widget.feature == SubLimitFeature.backtrack);
+
+    _FeatureConfig cfg;
+    if (showAddonCta) {
+      // Paid user: override title/subtitle to reflect add-on context
+      final baseCfg = _configs[widget.feature] ?? _configs[SubLimitFeature.generic]!;
+      cfg = _FeatureConfig(
+        emoji: baseCfg.emoji,
+        title: widget.feature == SubLimitFeature.superLike
+            ? 'Super Likes\nUsed Up!'
+            : widget.feature == SubLimitFeature.boost
+                ? 'Profile Boosts\nUsed Up!'
+                : 'Backtracks\nUsed Up!',
+        subtitle: widget.feature == SubLimitFeature.superLike
+            ? 'You\'ve used all your Super Likes for this cycle. Get an add-on pack to keep super-liking tonight!'
+            : widget.feature == SubLimitFeature.boost
+                ? 'You\'ve used all your Profile Boosts. Get a Boost pack to stay spotlighted!'
+                : 'You\'ve used all your Backtracks for today. Get a Backtrack add-on to keep undoing swipes!',
+        benefitHeader: 'Add-on packs include:',
+        benefits: widget.feature == SubLimitFeature.superLike
+            ? [
+                '⭐ +5 Super Likes from ₹99',
+                '⭐ +15 Super Likes from ₹249',
+                '✨ Instant top-profile alert to matches',
+                '💜 Priority placement in their feed',
+                '🔄 Never expires during your plan cycle',
+              ]
+            : widget.feature == SubLimitFeature.boost
+                ? [
+                    '⚡ +1 Boost from ₹49',
+                    '⚡ +3 Boosts from ₹129',
+                    '🚀 10x more profile views for 30 min',
+                    '📈 Jump to top of discovery feed',
+                    '🔔 Real-time activity alerts',
+                  ]
+                : [
+                    '⏪ +10 Backtracks from ₹49',
+                    '🔄 Undo swipes any time today',
+                    '♾️ No reset timer on add-on credits',
+                    '✅ Works on top of your plan limit',
+                  ],
+        gradientColors: baseCfg.gradientColors,
+      );
+    } else {
+      cfg = _configs[widget.feature] ?? _configs[SubLimitFeature.generic]!;
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF13131B) : Colors.white;
     final cardBg = isDark ? const Color(0xFF1C1C26) : const Color(0xFFF8F8FF);
@@ -416,7 +469,11 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
-                            final targetTab = widget.feature == SubLimitFeature.superLike ? 1 : 0;
+                            // For paid users: go to add-ons tab (index 1)
+                            // For free users: go to VIP plans tab (index 0)
+                            final targetTab = showAddonCta
+                                ? 1
+                                : (widget.feature == SubLimitFeature.superLike ? 1 : 0);
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -435,12 +492,12 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
-                                SubscriptionProvider.instance.isPaid ? '⚡' : '👑',
+                                showAddonCta ? '⚡' : (provider.isPaid ? '⚡' : '👑'),
                                 style: const TextStyle(fontSize: 20),
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                SubscriptionProvider.instance.isPaid ? 'GET ADD-ON PACK' : 'UPGRADE TO VIP',
+                                showAddonCta ? 'GET ADD-ON PACK' : (provider.isPaid ? 'GET ADD-ON PACK' : 'UPGRADE TO VIP'),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,

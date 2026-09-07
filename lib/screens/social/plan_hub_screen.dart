@@ -184,25 +184,27 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       if (mounted) {
         setState(() {
           _partyPlans = plans;
-          _isLoadingCustomers = false;
         });
       }
     }).catchError((e) {
       debugPrint('Error loading party plans: $e');
-      if (mounted) setState(() => _isLoadingCustomers = false);
     });
 
-    // Stage 2: Concurrently load secondary resources progressively in background
+    // Stage 2: Concurrently load customer profiles with accurate loading state
     unawaited(() async {
       try {
         final customers = await ApiService.fetchCustomers(limit: 50);
         if (mounted) {
           setState(() {
             _customerList = customers;
+            _isLoadingCustomers = false;
           });
         }
       } catch (e) {
         debugPrint('Error loading customers progressively: $e');
+        if (mounted) {
+          setState(() => _isLoadingCustomers = false);
+        }
       }
     }());
 
@@ -219,7 +221,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       : '${ApiService.baseUrl}${ad['imagePath']}')
                 : '';
 
-            String dateStr = ad['toDate'] ?? ad['fromDate'] ?? '';
+            String dateStr = ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '';
             if (dateStr.isNotEmpty) {
               try {
                 final dt = DateTime.parse(dateStr).toLocal();
@@ -229,15 +231,34 @@ class _PlanHubScreenState extends State<PlanHubScreen>
               dateStr = 'Upcoming';
             }
 
+            final bool isUnlimited = ad['isUnlimited'] == true;
+            final int seatLimit = ad['seatLimit'] is num ? (ad['seatLimit'] as num).toInt() : (int.tryParse(ad['seatLimit']?.toString() ?? '0') ?? 0);
+            final int filledSeats = ad['filledSeats'] is num ? (ad['filledSeats'] as num).toInt() : (int.tryParse(ad['filledSeats']?.toString() ?? '0') ?? 0);
+            final dynamic rawRem = ad['remainingSeats'];
+            final int remainingSeats = rawRem is num
+                ? rawRem.toInt()
+                : (isUnlimited ? 999999 : (seatLimit - filledSeats));
+            final double entryPrice = ad['entryPrice'] is num
+                ? (ad['entryPrice'] as num).toDouble()
+                : (double.tryParse(ad['entryPrice']?.toString() ?? '0') ?? 0.0);
+
             return {
+              'eventId': ad['id'],
               'title': ad['title'] ?? ad['description'] ?? 'Special Event',
               'date': dateStr,
+              'rawDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
+              'eventDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
               'venue': venue['name'] ?? 'Unknown Venue',
               'image': imageUrl,
               'isAsset': false,
               'venueId': ad['venueId'],
               'venueMap': venue,
               'aboutEvent': ad['aboutEvent'],
+              'entryPrice': entryPrice,
+              'isUnlimited': isUnlimited,
+              'seatLimit': seatLimit,
+              'filledSeats': filledSeats,
+              'remainingSeats': remainingSeats > 0 ? remainingSeats : 0,
             };
           }).toList();
         }
@@ -979,11 +1000,295 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     );
   }
 
+  Widget _buildFeaturedShimmer() {
+    return _PlanHubShimmer(
+      child: SizedBox(
+        height: 108,
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 6,
+          itemBuilder: (context, index) {
+            return Container(
+              width: 80,
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE7F6),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 52,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE7F6),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    width: 36,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEDE7F6),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopTenShimmer() {
+    return _PlanHubShimmer(
+      child: ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: 4,
+        itemBuilder: (context, index) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0x1A7F00FF),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0x0D7F00FF),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEDE7F6),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 120,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDE7F6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: 70,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEDE7F6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Container(
+                            width: 55,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEDE7F6),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            width: 65,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEDE7F6),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 48,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEDE7F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildFeaturedSection() {
     List<Map<String, dynamic>> filteredList = _customerList.where((u) {
       final isNotMe = u['id']?.toString() != _currentUser?.id;
       return isNotMe;
     }).toList();
+
+    Widget content;
+    if (_isLoadingCustomers) {
+      content = _buildFeaturedShimmer();
+    } else if (filteredList.isEmpty && _currentUser == null) {
+      content = Container(
+        height: 108,
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9F7FC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0x1A7F00FF)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.people_outline_rounded, size: 20, color: LunaraTheme.electricViolet),
+            const SizedBox(width: 8),
+            Text(
+              'No featured profiles in your city right now.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      );
+    } else {
+      content = SizedBox(
+        height: 108,
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          scrollDirection: Axis.horizontal,
+          itemCount: _currentUser != null
+              ? (filteredList.length + 1)
+              : filteredList.length,
+          itemBuilder: (context, index) {
+            final Map<String, dynamic> person;
+            final bool isMe;
+
+            if (_currentUser != null && index == 0) {
+              isMe = true;
+              person = {
+                'name': _currentUser!.firstName,
+                'profilePhotoUrl': _currentUser!.profilePhoto,
+                'gender': _currentUser!.gender ?? 'You',
+              };
+            } else {
+              isMe = false;
+              final adjustedIndex = _currentUser != null
+                  ? index - 1
+                  : index;
+              person = filteredList[adjustedIndex];
+            }
+
+            // Extract fields safely
+            final name =
+                person['name'] ??
+                person['firstName'] ??
+                person['first_name'] ??
+                'User';
+
+            final vibe = person['gender'] ?? person['vibe'] ?? 'Party';
+
+            return GestureDetector(
+              onTap: () {
+                if (isMe) return;
+                try {
+                  final resolvedUser = User.fromJson(person);
+                  final List<User> resolvedAllProfiles = [];
+                  for (var u in filteredList) {
+                    try {
+                      resolvedAllProfiles.add(User.fromJson(u));
+                    } catch (_) {}
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProfileScreen(
+                        user: resolvedUser,
+                        allProfiles: resolvedAllProfiles,
+                      ),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error navigating: $e');
+                }
+              },
+              child: Container(
+                width: 80,
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  children: [
+                    LunaraProfileImage(
+                      userData: person,
+                      user: isMe ? _currentUser : null,
+                      radius: 30,
+                      showGradientBorder: true,
+                      isInteractive: false,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isMe ? 'Me' : name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      vibe,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: isMe
+                            ? const Color(0xFFB952EB)
+                            : LunaraTheme.electricViolet.withValues(
+                                alpha: 0.8,
+                              ),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1027,110 +1332,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             ],
           ),
         ),
-        SizedBox(
-          height: 108,
-          child: _isLoadingCustomers
-              ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _currentUser != null
-                      ? (filteredList.length + 1)
-                      : filteredList.length,
-                  itemBuilder: (context, index) {
-                    final Map<String, dynamic> person;
-                    final bool isMe;
-
-                    if (_currentUser != null && index == 0) {
-                      isMe = true;
-                      person = {
-                        'name': _currentUser!.firstName,
-                        'profilePhotoUrl': _currentUser!.profilePhoto,
-                        'gender': _currentUser!.gender ?? 'You',
-                      };
-                    } else {
-                      isMe = false;
-                      final adjustedIndex = _currentUser != null
-                          ? index - 1
-                          : index;
-                      person = filteredList[adjustedIndex];
-                    }
-
-                    // Extract fields safely
-                    final name =
-                        person['name'] ??
-                        person['firstName'] ??
-                        person['first_name'] ??
-                        'User';
-
-                    final vibe = person['gender'] ?? person['vibe'] ?? 'Party';
-
-                    return GestureDetector(
-                      onTap: () {
-                        if (isMe) return;
-                        try {
-                          final resolvedUser = User.fromJson(person);
-                          final List<User> resolvedAllProfiles = [];
-                          for (var u in filteredList) {
-                            try {
-                              resolvedAllProfiles.add(User.fromJson(u));
-                            } catch (_) {}
-                          }
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ProfileScreen(
-                                user: resolvedUser,
-                                allProfiles: resolvedAllProfiles,
-                              ),
-                            ),
-                          );
-                        } catch (e) {
-                          debugPrint('Error navigating: $e');
-                        }
-                      },
-                      child: Container(
-                        width: 80,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Column(
-                          children: [
-                            LunaraProfileImage(
-                              userData: person,
-                              user: isMe ? _currentUser : null,
-                              radius: 30,
-                              showGradientBorder: true,
-                              isInteractive: false,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              isMe ? 'Me' : name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            Text(
-                              vibe,
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: isMe
-                                    ? const Color(0xFFB952EB)
-                                    : LunaraTheme.electricViolet.withValues(
-                                        alpha: 0.8,
-                                      ),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
+        content,
       ],
     );
   }
@@ -1204,6 +1406,241 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     // Sort in descending order of score
     scoredList.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
 
+    Widget topContent;
+    if (_isLoadingCustomers) {
+      topContent = _buildTopTenShimmer();
+    } else if (scoredList.isEmpty) {
+      topContent = Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9F7FC),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0x1A7F00FF)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.star_border_rounded,
+                size: 28,
+                color: LunaraTheme.electricViolet,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'No active ranked profiles yet',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Be the first to create or join plans to top the leaderboard tonight!',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    } else {
+      topContent = ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: scoredList.length > 10 ? 10 : scoredList.length,
+        itemBuilder: (context, index) {
+          final item = scoredList[index];
+          final person = item['user'] as Map<String, dynamic>;
+          final planCount = item['planCount'] as int;
+          final superLikes = item['superLikes'] as int;
+
+          final name =
+              person['name'] ??
+              person['firstName'] ??
+              person['first_name'] ??
+              'User';
+          final age = person['age'] ?? (22 + (index % 10));
+          final vibe =
+              person['gender'] ?? person['vibe'] ?? 'Discovery';
+          final matchPct = ApiService.calculateMatchPercentage(person);
+
+          return GestureDetector(
+            onTap: () {
+              try {
+                final resolvedUser = User.fromJson(person);
+                final List<User> resolvedAllProfiles = [];
+                for (var item in scoredList) {
+                  try {
+                    final rawUser = item['user'];
+                    if (rawUser is Map) {
+                      resolvedAllProfiles.add(
+                        User.fromJson(
+                          Map<String, dynamic>.from(rawUser),
+                        ),
+                      );
+                    }
+                  } catch (_) {}
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProfileScreen(
+                      user: resolvedUser,
+                      allProfiles: resolvedAllProfiles,
+                    ),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error navigating: $e');
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: const Color(0x1A7F00FF),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0x0D7F00FF),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  LunaraProfileImage(
+                    userData: person,
+                    radius: 26,
+                    showGradientBorder: false,
+                    isInteractive: false,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '$name, $age',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.verified,
+                              color: LunaraTheme.cyberCyan,
+                              size: 14,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          vibe,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.event_note,
+                                color: Colors.amber[700],
+                                size: 12,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '$planCount Plans',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Icon(
+                                Icons.star,
+                                color: Colors.amber[600],
+                                size: 12,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '$superLikes Super Likes',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: matchPct >= 80
+                              ? const Color(0xFF10B981).withValues(alpha: 0.1)
+                              : LunaraTheme.electricViolet.withValues(
+                                  alpha: 0.1,
+                                ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$matchPct%',
+                          style: TextStyle(
+                            color: matchPct >= 80
+                                ? const Color(0xFF10B981)
+                                : LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1219,199 +1656,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             ),
           ),
         ),
-        _isLoadingCustomers
-            ? const Padding(
-                padding: EdgeInsets.all(40),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: scoredList.length > 10 ? 10 : scoredList.length,
-                itemBuilder: (context, index) {
-                  final item = scoredList[index];
-                  final person = item['user'] as Map<String, dynamic>;
-                  final planCount = item['planCount'] as int;
-                  final superLikes = item['superLikes'] as int;
-
-                  final name =
-                      person['name'] ??
-                      person['firstName'] ??
-                      person['first_name'] ??
-                      'User';
-                  final age = person['age'] ?? (22 + (index % 10));
-                  final vibe =
-                      person['gender'] ?? person['vibe'] ?? 'Discovery';
-                  final matchPct = ApiService.calculateMatchPercentage(person);
-
-                  return GestureDetector(
-                    onTap: () {
-                      try {
-                        final resolvedUser = User.fromJson(person);
-                        final List<User> resolvedAllProfiles = [];
-                        for (var item in scoredList) {
-                          try {
-                            final rawUser = item['user'];
-                            if (rawUser is Map) {
-                              resolvedAllProfiles.add(
-                                User.fromJson(
-                                  Map<String, dynamic>.from(rawUser),
-                                ),
-                              );
-                            }
-                          } catch (_) {}
-                        }
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ProfileScreen(
-                              user: resolvedUser,
-                              allProfiles: resolvedAllProfiles,
-                            ),
-                          ),
-                        );
-                      } catch (e) {
-                        debugPrint('Error navigating: $e');
-                      }
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: const Color(0x1A7F00FF),
-                          width: 1.2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0x0D7F00FF),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          LunaraProfileImage(
-                            userData: person,
-                            radius: 26,
-                            showGradientBorder: false,
-                            isInteractive: false,
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      '$name, $age',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                        color: Colors.black,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(
-                                      Icons.verified,
-                                      color: LunaraTheme.cyberCyan,
-                                      size: 14,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  vibe,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: LunaraTheme.electricViolet,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.event_note,
-                                        color: Colors.amber[700],
-                                        size: 12,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$planCount Plans',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.grey[600],
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Icon(
-                                        Icons.star,
-                                        color: Colors.amber[600],
-                                        size: 12,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        '$superLikes Super Likes',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.grey[600],
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: matchPct >= 80
-                                      ? const Color(
-                                          0xFF10B981,
-                                        ).withValues(alpha: 0.12)
-                                      : LunaraTheme.electricViolet.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '$matchPct%',
-                                  style: TextStyle(
-                                    color: matchPct >= 80
-                                        ? const Color(0xFF10B981)
-                                        : LunaraTheme.electricViolet,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+        topContent,
       ],
     );
   }
@@ -6702,3 +6947,59 @@ class _PlanManagerSimulationScreenState
     );
   }
 }
+
+class _PlanHubShimmer extends StatefulWidget {
+  final Widget child;
+  const _PlanHubShimmer({required this.child});
+
+  @override
+  State<_PlanHubShimmer> createState() => _PlanHubShimmerState();
+}
+
+class _PlanHubShimmerState extends State<_PlanHubShimmer>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _shimmerController;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        final val = _shimmerController.value;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment(-2.0 + 4.0 * val, -0.3),
+              end: Alignment(0.0 + 4.0 * val, 0.3),
+              stops: const [0.0, 0.5, 1.0],
+              colors: const [
+                Color(0xFFF3F0FA),
+                Color(0xFFE8DEF8),
+                Color(0xFFF3F0FA),
+              ],
+            ).createShader(bounds);
+          },
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+

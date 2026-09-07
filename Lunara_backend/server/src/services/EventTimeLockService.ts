@@ -48,7 +48,7 @@ export class EventTimeLockService {
         proposedDateTimeInput: Date | string,
         _eventType: 'party_plan' | 'group_party' | 'stranger_meet' | 'solo_booking' | 'large_party',
         excludeEventId?: string,
-        options?: { transaction?: Transaction }
+        options?: { transaction?: Transaction; excludeVenueId?: string }
     ): Promise<TimeLockValidationResult> {
         const proposedTime = typeof proposedDateTimeInput === 'string'
             ? new Date(proposedDateTimeInput)
@@ -319,6 +319,9 @@ export class EventTimeLockService {
                             // Exclude booking if it was created for this party plan
                             if (b.specialRequests && b.specialRequests.includes(excludeEventId)) continue;
                             if ((b as any).partyEventId && (b as any).partyEventId === excludeEventId) continue;
+                        }
+                        if (options?.excludeVenueId && b.venueId === options.excludeVenueId) {
+                            continue;
                         }
                         if (b.status === BookingStatus.CANCELLED) continue;
 

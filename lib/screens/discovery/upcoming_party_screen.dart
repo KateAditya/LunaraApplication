@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import 'venue_detail_screen.dart';
@@ -50,8 +51,10 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     }
   }
 
-  String _formatDateIso(String raw) {
-    final clean = raw.trim();
+  String _formatDateIso(dynamic raw) {
+    if (raw == null) return '';
+    final clean = raw.toString().trim();
+    if (clean.isEmpty) return '';
     if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(clean)) {
       return clean;
     }
@@ -61,13 +64,56 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
       final mm = parsed.month.toString().padLeft(2, '0');
       final dd = parsed.day.toString().padLeft(2, '0');
       return '$yyyy-$mm-$dd';
-    } catch (_) {
-      final now = DateTime.now();
-      final yyyy = now.year;
-      final mm = now.month.toString().padLeft(2, '0');
-      final dd = now.day.toString().padLeft(2, '0');
+    } catch (_) {}
+
+    final dt = LunaraDateFormatter.parseToLocal(raw);
+    if (dt != null) {
+      final yyyy = dt.year;
+      final mm = dt.month.toString().padLeft(2, '0');
+      final dd = dt.day.toString().padLeft(2, '0');
       return '$yyyy-$mm-$dd';
     }
+
+    final patterns = [
+      'yyyy-MM-dd',
+      'yyyy/MM/dd',
+      'dd-MM-yyyy',
+      'dd/MM/yyyy',
+      'MMM dd, yyyy',
+      'MMMM dd, yyyy',
+      'dd MMM yyyy',
+      'dd MMMM yyyy',
+      'EEEE, MMM dd, yyyy',
+      'EEEE, MMM dd',
+      'EEE, MMM dd',
+      'MMM dd',
+    ];
+    for (final p in patterns) {
+      try {
+        final parsed = DateFormat(p).parse(clean);
+        int year = parsed.year;
+        if (year == 1970) {
+          year = DateTime.now().year;
+        }
+        final yyyy = year;
+        final mm = parsed.month.toString().padLeft(2, '0');
+        final dd = parsed.day.toString().padLeft(2, '0');
+        return '$yyyy-$mm-$dd';
+      } catch (_) {}
+    }
+
+    return clean;
+  }
+
+  String _getEffectiveEventDate() {
+    final raw = widget.party['eventDate'] ??
+        widget.party['rawDate'] ??
+        widget.party['fromDate'] ??
+        widget.party['toDate'] ??
+        widget.party['bannerFromDate'] ??
+        widget.party['date'] ??
+        '';
+    return _formatDateIso(raw);
   }
 
   Future<void> _checkInitialInterest() async {
@@ -75,11 +121,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
         widget.venueMap?['id']?.toString() ??
         widget.party['venueId']?.toString() ??
         '';
-    final rawDate =
-        widget.party['rawDate']?.toString() ??
-        widget.party['date']?.toString() ??
-        '';
-    final date = _formatDateIso(rawDate);
+    final date = _getEffectiveEventDate();
     if (venueId.isNotEmpty) {
       final isInt = await ApiService.checkNightInterest(
         venueId: venueId,
@@ -113,11 +155,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
         widget.venueMap?['id']?.toString() ??
         widget.party['venueId']?.toString() ??
         '';
-    final rawDate =
-        widget.party['rawDate']?.toString() ??
-        widget.party['date']?.toString() ??
-        '';
-    final date = _formatDateIso(rawDate);
+    final date = _getEffectiveEventDate();
 
     if (venueId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -551,8 +589,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       onTap: () {
                         final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
                         final vName = venueName;
-                        final rawDate = widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? '';
-                        final eventDate = _formatDateIso(rawDate);
+                        final eventDate = _getEffectiveEventDate();
                         final eventTime = LunaraDateFormatter.normalizeTimeTo12Hour(widget.party['time']?.toString() ?? '8:00 PM');
                         final flyer = widget.party['image'] ?? widget.party['coverImageUrl'] ?? widget.party['imagePath'];
                         final title = widget.party['title'] ?? widget.party['name'] ?? vName;
@@ -705,7 +742,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                               party: widget.party,
                               venueId: widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '',
                               venueName: venueName,
-                              date: _formatDateIso(widget.party['rawDate']?.toString() ?? widget.party['date']?.toString() ?? ''),
+                              date: _getEffectiveEventDate(),
                               time: widget.party['time']?.toString() ?? '20:00',
                               bannerImage: flyer?.toString(),
                               eventTitle: title?.toString(),

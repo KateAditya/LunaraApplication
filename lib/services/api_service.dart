@@ -87,12 +87,23 @@ class ApiService {
 
   /// Centralized trigger to instantly refresh the Live Feed and associated views across the app.
   static void notifyFeedNeedsRefresh() {
-    _cachedLiveFeedData = null;
-    _liveFeedCacheTime = null;
+    clearBookingCache();
     planPostedNotifier.value++;
     RealtimeSyncManager.instance.triggerLiveFeedSync();
     RealtimeSyncManager.instance.triggerPartyPlanSync();
     RealtimeSyncManager.instance.triggerStrangerMeetSync();
+  }
+
+  /// Clears in-memory caches for bookings, notifications, and badges to ensure instant fresh fetch.
+  static void clearBookingCache() {
+    _cachedLiveFeedData = null;
+    _liveFeedCacheTime = null;
+    _cachedNotifications = null;
+    _notificationsCacheTime = null;
+    _cachedBookings = null;
+    _bookingsCacheTime = null;
+    _cachedBadgeCounts = null;
+    _badgeCountsCacheTime = null;
   }
 
   // ── Synchronous Local Request Status Cache for Instant UI Rendering ────────
@@ -873,14 +884,14 @@ class ApiService {
 
   /// Fetches only the current user's large-party (group party) booking requests.
   /// Returns them as a typed list sorted newest-first.
-  static Future<List<Map<String, dynamic>>> fetchMyLargePartyBookings() async {
+  static Future<List<Map<String, dynamic>>> fetchMyLargePartyBookings({bool forceRefresh = false}) async {
     try {
       final userId = currentUserId;
       if (userId == null) return [];
 
       // 1. Fetch normal large party request bookings
       final List<Map<String, dynamic>> bookingParties = [];
-      final raw = await fetchBookings();
+      final raw = await fetchBookings(forceRefresh: forceRefresh);
       if (raw != null) {
         bookingParties.addAll(
           raw
@@ -4975,7 +4986,11 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+          return true;
+        }
       }
     } catch (e) {
       debugPrint('cancelPendingGroupParty error: $e');
@@ -4991,7 +5006,11 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+          return true;
+        }
       }
     } catch (e) {
       debugPrint('cancelPendingBooking error: $e');
@@ -5045,6 +5064,8 @@ class ApiService {
       final response = await post(path, body: body);
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
         return Map<String, dynamic>.from(data);
       } else {
         return {

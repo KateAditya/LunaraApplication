@@ -1364,9 +1364,11 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
         const isLikeRecord = (swipe: any) => swipe && swipe.status !== 'declined' && swipe.matchReason !== 'superlike';
         const isNopeRecord = (swipe: any) => swipe && swipe.status === 'declined';
 
-        // 1. If duplicate swipe action on existing record, retain it permanently (do NOT delete)
+        // 1. If duplicate swipe action on existing record, retain it permanently (do NOT delete).
+        // NOTE: liking a previously superlikes profile is intentionally ALLOWED (it is not a duplicate).
+        // Only a like-after-like or superlike-after-superlike or nope-after-nope is considered duplicate.
         if (existingMySwipe) {
-            const isDuplicateLike = (action === 'like' && (isLikeRecord(existingMySwipe) || isSuperlikeRecord(existingMySwipe)));
+            const isDuplicateLike = (action === 'like' && isLikeRecord(existingMySwipe));
             const isDuplicateSuperlike = (action === 'superlike' && isSuperlikeRecord(existingMySwipe));
             const isDuplicateNope = (action === 'nope' && isNopeRecord(existingMySwipe));
 
@@ -1397,7 +1399,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             const isUnlimitedLikes = (await SubscriptionService.getLimit(userId, 'daily_likes')) === 'unlimited';
             if (isUnlimitedLikes) {
                 // Unlimited VIP like: background tracking, zero limits, zero warnings
-                SubscriptionService.incrementUsage(userId, 'daily_likes', 'DAILY', 1).catch(() => {});
+                SubscriptionService.incrementUsage(userId, 'daily_likes', 'daily', 1).catch(() => {});
             } else {
                 const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
                 if (!consume.success) {
@@ -1480,11 +1482,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             });
 
             const isEliteTier = (activeSub as any)?.package?.tier === 'ELITE' || consumption.totalRemaining === 9999;
-            const totalGranted = (activeSub as any)?.package?.superlikesPerCycle || 0;
-            const remaining = consumption.totalRemaining ?? 0;
+            // Use combined plan+addon total for accurate usage warning
+            const planGranted = (activeSub as any)?.package?.superlikesPerCycle || 0;
+            const totalRemaining = consumption.totalRemaining ?? 0;
+            // totalOriginal = plan allotment + addon quantities purchased; use consumption metadata if available
+            const totalGranted = (consumption as any).totalGranted || planGranted;
 
             if (!isEliteTier && totalGranted > 0 && totalGranted < 9999) {
-                const used = Math.max(0, totalGranted - remaining);
+                const used = Math.max(0, totalGranted - totalRemaining);
                 const percentage = Math.round((used / totalGranted) * 100);
 
                 if (percentage >= 66) {
@@ -1493,9 +1498,9 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                         feature: 'superlike',
                         used,
                         limit: totalGranted,
-                        remaining,
+                        remaining: totalRemaining,
                         percentage,
-                        message: `You've used ${used} of ${totalGranted} Super Likes for this cycle. ${remaining > 0 ? `Only ${remaining} remaining!` : 'None remaining.'}`,
+                        message: `You've used ${used} of ${totalGranted} Super Likes for this cycle. ${totalRemaining > 0 ? `Only ${totalRemaining} remaining!` : 'None remaining.'}`,
                     };
 
                     // Create In-App Notification
@@ -1509,7 +1514,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                                 eventType: 'LIMIT_WARNING',
                                 category: 'system' as any,
                                 title: '⭐ Super Likes Usage Alert',
-                                body: `You've used ${used} of ${totalGranted} Super Likes for your current plan. Top up credits or upgrade to Plus/Pro for more!`,
+                                body: `You've used ${used} of ${totalGranted} Super Likes (plan + add-ons). Top up credits or upgrade to Plus/Pro for more!`,
                                 actionType: 'open_vip_upgrade',
                                 deepLink: '/vip-membership',
                                 isRead: false,
@@ -2283,10 +2288,16 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
                     }
                 });
                 if (oppositeSwipe) {
+                    // Revert the other party's swipe back to pending
                     oppositeSwipe.status = 'pending' as any;
+                    oppositeSwipe.matchReason = undefined; // clear superlike reason too
                     await oppositeSwipe.save();
                 }
             }
+            // FIX: Destroy the swipe record completely so that on the
+            // next _loadData() call the profile is NOT re-shown as superliked.
+            // Previously matchReason='superlike' survived in UserMatch even
+            // after UserLike was deleted, causing the UI to re-flag it.
             await mySwipe.destroy();
         }
 

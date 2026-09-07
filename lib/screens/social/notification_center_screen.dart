@@ -398,24 +398,35 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final currentUid = ApiService.currentUserId ?? '';
     if (currentUid.isEmpty) return;
 
+    final backup = List<dynamic>.from(_notifications);
+    setState(() {
+      _notifications.clear();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Notifications cleared'),
+        backgroundColor: LunaraTheme.electricViolet,
+      ),
+    );
+
     try {
       final response = await ApiService.post(
         '/api/mobile/notifications/clear-all',
         body: {'userId': currentUid},
       );
-      if (response.statusCode == 200 && mounted) {
+      if (response.statusCode != 200 && mounted) {
         setState(() {
-          _notifications.clear();
+          _notifications.addAll(backup);
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notifications cleared'),
-            backgroundColor: LunaraTheme.electricViolet,
-          ),
-        );
       }
     } catch (e) {
       debugPrint('Error clearing notifications: $e');
+      if (mounted) {
+        setState(() {
+          _notifications.addAll(backup);
+        });
+      }
     }
   }
 

@@ -401,7 +401,7 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
         }
 
         // Validate 4-hour gap across all event types
-        const eventDateVal = ad.eventDate as any;
+        const eventDateVal = ad.eventDate || ad.fromDate || ad.toDate;
         const eventDateStr = eventDateVal
             ? (eventDateVal instanceof Date ? eventDateVal.toISOString().split('T')[0] : String(eventDateVal).split('T')[0])
             : new Date().toISOString().split('T')[0];
@@ -437,7 +437,7 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             bookingNumber,
             userId,
             venueId: ad.venueId || '',
-            bookingDate: ad.eventDate || new Date(),
+            bookingDate: eventDateStr as any,
             startTime: '20:00', // Default start time
             numberOfGuests: qty,
             totalAmount: amount,
