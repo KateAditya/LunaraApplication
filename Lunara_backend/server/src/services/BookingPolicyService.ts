@@ -448,17 +448,19 @@ export class BookingPolicyService {
                     userId,
                     amount: refundAmount,
                     bookingId: booking.id,
-                    reference: isGroupBooking
-                        ? `REFUND_GP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
-                        : `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`,
-                    reason: cancellationReason || (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED'),
+                    reference: (booking as any)?.goingMode === GoingMode.PLAN
+                        ? `REFUND_PP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                        : (isGroupBooking
+                            ? `REFUND_GP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                            : `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`),
+                    reason: cancellationReason || ((booking as any)?.goingMode === GoingMode.PLAN ? 'PARTY PLAN CANCELLED' : (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED')),
                     metadata: {
                         originalAmountPaid: paidAmount,
                         refundPercentage: refundCalc.refundPercentage,
                         nonRefundableAmount: refundCalc.nonRefundableAmount,
                         refundAmount,
                         bookingId: booking.id,
-                        transactionLabel: isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED',
+                        transactionLabel: (booking as any)?.goingMode === GoingMode.PLAN ? 'PARTY PLAN CANCELLED' : (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED'),
                     },
                 }, t);
                 walletTxId = refundResult.transaction.id;
@@ -471,8 +473,9 @@ export class BookingPolicyService {
         }
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
-        const entityLabel = isGroupBooking ? 'Group Party' : 'Booking';
-        const notifTitle = isGroupBooking ? 'Group Party Cancelled' : 'Booking Cancelled';
+        const isPlan = (booking as any)?.goingMode === GoingMode.PLAN;
+        const entityLabel = isPlan ? 'Party Plan' : (isGroupBooking ? 'Group Party' : 'Booking');
+        const notifTitle = isPlan ? 'Party Plan Cancelled' : (isGroupBooking ? 'Group Party Cancelled' : 'Booking Cancelled');
         const notifBody = refundAmount > 0
             ? (isLargeRefund
                 ? `Your ${entityLabel} at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`

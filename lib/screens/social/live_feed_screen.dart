@@ -4099,9 +4099,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Skip party plans
     if (cat.contains('party_plan') ||
         cat == 'party_plan' ||
+        cat == 'plan' ||
         item['partyPlanId'] != null ||
+        item['partyEventId'] != null ||
+        item['planId'] != null ||
         item['booking']?['goingMode']?.toString() == 'plan' ||
-        item['goingMode']?.toString() == 'plan') {
+        item['goingMode']?.toString() == 'plan' ||
+        item['partySubject']?.toString().toLowerCase() == 'party plan' ||
+        (item['specialRequests'] != null &&
+            (item['specialRequests'].toString().contains('partyPlanId') ||
+                item['specialRequests'].toString().contains('planId')))) {
       return null;
     }
 
@@ -4220,7 +4227,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Helper to extract Solo and standard venue booking ID
   String? _extractSoloBookingId(dynamic item) {
     if (item == null || item is! Map) return null;
-    if (_isPartyPlanItem(item) || _isStrangerMeetItem(item)) {
+    if (_isPartyPlanItem(item) ||
+        _isStrangerMeetItem(item) ||
+        item['partyPlanId'] != null ||
+        item['partyEventId'] != null ||
+        item['planId'] != null ||
+        item['goingMode']?.toString() == 'plan' ||
+        item['booking']?['goingMode']?.toString() == 'plan' ||
+        item['partySubject']?.toString().toLowerCase() == 'party plan' ||
+        (item['specialRequests'] != null &&
+            (item['specialRequests'].toString().contains('partyPlanId') ||
+                item['specialRequests'].toString().contains('planId')))) {
       return null;
     }
 
@@ -4384,7 +4401,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final booking in _userBookings) {
       if (_isPartyPlanItem(booking) ||
           _isStrangerMeetItem(booking) ||
-          _isUpcomingNightItem(booking)) {
+          _isUpcomingNightItem(booking) ||
+          (booking['goingMode'] ?? '').toString().toLowerCase() == 'plan' ||
+          (booking['partySubject'] ?? '').toString().toLowerCase() == 'party plan' ||
+          booking['partyPlanId'] != null ||
+          booking['partyEventId'] != null ||
+          booking['planId'] != null ||
+          (booking['specialRequests'] != null &&
+              (booking['specialRequests'].toString().contains('partyPlanId') ||
+                  booking['specialRequests'].toString().contains('planId')))) {
         continue; // Never render party plans, stranger meets, or upcoming nights as solo/table bookings!
       }
       final dynamic rawGuests =

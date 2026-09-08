@@ -358,7 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
-    final isAlreadyLiked = currentAction == 'like' || targetUser.isLiked;
+    final isAlreadyLiked = currentAction == 'like';
 
     // If already liked, clicking "like" again unlikes (toggle)
     if (isAlreadyLiked) {

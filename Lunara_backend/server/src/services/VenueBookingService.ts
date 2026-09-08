@@ -500,8 +500,9 @@ export class VenueBookingService {
             const completedCount = timelineSteps.filter(s => s.completed).length;
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
 
-            const isSolo = bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1;
-            const isLarge = guestCount > 20 || bookingRecord.isLargePartyRequest;
+            const isPlan = bookingRecord.goingMode === GoingMode.PLAN;
+            const isSolo = !isPlan && (bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1);
+            const isLarge = !isPlan && (guestCount > 20 || bookingRecord.isLargePartyRequest);
 
             const refundAmt = Number(bookingRecord.refundAmount || 0);
             const totalAmt = Number(bookingRecord.totalAmount || bookingRecord.depositAmount || 0);
@@ -509,28 +510,36 @@ export class VenueBookingService {
                 ? Math.round((refundAmt / totalAmt) * 100)
                 : ((bookingRecord as any).refundPercentage || 100);
 
-            let title = isLarge
-                ? `Large Party at ${venueName} 🎉`
-                : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Group Party at ${venueName} 🎉`);
+            let title = isPlan
+                ? `Party Plan at ${venueName} 🎟`
+                : (isLarge
+                    ? `Large Party at ${venueName} 🎉`
+                    : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Group Party at ${venueName} 🎉`));
             let body = `Your reservation for ${guestCount} guests at ${venueName} is being processed.`;
             let statusText = 'Booking Requested';
 
             if (isCompleted) {
-                title = isLarge
-                    ? `Large Party Completed ✨`
-                    : (isSolo ? `Solo Booking Completed ✨` : `Group Party Completed ✨`);
+                title = isPlan
+                    ? `Party Plan Completed ✨`
+                    : (isLarge
+                        ? `Large Party Completed ✨`
+                        : (isSolo ? `Solo Booking Completed ✨` : `Group Party Completed ✨`));
                 body = `Hope you enjoyed your experience at ${venueName}!`;
                 statusText = 'Completed';
             } else if (isConfirmed && !isCancelled) {
-                title = isLarge
-                    ? `Large Party Confirmed! 🎉`
-                    : (isSolo ? `Solo Booking Confirmed! 🎉` : `Group Party Confirmed! 🎉`);
-                body = `Your table reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
+                title = isPlan
+                    ? `Party Plan Confirmed! 🎉`
+                    : (isLarge
+                        ? `Large Party Confirmed! 🎉`
+                        : (isSolo ? `Solo Booking Confirmed! 🎉` : `Group Party Confirmed! 🎉`));
+                body = `Your reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
                 statusText = 'Confirmed';
             } else if (isCancelled) {
-                title = isLarge
-                    ? `Large Party Cancelled ❌`
-                    : (isSolo ? `Solo Booking Cancelled ❌` : `Group Party Cancelled ❌`);
+                title = isPlan
+                    ? `Party Plan Cancelled ❌`
+                    : (isLarge
+                        ? `Large Party Cancelled ❌`
+                        : (isSolo ? `Solo Booking Cancelled ❌` : `Group Party Cancelled ❌`));
                 body = (isRefunded || refundAmt > 0)
                     ? `Your booking for ${venueName} was cancelled. ${refundPct}% (₹${refundAmt.toFixed(0)}) refunded to your Lunara Wallet.`
                     : `Your booking for ${venueName} was cancelled.`;

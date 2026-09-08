@@ -106,9 +106,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
         _isLiked = true;
       } else if (widget.swipedAction == 'superlike') {
         _isSuperLiked = true;
+      } else if (widget.swipedAction == null && oldWidget.swipedAction != null) {
+        _isLiked = false;
+        _isSuperLiked = false;
       }
-      if (widget.user.isLiked) _isLiked = true;
-      if (widget.user.isSuperLiked) _isSuperLiked = true;
     }
   }
 
@@ -1004,8 +1005,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       builder: (_, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
 
-        final isSuperLiked = _isSuperLiked;
-        final isLiked = _isLiked;
+        final isSuperLiked = _isSuperLiked || widget.swipedAction == 'superlike';
+        final isLiked = _isLiked || widget.swipedAction == 'like';
 
         final subProvider = SubscriptionProvider.instance;
         final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes;
@@ -1238,7 +1239,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 bool success = false;
                                 if (widget.onLike != null) {
                                   final res = await widget.onLike!.call();
-                                  success = res == true;
+                                  success = res == true || (res == null && (widget.swipedAction == 'like' || widget.user.isLiked));
+                                  if (res == null && widget.onLike != null) {
+                                    success = true;
+                                  }
                                 } else {
                                   final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
                                   if (!mounted) return;

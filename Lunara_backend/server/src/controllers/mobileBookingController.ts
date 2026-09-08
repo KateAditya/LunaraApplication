@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
-import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
+import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode, GoingMode } from '../models/Booking';
 import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
@@ -1077,7 +1077,10 @@ export const listMyBookings = async (req: Request, res: Response) => {
             smJoinerRequests
         ] = await Promise.all([
             Booking.findAll({
-                where: { userId },
+                where: {
+                    userId,
+                    goingMode: { [Op.ne]: GoingMode.PLAN },
+                },
                 include: [
                     venueInclude,
                     userInclude,
