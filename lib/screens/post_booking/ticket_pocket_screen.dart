@@ -1575,16 +1575,26 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                     ? Map<String, dynamic>.from(booking['request'])
                     : <String, dynamic>{});
 
+            final resolvedStartTime = startTime.isNotEmpty
+                ? startTime
+                : (booking['startTime']?.toString() ??
+                    rawPlan['startTime']?.toString() ??
+                    rawReq['startTime']?.toString() ??
+                    (bookingDate.isNotEmpty ? LunaraDateFormatter.formatEventTime(bookingDate) : ''));
+
             // Enrich plan
             if (rawPlan['venue'] == null && venue != null) rawPlan['venue'] = venue;
             if (rawPlan['planDateTime'] == null && (booking['planDateTime'] != null || booking['eventStartAt'] != null || booking['bookingDate'] != null)) {
               rawPlan['planDateTime'] = booking['planDateTime'] ?? booking['eventStartAt'] ?? booking['bookingDate'];
             }
-            if (rawPlan['eventStartAt'] == null && booking['eventStartAt'] != null) {
-              rawPlan['eventStartAt'] = booking['eventStartAt'];
+            if (rawPlan['eventStartAt'] == null && (booking['eventStartAt'] != null || rawPlan['planDateTime'] != null)) {
+              rawPlan['eventStartAt'] = booking['eventStartAt'] ?? rawPlan['planDateTime'];
             }
-            if (rawPlan['depositAmount'] == null && booking['totalAmount'] != null) {
-              rawPlan['depositAmount'] = booking['totalAmount'];
+            if (rawPlan['startTime'] == null && resolvedStartTime.isNotEmpty) {
+              rawPlan['startTime'] = resolvedStartTime;
+            }
+            if (rawPlan['depositAmount'] == null && (booking['depositAmount'] != null || booking['totalAmount'] != null)) {
+              rawPlan['depositAmount'] = booking['depositAmount'] ?? booking['totalAmount'];
             }
             if (rawPlan['id'] == null && (booking['bookingId'] != null || booking['id'] != null)) {
               rawPlan['id'] = booking['bookingId'] ?? booking['id'];
@@ -1616,14 +1626,17 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
             if (rawReq['planDateTime'] == null && (booking['planDateTime'] != null || booking['eventStartAt'] != null || booking['bookingDate'] != null)) {
               rawReq['planDateTime'] = booking['planDateTime'] ?? booking['eventStartAt'] ?? booking['bookingDate'];
             }
-            if (rawReq['eventStartAt'] == null && booking['eventStartAt'] != null) {
-              rawReq['eventStartAt'] = booking['eventStartAt'];
+            if (rawReq['eventStartAt'] == null && (booking['eventStartAt'] != null || rawReq['planDateTime'] != null)) {
+              rawReq['eventStartAt'] = booking['eventStartAt'] ?? rawReq['planDateTime'];
             }
-            if (rawReq['paymentAmount'] == null && booking['totalAmount'] != null) {
-              rawReq['paymentAmount'] = booking['totalAmount'];
+            if (rawReq['startTime'] == null && resolvedStartTime.isNotEmpty) {
+              rawReq['startTime'] = resolvedStartTime;
             }
-            if (rawReq['depositAmount'] == null && booking['totalAmount'] != null) {
-              rawReq['depositAmount'] = booking['totalAmount'];
+            if (rawReq['paymentAmount'] == null && (booking['paymentAmount'] != null || booking['depositAmount'] != null || booking['totalAmount'] != null)) {
+              rawReq['paymentAmount'] = booking['paymentAmount'] ?? booking['depositAmount'] ?? booking['totalAmount'];
+            }
+            if (rawReq['depositAmount'] == null && (booking['depositAmount'] != null || booking['totalAmount'] != null)) {
+              rawReq['depositAmount'] = booking['depositAmount'] ?? booking['totalAmount'];
             }
             if (rawReq['id'] == null && (booking['id'] != null || booking['bookingId'] != null)) {
               rawReq['id'] = booking['id'] ?? booking['bookingId'];

@@ -1173,20 +1173,40 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
             const bookedDate = plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString();
+            const formattedStartTime = formatTime12Hour(planDateTime);
+            const ticketCode = (plan as any).ticketCode || (plan as any).ticketId || `PP-${plan.id.substring(0, 6).toUpperCase()}`;
+            const hostUser = (plan as any).creator || (plan as any).user ? {
+                id: ((plan as any).creator || (plan as any).user).id,
+                fullName: `${((plan as any).creator || (plan as any).user).firstName || ''} ${((plan as any).creator || (plan as any).user).lastName || ''}`.trim() || 'Host',
+                firstName: ((plan as any).creator || (plan as any).user).firstName,
+                lastName: ((plan as any).creator || (plan as any).user).lastName,
+                profilePhotoUrl: ((plan as any).creator || (plan as any).user).profileImageUrl || null,
+                profileImageUrl: ((plan as any).creator || (plan as any).user).profileImageUrl || null,
+            } : null;
+
             synthesized.push({
                 id: `party_plan_host_${plan.id}`,
                 bookingId: plan.id,
+                ticketId: ticketCode,
+                ticketCode,
                 bookingType: 'party_plan',
+                category: 'party_plan',
                 status: plan.status === 'cancelled' ? 'cancelled' : 'confirmed',
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),
-                startTime: planDateTime.toTimeString().substring(0, 5),
-                totalAmount: Number(plan.depositAmount),
-                tablePackage: 'PARTY PLAN (HOST)',
+                planDateTime: planDateTime.toISOString(),
+                eventStartAt: planDateTime.toISOString(),
+                startTime: formattedStartTime,
+                totalAmount: Number(plan.depositAmount || 99),
+                tablePackage: 'Party Plan Match',
                 numberOfGuests: 2,
                 venue,
+                user: hostUser,
+                host: hostUser,
+                plan: (plan as any).toJSON ? (plan as any).toJSON() : plan,
                 isPartyPlan: true,
+                isHost: true,
             });
         }
 
@@ -1203,20 +1223,43 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const venue = (plan as any).venue;
             const planDateTime = new Date(plan.planDateTime);
             const bookedDate = request.createdAt ? new Date(request.createdAt).toISOString() : (plan.createdAt ? new Date(plan.createdAt).toISOString() : planDateTime.toISOString());
+            const formattedStartTime = formatTime12Hour(planDateTime);
+            const ticketCode = (request as any).ticketCode || (plan as any).ticketCode || `PP-${plan.id.substring(0, 6).toUpperCase()}`;
+            const reqUser = (request as any).requester ? {
+                id: (request as any).requester.id,
+                fullName: `${(request as any).requester.firstName || ''} ${(request as any).requester.lastName || ''}`.trim() || 'Guest',
+                firstName: (request as any).requester.firstName,
+                lastName: (request as any).requester.lastName,
+                profilePhotoUrl: (request as any).requester.profileImageUrl || null,
+                profileImageUrl: (request as any).requester.profileImageUrl || null,
+            } : null;
+
             synthesized.push({
                 id: `party_plan_joiner_${request.id}`,
                 bookingId: plan.id,
+                ticketId: ticketCode,
+                ticketCode,
                 bookingType: 'party_plan',
+                category: 'party_plan',
                 status: 'confirmed',
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),
-                startTime: planDateTime.toTimeString().substring(0, 5),
+                planDateTime: planDateTime.toISOString(),
+                eventStartAt: planDateTime.toISOString(),
+                startTime: formattedStartTime,
                 totalAmount: Number(plan.depositAmount ?? 99),
-                tablePackage: 'PARTY PLAN (JOINER)',
+                tablePackage: 'Party Plan Match',
                 numberOfGuests: 2,
                 venue,
+                user: reqUser,
+                joiner: reqUser,
+                requester: reqUser,
+                plan: (plan as any).toJSON ? (plan as any).toJSON() : plan,
+                request: (request as any).toJSON ? (request as any).toJSON() : request,
+                rawRequest: (request as any).toJSON ? (request as any).toJSON() : request,
                 isPartyPlan: true,
+                isHost: false,
             });
         }
 

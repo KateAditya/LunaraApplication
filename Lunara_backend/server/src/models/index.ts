@@ -1095,6 +1095,10 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20) DEFAULT 'SELF_PAY';
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS cancellation_status VARCHAR(50) DEFAULT 'NONE';
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+                ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS cancelled_by UUID;
                 ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE;
                 ALTER TABLE night_partner_matches ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE;

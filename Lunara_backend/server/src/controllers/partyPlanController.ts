@@ -4852,7 +4852,8 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             (plan.lifecycleStatus || '').toLowerCase() === 'cancelled' ||
             ticketRec?.ticketStatus === TicketStatus.CANCELLED;
 
-        const effectiveStatus = isCancelledTicket ? 'CANCELLED' : (ticketRec?.ticketStatus || (isPlanConfirmed ? 'ACTIVE' : plan.status));
+        const effectiveStatus = isCancelledTicket ? 'CANCELLED' : (ticketRec?.ticketStatus || (booking as any)?.status || 'CONFIRMED');
+        const startTimeStr = formatTime12Hour(plan.planDateTime, DEFAULT_TIMEZONE);
 
         res.json({
             success: true,
@@ -4863,6 +4864,9 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     status: request.status,
                     joinerPaymentStatus: request.joinerPaymentStatus,
                     createdAt: request.createdAt,
+                    planDateTime: plan.planDateTime,
+                    eventStartAt: plan.planDateTime,
+                    startTime: startTimeStr,
                     requester: joinerData,
                     joiner: joinerData,
                     user: joinerData,
@@ -4874,6 +4878,8 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     id: plan.id,
                     message: plan.message,
                     planDateTime: plan.planDateTime,
+                    eventStartAt: plan.planDateTime,
+                    startTime: startTimeStr,
                     expiresAt: plan.planDateTime,
                     paymentType: plan.paymentType,
                     depositAmount: plan.depositAmount,
@@ -4885,6 +4891,7 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
                     host: hostData,
                     venue: buildVenueData(plan as any),
                 },
+                startTime: startTimeStr,
                 ticketCode: ticketCode,
                 ticketId: ticketCode,
                 bookingId: booking?.id ?? ticketRec?.bookingId ?? null,

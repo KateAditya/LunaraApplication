@@ -39,6 +39,8 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   Duration _timeRemaining = Duration.zero;
 
   // ── Backend-refreshed ticket data ─────────────────────────────────────────
+  Map<String, dynamic>? _freshPlan;
+  Map<String, dynamic>? _freshRequest;
   Map<String, dynamic>? _freshHostUser;
   Map<String, dynamic>? _freshJoinerUser;
   String? _canonicalTicketCode;
@@ -46,8 +48,8 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   bool get _isTicketCancelled {
     if (widget.isCancelled == true) return true;
-    final r = widget.request;
-    final p = widget.plan;
+    final r = _freshRequest ?? widget.request;
+    final p = _freshPlan ?? widget.plan;
     final status = (r['status'] ?? p['status'] ?? '').toString().toLowerCase();
     final pStatus = (r['paymentStatus'] ?? p['paymentStatus'] ?? '').toString().toLowerCase();
     return status == 'cancelled' || pStatus == 'cancelled' || pStatus == 'refunded';
@@ -56,21 +58,22 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
   bool get _isTicketExpired {
     if (_isTicketCancelled) return false;
     if (widget.isExpired == true) return true;
-    final r = widget.request;
-    final p = widget.plan;
+    final r = _freshRequest ?? widget.request;
+    final p = _freshPlan ?? widget.plan;
     final status = (r['status'] ?? p['status'] ?? '').toString().toLowerCase();
     if (status == 'expired') return true;
 
     final rawDate = p['planDateTime'] ??
         p['eventStartAt'] ??
-        p['bookingDate'] ??
         r['planDateTime'] ??
         r['eventStartAt'] ??
+        p['bookingDate'] ??
         r['bookingDate'];
     final rawTime = p['startTime'] ??
         p['time'] ??
         r['startTime'] ??
-        r['time'];
+        r['time'] ??
+        (rawDate != null ? LunaraDateFormatter.formatEventTime(rawDate) : null);
     final planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
     if (planDateTime != null) {
       final expirationTime = planDateTime.add(const Duration(hours: 2));
@@ -98,16 +101,19 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   // ── Countdown logic ────────────────────────────────────────────────────────
   void _initCountdown() {
-    final rawDate = widget.plan['planDateTime'] ??
-        widget.plan['eventStartAt'] ??
-        widget.plan['bookingDate'] ??
-        widget.request['planDateTime'] ??
-        widget.request['eventStartAt'] ??
-        widget.request['bookingDate'];
-    final rawTime = widget.plan['startTime'] ??
-        widget.plan['time'] ??
-        widget.request['startTime'] ??
-        widget.request['time'];
+    final p = _freshPlan ?? widget.plan;
+    final r = _freshRequest ?? widget.request;
+    final rawDate = p['planDateTime'] ??
+        p['eventStartAt'] ??
+        r['planDateTime'] ??
+        r['eventStartAt'] ??
+        p['bookingDate'] ??
+        r['bookingDate'];
+    final rawTime = p['startTime'] ??
+        p['time'] ??
+        r['startTime'] ??
+        r['time'] ??
+        (rawDate != null ? LunaraDateFormatter.formatEventTime(rawDate) : null);
     final planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString());
     if (planDateTime == null) return;
 
@@ -122,6 +128,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     }
 
     update();
+    _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
   }
 
@@ -148,6 +155,13 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         setState(() {
           final planData = data['plan'];
           final requestData = data['request'];
+
+          if (planData is Map && planData.isNotEmpty) {
+            _freshPlan = Map<String, dynamic>.from(planData);
+          }
+          if (requestData is Map && requestData.isNotEmpty) {
+            _freshRequest = Map<String, dynamic>.from(requestData);
+          }
 
           final hostObj = data['host'] ??
               data['creator'] ??
@@ -177,6 +191,7 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
           _canonicalTicketCode = data['ticketCode']?.toString() ?? data['ticketId']?.toString();
         });
+        _initCountdown();
       }
     } catch (e) {
       debugPrint('_fetchTicketData error: $e');
@@ -211,6 +226,35 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
           }
         } catch (e) {
           debugPrint('_fetchTicketData host fallback error: $e');
+        }
+      }
+    }
+
+    // ── Fallback: if joiner profile is still missing on the host side, fetch by joinerId ──
+    if (widget.isHost && mounted && (_freshJoinerUser == null || _freshJoinerUser!.isEmpty)) {
+      final joinerId = widget.plan['matchedRequestId']?.toString() ??
+          widget.plan['joinerId']?.toString() ??
+          widget.request['requesterId']?.toString() ??
+          widget.request['userId']?.toString();
+      if (joinerId != null && joinerId.isNotEmpty) {
+        try {
+          final profile = await ApiService.fetchProfile(userId: joinerId);
+          if (profile != null && mounted) {
+            setState(() {
+              _freshJoinerUser = {
+                'id': profile.id,
+                'firstName': profile.firstName,
+                'lastName': profile.lastName,
+                'username': profile.displayName ?? profile.firstName.toLowerCase(),
+                'profilePhotoUrl': profile.profilePhoto,
+                'profileImageUrl': profile.profilePhoto,
+                'image': profile.profilePhoto,
+                'bio': profile.bio,
+              };
+            });
+          }
+        } catch (e) {
+          debugPrint('_fetchTicketData joiner fallback error: $e');
         }
       }
     }
@@ -473,42 +517,43 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (_freshHostUser != null && _freshHostUser!.isNotEmpty) {
       return _freshHostUser!;
     }
-    if (widget.plan['host'] is Map && (widget.plan['host'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['host']);
+    final p = _freshPlan ?? widget.plan;
+    final r = _freshRequest ?? widget.request;
+
+    if (p['host'] is Map && (p['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['host']);
     }
-    if (widget.plan['creator'] is Map && (widget.plan['creator'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['creator']);
+    if (p['creator'] is Map && (p['creator'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['creator']);
     }
-    if (widget.request['host'] is Map && (widget.request['host'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['host']);
+    if (r['host'] is Map && (r['host'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['host']);
     }
-    if (widget.request['creator'] is Map && (widget.request['creator'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['creator']);
+    if (r['creator'] is Map && (r['creator'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['creator']);
     }
-    if (widget.request['plan'] is Map) {
-      final p = widget.request['plan'];
-      if (p['host'] is Map && (p['host'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['host']);
-      if (p['creator'] is Map && (p['creator'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['creator']);
-      if (p['user'] is Map && (p['user'] as Map).isNotEmpty) return Map<String, dynamic>.from(p['user']);
+    if (r['plan'] is Map) {
+      final subP = r['plan'];
+      if (subP['host'] is Map && (subP['host'] as Map).isNotEmpty) return Map<String, dynamic>.from(subP['host']);
+      if (subP['creator'] is Map && (subP['creator'] as Map).isNotEmpty) return Map<String, dynamic>.from(subP['creator']);
+      if (subP['user'] is Map && (subP['user'] as Map).isNotEmpty) return Map<String, dynamic>.from(subP['user']);
     }
-    // plan['user'] is the HOST's user object only when the current user is the host
-    // (on the joiner side, plan['user'] might be the joiner's own object — skip it here)
-    if (widget.plan['user'] is Map && widget.isHost && (widget.plan['user'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['user']);
+    // p['user'] is the HOST's user object only when the current user is the host
+    if (p['user'] is Map && widget.isHost && (p['user'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['user']);
     }
 
     final myUser = ApiService.cachedCurrentUser;
-    // Only use plan-level userId/creatorId/hostId fields that genuinely point to the HOST.
-    // Deliberately EXCLUDE widget.request['userId'] — for a joiner ticket, that field
-    // is the JOINER's own user-id, not the host's, which would make isMe wrongly = true.
-    final planUserId = widget.plan['userId']?.toString() ??
-        widget.plan['creatorId']?.toString() ??
-        widget.plan['hostId']?.toString() ??
-        widget.request['plan']?['userId']?.toString() ??
-        widget.request['plan']?['creatorId']?.toString() ??
-        widget.request['plan']?['hostId']?.toString() ??
-        widget.request['hostId']?.toString() ??
-        widget.request['creatorId']?.toString();
+    final planUserId = p['userId']?.toString() ??
+        p['creatorId']?.toString() ??
+        p['hostId']?.toString() ??
+        r['plan']?['userId']?.toString() ??
+        r['plan']?['creatorId']?.toString() ??
+        r['plan']?['hostId']?.toString() ??
+        r['hostId']?.toString() ??
+        r['creatorId']?.toString() ??
+        widget.plan['userId']?.toString() ??
+        widget.plan['creatorId']?.toString();
 
     // isMe is true ONLY when the current user is confirmed to be the HOST
     final isMe = widget.isHost || (myUser != null && planUserId != null && planUserId == myUser.id);
@@ -525,10 +570,9 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
       };
     }
 
-    // Last static fallback: plan['user'] regardless of role
-    if (widget.plan['user'] is Map && (widget.plan['user'] as Map).isNotEmpty) {
-      final cand = Map<String, dynamic>.from(widget.plan['user']);
-      // Only return if it's a different person than the current user (i.e. it's the host)
+    // Last static fallback: p['user'] regardless of role
+    if (p['user'] is Map && (p['user'] as Map).isNotEmpty) {
+      final cand = Map<String, dynamic>.from(p['user']);
       if (myUser == null || cand['id']?.toString() != myUser.id) {
         return cand;
       }
@@ -542,37 +586,40 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
     if (_freshJoinerUser != null && _freshJoinerUser!.isNotEmpty) {
       return _freshJoinerUser!;
     }
-    if (widget.request['requester'] is Map && (widget.request['requester'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['requester']);
+    final p = _freshPlan ?? widget.plan;
+    final r = _freshRequest ?? widget.request;
+
+    if (r['requester'] is Map && (r['requester'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['requester']);
     }
-    if (widget.request['joiner'] is Map && (widget.request['joiner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['joiner']);
+    if (r['joiner'] is Map && (r['joiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['joiner']);
     }
-    if (widget.request['partner'] is Map && (widget.request['partner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['partner']);
+    if (r['partner'] is Map && (r['partner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['partner']);
     }
-    if (widget.plan['partner'] is Map && (widget.plan['partner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['partner']);
+    if (p['partner'] is Map && (p['partner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['partner']);
     }
-    if (widget.plan['matchedJoiner'] is Map && (widget.plan['matchedJoiner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['matchedJoiner']);
+    if (p['matchedJoiner'] is Map && (p['matchedJoiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['matchedJoiner']);
     }
-    if (widget.plan['joiner'] is Map && (widget.plan['joiner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.plan['joiner']);
+    if (p['joiner'] is Map && (p['joiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(p['joiner']);
     }
-    if (widget.request['matchedJoiner'] is Map && (widget.request['matchedJoiner'] as Map).isNotEmpty) {
-      return Map<String, dynamic>.from(widget.request['matchedJoiner']);
+    if (r['matchedJoiner'] is Map && (r['matchedJoiner'] as Map).isNotEmpty) {
+      return Map<String, dynamic>.from(r['matchedJoiner']);
     }
-    if (widget.request['user'] is Map && (widget.request['user'] as Map).isNotEmpty) {
-      final cand = Map<String, dynamic>.from(widget.request['user']);
+    if (r['user'] is Map && (r['user'] as Map).isNotEmpty) {
+      final cand = Map<String, dynamic>.from(r['user']);
       final hostId = hostUser['id']?.toString();
       final candId = cand['id']?.toString();
       if (hostId == null || candId == null || hostId != candId) {
         return cand;
       }
     }
-    if (widget.plan['user'] is Map && (widget.plan['user'] as Map).isNotEmpty) {
-      final cand = Map<String, dynamic>.from(widget.plan['user']);
+    if (p['user'] is Map && (p['user'] as Map).isNotEmpty) {
+      final cand = Map<String, dynamic>.from(p['user']);
       final hostId = hostUser['id']?.toString();
       final candId = cand['id']?.toString();
       if (hostId == null || candId == null || hostId != candId) {
@@ -599,7 +646,12 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final venue = (widget.plan['venue'] is Map ? widget.plan['venue'] : null) ??
+    final effectivePlan = _freshPlan ?? widget.plan;
+    final effectiveRequest = _freshRequest ?? widget.request;
+
+    final venue = (effectivePlan['venue'] is Map ? effectivePlan['venue'] : null) ??
+        (effectiveRequest['venue'] is Map ? effectiveRequest['venue'] : null) ??
+        (widget.plan['venue'] is Map ? widget.plan['venue'] : null) ??
         (widget.request['venue'] is Map ? widget.request['venue'] : null) ??
         {};
     final venueName = venue['name'] ?? 'Lunara Venue';
@@ -609,20 +661,32 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         venue['addressLine1'] ??
         '${venueArea.isNotEmpty ? "$venueArea, " : ""}$venueCity, Maharashtra 411057';
 
-    final rawDate = widget.plan['planDateTime'] ??
+    final rawDate = effectivePlan['planDateTime'] ??
+        effectivePlan['eventStartAt'] ??
+        effectiveRequest['planDateTime'] ??
+        effectiveRequest['eventStartAt'] ??
+        effectivePlan['bookingDate'] ??
+        effectiveRequest['bookingDate'] ??
+        effectivePlan['partyDate'] ??
+        effectiveRequest['partyDate'] ??
+        widget.plan['planDateTime'] ??
         widget.plan['eventStartAt'] ??
-        widget.plan['bookingDate'] ??
-        widget.plan['partyDate'] ??
         widget.request['planDateTime'] ??
         widget.request['eventStartAt'] ??
-        widget.request['bookingDate'] ??
-        widget.request['partyDate'];
-    final rawTime = widget.plan['startTime'] ??
+        widget.plan['bookingDate'] ??
+        widget.request['bookingDate'];
+
+    final rawTime = effectivePlan['startTime'] ??
+        effectivePlan['time'] ??
+        effectiveRequest['startTime'] ??
+        effectiveRequest['time'] ??
+        widget.plan['startTime'] ??
         widget.plan['time'] ??
-        widget.plan['partyTime'] ??
         widget.request['startTime'] ??
         widget.request['time'] ??
-        widget.request['partyTime'];
+        effectivePlan['partyTime'] ??
+        effectiveRequest['partyTime'] ??
+        (rawDate != null ? LunaraDateFormatter.formatEventTime(rawDate) : null);
 
     final DateTime planDateTime = LunaraDateFormatter.parseToLocal(rawDate, explicitTime: rawTime?.toString()) ?? DateTime.now();
 
@@ -665,6 +729,8 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
             : '@guest');
 
     final ticketId = (_canonicalTicketCode ??
+        effectiveRequest['ticketCode']?.toString() ??
+        effectivePlan['ticketCode']?.toString() ??
         widget.request['ticketCode']?.toString() ??
         widget.plan['ticketCode']?.toString() ??
         widget.request['ticketId']?.toString() ??
@@ -675,25 +741,25 @@ class _PartyPlanTicketScreenState extends State<PartyPlanTicketScreen> {
         'LUN-PARTY-PLAN').toUpperCase();
     final headlineText = "Let's party at $venueName!";
 
-    final rawAmount = widget.request['paymentAmount'] ??
-        widget.request['totalAmount'] ??
-        widget.plan['depositAmount'] ??
-        widget.plan['totalAmount'] ??
-        widget.plan['paymentAmount'] ??
-        widget.request['amountPaid'] ??
-        widget.plan['amountPaid'] ??
-        99.0;
-    final rawPaymentType = (widget.plan['paymentType'] ??
-            widget.plan['plan']?['paymentType'] ??
+    final rawPaymentType = (effectivePlan['paymentType'] ??
+            effectivePlan['plan']?['paymentType'] ??
+            effectiveRequest['paymentType'] ??
+            effectiveRequest['plan']?['paymentType'] ??
+            widget.plan['paymentType'] ??
             widget.request['paymentType'] ??
-            widget.request['plan']?['paymentType'] ??
             'split')
         .toString()
         .toLowerCase()
         .trim();
     final bool isSelfPay = rawPaymentType == 'self_pay' || rawPaymentType == 'self' || rawPaymentType == 'host_pay';
 
-    final double amountPaid = double.tryParse(rawAmount.toString()) ?? 99.0;
+    final double depositPerPerson = double.tryParse((effectivePlan['depositAmount'] ?? effectiveRequest['depositAmount'] ?? widget.plan['depositAmount'] ?? widget.request['depositAmount'] ?? 99.0).toString()) ?? 99.0;
+    final double amountPaid;
+    if (isSelfPay) {
+      amountPaid = widget.isHost ? (depositPerPerson * 2) : 0.0;
+    } else {
+      amountPaid = depositPerPerson;
+    }
 
     final bookingCreatedDate = widget.request['createdAt'] != null
         ? DateTime.tryParse(widget.request['createdAt'].toString())?.toLocal() ?? planDateTime

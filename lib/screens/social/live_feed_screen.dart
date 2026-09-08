@@ -319,6 +319,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_status_update', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_cancelled', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('upcoming_night_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('partner_request_created', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('partner_request_received', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('partner_request_accepted', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('partner_request_declined', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener('partner_request_cancelled', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -367,8 +378,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
     ApiService.removeSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_paid', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_joiner_paid', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('strangers_meet_host_paid', _onPartyPlanHostPaid);
+    ApiService.removeSocketListener('strangers_meet_joiner_paid', _onPartyPlanJoinerPaid);
     ApiService.removeSocketListener('strangers_meet_arrival_confirmed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
@@ -385,6 +396,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_created', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_status_update', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_cancelled', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_cancellation_requested', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_cancellation_approved', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('upcoming_night_cancellation_rejected', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('partner_request_created', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('partner_request_received', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('partner_request_accepted', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('partner_request_declined', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener('partner_request_cancelled', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
     ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
@@ -4411,9 +4433,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    final String matchId = (metadata['matchId'] ?? rawItem['matchId'] ?? rawItem['entityId'] ?? nightId).toString();
+    final String requestId = (metadata['requestId'] ?? rawItem['requestId'] ?? rawItem['data']?['requestId'] ?? (rawItem['id']?.toString().startsWith('upcoming_night_timeline_') == false ? rawItem['id'] : null) ?? nightId).toString();
+    final String matchId = (metadata['matchId'] ?? rawItem['matchId'] ?? rawItem['data']?['matchId'] ?? '').toString();
+    final String targetRequestId = requestId.isNotEmpty ? requestId : (matchId.isNotEmpty ? matchId : nightId);
+    final String targetMatchId = matchId.isNotEmpty ? matchId : (requestId.isNotEmpty ? requestId : nightId);
+
     final String status = (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT').toString().toUpperCase();
     final String stage = (metadata['stage'] ?? rawItem['stage'] ?? 'INVITE_SENT').toString().toUpperCase();
+    final String cancellationStatus = (metadata['cancellationStatus'] ?? rawItem['cancellationStatus'] ?? rawItem['data']?['cancellationStatus'] ?? 'NONE').toString().toUpperCase();
+    final String cancelledBy = (metadata['cancelledBy'] ?? rawItem['cancelledBy'] ?? rawItem['data']?['cancelledBy'] ?? '').toString();
 
     final String hostId = (metadata['hostId'] ?? rawItem['hostId'] ?? rawItem['actorUserId'] ?? rawItem['senderId'] ?? '').toString();
     final String partnerId = (metadata['partnerId'] ?? rawItem['partnerId'] ?? rawItem['recipientUserId'] ?? '').toString();
@@ -4492,6 +4520,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String? ticketId = metadata['ticketId']?.toString() ?? rawItem['ticketCode']?.toString();
     final String? chatId = metadata['chatId']?.toString() ?? rawItem['conversationId']?.toString();
 
+    final bool isCancellationRequested = cancellationStatus == 'REQUESTED';
+    final bool isCanceller = isCancellationRequested && (cancelledBy.isNotEmpty ? cancelledBy == myId : false);
+    final bool isCancellationRecipient = isCancellationRequested && !isCanceller;
+
     Color accentColor = LunaraTheme.electricViolet;
     String badgeText = 'UPCOMING NIGHT';
     String cardTitle = 'Upcoming Night 🌙';
@@ -4505,6 +4537,84 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badgeText = 'CANCELLED';
       cardTitle = 'Upcoming Night Cancelled ❌';
       cardBody = 'The upcoming night at $venueName was cancelled.';
+    } else if (isCancellationRequested) {
+      if (isCancellationRecipient) {
+        accentColor = const Color(0xFFEF4444);
+        badgeText = 'ACTION REQUIRED';
+        cardTitle = 'Cancellation Request Received ⚠️';
+        final reason = (metadata['cancellationReason'] ?? rawItem['cancellationReason'] ?? 'Change of plans').toString();
+        cardBody = '$partnerName requested to cancel Upcoming Night at $displayTitle. Reason: "$reason". Please confirm to process refund or keep active.';
+
+        final acceptCancelKey = 'accept_cancel_$targetMatchId';
+        final rejectCancelKey = 'reject_cancel_$targetMatchId';
+        final isAcceptingCancel = _activeActionKeys.contains(acceptCancelKey);
+        final isRejectingCancel = _activeActionKeys.contains(rejectCancelKey);
+
+        actionsList.add(
+          NotificationAction(
+            label: isAcceptingCancel ? 'Processing...' : 'Confirm & Refund',
+            icon: Icons.check_circle_rounded,
+            isPrimary: true,
+            isLoading: isAcceptingCancel,
+            onTap: (isAcceptingCancel || isRejectingCancel) ? () {} : () async {
+              setState(() => _activeActionKeys.add(acceptCancelKey));
+              try {
+                final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, action: 'approve');
+                if (res != null && res['success'] == true) {
+                  _optimisticallyMarkBookingCancelled(targetMatchId);
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Upcoming night cancelled and refunded to wallet.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res?['message'] ?? 'Could not process cancellation.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(acceptCancelKey));
+              }
+            },
+          ),
+        );
+
+        actionsList.add(
+          NotificationAction(
+            label: isRejectingCancel ? 'Processing...' : 'Keep Active',
+            icon: Icons.close_rounded,
+            isPrimary: false,
+            isLoading: isRejectingCancel,
+            onTap: (isAcceptingCancel || isRejectingCancel) ? () {} : () async {
+              setState(() => _activeActionKeys.add(rejectCancelKey));
+              try {
+                final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, action: 'reject');
+                if (res != null && res['success'] == true) {
+                  _loadFeed(showLoader: false, forceRefresh: true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Cancellation declined. Event remains confirmed.'),
+                      backgroundColor: Colors.blueGrey,
+                    ),
+                  );
+                }
+              } finally {
+                if (mounted) setState(() => _activeActionKeys.remove(rejectCancelKey));
+              }
+            },
+          ),
+        );
+      } else {
+        accentColor = const Color(0xFFF59E0B);
+        badgeText = 'PENDING';
+        cardTitle = 'Cancellation Requested ⏳';
+        cardBody = 'Waiting for $partnerName to confirm cancellation of Upcoming Night at $displayTitle.';
+      }
     } else if (stage == 'FULLY_BOOKED' || status == 'CONFIRMED') {
       accentColor = const Color(0xFF10B981);
       badgeText = 'CONFIRMED';
@@ -4594,19 +4704,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             );
 
             if (confirm == true) {
-              final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'User requested cancellation');
+              final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, reason: 'User requested cancellation');
               if (res != null && res['success'] == true) {
-                _loadFeed(showLoader: false);
+                _loadFeed(showLoader: false, forceRefresh: true);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Upcoming night cancelled and wallet refunded.'),
+                    content: Text('Cancellation request submitted.'),
                     backgroundColor: Colors.green,
                   ),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Could not cancel upcoming night. Please contact support.'),
+                  SnackBar(
+                    content: Text(res?['message'] ?? 'Could not cancel upcoming night. Please contact support.'),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
@@ -4615,32 +4725,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
         ),
       );
-    } else if (stage == 'WAITING_FOR_PAYMENT' || status == 'ACCEPTED') {
+    } else if (stage == 'WAITING_FOR_PAYMENT' || status == 'ACCEPTED' || status == 'MATCHED') {
       accentColor = const Color(0xFFF59E0B);
-      badgeText = 'ACTION REQUIRED';
-      cardTitle = 'Invite Accepted! 💳';
-      cardBody = '$partnerName accepted your invite for $displayTitle! Complete payment to lock your match.';
+      badgeText = isCurrentUserHost ? 'ACTION REQUIRED' : 'WAITING FOR HOST';
+      cardTitle = isCurrentUserHost ? 'Invite Accepted! 💳' : 'Waiting for Confirmation 🎉';
+      cardBody = isCurrentUserHost
+          ? '$partnerName accepted your invite for $displayTitle! Complete payment to lock your match.'
+          : 'You accepted the invite! Waiting for host ($partnerName) to complete booking payment.';
 
-      actionsList.add(
-        NotificationAction(
-          label: 'Pay & Lock',
-          icon: Icons.payment_rounded,
-          isPrimary: true,
-          onTap: () {
-            showDialog(
-              context: context,
-              builder: (_) => UpcomingNightHostConfirmDialog(
-                matchId: matchId,
-                partnerName: partnerName,
-                partnerPhoto: partnerPhoto,
-                venueName: venueName,
-                date: dateStr,
-                time: timeStr,
-              ),
-            );
-          },
-        ),
-      );
+      if (isCurrentUserHost) {
+        actionsList.add(
+          NotificationAction(
+            label: 'Pay & Lock',
+            icon: Icons.payment_rounded,
+            isPrimary: true,
+            onTap: () {
+              showDialog(
+                context: context,
+                builder: (_) => UpcomingNightHostConfirmDialog(
+                  matchId: targetMatchId,
+                  partnerName: partnerName,
+                  partnerPhoto: partnerPhoto,
+                  venueName: venueName,
+                  date: dateStr,
+                  time: timeStr,
+                ),
+              );
+            },
+          ),
+        );
+      }
 
       actionsList.add(
         NotificationAction(
@@ -4649,9 +4763,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           isPrimary: false,
           color: Colors.red[400],
           onTap: () async {
-            final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'Host cancelled before payment');
+            final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, reason: 'Cancelled before booking');
             if (res != null && res['success'] == true) {
-              _loadFeed(showLoader: false);
+              _loadFeed(showLoader: false, forceRefresh: true);
             }
           },
         ),
@@ -4664,8 +4778,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         cardTitle = 'Night Partner Invite 🌙';
         cardBody = '$partnerName invited you to join for $displayTitle on $dateStr • $timeStr!';
 
-        final acceptKey = 'accept_np_$matchId';
-        final declineKey = 'decline_np_$matchId';
+        final acceptKey = 'accept_np_$targetRequestId';
+        final declineKey = 'decline_np_$targetRequestId';
         final isAccepting = _activeActionKeys.contains(acceptKey);
         final isDeclining = _activeActionKeys.contains(declineKey);
 
@@ -4678,9 +4792,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAccepting || isDeclining) ? () {} : () async {
               setState(() => _activeActionKeys.add(acceptKey));
               try {
-                final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'accept');
-                if (ok) {
-                  _optimisticallyUpdateNightPartnerRequest(matchId, 'accepted');
+                final res = await ApiService.respondToNightPartnerRequestDetailed(requestId: targetRequestId, action: 'accept');
+                if (res['success'] == true) {
+                  _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'accepted');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Invite accepted! Waiting for booking confirmation. 🎉'),
@@ -4689,9 +4803,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   );
                   _loadFeed(showLoader: false, forceRefresh: true);
                 } else {
+                  final errMsg = res['message']?.toString() ?? 'Could not accept invite. Match slot may already be filled.';
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Could not accept invite. Match slot may already be filled.'),
+                    SnackBar(
+                      content: Text(errMsg),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
@@ -4714,9 +4829,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAccepting || isDeclining) ? () {} : () async {
               setState(() => _activeActionKeys.add(declineKey));
               try {
-                final ok = await ApiService.respondToNightPartnerRequest(requestId: matchId, action: 'decline');
-                if (ok) {
-                  _optimisticallyUpdateNightPartnerRequest(matchId, 'rejected');
+                final res = await ApiService.respondToNightPartnerRequestDetailed(requestId: targetRequestId, action: 'decline');
+                if (res['success'] == true) {
+                  _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'rejected');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Invite declined.'),
@@ -4725,9 +4840,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   );
                   _loadFeed(showLoader: false, forceRefresh: true);
                 } else {
+                  final errMsg = res['message']?.toString() ?? 'Could not decline invite.';
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Could not decline invite.'),
+                    SnackBar(
+                      content: Text(errMsg),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
@@ -4752,9 +4868,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.red[400],
             onTap: () async {
-              final res = await ApiService.cancelUpcomingNight(targetId: matchId.isNotEmpty ? matchId : nightId, reason: 'Host cancelled invite');
+              final res = await ApiService.cancelUpcomingNight(targetId: targetRequestId, reason: 'Host cancelled invite');
               if (res != null && res['success'] == true) {
-                _loadFeed(showLoader: false);
+                _loadFeed(showLoader: false, forceRefresh: true);
               }
             },
           ),
@@ -7765,14 +7881,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
-      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? item.rawData['stage'] ?? '').toString().toLowerCase();
+      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
       bool matches = false;
       if (pillId == 'REQUESTS') {
-        matches = title.contains('request') || badge.contains('REQUEST') || category.contains('request');
+        matches = title.contains('request') ||
+            title.contains('invite') ||
+            title.contains('partner') ||
+            badge.contains('REQUEST') ||
+            badge.contains('INVITE') ||
+            category.contains('request') ||
+            category.contains('upcoming_night') ||
+            category.contains('night_partner');
       } else if (pillId == 'PENDING') {
-        matches = rawStatus.contains('pending') || badge.contains('ACTION REQUIRED') || badge.contains('PENDING');
+        matches = rawStatus.contains('pending') ||
+            rawStatus.contains('invite_sent') ||
+            rawStatus.contains('waiting_for_payment') ||
+            rawStatus.contains('requested') ||
+            cancellationStatus.contains('requested') ||
+            badge.contains('ACTION REQUIRED') ||
+            badge.contains('PENDING') ||
+            badge.contains('INVITE') ||
+            badge.contains('WAITING');
       } else if (pillId == 'PAYMENT') {
-        matches = category.contains('pay') || category.contains('wallet') || badge.contains('PAYMENT') || title.contains('payment') || title.contains('paid');
+        matches = category.contains('pay') ||
+            category.contains('wallet') ||
+            category.contains('deposit') ||
+            rawStatus.contains('pay') ||
+            rawStatus.contains('waiting_for_payment') ||
+            badge.contains('PAYMENT') ||
+            badge.contains('ACTION REQUIRED') ||
+            title.contains('payment') ||
+            title.contains('paid');
       } else if (pillId == 'CONFIRMED') {
         matches = rawStatus.contains('confirmed') || rawStatus.contains('paid') || badge.contains('CONFIRMED') || title.contains('confirmed');
       } else if (pillId == 'SYSTEM') {
@@ -7882,7 +8022,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return item.isExpired;
       }
       if (_selectedCategoryFilter == 'BOOKINGS') {
-        return item.category == 'booking' || item.category == 'group';
+        return item.category == 'booking' || item.category == 'group' || item.category == 'upcoming_night' || item.category == 'night_partner';
       }
       if (_selectedCategoryFilter == 'PARTY_PLANS') {
         return item.category == 'party_plan';
@@ -7924,13 +8064,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
-      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? item.rawData['stage'] ?? '').toString().toLowerCase();
+      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
 
       if (_selectedStatusPill == 'REQUESTS') {
-        return title.contains('request') || body.contains('request') || badge.contains('REQUEST') || category.contains('request');
+        return title.contains('request') ||
+            title.contains('invite') ||
+            title.contains('partner') ||
+            body.contains('request') ||
+            body.contains('invite') ||
+            body.contains('partner') ||
+            badge.contains('REQUEST') ||
+            badge.contains('INVITE') ||
+            category.contains('request') ||
+            category.contains('upcoming_night') ||
+            category.contains('night_partner');
       }
       if (_selectedStatusPill == 'PENDING') {
-        return rawStatus.contains('pending') || badge.contains('ACTION REQUIRED') || badge.contains('PENDING');
+        return rawStatus.contains('pending') ||
+            rawStatus.contains('invite_sent') ||
+            rawStatus.contains('waiting_for_payment') ||
+            rawStatus.contains('requested') ||
+            cancellationStatus.contains('requested') ||
+            badge.contains('ACTION REQUIRED') ||
+            badge.contains('PENDING') ||
+            badge.contains('INVITE') ||
+            badge.contains('WAITING');
       }
       if (_selectedStatusPill == 'PAYMENT') {
         final hasPayAction = item.actions?.any((act) => act.label.toLowerCase().contains('pay')) ?? false;
@@ -7939,6 +8098,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             category.contains('deposit') ||
             rawStatus.contains('pay') ||
             rawStatus.contains('deposit') ||
+            rawStatus.contains('waiting_for_payment') ||
             rawStatus.contains('awaiting_payment') ||
             badge.contains('PAYMENT') ||
             badge.contains('ACTION REQUIRED') ||

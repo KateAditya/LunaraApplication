@@ -862,11 +862,20 @@ async function getUserNotifications(
             (n.id?.startsWith('party_plan_') ? n.id.replace(/^party_plan_(?:timeline_)?([^_]+).*/, '$1') : null) ||
             (n.metadata ? (n.metadata.partyPlanId || n.metadata.planId) : null);
 
+        const isUn = typeLower.startsWith('upcoming_night') || typeLower.includes('night_partner') || typeLower.includes('partner_request') || n.entityType === 'night_partner' || n.entityType === 'NightPartnerRequest' || n.entityType === 'NightPartnerMatch' || titleLower.includes('night partner') || titleLower.includes('upcoming night');
+
+        const upcomingNightId = data.nightId?.toString() || data.matchId?.toString() || data.requestId?.toString() ||
+            (n.entityType === 'night_partner' || n.entityType === 'NightPartnerRequest' || n.entityType === 'NightPartnerMatch' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('upcoming_night_') ? n.id.replace(/^upcoming_night_(?:timeline_)?([^_]+).*/, '$1') : null) ||
+            (n.metadata ? (n.metadata.nightId || n.metadata.matchId || n.metadata.requestId) : null) ||
+            (isUn ? n.entityId?.toString() : null);
+
         let key: string | null = null;
         if (strangerMeetId) key = `sm_${strangerMeetId}`;
         else if (groupPartyId) key = `gp_${groupPartyId}`;
         else if (partyPlanId) key = `pp_${partyPlanId}`;
         else if (bookingId) key = `bk_${bookingId}`;
+        else if (upcomingNightId) key = `un_${upcomingNightId}`;
 
         if (key) {
             if (!entityKeys.has(key)) {
@@ -890,10 +899,14 @@ async function getUserNotifications(
                     const action = n.data?.primaryAction;
                     return action && ['Pay Now', 'Accept', 'Confirm Arrival'].includes(action);
                 }
+                if (n.type === 'upcoming_night_timeline') {
+                    const stage = n.data?.stage || n.data?.status || '';
+                    return stage === 'INVITE_SENT' || stage === 'PENDING' || stage === 'WAITING_FOR_PAYMENT' || stage === 'PAYMENT_PENDING' || n.data?.cancellationStatus === 'REQUESTED';
+                }
                 if (type.startsWith('group_party_initiated') || type.startsWith('large_party_payment_link') || type.startsWith('large_party_approved')) {
                     return true;
                 }
-                if (type.includes('join_request') || type.includes('awaiting_payment')) {
+                if (type.includes('join_request') || type.includes('awaiting_payment') || type.includes('PARTNER_REQUEST') || type.includes('PAYMENT_PENDING')) {
                     return true;
                 }
                 return false;
@@ -902,6 +915,10 @@ async function getUserNotifications(
             if (filter === 'completed') {
                 if (n.type === 'party_plan_timeline') {
                     return ['Completed', 'Cancelled', 'Expired'].includes(statusText);
+                }
+                if (n.type === 'upcoming_night_timeline') {
+                    const status = (n.data?.status || '').toUpperCase();
+                    return ['COMPLETED', 'CANCELLED', 'EXPIRED', 'DECLINED'].includes(status);
                 }
                 if (type.includes('completed') || type.includes('cancelled') || type.includes('rejected')) {
                     return true;

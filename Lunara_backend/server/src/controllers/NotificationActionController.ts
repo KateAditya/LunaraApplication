@@ -37,7 +37,8 @@ export class NotificationActionController {
             let actionResult: any = { status: 'ACTIONED', actionExecuted: action };
 
             // Handle domain entity specific actions
-            if (action === 'ACCEPT' || action === 'DECLINE' || action === 'REJECT') {
+            const upperAction = action.toUpperCase();
+            if (['ACCEPT', 'DECLINE', 'REJECT', 'ACCEPT_CANCELLATION', 'REJECT_CANCELLATION'].includes(upperAction)) {
                 const isPartyPlanEntity = notification.entityType === 'PartyPlanRequest' || 
                                           notification.entityType === 'party_plan_request' || 
                                           notification.entityType === 'party_plan';
@@ -45,7 +46,8 @@ export class NotificationActionController {
                 if (isPartyPlanEntity) {
                     const isCancellationNotif = notification.eventType === 'party_plan_cancellation_requested' || 
                                                Boolean(notification.metadata?.cancellationId) ||
-                                               (notification.title && notification.title.toLowerCase().includes('cancellation'));
+                                               (notification.title && notification.title.toLowerCase().includes('cancellation')) ||
+                                               upperAction.includes('CANCELLATION');
 
                     if (isCancellationNotif) {
                         const planId = notification.entityId || notification.metadata?.planId;
@@ -57,7 +59,7 @@ export class NotificationActionController {
                                 params: { id: planId },
                                 body: {
                                     requestId: cancellationReqId,
-                                    action: action === 'ACCEPT' ? 'approve' : 'reject',
+                                    action: (upperAction === 'ACCEPT' || upperAction === 'ACCEPT_CANCELLATION') ? 'approve' : 'reject',
                                     userId: currentUserId,
                                 },
                                 user: { id: currentUserId },
@@ -75,7 +77,7 @@ export class NotificationActionController {
                         const requestId = notification.metadata?.requestId || 
                                          (notification.entityType === 'PartyPlanRequest' || notification.entityType === 'party_plan_request' ? notification.entityId : null);
 
-                        if (action === 'ACCEPT' && requestId) {
+                        if (upperAction === 'ACCEPT' && requestId) {
                             const mockReq: any = {
                                 params: { reqId: requestId },
                                 body: { userId: currentUserId },
@@ -88,7 +90,7 @@ export class NotificationActionController {
                             };
                             await acceptPartyPlanRequest(mockReq, mockRes);
                             actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
-                        } else if ((action === 'DECLINE' || action === 'REJECT') && requestId) {
+                        } else if ((upperAction === 'DECLINE' || upperAction === 'REJECT') && requestId) {
                             const mockReq: any = {
                                 params: { reqId: requestId },
                                 body: { userId: currentUserId },
@@ -130,14 +132,29 @@ export class NotificationActionController {
                         await handleJoinRequest(mockReq, mockRes);
                         actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
-                } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest') && notification.entityId) {
-                    const act = action.toUpperCase() === 'ACCEPT' ? 'accept' : 'decline';
-                    try {
-                        const result = await NightPartnerService.respondToRequest(notification.entityId, currentUserId, act);
-                        actionResult = { status: 'ACTIONED', actionExecuted: action, result };
-                    } catch (partnerErr: any) {
-                        logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
-                        actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
+                } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch') && notification.entityId) {
+                    if (upperAction === 'ACCEPT_CANCELLATION' || upperAction === 'REJECT_CANCELLATION') {
+                        try {
+                            const result = await NightPartnerService.cancelUpcomingNight(
+                                notification.entityId,
+                                currentUserId,
+                                upperAction === 'ACCEPT_CANCELLATION' ? 'Cancellation confirmed by partner' : 'Cancellation declined by partner',
+                                upperAction === 'ACCEPT_CANCELLATION' ? 'approve' : 'reject'
+                            );
+                            actionResult = { status: 'ACTIONED', actionExecuted: action, result };
+                        } catch (partnerErr: any) {
+                            logger.error('[NotificationActionController] NightPartner cancellation action error:', partnerErr);
+                            actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
+                        }
+                    } else {
+                        const act = upperAction === 'ACCEPT' ? 'accept' : 'decline';
+                        try {
+                            const result = await NightPartnerService.respondToRequest(notification.entityId, currentUserId, act);
+                            actionResult = { status: 'ACTIONED', actionExecuted: action, result };
+                        } catch (partnerErr: any) {
+                            logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
+                            actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
+                        }
                     }
                 }
             }

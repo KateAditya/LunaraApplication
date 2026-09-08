@@ -295,8 +295,8 @@ export class MobileTicketController {
             }
             const allPartyPlanIds = [...new Set([...bookingIds, ...partyPlanIdsFromBookings])];
 
-            const [sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans] = bookingIds.length === 0
-                ? [[], [], [], []]
+            const [sourceGroupParties, sourceStrangersMeets, sourceStrangersJoiners, sourcePartyPlans, sourcePartyPlanRequests] = bookingIds.length === 0
+                ? [[], [], [], [], []]
                 : await Promise.all([
                     GroupParty.findAll({
                         where: { id: { [Op.in]: bookingIds } },
@@ -325,12 +325,23 @@ export class MobileTicketController {
                         attributes: ['id', 'userId', 'venueId', 'planDateTime', 'depositAmount', 'status', 'lifecycleStatus', 'hostPaymentStatus', 'matchedRequestId', 'createdAt'],
                         include: [venueInclude, userInclude],
                     }),
+                    PartyPlanRequest.findAll({
+                        where: { planId: { [Op.in]: allPartyPlanIds } },
+                        include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] }],
+                        order: [['updatedAt', 'DESC']],
+                    }),
                 ]);
             const bookingById = new Map(sourceBookings.map(b => [b.id, b]));
             const groupPartyById = new Map(sourceGroupParties.map(g => [g.id, g]));
             const strangersMeetById = new Map(sourceStrangersMeets.map(sm => [sm.id, sm]));
             const strangersJoinerById = new Map(sourceStrangersJoiners.map(j => [j.id, j]));
             const partyPlanById = new Map(sourcePartyPlans.map(p => [p.id, p]));
+            const partyPlanRequestsByPlanId = new Map<string, any>();
+            for (const req of (sourcePartyPlanRequests || [])) {
+                if (!partyPlanRequestsByPlanId.has(req.planId) || req.status === PartyPlanRequestStatus.ACCEPTED || req.joinerPaymentStatus === 'paid') {
+                    partyPlanRequestsByPlanId.set(req.planId, req);
+                }
+            }
 
             for (const t of tickets) {
                 if (t.bookingId) seenBookingIds.add(t.bookingId);
@@ -401,13 +412,15 @@ export class MobileTicketController {
                 const smSubject = smMeet?.subject || 'Strangers Meetup';
                 const smTagline = smMeet?.tagline || '';
 
-                const amountVal = sourceBooking
-                    ? Number(sourceBooking.totalAmount)
-                    : (sourceGroupParty
-                        ? Number(sourceGroupParty.totalAmount)
-                        : (smAmount != null
-                            ? smAmount
-                            : (sourcePartyPlan ? Number(sourcePartyPlan.depositAmount || 99) : null)));
+                const amountVal = isPartyPlan
+                    ? Number(sourcePartyPlan?.depositAmount || 99)
+                    : (sourceBooking
+                        ? Number(sourceBooking.totalAmount)
+                        : (sourceGroupParty
+                            ? Number(sourceGroupParty.totalAmount)
+                            : (smAmount != null
+                                ? smAmount
+                                : (sourcePartyPlan ? Number(sourcePartyPlan.depositAmount || 99) : null))));
                 const isFree = amountVal != null ? amountVal <= 0 : false;
 
                 const sbPartyEvent = (sourceBooking as any)?.partyEvent;
@@ -430,6 +443,44 @@ export class MobileTicketController {
                     ? smGuests
                     : (isPartyPlan ? 2 : (sourceBooking ? sourceBooking.numberOfGuests : (sourceGroupParty ? sourceGroupParty.numberOfFriends : null)));
 
+                // Resolve matching party plan request & joiner user
+                let ppMatchedRequest: any = null;
+                let ppJoinerUserObj: any = null;
+                let ppHostUserObj: any = null;
+                const isPartyHost = isPartyPlan && sourcePartyPlan ? (t.userId === sourcePartyPlan.userId || userId === sourcePartyPlan.userId) : true;
+
+                if (isPartyPlan && sourcePartyPlan) {
+                    ppMatchedRequest = partyPlanRequestsByPlanId.get(sourcePartyPlan.id);
+                    const rawHost = (sourcePartyPlan as any).user || userObj;
+                    if (rawHost) {
+                        ppHostUserObj = {
+                            id: rawHost.id,
+                            fullName: `${rawHost.firstName || ''} ${rawHost.lastName || ''}`.trim() || 'Host',
+                            firstName: rawHost.firstName,
+                            lastName: rawHost.lastName,
+                            email: rawHost.email,
+                            phone: rawHost.phone,
+                            mobileNumber: rawHost.phone,
+                            profilePhotoUrl: rawHost.profileImageUrl || null,
+                            profileImageUrl: rawHost.profileImageUrl || null,
+                        };
+                    }
+                    if (ppMatchedRequest && ppMatchedRequest.requester) {
+                        const r = ppMatchedRequest.requester;
+                        ppJoinerUserObj = {
+                            id: r.id,
+                            fullName: `${r.firstName || ''} ${r.lastName || ''}`.trim() || 'Guest',
+                            firstName: r.firstName,
+                            lastName: r.lastName,
+                            email: r.email,
+                            phone: r.phone,
+                            mobileNumber: r.phone,
+                            profilePhotoUrl: r.profileImageUrl || null,
+                            profileImageUrl: r.profileImageUrl || null,
+                        };
+                    }
+                }
+
                 let rawRequestObj: any = undefined;
                 if (isStrangersMeet && smMeet) {
                     const smJson = (smMeet.toJSON ? smMeet.toJSON() : smMeet);
@@ -447,6 +498,8 @@ export class MobileTicketController {
                         tagline: smTagline,
                         eventDateTime: smMeet.eventDateTime || t.eventStartAt,
                     };
+                } else if (isPartyPlan && ppMatchedRequest) {
+                    rawRequestObj = ppMatchedRequest.toJSON ? ppMatchedRequest.toJSON() : ppMatchedRequest;
                 } else if (isPartyPlan && sourcePartyPlan) {
                     rawRequestObj = sourcePartyPlan.toJSON ? sourcePartyPlan.toJSON() : sourcePartyPlan;
                 }
@@ -463,6 +516,7 @@ export class MobileTicketController {
                     category: isPartyPlan ? 'party_plan' : category,
                     status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
                     bookingDate: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
+                    planDateTime: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     startTime: startTimeStr,
                     eventStartAt: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     eventEndAt: t.eventEndAt || actualExpiresAt,
@@ -487,13 +541,19 @@ export class MobileTicketController {
                     subject: isStrangersMeet ? smSubject : undefined,
                     tagline: isStrangersMeet ? smTagline : undefined,
                     rawRequest: rawRequestObj,
+                    request: ppMatchedRequest ? (ppMatchedRequest.toJSON ? ppMatchedRequest.toJSON() : ppMatchedRequest) : rawRequestObj,
                     plan: isPartyPlan && sourcePartyPlan ? {
                         ...(sourcePartyPlan.toJSON ? sourcePartyPlan.toJSON() : sourcePartyPlan),
                         venue: (sourcePartyPlan as any).venue || t.venue,
-                        creator: (sourcePartyPlan as any).user || userObj,
-                        user: (sourcePartyPlan as any).user || userObj,
-                        host: (sourcePartyPlan as any).user || userObj,
+                        creator: ppHostUserObj || (sourcePartyPlan as any).user || userObj,
+                        user: ppHostUserObj || (sourcePartyPlan as any).user || userObj,
+                        host: ppHostUserObj || (sourcePartyPlan as any).user || userObj,
+                        partner: ppJoinerUserObj,
+                        joiner: ppJoinerUserObj,
+                        matchedJoiner: ppJoinerUserObj,
                         planDateTime: sourcePartyPlan.planDateTime || t.eventStartAt,
+                        eventStartAt: sourcePartyPlan.planDateTime || t.eventStartAt,
+                        startTime: startTimeStr,
                         depositAmount: sourcePartyPlan.depositAmount || amountVal,
                     } : undefined,
                     groupParty: isGroupParty && sourceGroupParty ? {
@@ -524,6 +584,7 @@ export class MobileTicketController {
                         entryPrice: sbPartyEvent.entryPrice,
                     } : null,
                     isPartyPlan,
+                    isHost: isPartyHost,
                     isGroupParty,
                     isLargeParty,
                     isLargePartyRequest: isLargeParty,
@@ -532,8 +593,13 @@ export class MobileTicketController {
                     isEventBooking,
                     isUpcomingNight: isEventBooking,
                     isVenueBooking,
-                    user: (isStrangersMeet && smMeet?.user) || userObj,
-                    host: (isStrangersMeet && smMeet?.user) || userObj,
+                    user: (isPartyPlan ? (isPartyHost ? ppHostUserObj : ppJoinerUserObj) : ((isStrangersMeet && smMeet?.user) || userObj)),
+                    host: (isPartyPlan ? ppHostUserObj : ((isStrangersMeet && smMeet?.user) || userObj)),
+                    creator: (isPartyPlan ? ppHostUserObj : ((isStrangersMeet && smMeet?.user) || userObj)),
+                    partner: (isPartyPlan ? (isPartyHost ? ppJoinerUserObj : ppHostUserObj) : null),
+                    joiner: ppJoinerUserObj,
+                    matchedJoiner: ppJoinerUserObj,
+                    requester: ppJoinerUserObj,
                     venueName: (isStrangersMeet && smMeet?.venue?.name) || t.venue?.name || 'Lunara Venue',
                     venueAddress: `${t.venue?.area || t.venue?.addressLine1 || ''}, ${t.venue?.city || ''}`.trim(),
                     venue: t.venue ? {
