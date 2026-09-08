@@ -2768,11 +2768,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               : <String, dynamic>{});
 
     final String requestId = (data['requestId'] ?? data['planId'] ?? data['partyPlanId'] ?? item['entityId'] ?? '').toString();
-    final String title = (item['title'] ?? '🎉 Party Plan Invitation')
+    final String currentUid = ApiService.currentUserId ?? '';
+    final String senderId = (data['senderId'] ?? data['hostId'] ?? data['userId'] ?? item['senderId'] ?? item['actorUserId'] ?? '').toString();
+    final bool isSender = currentUid.isNotEmpty && senderId.isNotEmpty && currentUid == senderId;
+
+    final String title = isSender
+        ? 'Party Plan Invitation Sent'
+        : (item['title'] ?? '🎉 Party Plan Invitation').toString();
+    final String body = (item['body'] ?? (isSender
+            ? 'You sent a private invitation for this Party Plan. Waiting for response.'
+            : 'You have been invited to join a Party Plan!'))
         .toString();
-    final String body =
-        (item['body'] ?? 'You have been invited to join a Party Plan!')
-            .toString();
     final String timeStr = _formatTimeAgo(item['createdAt']);
 
     final String reqStatus = (data['status'] ?? item['status'] ?? 'pending')
@@ -2783,6 +2789,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         reqStatus == 'payment_pending' ||
         reqStatus == 'confirmed' ||
         reqStatus == 'paid';
+
+    final String badgeText = isAccepted
+        ? 'INVITE ACCEPTED'
+        : (isSender ? 'INVITATION SENT' : 'PRIVATE INVITATION');
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
@@ -2801,7 +2811,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  isAccepted ? 'INVITE ACCEPTED' : 'PRIVATE INVITATION',
+                  badgeText,
                   style: TextStyle(
                     color: isAccepted ? Colors.green : const Color(0xFF8B5CF6),
                     fontSize: 9,
@@ -2840,7 +2850,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          if (isAccepted)
+          if (isAccepted || isSender)
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -2854,13 +2864,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   );
                 },
                 icon: const Icon(
-                  Icons.payment_rounded,
+                  Icons.open_in_new_rounded,
                   size: 14,
                   color: Colors.white,
                 ),
-                label: const Text(
-                  'View Plan Details',
-                  style: TextStyle(
+                label: Text(
+                  isAccepted ? 'View Plan Details' : 'View Plan',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,

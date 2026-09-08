@@ -2846,7 +2846,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ),
                   ),
-                  if (!_isWindowClosed) ...[
+                  if (!_isWindowClosed &&
+                      !((_cancellationRequest != null && _cancellationRequest!['status'] == 'pending') || widget.plan['cancellationStatus'] == 'pending') &&
+                      !(widget.plan['status'] == 'cancelled' || widget.plan['cancellationStatus'] == 'cancelled')) ...[
                     const SizedBox(width: 10),
                     GestureDetector(
                       onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
@@ -3157,8 +3159,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                 ),
               ),
-              // Cancel (Only when cancellation window is open)
-              if (!_isWindowClosed) ...[
+              // Cancel (Only when cancellation window is open and not already in cancellation)
+              if (!_isWindowClosed &&
+                  !((_cancellationRequest != null && _cancellationRequest!['status'] == 'pending') || widget.plan['cancellationStatus'] == 'pending') &&
+                  !(widget.plan['status'] == 'cancelled' || widget.plan['cancellationStatus'] == 'cancelled')) ...[
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
