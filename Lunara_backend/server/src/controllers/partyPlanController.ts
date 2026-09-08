@@ -6078,6 +6078,19 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
             ? (matchedRequest ? matchedRequest.requester : null)
             : p.creator;
 
+        let pendingCancellation: any = null;
+        if (plan.lifecycleStatus === PartyPlanLifecycleStatus.CANCELLATION_REQUESTED || (plan as any).cancellationRequests?.length) {
+            try {
+                const PartyPlanCancellationRequest = (await import('../models/PartyPlanCancellationRequest')).default;
+                pendingCancellation = await PartyPlanCancellationRequest.findOne({
+                    where: { planId: plan.id, status: 'pending' },
+                    order: [['createdAt', 'DESC']],
+                });
+            } catch (cancErr) {
+                logger.warn('[enrichPartyPlanNotificationCard] Error querying pending cancellation:', cancErr);
+            }
+        }
+
         // Mask the venue for this recipient until the host has accepted their
         // request — mirrors buildVenueData's condition exactly.
         const isSecretVenue = plan.showVenueDetails === false && !isHost &&
@@ -6283,6 +6296,30 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
             }
         } else if (status === PartyPlanLifecycleStatus.CANCELLED) {
             currentStatusText = 'Cancelled';
+        } else if (status === PartyPlanLifecycleStatus.CANCELLATION_REQUESTED || pendingCancellation) {
+            const cancRequestedBy = pendingCancellation?.requestedById || '';
+            const isCancelRequester = cancRequestedBy === recipientUserId;
+            const isCancelRecipient = cancRequestedBy !== '' && cancRequestedBy !== recipientUserId;
+
+            if (isCancelRequester) {
+                currentStatusText = 'Cancellation Request Sent • Waiting for Approval';
+                primaryAction = null;
+                secondaryAction = null;
+            } else if (isCancelRecipient) {
+                currentStatusText = 'Cancellation Requested • Action Required';
+                primaryAction = 'Accept Cancellation';
+                secondaryAction = 'Keep Plan';
+                primaryActionUrl = `/party-plans/${plan.id}/cancellation/approve`;
+                secondaryActionUrl = `/party-plans/${plan.id}/cancellation/reject`;
+                if (pendingCancellation?.id) {
+                    permittedActions.push(
+                        { key: 'accept_cancellation', requestId: pendingCancellation.id },
+                        { key: 'keep_plan', requestId: pendingCancellation.id }
+                    );
+                }
+            } else {
+                currentStatusText = 'Cancellation Requested';
+            }
         } else if (status === PartyPlanLifecycleStatus.EXPIRED) {
             currentStatusText = 'Expired';
         } else if (isCompleted) {
@@ -6504,9 +6541,24 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
                 return new Date(latestActivityTime).toISOString();
             })(),
             requiresAction: Boolean(
+                ((status === PartyPlanLifecycleStatus.CANCELLATION_REQUESTED || pendingCancellation) &&
+                    pendingCancellation?.requestedById &&
+                    pendingCancellation.requestedById !== recipientUserId) ||
                 (isHost && (p.requests?.some((r: any) => r.status === 'pending') || (plan.hostPaymentStatus !== 'paid' && plan.status === 'active'))) ||
                 (!isHost && viewerRequest && [PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.ACCEPTED].includes(viewerRequest.status) && viewerRequest.joinerPaymentStatus !== 'paid')
             ),
+            cancellationRequest: pendingCancellation ? {
+                id: pendingCancellation.id,
+                requestId: pendingCancellation.id,
+                requestedById: pendingCancellation.requestedById,
+                recipientUserId: pendingCancellation.recipientUserId,
+                reason: pendingCancellation.reason,
+                otherReasonText: pendingCancellation.otherReasonText,
+                status: pendingCancellation.status,
+                requestedAt: pendingCancellation.requestedAt ? pendingCancellation.requestedAt.toISOString() : null,
+            } : null,
+            requestedById: pendingCancellation?.requestedById || null,
+            cancellationRequestId: pendingCancellation?.id || null,
             matchedRequestId: plan.matchedRequestId,
             requestId: matchedRequest?.id || null,
             hostPaymentStatus: plan.hostPaymentStatus,

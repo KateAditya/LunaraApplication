@@ -245,8 +245,12 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 title: 'Party Plan Cancellation Request',
                 body: `${requesterName} wants to cancel your Party Plan.`,
                 metadata: {
+                    type: 'party_plan_cancellation_requested',
                     planId: plan.id,
+                    partyPlanId: plan.id,
                     requestId: cancellationRequest.id,
+                    requestedById: userId,
+                    recipientUserId,
                     reason: cancellationRequest.reason,
                     autoApprovalEligible,
                 },

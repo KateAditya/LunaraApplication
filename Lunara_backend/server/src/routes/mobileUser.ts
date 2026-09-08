@@ -661,7 +661,10 @@ async function getUserNotifications(
     // 5. Fetch Booking records (goingMode = party_request or solo) in parallel
     try {
         const bookings = await Booking.findAll({
-            where: { userId: uId },
+            where: {
+                userId: uId,
+                goingMode: { [Op.in]: ['solo', 'party_request'] },
+            },
             include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
             order: [['createdAt', 'DESC']],
             limit: 30

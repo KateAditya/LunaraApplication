@@ -1476,11 +1476,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final bodyLower = body.toLowerCase();
 
     // ── Cancellation event routing ────────────────────────────────────
-    if (eventType.contains('CANCELLATION') ||
-        titleLower.contains('cancellation') ||
-        titleLower.contains('cancelled') ||
-        bodyLower.contains('cancelled') ||
-        bodyLower.contains('wants to cancel')) {
+    final bool isPartyPlanCancellation =
+        eventType.contains('PARTY_PLAN_CANCELLATION') ||
+        type.contains('party_plan_cancellation') ||
+        (item['entityType'] == 'party_plan' &&
+            (eventType.contains('CANCEL') ||
+             titleLower.contains('cancel') ||
+             bodyLower.contains('cancel'))) ||
+        ((data['partyPlanId'] != null || data['planId'] != null) &&
+            (eventType.contains('CANCEL') ||
+             titleLower.contains('cancel') ||
+             bodyLower.contains('cancel')));
+
+    if (isPartyPlanCancellation) {
       return _buildPartyPlanCancellationCard(item);
     }
 
@@ -2511,15 +2519,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             .toLowerCase();
     final String requestedById =
         (data['requestedById'] ?? item['requestedById'] ?? '').toString();
+    final String recipientUserId =
+        (data['recipientUserId'] ?? item['recipientUserId'] ?? '').toString();
     final bool isRecipient =
         ApiService.currentUserId != null &&
-        requestedById.isNotEmpty &&
-        requestedById != ApiService.currentUserId;
+        ((requestedById.isNotEmpty && requestedById != ApiService.currentUserId) ||
+         (recipientUserId.isNotEmpty && recipientUserId == ApiService.currentUserId));
     final bool isCancelled =
         reqStatus == 'approved' ||
         reqStatus == 'completed' ||
         reqStatus == 'cancelled' ||
-        body.toLowerCase().contains('cancelled');
+        body.toLowerCase().contains('cancelled') ||
+        title.toLowerCase().contains('cancelled');
 
     return _buildBaseCardContainer(
       isUnread: isUnread,

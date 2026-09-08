@@ -1097,9 +1097,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
 
     if (_cancellationRequest != null && _cancellationRequest!['status'] == 'pending') {
-      final reqId = _cancellationRequest!['id']?.toString() ?? '';
-      final requestedById = _cancellationRequest!['requestedById']?.toString() ?? '';
-      final isRecipient = _currentUserId != null && requestedById != _currentUserId;
+      final String reqId = _cancellationRequest!['id']?.toString() ?? '';
+      final String requestedById = _cancellationRequest!['requestedById']?.toString() ?? '';
+      final String recipientUserId = _cancellationRequest!['recipientUserId']?.toString() ?? '';
+      final bool isRecipient = _currentUserId != null &&
+          ((requestedById.isNotEmpty && requestedById != _currentUserId) ||
+           (recipientUserId.isNotEmpty && recipientUserId == _currentUserId));
       final requesterObj = _cancellationRequest!['requester'] as Map<String, dynamic>?;
       final requesterName = requesterObj?['firstName'] ?? 'The other participant';
       final reasonKey = _cancellationRequest!['reason']?.toString() ?? '';

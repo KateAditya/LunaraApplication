@@ -22,8 +22,8 @@ class ProfileDetailView extends StatefulWidget {
   final VoidCallback? onNope;
   // Returns a Future so this widget can wait for the real server-confirmed
   // outcome before showing the liked/superliked state, instead of guessing.
-  final Future<void> Function()? onLike;
-  final Future<void> Function()? onSuper;
+  final Future<dynamic> Function()? onLike;
+  final Future<dynamic> Function()? onSuper;
   final VoidCallback? onBacktrack;
   final bool canBacktrack;
 
@@ -1232,48 +1232,51 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
                               setState(() {
                                 _isLiking = true;
-                                _isLiked = true;
                               });
-                              subProvider.optimisticConsume(VipAction.like);
 
                               try {
+                                bool success = false;
                                 if (widget.onLike != null) {
-                                  await widget.onLike!.call();
+                                  final res = await widget.onLike!.call();
+                                  success = res == true;
                                 } else {
                                   final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
                                   if (!mounted) return;
                                   if (res == null || res['limitReached'] == true) {
-                                    // Rollback
-                                    subProvider.rollbackConsume(VipAction.like);
-                                    setState(() => _isLiked = false);
                                     showSubscriptionLimitDialog(
                                       context,
                                       feature: SubLimitFeature.dailyLikes,
                                       customMessage: res?['message'],
                                     );
-                                    return;
-                                  }
-                                  if (res['matched'] == true) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                        backgroundColor: const Color(0xFF10B981),
-                                      ),
-                                    );
+                                    success = false;
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('You liked ${_currentUser.firstName}! ❤️'),
-                                        backgroundColor: LunaraTheme.electricViolet,
-                                        behavior: SnackBarBehavior.floating,
-                                        duration: const Duration(seconds: 2),
-                                      ),
-                                    );
+                                    success = true;
+                                    subProvider.optimisticConsume(VipAction.like);
+                                    if (res['matched'] == true) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                          backgroundColor: const Color(0xFF10B981),
+                                        ),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('You liked ${_currentUser.firstName}! ❤️'),
+                                          backgroundColor: LunaraTheme.electricViolet,
+                                          behavior: SnackBarBehavior.floating,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                    _checkUsageWarning(res);
                                   }
-                                  _checkUsageWarning(res);
+                                }
+
+                                if (mounted) {
+                                  setState(() => _isLiked = success);
                                 }
                               } catch (e) {
-                                subProvider.rollbackConsume(VipAction.like);
                                 if (mounted) {
                                   setState(() => _isLiked = false);
                                 }
@@ -1402,48 +1405,51 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
 
                               setState(() {
                                 _isSuperLiking = true;
-                                _isSuperLiked = true;
                               });
-                              subProvider.optimisticConsume(VipAction.superlike);
 
                               try {
+                                bool success = false;
                                 if (widget.onSuper != null) {
-                                  await widget.onSuper!.call();
+                                  final res = await widget.onSuper!.call();
+                                  success = res == true;
                                 } else {
                                   final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
                                   if (!mounted) return;
                                   if (res == null || res['limitReached'] == true) {
-                                    // Rollback
-                                    subProvider.rollbackConsume(VipAction.superlike);
-                                    setState(() => _isSuperLiked = false);
                                     showSubscriptionLimitDialog(
                                       context,
                                       feature: SubLimitFeature.superLike,
                                       customMessage: res?['message'],
                                     );
-                                    return;
-                                  }
-                                  if (res['matched'] == true) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                        backgroundColor: const Color(0xFF10B981),
-                                      ),
-                                    );
+                                    success = false;
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('You Super Liked ${_currentUser.firstName}! 🌟'),
-                                        backgroundColor: const Color(0xFFFF8C00),
-                                        behavior: SnackBarBehavior.floating,
-                                        duration: const Duration(seconds: 2),
-                                      ),
-                                    );
+                                    success = true;
+                                    subProvider.optimisticConsume(VipAction.superlike);
+                                    if (res['matched'] == true) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                          backgroundColor: const Color(0xFF10B981),
+                                        ),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('You Super Liked ${_currentUser.firstName}! 🌟'),
+                                          backgroundColor: const Color(0xFFFF8C00),
+                                          behavior: SnackBarBehavior.floating,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                    _checkUsageWarning(res);
                                   }
-                                  _checkUsageWarning(res);
+                                }
+
+                                if (mounted) {
+                                  setState(() => _isSuperLiked = success);
                                 }
                               } catch (e) {
-                                subProvider.rollbackConsume(VipAction.superlike);
                                 if (mounted) {
                                   setState(() => _isSuperLiked = false);
                                 }

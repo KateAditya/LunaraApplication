@@ -7324,19 +7324,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           (pendingCancellationEntry?['requestedById'] ??
                   pendingCancellationEntry?['metadata']?['requestedById'] ??
                   pendingCancellationEntry?['actorUserId'] ??
+                  planMap['cancellationRequest']?['requestedById'] ??
+                  planMap['requestedById'] ??
+                  '')
+              .toString();
+      final String recipientUserId =
+          (pendingCancellationEntry?['recipientUserId'] ??
+                  pendingCancellationEntry?['metadata']?['recipientUserId'] ??
+                  planMap['cancellationRequest']?['recipientUserId'] ??
                   '')
               .toString();
       final bool isRecipient = requestedById.isNotEmpty
-          ? requestedById != currentUserId
-          : (isHost ? false : true);
-      final String requesterName = (isHost && isRecipient)
-          ? (partnerUser?['firstName'] ??
-                partnerUser?['name'] ??
-                'Your partner')
-          : (hostUserObj['firstName'] ?? hostUserObj['name'] ?? 'Host');
+          ? (requestedById != currentUserId)
+          : (recipientUserId.isNotEmpty && recipientUserId == currentUserId);
+      final String requesterName = (requestedById.isNotEmpty && requestedById != currentUserId)
+          ? (isHost
+              ? (partnerUser?['firstName'] ??
+                    partnerUser?['name'] ??
+                    'Your partner')
+              : (hostUserObj['firstName'] ?? hostUserObj['name'] ?? 'Host'))
+          : 'You';
       final String reasonKey =
           (pendingCancellationEntry?['reason'] ??
                   pendingCancellationEntry?['metadata']?['reason'] ??
+                  planMap['cancellationRequest']?['reason'] ??
                   'my_plans_changed')
               .toString();
       final Map<String, String> reasonLabels = {
@@ -7351,7 +7362,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final reasonText = reasonLabels[reasonKey] ?? reasonKey;
       final String cancelReqId =
           (pendingCancellationEntry?['requestId'] ??
+                  pendingCancellationEntry?['id'] ??
                   pendingCancellationEntry?['metadata']?['requestId'] ??
+                  planMap['cancellationRequest']?['id'] ??
+                  planMap['cancellationRequestId'] ??
                   '')
               .toString();
 

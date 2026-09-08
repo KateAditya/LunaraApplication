@@ -353,8 +353,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Returns a Future so callers (e.g. ProfileDetailView's own button) can
   // await the real server-confirmed outcome instead of guessing/optimistically
   // marking themselves as liked before this resolves.
-  Future<void> _handleLike() async {
-    if (_displayUser == null) return;
+  Future<bool> _handleLike() async {
+    if (_displayUser == null) return false;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
@@ -363,7 +363,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // If already liked, clicking "like" again unlikes (toggle)
     if (isAlreadyLiked) {
       final ok = await ApiService.unlikeUser(targetUserId: targetId);
-      if (!mounted) return;
+      if (!mounted) return false;
       if (ok) {
         setState(() {
           _swipedActions.remove(targetId);
@@ -378,7 +378,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       }
-      return;
+      return false;
     }
 
     // Daily like limit guard
@@ -386,16 +386,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes || _dailyLikesLimit == 999999;
     if (!hasUnlimitedLikes && !subProvider.canLike && _dailyLikesUsed >= _dailyLikesLimit) {
       _showLimitReachedSnack();
-      return;
+      return false;
     }
 
     // Fire API first — only apply optimistic UI once the server confirms
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
-    if (!mounted) return;
+    if (!mounted) return false;
 
     if (res == null || res['limitReached'] == true) {
       _showLimitReachedSnack();
-      return;
+      return false;
     }
 
     setState(() {
@@ -406,6 +406,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
     _checkUsageWarning(res);
+    return true;
   }
 
   void _checkUsageWarning(Map<String, dynamic>? res) {
@@ -458,8 +459,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── SUPERLIKE handler ─────────────────────────────────────────────────────────
-  Future<void> _handleSuperLike() async {
-    if (_displayUser == null) return;
+  Future<bool> _handleSuperLike() async {
+    if (_displayUser == null) return false;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
@@ -467,7 +468,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // If already superliked, clicking "superlike" again retains it
     if (currentAction == 'superlike' || targetUser.isSuperLiked) {
       _showAlreadyLikedSnack(targetUser.firstName, isSuperLike: true);
-      return;
+      return true;
     }
 
     // Superlikes remaining guard (always validate against plan limit)
@@ -475,15 +476,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes || _superlikesRemaining >= 9999;
     if (!isUnlimitedSuper && !subProvider.canSuperLike && _superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
       _showSuperLikeLimitSnack();
-      return;
+      return false;
     }
 
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
-    if (!mounted) return;
+    if (!mounted) return false;
 
     if (res == null || res['limitReached'] == true) {
       _showSuperLikeLimitSnack();
-      return;
+      return false;
     }
 
     setState(() {
@@ -494,6 +495,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
     _checkUsageWarning(res);
+    return true;
   }
 
   // ── NOPE handler — go to next profile ────────────────────────────────────────
