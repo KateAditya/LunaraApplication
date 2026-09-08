@@ -14,6 +14,7 @@ import { NotificationService } from './NotificationService';
 import { RealtimeEventBroker } from './RealtimeEventBroker';
 import { logger } from '../config/logger';
 import { Op } from 'sequelize';
+import apiCache from '../utils/apiCache';
 
 export interface MaskedPayoutDetails {
     upiId?: string;
@@ -250,10 +251,17 @@ export class LargePartyCancellationService {
                         partyId: groupParty.id,
                         status: 'cancelled',
                     });
+                    io.emit('live_feed_update', { action: 'group_party_cancelled', partyId: groupParty.id });
                 }
             } catch (err: any) {
                 logger.warn('[LargePartyCancellationService] Dispatch error:', err);
             }
+
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+            apiCache.invalidatePrefix('bookings');
+            apiCache.invalidatePrefix('group_party');
 
             const successMessage = originalPaidAmount > 0
                 ? `Group Party cancelled successfully. ₹${originalPaidAmount.toFixed(2)} has been refunded to your Lunara Wallet.`
@@ -363,9 +371,21 @@ export class LargePartyCancellationService {
                         refundAmount: originalPaidAmount,
                         refundMethod: originalPaidAmount > 0 ? 'WALLET' : 'NONE',
                     });
+
+                    const { io } = require('../server');
+                    if (io) {
+                        io.to(`user_${cleanUserId}`).emit('booking_cancelled', { bookingId: booking.id, status: 'cancelled' });
+                        io.emit('live_feed_update', { action: 'booking_cancelled', bookingId: booking.id });
+                    }
                 } catch (err: any) {
                     logger.warn('[LargePartyCancellationService] Dispatch error:', err);
                 }
+
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+                apiCache.invalidatePrefix('bookings');
+                apiCache.invalidatePrefix('group_party');
 
                 const successMessage = originalPaidAmount > 0
                     ? `Booking cancelled successfully. ₹${originalPaidAmount.toFixed(2)} has been refunded to your Lunara Wallet.`
@@ -462,10 +482,18 @@ export class LargePartyCancellationService {
                         bookingId: booking.id,
                         cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
                     });
+
+                    io.emit('live_feed_update', { action: 'large_party_cancellation_requested', bookingId: booking.id });
                 }
             } catch (notifErr) {
                 logger.warn('Failed to dispatch notifications for large party cancellation request:', notifErr);
             }
+
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+            apiCache.invalidatePrefix('bookings');
+            apiCache.invalidatePrefix('group_party');
 
             return {
                 success: true,
@@ -868,10 +896,18 @@ export class LargePartyCancellationService {
                         refundPercentage,
                     },
                 });
+
+                io.emit('live_feed_update', { action: 'large_party_cancellation_approved', bookingId, requestId });
             }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for large party approval:', pushErr);
         }
+
+        // Invalidate Redis/In-memory API caches immediately
+        apiCache.invalidatePrefix('pp_feed');
+        apiCache.invalidatePrefix('party_plans');
+        apiCache.invalidatePrefix('bookings');
+        apiCache.invalidatePrefix('group_party');
 
         return {
             success: true,
@@ -992,10 +1028,17 @@ export class LargePartyCancellationService {
                         reason: rejectionReason.trim(),
                     },
                 });
+                io.emit('live_feed_update', { action: 'large_party_cancellation_rejected', bookingId, requestId });
             }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for large party rejection:', pushErr);
         }
+
+        // Invalidate Redis/In-memory API caches immediately
+        apiCache.invalidatePrefix('pp_feed');
+        apiCache.invalidatePrefix('party_plans');
+        apiCache.invalidatePrefix('bookings');
+        apiCache.invalidatePrefix('group_party');
 
         return {
             success: true,

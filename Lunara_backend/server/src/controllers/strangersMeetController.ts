@@ -277,7 +277,7 @@ export const createRequest = async (req: Request, res: Response): Promise<void> 
             }
         });
 
-        apiCache.invalidatePrefix('sm_feed');
+        StrangersMeetService.invalidateStrangersMeetCaches();
         res.status(201).json({
             success: true,
             message: 'Request submitted successfully! Admin will review and get back to you. 🎉',
@@ -647,16 +647,18 @@ export const confirmPayment = async (req: Request, res: Response): Promise<void>
                 razorpaySignature: razorpay_signature,
             });
 
-            // Generate digital ticket in background
-            setImmediate(async () => {
-                try {
-                    await generateTicketForStrangersMeetHelper(request.id);
-                } catch (ticketErr) {
-                    logger.error(`Background ticket generation failed for StrangersMeetRequest ${request.id}:`, ticketErr);
-                }
-            });
-
-
+            // Invalidate caches & notify
+            StrangersMeetService.invalidateStrangersMeetCaches();
+            try {
+                await StrangersMeetService.emitNotification({
+                    recipientUserId: userId,
+                    eventType: 'strangers_meet_host_paid',
+                    title: '🎟️ Deposit Paid',
+                    body: `Your deposit for "${request.subject}" has been received. You can now set per-head charges to publish it!`,
+                    entityId: request.id,
+                    metadata: { requestId: request.id, ticketId }
+                });
+            } catch (_) {}
 
             res.json({
                 success: true,
@@ -954,6 +956,8 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
             logger.warn('Failed to emit approve request socket notification: ' + socketErr.message);
         }
 
+        StrangersMeetService.invalidateStrangersMeetCaches();
+
         res.json({
             success: true,
             message: 'Request approved successfully',
@@ -1030,6 +1034,8 @@ export const rejectRequest = async (req: Request, res: Response): Promise<void> 
         } catch (socketErr: any) {
             logger.warn('Failed to emit reject request socket notification: ' + socketErr.message);
         }
+
+        StrangersMeetService.invalidateStrangersMeetCaches();
 
         res.json({
             success: true,
@@ -1346,6 +1352,8 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
         }
 
+        StrangersMeetService.invalidateStrangersMeetCaches();
+
         res.json({
             success: true,
             message: 'Successfully joined strangers meet! 🎉',
@@ -1393,6 +1401,17 @@ export const completeMeet = async (req: Request, res: Response): Promise<void> =
         await request.update({
             status: StrangersMeetStatus.COMPLETED,
         });
+
+        StrangersMeetService.invalidateStrangersMeetCaches();
+        try {
+            await StrangersMeetService.emitNotification({
+                recipientUserId: userId,
+                eventType: 'strangers_meet_completed',
+                title: '🏆 Stranger Meet Completed',
+                body: `Your Stranger Meet "${request.subject}" has been marked as completed!`,
+                entityId: request.id,
+            });
+        } catch (_) {}
 
         res.json({
             success: true,
@@ -1898,6 +1917,8 @@ export const submitSettlementRequest = async (req: Request, res: Response): Prom
             logger.warn('Failed to dispatch settlement requested notification: ' + notifErr.message);
         }
 
+        StrangersMeetService.invalidateStrangersMeetCaches();
+
         res.json({
             success: true,
             message: 'Party Done Successfully! Settlement payout requested. Admin has been notified. ⏳',
@@ -1953,6 +1974,8 @@ export const approveSettlementPayout = async (req: Request, res: Response): Prom
         } catch (notifErr: any) {
             logger.warn('Failed to dispatch approve settlement notification: ' + notifErr.message);
         }
+
+        StrangersMeetService.invalidateStrangersMeetCaches();
 
         res.json({
             success: true,
@@ -2022,6 +2045,8 @@ export const paySettlement = async (req: Request, res: Response): Promise<void> 
         } catch (notifErr: any) {
             logger.warn('Failed to dispatch settlement paid notification: ' + notifErr.message);
         }
+
+        StrangersMeetService.invalidateStrangersMeetCaches();
 
         res.json({
             success: true,

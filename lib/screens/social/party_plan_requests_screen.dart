@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/realtime_sync_manager.dart';
+import '../../services/optimistic_action_guard.dart';
 import '../discovery/payment_confirmation_screen.dart';
 import 'chat_screen.dart';
 
@@ -19,18 +21,63 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _requests = [];
   Timer? _timer;
+  final Set<String> _activeActionReqIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     _loadRequests();
+    _initRealtimeListeners();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
   }
 
+  void _initRealtimeListeners() {
+    RealtimeSyncManager.instance.partyPlanNotifier.addListener(_onRealtimeUpdate);
+    RealtimeSyncManager.instance.liveFeedNotifier.addListener(_onRealtimeUpdate);
+    RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimeUpdate);
+
+    ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_relisted', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_updated', _onSocketUpdate);
+    ApiService.addSocketListener('live_feed_update', _onSocketUpdate);
+  }
+
+  void _disposeRealtimeListeners() {
+    RealtimeSyncManager.instance.partyPlanNotifier.removeListener(_onRealtimeUpdate);
+    RealtimeSyncManager.instance.liveFeedNotifier.removeListener(_onRealtimeUpdate);
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimeUpdate);
+
+    ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_joiner_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_host_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_match_success', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_relisted', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_updated', _onSocketUpdate);
+    ApiService.removeSocketListener('live_feed_update', _onSocketUpdate);
+  }
+
+  void _onRealtimeUpdate() {
+    if (!mounted) return;
+    _loadRequests(showLoader: false);
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _loadRequests(showLoader: false);
+  }
+
   @override
   void dispose() {
+    _disposeRealtimeListeners();
     _timer?.cancel();
     super.dispose();
   }
@@ -49,8 +96,8 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     }
   }
 
-  Future<void> _loadRequests() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadRequests({bool showLoader = true}) async {
+    if (showLoader) setState(() => _isLoading = true);
     final allRequests = await ApiService.fetchMyPartyPlanRequests();
 
     if (mounted) {
@@ -67,6 +114,104 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
         }).toList();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _cancelRequest(String reqId) async {
+    final guardKey = 'cancel_req_$reqId';
+    if (!OptimisticActionGuard.start(guardKey)) return;
+
+    setState(() => _activeActionReqIds.add(reqId));
+    try {
+      final success = await ApiService.cancelPartyPlanRequest(reqId);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request cancelled successfully'),
+            backgroundColor: Colors.black87,
+          ),
+        );
+        await _loadRequests(showLoader: false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to cancel request'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end(guardKey);
+      if (mounted) {
+        setState(() => _activeActionReqIds.remove(reqId));
+      }
+    }
+  }
+
+  Future<void> _acceptInvite(Map<String, dynamic> req) async {
+    final reqId = req['id']?.toString() ?? '';
+    if (reqId.isEmpty) return;
+    final guardKey = 'accept_invite_$reqId';
+    if (!OptimisticActionGuard.start(guardKey)) return;
+
+    setState(() => _activeActionReqIds.add(reqId));
+    try {
+      final res = await ApiService.acceptPartyPlanInvite(reqId);
+      if (!mounted) return;
+      if (res != null && res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Invite accepted! Complete your deposit payment.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadRequests(showLoader: false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to accept invite'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end(guardKey);
+      if (mounted) {
+        setState(() => _activeActionReqIds.remove(reqId));
+      }
+    }
+  }
+
+  Future<void> _declineInvite(String reqId) async {
+    final guardKey = 'decline_invite_$reqId';
+    if (!OptimisticActionGuard.start(guardKey)) return;
+
+    setState(() => _activeActionReqIds.add(reqId));
+    try {
+      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      if (!mounted) return;
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invite declined'),
+            backgroundColor: Colors.black87,
+          ),
+        );
+        await _loadRequests(showLoader: false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to decline invite'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      OptimisticActionGuard.end(guardKey);
+      if (mounted) {
+        setState(() => _activeActionReqIds.remove(reqId));
+      }
     }
   }
 
@@ -316,6 +461,10 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
 
     final timerText = _getTimeRemaining(req['paymentTimeoutAt']);
 
+    final bool isInvite = req['isInvite'] == true ||
+        req['requestType'] == 'private_invite' ||
+        req['type'] == 'party_plan_invitation';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -358,6 +507,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                   paymentStatus,
                   plan['hostPaymentStatus']?.toString(),
                   paymentType: plan['paymentType']?.toString(),
+                  isInvite: isInvite,
                 ),
               ],
             ),
@@ -577,6 +727,166 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                 ),
               ),
             ],
+            if (lowerStatus == 'pending' && isInvite) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.mail_outline_rounded,
+                        color: LunaraTheme.electricViolet,
+                        size: 16,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Private Invite',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      OutlinedButton(
+                        onPressed: _activeActionReqIds.contains(req['id']?.toString())
+                            ? null
+                            : () => _declineInvite(req['id'].toString()),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red[600],
+                          side: BorderSide(color: Colors.red.withValues(alpha: 0.4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                        ),
+                        child: _activeActionReqIds.contains(req['id']?.toString())
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.red,
+                                ),
+                              )
+                            : Text(
+                                'Decline',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                  color: Colors.red[600],
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _activeActionReqIds.contains(req['id']?.toString())
+                            ? null
+                            : () => _acceptInvite(req),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: LunaraTheme.electricViolet,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                        ),
+                        child: _activeActionReqIds.contains(req['id']?.toString())
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Accept',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ] else if (lowerStatus == 'pending') ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Awaiting Host Decision',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  OutlinedButton(
+                    onPressed: _activeActionReqIds.contains(req['id']?.toString())
+                        ? null
+                        : () => _cancelRequest(req['id'].toString()),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red[600],
+                      side: BorderSide(color: Colors.red.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: _activeActionReqIds.contains(req['id']?.toString())
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.red,
+                            ),
+                          )
+                        : const Text(
+                            'Cancel Request',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -588,6 +898,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     String paymentStatus,
     String? hostPaymentStatus, {
     String? paymentType,
+    bool isInvite = false,
   }) {
     Color bg;
     Color text;
@@ -608,8 +919,14 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       text = Colors.grey[700]!;
       label = lowerStatus == 'closed' ? 'CLOSED' : 'CANCELLED';
     } else if (lowerStatus == 'pending') {
-      bg = Colors.orange.withValues(alpha: 0.1);
-      text = Colors.orange;
+      if (isInvite) {
+        bg = LunaraTheme.electricViolet.withValues(alpha: 0.12);
+        text = LunaraTheme.electricViolet;
+        label = 'INVITE';
+      } else {
+        bg = Colors.orange.withValues(alpha: 0.1);
+        text = Colors.orange;
+      }
     } else if (lowerStatus == 'rejected' || lowerStatus == 'payment_failed') {
       bg = Colors.red.withValues(alpha: 0.1);
       text = Colors.red;
@@ -637,6 +954,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
       text = Colors.green;
       label = 'CONFIRMED';
     }
+
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

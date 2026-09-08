@@ -58,7 +58,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   int _currentPhotoIndex = 0;
   bool _isBlocked = false;
   late User _currentUser;
-  String? _localSwipedAction;
+  bool _isLiked = false;
+  bool _isSuperLiked = false;
   bool _isLoadingSwipeStatus = false;
   bool _isLiking = false;
   bool _isSuperLiking = false;
@@ -68,10 +69,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     super.initState();
     ApiService.profileUpdateNotifier.addListener(_refreshProfile);
     _currentUser = widget.user;
-    _localSwipedAction = widget.swipedAction ??
-        (widget.user.isSuperLiked
-            ? 'superlike'
-            : (widget.user.isLiked ? 'like' : null));
+    _isLiked = widget.user.isLiked || widget.swipedAction == 'like';
+    _isSuperLiked = widget.user.isSuperLiked || widget.swipedAction == 'superlike';
     if (!widget.isMe) {
       _checkBlockStatus();
       _isLoadingSwipeStatus = true;
@@ -93,10 +92,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     final userChanged = widget.user.id != oldWidget.user.id;
     if (userChanged) {
       _currentUser = widget.user;
-      _localSwipedAction = widget.swipedAction ??
-          (widget.user.isSuperLiked
-              ? 'superlike'
-              : (widget.user.isLiked ? 'like' : null));
+      _isLiked = widget.user.isLiked || widget.swipedAction == 'like';
+      _isSuperLiked = widget.user.isSuperLiked || widget.swipedAction == 'superlike';
       if (!widget.isMe) {
         _isLoadingSwipeStatus = true;
         _fetchLiveSwipeStatus().then((_) {
@@ -105,15 +102,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       }
     } else {
       _currentUser = widget.user;
-      if (widget.swipedAction != null && widget.swipedAction != _localSwipedAction) {
-        _localSwipedAction = widget.swipedAction;
-      } else if (_localSwipedAction == null) {
-        if (widget.user.isSuperLiked) {
-          _localSwipedAction = 'superlike';
-        } else if (widget.user.isLiked) {
-          _localSwipedAction = 'like';
-        }
+      if (widget.swipedAction == 'like') {
+        _isLiked = true;
+      } else if (widget.swipedAction == 'superlike') {
+        _isSuperLiked = true;
       }
+      if (widget.user.isLiked) _isLiked = true;
+      if (widget.user.isSuperLiked) _isSuperLiked = true;
     }
   }
 
@@ -121,11 +116,14 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     try {
       final status = await ApiService.fetchSwipeStatus(_currentUser.id);
       if (mounted && status.isNotEmpty) {
-        final action = status['actionType']?.toString() ??
-            (status['alreadySuperLiked'] == true ? 'superlike' : (status['alreadyLiked'] == true ? 'like' : null));
-        if (action != null) {
-          setState(() => _localSwipedAction = action);
-        }
+        setState(() {
+          if (status.containsKey('alreadyLiked')) {
+            _isLiked = status['alreadyLiked'] == true;
+          }
+          if (status.containsKey('alreadySuperLiked')) {
+            _isSuperLiked = status['alreadySuperLiked'] == true;
+          }
+        });
       }
     } catch (_) {}
   }
@@ -135,6 +133,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
     if (updatedUser != null && mounted) {
       setState(() {
         _currentUser = updatedUser;
+        _isLiked = updatedUser.isLiked;
+        _isSuperLiked = updatedUser.isSuperLiked;
       });
     }
   }
@@ -944,22 +944,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   }
 
   Widget _buildActionButtons() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final effectiveSwipedAction = _localSwipedAction ??
-        widget.swipedAction ??
-        (_currentUser.isSuperLiked
-            ? 'superlike'
-            : (_currentUser.isLiked ? 'like' : null));
-
-    final isSuperLiked = effectiveSwipedAction == 'superlike' || _currentUser.isSuperLiked;
-    final isLiked = !isSuperLiked && (effectiveSwipedAction == 'like' || _currentUser.isLiked);
-    final isActed = isLiked || isSuperLiked; // already acted on this profile
-    final likeDisabled = widget.isLikeDisabled && !isActed;
-    // Super Like is disabled only when credits are exhausted AND not already superliked.
-    // If the user has already liked (isLiked), Super Like is still enabled to allow upgrade.
-    final superLikeDisabled = widget.isSuperLikeDisabled && !isSuperLiked && !isLiked;
-
     if (widget.isMe) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1015,422 +999,484 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       );
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // ── Backtrack button ──────────────────────────────────────────────────
-        Opacity(
-          opacity: widget.canBacktrack ? 1.0 : 0.4,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LunaraTheme.amberGlow,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.amber.withValues(
-                        alpha: isDark ? 0.35 : 0.15,
-                      ),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(Icons.undo_rounded, color: Colors.white),
-                  onPressed: widget.canBacktrack ? widget.onBacktrack : null,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Backtrack',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white60 : Colors.black54,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
+    return ListenableBuilder(
+      listenable: SubscriptionProvider.instance,
+      builder: (_, child) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
 
-        // ── Nope button ───────────────────────────────────────────────────────
-        Column(
-          mainAxisSize: MainAxisSize.min,
+        final isSuperLiked = _isSuperLiked;
+        final isLiked = _isLiked;
+
+        final subProvider = SubscriptionProvider.instance;
+        final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes;
+        final bool canLike = hasUnlimitedLikes || subProvider.canLike;
+        // Disabled (grey) only if user has no likes left and not unlimited, AND not already liked
+        final likeDisabled = !isLiked && !hasUnlimitedLikes && (!canLike || widget.isLikeDisabled);
+
+        final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes;
+        final bool canSuperLike = isUnlimitedSuper || subProvider.canSuperLike;
+        // Disabled (grey) only when user has no superlikes and not unlimited, AND not already superliked
+        final superLikeDisabled = !isSuperLiked && !isUnlimitedSuper && (!canSuperLike || widget.isSuperLikeDisabled);
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFF2A6D), Color(0xFFFF6597)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(
-                      0xFFFF2A6D,
-                    ).withValues(alpha: isDark ? 0.35 : 0.15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+            // ── Backtrack button ──────────────────────────────────────────────────
+            Opacity(
+              opacity: widget.canBacktrack ? 1.0 : 0.4,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LunaraTheme.amberGlow,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withValues(
+                            alpha: isDark ? 0.35 : 0.15,
+                          ),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.undo_rounded, color: Colors.white),
+                      onPressed: widget.canBacktrack ? widget.onBacktrack : null,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Backtrack',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white60 : Colors.black54,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: widget.onNope,
-              ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Nope',
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark ? Colors.white60 : Colors.black54,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 16),
-              // ── Like button ───────────────────────────────────────────────────────
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: isLiked ? 64 : 56,
-                height: isLiked ? 64 : 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  // Green when liked, disabled grey when limit reached, default cyan
-                  gradient: isLiked
-                      ? const LinearGradient(
-                          colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : likeDisabled
-                      ? LinearGradient(
-                          colors: [Colors.grey.shade400, Colors.grey.shade500],
-                        )
-                      : const LinearGradient(
-                          colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isLiked
-                          ? const Color(0xFF00C853).withValues(alpha: 0.5)
-                          : const Color(
-                              0xFF00B5FF,
-                            ).withValues(alpha: isDark ? 0.4 : 0.2),
-                      blurRadius: isLiked ? 16 : 12,
-                      offset: const Offset(0, 5),
+            const SizedBox(width: 16),
+
+            // ── Nope button ───────────────────────────────────────────────────────
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF2A6D), Color(0xFFFF6597)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(
+                          0xFFFF2A6D,
+                        ).withValues(alpha: isDark ? 0.35 : 0.15),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: widget.onNope,
+                  ),
                 ),
-                child: IconButton(
-                  disabledColor: Colors.white,
-                  icon: _isLiking
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Icon(
-                          isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: Colors.white,
+                const SizedBox(height: 6),
+                Text(
+                  'Nope',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+
+            // ── Like button ───────────────────────────────────────────────────────
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: isLiked ? 64 : 56,
+                    height: isLiked ? 64 : 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      // Green when liked, disabled grey when limit reached, default cyan
+                      gradient: isLiked
+                          ? const LinearGradient(
+                              colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                          : likeDisabled
+                          ? LinearGradient(
+                              colors: [Colors.grey.shade400, Colors.grey.shade500],
+                            )
+                          : const LinearGradient(
+                              colors: [Color(0xFF00B5FF), Color(0xFF00E5FF)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isLiked
+                              ? const Color(0xFF00C853).withValues(alpha: 0.5)
+                              : const Color(
+                                  0xFF00B5FF,
+                                ).withValues(alpha: isDark ? 0.4 : 0.2),
+                          blurRadius: isLiked ? 16 : 12,
+                          offset: const Offset(0, 5),
                         ),
-                  iconSize: isLiked ? 34 : 32,
-                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || likeDisabled || _isLiking)
-                      ? null
-                      : () async {
-                          if (isLiked) {
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('You already liked ${_currentUser.firstName}! ❤️'),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
+                      ],
+                    ),
+                    child: IconButton(
+                      disabledColor: Colors.white,
+                      icon: _isLiking
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
                               ),
-                            );
-                            return;
-                          }
-                          if (isSuperLiked) {
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('You already Super Liked ${_currentUser.firstName}! 🌟'),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                            return;
-                          }
+                            )
+                          : Icon(
+                              isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: Colors.white,
+                            ),
+                      iconSize: isLiked ? 34 : 32,
+                      onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || _isLiking)
+                          ? null
+                          : () async {
+                              if (_isLiked) {
+                                // Toggle: UNLIKE
+                                if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
+                                setState(() {
+                                  _isLiking = true;
+                                  _isLiked = false;
+                                });
 
-                          // In-memory quota check
-                          final validation = SubscriptionProvider.instance.validateAction(VipAction.like);
-                          if (!validation.allowed) {
-                            showSubscriptionLimitDialog(
-                              context,
-                              feature: SubLimitFeature.dailyLikes,
-                              customMessage: validation.message,
-                            );
-                            return;
-                          }
+                                try {
+                                  if (widget.onLike != null) {
+                                    await widget.onLike!.call();
+                                  } else {
+                                    final ok = await ApiService.unlikeUser(targetUserId: _currentUser.id);
+                                    if (!mounted) return;
+                                    if (!ok) {
+                                      // Rollback
+                                      setState(() => _isLiked = true);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Failed to remove like. Please try again.'),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Removed like for ${_currentUser.firstName}'),
+                                        duration: const Duration(seconds: 2),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (mounted) setState(() => _isLiked = true);
+                                } finally {
+                                  if (mounted) setState(() => _isLiking = false);
+                                  OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
+                                  subProvider.refresh();
+                                }
+                                return;
+                              }
 
-                          if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
-                          final prevSwipedAction = _localSwipedAction;
-                          
-                          setState(() {
-                            _isLiking = true;
-                            _localSwipedAction = 'like';
-                          });
-                          SubscriptionProvider.instance.optimisticConsume(VipAction.like);
-
-                          try {
-                            if (widget.onLike != null) {
-                              await widget.onLike!.call();
-                            } else {
-                              final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
-                              if (!mounted) return;
-                              if (res == null || res['limitReached'] == true) {
-                                // Rollback
-                                SubscriptionProvider.instance.rollbackConsume(VipAction.like);
-                                setState(() => _localSwipedAction = prevSwipedAction);
+                              // Quota check / Grey button tap validation
+                              if (likeDisabled || (!hasUnlimitedLikes && !subProvider.canLike)) {
+                                final validation = subProvider.validateAction(VipAction.like);
                                 showSubscriptionLimitDialog(
                                   context,
                                   feature: SubLimitFeature.dailyLikes,
-                                  customMessage: res?['message'],
+                                  customMessage: validation.message,
                                 );
                                 return;
                               }
-                              if (res['matched'] == true) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                    backgroundColor: const Color(0xFF10B981),
-                                  ),
+
+                              // In-memory quota check
+                              final validation = subProvider.validateAction(VipAction.like);
+                              if (!validation.allowed) {
+                                showSubscriptionLimitDialog(
+                                  context,
+                                  feature: SubLimitFeature.dailyLikes,
+                                  customMessage: validation.message,
                                 );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('You liked ${_currentUser.firstName}! ❤️'),
-                                    backgroundColor: LunaraTheme.electricViolet,
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
+                                return;
                               }
-                              _checkUsageWarning(res);
-                            }
-                          } catch (e) {
-                            SubscriptionProvider.instance.rollbackConsume(VipAction.like);
-                            if (mounted) {
-                              setState(() => _localSwipedAction = prevSwipedAction);
-                            }
-                          } finally {
-                            if (mounted) setState(() => _isLiking = false);
-                            OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
-                            // Background-sync quota counts with backend
-                            SubscriptionProvider.instance.refresh();
-                          }
-                        },
-                ),
-              ),
-              const SizedBox(height: 6),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: Text(
-                  _isLiking ? 'Liking...' : (isLiked ? 'LIKED ✓' : 'Like'),
-                  key: ValueKey('${isLiked}_$_isLiking'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isLiked
-                        ? const Color(0xFF00C853)
-                        : (isDark ? Colors.white60 : Colors.black54),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
 
-        // ── Super Like button ─────────────────────────────────────────────────
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: isSuperLiked ? 56 : 48,
-                height: isSuperLiked ? 56 : 48,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  // Gold when superliked, disabled grey when no credits, default purple
-                  gradient: isSuperLiked
-                      ? const LinearGradient(
-                          colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : superLikeDisabled
-                      ? LinearGradient(
-                          colors: [Colors.grey.shade400, Colors.grey.shade500],
-                        )
-                      : const LinearGradient(
-                          colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isSuperLiked
-                          ? const Color(0xFFFFD700).withValues(alpha: 0.6)
-                          : const Color(
-                              0xFF7F00FF,
-                            ).withValues(alpha: isDark ? 0.35 : 0.15),
-                      blurRadius: isSuperLiked ? 18 : 10,
-                      offset: const Offset(0, 4),
+                              if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
+
+                              setState(() {
+                                _isLiking = true;
+                                _isLiked = true;
+                              });
+                              subProvider.optimisticConsume(VipAction.like);
+
+                              try {
+                                if (widget.onLike != null) {
+                                  await widget.onLike!.call();
+                                } else {
+                                  final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
+                                  if (!mounted) return;
+                                  if (res == null || res['limitReached'] == true) {
+                                    // Rollback
+                                    subProvider.rollbackConsume(VipAction.like);
+                                    setState(() => _isLiked = false);
+                                    showSubscriptionLimitDialog(
+                                      context,
+                                      feature: SubLimitFeature.dailyLikes,
+                                      customMessage: res?['message'],
+                                    );
+                                    return;
+                                  }
+                                  if (res['matched'] == true) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                        backgroundColor: const Color(0xFF10B981),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('You liked ${_currentUser.firstName}! ❤️'),
+                                        backgroundColor: LunaraTheme.electricViolet,
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                  _checkUsageWarning(res);
+                                }
+                              } catch (e) {
+                                subProvider.rollbackConsume(VipAction.like);
+                                if (mounted) {
+                                  setState(() => _isLiked = false);
+                                }
+                              } finally {
+                                if (mounted) setState(() => _isLiking = false);
+                                OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
+                                // Background-sync quota counts with backend
+                                subProvider.refresh();
+                              }
+                            },
                     ),
-                  ],
-                ),
-                child: IconButton(
-                  disabledColor: Colors.white,
-                  icon: _isSuperLiking
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Icon(
-                          isSuperLiked ? Icons.star : Icons.star_border,
-                          color: Colors.white,
+                  ),
+                  const SizedBox(height: 6),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      _isLiking ? 'Liking...' : (isLiked ? 'LIKED ✓' : 'Like'),
+                      key: ValueKey('${isLiked}_$_isLiking'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isLiked
+                            ? const Color(0xFF00C853)
+                            : (isDark ? Colors.white60 : Colors.black54),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+
+            // ── Super Like button ─────────────────────────────────────────────────
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: isSuperLiked ? 56 : 48,
+                    height: isSuperLiked ? 56 : 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      // Gold when superliked, disabled grey when no credits, default purple
+                      gradient: isSuperLiked
+                          ? const LinearGradient(
+                              colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                          : superLikeDisabled
+                          ? LinearGradient(
+                              colors: [Colors.grey.shade400, Colors.grey.shade500],
+                            )
+                          : const LinearGradient(
+                              colors: [Color(0xFF7F00FF), Color(0xFFB952EB)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: isSuperLiked
+                              ? const Color(0xFFFFD700).withValues(alpha: 0.6)
+                              : const Color(
+                                  0xFF7F00FF,
+                                ).withValues(alpha: isDark ? 0.35 : 0.15),
+                          blurRadius: isSuperLiked ? 18 : 10,
+                          offset: const Offset(0, 4),
                         ),
-                  onPressed: (OptimisticActionGuard.isLocked('SWIPE_SUPER:${_currentUser.id}') || superLikeDisabled || _isSuperLiking)
-                      ? null
-                      : () async {
-                          if (isSuperLiked) {
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('You already Super Liked ${_currentUser.firstName}! 🌟'),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
+                      ],
+                    ),
+                    child: IconButton(
+                      disabledColor: Colors.white,
+                      icon: _isSuperLiking
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
                               ),
-                            );
-                            return;
-                          }
+                            )
+                          : Icon(
+                              isSuperLiked ? Icons.star : Icons.star_border,
+                              color: Colors.white,
+                            ),
+                      onPressed: (OptimisticActionGuard.isLocked('SWIPE_SUPER:${_currentUser.id}') || _isSuperLiking)
+                          ? null
+                          : () async {
+                              if (_isSuperLiked) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('You already Super Liked ${_currentUser.firstName}! 🌟'),
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                                return;
+                              }
 
-                          // In-memory quota check
-                          final validation = SubscriptionProvider.instance.validateAction(VipAction.superlike);
-                          if (!validation.allowed) {
-                            showSubscriptionLimitDialog(
-                              context,
-                              feature: SubLimitFeature.superLike,
-                              customMessage: validation.message,
-                            );
-                            return;
-                          }
-
-                          if (!OptimisticActionGuard.start('SWIPE_SUPER:${_currentUser.id}')) return;
-                          final prevSwipedAction = _localSwipedAction;
-                          
-                          setState(() {
-                            _isSuperLiking = true;
-                            _localSwipedAction = 'superlike';
-                          });
-                          SubscriptionProvider.instance.optimisticConsume(VipAction.superlike);
-
-                          try {
-                            if (widget.onSuper != null) {
-                              await widget.onSuper!.call();
-                            } else {
-                              final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
-                              if (!mounted) return;
-                              if (res == null || res['limitReached'] == true) {
-                                // Rollback
-                                SubscriptionProvider.instance.rollbackConsume(VipAction.superlike);
-                                setState(() => _localSwipedAction = prevSwipedAction);
+                              // Quota check / Grey button tap validation
+                              if (superLikeDisabled || (!isUnlimitedSuper && !subProvider.canSuperLike)) {
+                                final validation = subProvider.validateAction(VipAction.superlike);
                                 showSubscriptionLimitDialog(
                                   context,
                                   feature: SubLimitFeature.superLike,
-                                  customMessage: res?['message'],
+                                  customMessage: validation.message,
                                 );
                                 return;
                               }
-                              if (res['matched'] == true) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                    backgroundColor: const Color(0xFF10B981),
-                                  ),
+
+                              // In-memory quota check
+                              final validation = subProvider.validateAction(VipAction.superlike);
+                              if (!validation.allowed) {
+                                showSubscriptionLimitDialog(
+                                  context,
+                                  feature: SubLimitFeature.superLike,
+                                  customMessage: validation.message,
                                 );
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('You Super Liked ${_currentUser.firstName}! 🌟'),
-                                    backgroundColor: const Color(0xFFFF8C00),
-                                    behavior: SnackBarBehavior.floating,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
+                                return;
                               }
-                              _checkUsageWarning(res);
-                            }
-                          } catch (e) {
-                            SubscriptionProvider.instance.rollbackConsume(VipAction.superlike);
-                            if (mounted) {
-                              setState(() => _localSwipedAction = prevSwipedAction);
-                            }
-                          } finally {
-                            if (mounted) setState(() => _isSuperLiking = false);
-                            OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
-                            // Background-sync quota counts with backend
-                            SubscriptionProvider.instance.refresh();
-                          }
-                        },
-                ),
-              ),
-              const SizedBox(height: 6),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: Text(
-                  _isSuperLiking ? 'Super...' : (isSuperLiked ? 'SUPER LIKED ★' : 'Super'),
-                  key: ValueKey('${isSuperLiked}_$_isSuperLiking'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isSuperLiked
-                        ? const Color(0xFFFFD700)
-                        : (isDark ? Colors.white60 : Colors.black54),
-                    fontWeight: FontWeight.bold,
+
+                              if (!OptimisticActionGuard.start('SWIPE_SUPER:${_currentUser.id}')) return;
+
+                              setState(() {
+                                _isSuperLiking = true;
+                                _isSuperLiked = true;
+                              });
+                              subProvider.optimisticConsume(VipAction.superlike);
+
+                              try {
+                                if (widget.onSuper != null) {
+                                  await widget.onSuper!.call();
+                                } else {
+                                  final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
+                                  if (!mounted) return;
+                                  if (res == null || res['limitReached'] == true) {
+                                    // Rollback
+                                    subProvider.rollbackConsume(VipAction.superlike);
+                                    setState(() => _isSuperLiked = false);
+                                    showSubscriptionLimitDialog(
+                                      context,
+                                      feature: SubLimitFeature.superLike,
+                                      customMessage: res?['message'],
+                                    );
+                                    return;
+                                  }
+                                  if (res['matched'] == true) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
+                                        backgroundColor: const Color(0xFF10B981),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('You Super Liked ${_currentUser.firstName}! 🌟'),
+                                        backgroundColor: const Color(0xFFFF8C00),
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                  _checkUsageWarning(res);
+                                }
+                              } catch (e) {
+                                subProvider.rollbackConsume(VipAction.superlike);
+                                if (mounted) {
+                                  setState(() => _isSuperLiked = false);
+                                }
+                              } finally {
+                                if (mounted) setState(() => _isSuperLiking = false);
+                                OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
+                                // Background-sync quota counts with backend
+                                subProvider.refresh();
+                              }
+                            },
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: Text(
+                      _isSuperLiking ? 'Superliking...' : (isSuperLiked ? 'SUPER LIKED' : 'Super Like'),
+                      key: ValueKey('${isSuperLiked}_$_isSuperLiking'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isSuperLiked
+                            ? const Color(0xFFFFD700)
+                            : (isDark ? Colors.white60 : Colors.black54),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 

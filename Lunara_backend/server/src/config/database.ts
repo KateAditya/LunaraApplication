@@ -435,6 +435,7 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='guest_arrival_confirmed') THEN ALTER TABLE party_plan_requests ADD COLUMN guest_arrival_confirmed BOOLEAN DEFAULT FALSE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='guest_arrival_time') THEN ALTER TABLE party_plan_requests ADD COLUMN guest_arrival_time TIMESTAMP WITH TIME ZONE; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='joiner_payment_status') THEN ALTER TABLE party_plan_requests ADD COLUMN joiner_payment_status VARCHAR(50) DEFAULT 'unpaid'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='party_plan_requests' AND column_name='request_type') THEN ALTER TABLE party_plan_requests ADD COLUMN request_type VARCHAR(50) DEFAULT 'public_request'; END IF;
 
                     -- SubscriptionPackages columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='display_name') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN display_name VARCHAR(200); END IF;

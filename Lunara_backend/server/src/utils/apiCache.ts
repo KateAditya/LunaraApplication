@@ -47,10 +47,14 @@ export class ApiCache {
     public invalidatePrefix(prefix: string): void {
         const normalizedPrefix = prefix.toLowerCase();
         for (const key of this.cache.keys()) {
-            if (key.toLowerCase().startsWith(normalizedPrefix)) {
+            if (key.toLowerCase().startsWith(normalizedPrefix) || key.toLowerCase().includes(normalizedPrefix)) {
                 this.cache.delete(key);
             }
         }
+    }
+
+    public invalidatePattern(pattern: string): void {
+        this.invalidatePrefix(pattern);
     }
 
     public clear(): void {

@@ -12,7 +12,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import sequelize from '../config/database';
 import { PartyPlanPaymentStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
-import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
+import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus, PartyPlanRequestType } from '../models/PartyPlanRequest';
 import { sendMulticastPushNotification } from '../services/fcmService';
 import Conversation from '../models/Conversation';
 import ChatSubscription, { ChatSubscriptionStatus, ChatSubscriptionType } from '../models/ChatSubscription';
@@ -543,13 +543,28 @@ async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transact
     // 4. Reject and notify all remaining WAITING/PENDING requests
     await rejectAndNotifyStaleRequests(plan, request.id, transaction);
 
-    // 5. Socket events
+    // 5. Socket events & Cache Invalidation
     setImmediate(async () => {
         try {
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+
             const { io } = require('../server');
-            io.to(`user_${plan.userId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-            io.to(`user_${request.requesterId}`).emit('party_plan_match_success', { planId: plan.id, requestId: request.id });
-            io.emit('party_plan_deleted', { planId: plan.id });
+            if (io) {
+                const matchPayload = {
+                    planId: plan.id,
+                    requestId: request.id,
+                    status: PartyPlanStatus.INACTIVE,
+                    lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED,
+                };
+                io.to(`user_${plan.userId}`).emit('party_plan_match_success', matchPayload);
+                io.to(`user_${request.requesterId}`).emit('party_plan_match_success', matchPayload);
+                io.to(`user_${plan.userId}`).emit('party_plan_updated', matchPayload);
+                io.to(`user_${request.requesterId}`).emit('party_plan_updated', matchPayload);
+                io.emit('party_plan_deleted', { planId: plan.id });
+                io.emit('live_feed_update', { action: 'match_confirmed', planId: plan.id, requestId: request.id });
+            }
         } catch (socketErr) {
             logger.warn('confirmMatch: Socket emission failed:', socketErr);
         }
@@ -672,12 +687,18 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
         // Notify host and joiner, and emit socket relisted event
         setImmediate(async () => {
             try {
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 const { io } = require('../server');
                 if (plan.visibility !== 'private') {
                     io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
+                    io.emit('live_feed_update', { action: 'party_plan_relisted', planId: plan.id, isLive: true });
                 } else {
                     io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
                 }
+                io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
 
                 // Notify host that plan is live again
                 await NotificationService.dispatch({
@@ -701,6 +722,7 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
                         status: failReason === 'payment_failed' ? 'payment_failed' : 'cancelled',
                         isLive: true
                     });
+                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_updated', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
                     io.to(`user_${failedReq.requesterId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true });
 
                     await NotificationService.dispatch({
@@ -1380,6 +1402,7 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                                     createdReq = await PartyPlanRequest.create({
                                         planId: plan.id,
                                         requesterId: invitedUserId,
+                                        requestType: PartyPlanRequestType.PRIVATE_INVITE,
                                         status: PartyPlanRequestStatus.PENDING,
                                         joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
                                         joinerRazorpayOrderId: joinerOrder.id,
@@ -1403,6 +1426,8 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                                         partyPlanId: plan.id,
                                         planId: plan.id,
                                         requestId: createdReq?.id,
+                                        requestType: 'private_invite',
+                                        isInvite: true,
                                         senderId: plan.userId,
                                         recipientId: invitedUserId,
                                         hostId: plan.userId,
@@ -1416,15 +1441,35 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                                 const { io } = require('../server');
                                 if (io) {
                                     io.to(`user_${invitedUserId}`).emit('party_plan_created', plan);
+                                    io.to(`user_${invitedUserId}`).emit('party_plan_invitation', {
+                                        planId: plan.id,
+                                        requestId: createdReq?.id,
+                                        hostName,
+                                        venueName,
+                                        isInvite: true,
+                                        requestType: 'private_invite',
+                                        senderId: plan.userId,
+                                        recipientId: invitedUserId,
+                                        hostId: plan.userId,
+                                        targetUserId: invitedUserId,
+                                        status: 'pending',
+                                        plan,
+                                    });
                                     io.to(`user_${invitedUserId}`).emit('party_plan_request_received', {
                                         planId: plan.id,
                                         requestId: createdReq?.id,
                                         hostName,
-                                        venueName
+                                        venueName,
+                                        isInvite: true,
+                                        requestType: 'private_invite',
+                                        senderId: plan.userId,
+                                        recipientId: invitedUserId,
+                                        hostId: plan.userId,
                                     });
                                     io.to(`user_${invitedUserId}`).emit('live_feed_update', {
                                         type: 'party_plan_invitation',
                                         partyPlanId: plan.id,
+                                        requestId: createdReq?.id,
                                     });
                                 }
                             }
@@ -2188,6 +2233,7 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
         const newReq = await PartyPlanRequest.create({
             planId: id,
             requesterId: callerUserId,
+            requestType: PartyPlanRequestType.PUBLIC_REQUEST,
             status: PartyPlanRequestStatus.PENDING,
             joinerPaymentStatus: PartyPlanJoinerPaymentStatus.UNPAID,
             latLangCheckIn: false,
@@ -2248,12 +2294,31 @@ export const createPartyPlanRequest = async (req: Request, res: Response): Promi
                     });
                 }
 
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 const { io } = require('../server');
                 if (io) {
-                    io.to(`user_${plan.userId}`).emit('party_plan_request_created', { planId: plan.id, requestId: newReq.id });
-                    io.to(`user_${plan.userId}`).emit('party_plan_request_received', { planId: plan.id, requestId: newReq.id });
-                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
-                    io.to(`user_${callerUserId}`).emit('party_plan_request_updated', { planId: plan.id, requestId: newReq.id });
+                    const eventPayload = {
+                        planId: plan.id,
+                        partyPlanId: plan.id,
+                        requestId: newReq.id,
+                        requesterId: callerUserId,
+                        hostId: plan.userId,
+                        status: 'pending',
+                        requestStatus: 'pending',
+                        timestamp: new Date().toISOString(),
+                    };
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_created', eventPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_received', eventPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', eventPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_updated', eventPayload);
+                    io.to(`user_${callerUserId}`).emit('party_plan_request_updated', eventPayload);
+                    io.to(`user_${callerUserId}`).emit('party_plan_updated', eventPayload);
+                    io.to('live_feed').emit('live_feed_update', {
+                        type: 'party_plan_request_created',
+                        ...eventPayload,
+                    });
                 }
             } catch (notifErr: any) {
                 logger.warn('Failed to dispatch party plan request notifications:', notifErr.message);
@@ -2322,8 +2387,11 @@ export const getPartyPlanRequests = async (req: Request, res: Response): Promise
 
         const data = requests.map(r => {
             const reqData = r.toJSON() as any;
-            const isInvite = !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(r.requesterId));
+            const isInvite = r.requestType === PartyPlanRequestType.PRIVATE_INVITE ||
+                r.requestType === 'private_invite' ||
+                !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(r.requesterId));
             reqData.isInvite = isInvite;
+            reqData.requestType = isInvite ? 'private_invite' : 'public_request';
             reqData.senderId = isInvite ? plan.userId : r.requesterId;
             reqData.recipientId = isInvite ? r.requesterId : plan.userId;
             reqData.hostId = plan.userId;
@@ -2380,7 +2448,9 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             return;
         }
 
-        const isPrivateInvite = !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(request.requesterId));
+        const isPrivateInvite = request.requestType === PartyPlanRequestType.PRIVATE_INVITE ||
+            request.requestType === 'private_invite' ||
+            !!(plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(request.requesterId));
         const recipientId = isPrivateInvite ? request.requesterId : plan.userId;
 
         if (callerUserId && callerUserId.toLowerCase() !== recipientId.toLowerCase()) {
@@ -2647,24 +2717,34 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
         setImmediate(async () => {
             await postInvalidate();
             try {
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 const { io } = require('../server');
 
-                // Notify joiner of acceptance + payment details
+                // Notify joiner & host of acceptance + payment details
                 if (io) {
-                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', {
+                    const acceptPayload = {
                         requestId: request.id,
                         planId: plan.id,
+                        status: PartyPlanRequestStatus.ACCEPTED,
                         hostAlreadyPaid,
                         hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
                         hostAmount: hostOrder ? hostOrder.amount : null,
                         hostCurrency: hostOrder ? hostOrder.currency : null,
-                        joinerRazorpayOrderId: joinerOrder.id,
-                        joinerAmount: joinerOrder.amount,
-                        joinerCurrency: joinerOrder.currency,
-                    });
+                        joinerRazorpayOrderId: joinerOrder ? joinerOrder.id : null,
+                        joinerAmount: joinerOrder ? joinerOrder.amount : null,
+                        joinerCurrency: joinerOrder ? joinerOrder.currency : null,
+                    };
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', acceptPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_accepted', acceptPayload);
+                    io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                    io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
 
-                    // Remove from global feeds (plan is reserved)
+                    // Remove from global feeds (plan is reserved) / live feed update
                     io.emit('party_plan_deleted', { planId: plan.id });
+                    io.emit('live_feed_update', { action: 'request_accepted', planId: plan.id, requestId: request.id });
                 }
 
                 // Notify joiner via NotificationService
@@ -2826,6 +2906,10 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
         // Authoritative synchronization for BOTH Host and Requester
         setImmediate(async () => {
             try {
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 await notifyRequestLifecycleChange({
                     plan, request, recipientUserId: plan.userId, actorUserId: callerUserId,
                     eventType: 'party_plan_request_cancelled', title: 'Request Cancelled',
@@ -2840,8 +2924,16 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
 
                 const { io } = require('../server');
                 if (io) {
-                    io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', { planId: plan.id, requestId: request.id });
-                    io.to(`user_${callerUserId}`).emit('party_plan_request_cancelled', { planId: plan.id, requestId: request.id });
+                    const cancelPayload = {
+                        planId: plan.id,
+                        requestId: request.id,
+                        status: PartyPlanRequestStatus.CANCELLED,
+                    };
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', cancelPayload);
+                    io.to(`user_${callerUserId}`).emit('party_plan_request_cancelled', cancelPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                    io.to(`user_${callerUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                    io.emit('live_feed_update', { action: 'request_cancelled', planId: plan.id, requestId: request.id });
                 }
             } catch (notifErr: any) {
                 logger.warn('Request cancellation notification failed:', notifErr.message);
@@ -2951,8 +3043,30 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
             body: actor === 'host' ? 'The host withdrew the acceptance for this Party Plan.' : 'The participant withdrew from the Party Plan before payment.',
         }).catch((err: any) => logger.warn('Pre-payment match notification failed:', err.message)));
         try {
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+
             const { io } = require('../server');
-            if (plan.visibility !== PartyPlanVisibility.PRIVATE) io.emit('party_plan_relisted', { planId: plan.id });
+            if (io) {
+                const cancelPayload = {
+                    planId: plan.id,
+                    requestId: request.id,
+                    status: PartyPlanRequestStatus.CANCELLED,
+                    actor,
+                };
+                io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', cancelPayload);
+                io.to(`user_${request.requesterId}`).emit('party_plan_request_cancelled', cancelPayload);
+                io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+
+                if (plan.visibility !== PartyPlanVisibility.PRIVATE) {
+                    io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: plan.lifecycleStatus });
+                    io.emit('live_feed_update', { action: 'party_plan_relisted', planId: plan.id });
+                } else {
+                    io.emit('live_feed_update', { action: 'request_cancelled', planId: plan.id, requestId: request.id });
+                }
+            }
         } catch (socketErr: any) {
             logger.warn('Pre-payment match relist socket failed:', socketErr.message);
         }
@@ -3135,7 +3249,9 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
         //  - INVITEE: can decline only if they are the requesterId on a private invite
         const isHost = plan && plan.userId === userId;
         const isInvitee = request.requesterId === userId;
-        const isPrivateInvite = !!(plan?.selectedUsers && plan.selectedUsers.includes(request.requesterId));
+        const isPrivateInvite = request.requestType === PartyPlanRequestType.PRIVATE_INVITE ||
+            request.requestType === 'private_invite' ||
+            !!(plan?.selectedUsers && plan.selectedUsers.includes(request.requesterId));
 
         if (!isHost && !isInvitee) {
             res.status(403).json({ success: false, message: 'Only the host or the invited user can decline this request' });
@@ -3290,10 +3406,27 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     }
                 }
 
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 const { io } = require('../server');
-                io.to(`user_${request.requesterId}`).emit('plan_unavailable', {
-                    planId: plan.id, requestId: request.id,
-                });
+                if (io) {
+                    const rejectPayload = {
+                        planId: plan.id,
+                        requestId: request.id,
+                        status: isHost ? PartyPlanRequestStatus.REJECTED : PartyPlanRequestStatus.CANCELLED,
+                        isHost,
+                    };
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_rejected', rejectPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_rejected', rejectPayload);
+                    io.to(`user_${request.requesterId}`).emit('plan_unavailable', {
+                        planId: plan.id, requestId: request.id,
+                    });
+                    io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                    io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
+                    io.emit('live_feed_update', { action: 'request_rejected', planId: plan.id, requestId: request.id });
+                }
             } catch (err: any) {
                 logger.warn('Failed to send rejection/decline notifications:', err.message);
             }
@@ -3488,6 +3621,10 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                 // Notify host that joiner has paid and they need to pay
                 setImmediate(async () => {
                     try {
+                        // Invalidate Redis/In-memory API caches immediately
+                        apiCache.invalidatePrefix('pp_feed');
+                        apiCache.invalidatePrefix('party_plans');
+
                         await NotificationService.dispatch({
                             recipientUserId: plan.userId,
                             actorUserId: request.requesterId,
@@ -3503,7 +3640,16 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
 
                         const { io } = require('../server');
                         if (io) {
-                            io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', { planId: plan.id, requestId: request.id });
+                            const joinerPaidPayload = {
+                                planId: plan.id,
+                                requestId: request.id,
+                                lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED,
+                            };
+                            io.to(`user_${plan.userId}`).emit('party_plan_joiner_paid', joinerPaidPayload);
+                            io.to(`user_${request.requesterId}`).emit('party_plan_joiner_paid', joinerPaidPayload);
+                            io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED });
+                            io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED });
+                            io.emit('live_feed_update', { action: 'joiner_paid', planId: plan.id, requestId: request.id });
                         }
                     } catch (err: any) {
                         logger.warn('Failed to notify host of joiner payment:', err.message);
@@ -3991,6 +4137,24 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         joinerRazorpayOrderId: joinerOrder.id,
                         joinerAmount: joinerOrder.amount,
                         joinerCurrency: joinerOrder.currency,
+                        isInvite: true,
+                        requestType: 'private_invite',
+                    });
+                    io.to(`user_${plan.userId}`).emit('party_plan_invite_accepted', {
+                        requestId: request.id,
+                        planId: plan.id,
+                        joinerId: joiner.id,
+                        joinerName,
+                    });
+                    io.to(`user_${request.requesterId}`).emit('live_feed_update', {
+                        type: 'party_plan_invite_accepted',
+                        partyPlanId: plan.id,
+                        requestId: request.id,
+                    });
+                    io.to(`user_${plan.userId}`).emit('live_feed_update', {
+                        type: 'party_plan_invite_accepted',
+                        partyPlanId: plan.id,
+                        requestId: request.id,
                     });
 
                     io.emit('party_plan_deleted', { planId: plan.id });
@@ -4004,7 +4168,7 @@ export const acceptPartyPlanInvite = async (req: Request, res: Response): Promis
                         entityId: plan.id,
                         title: 'Invite Accepted',
                         body: `${joinerName} accepted your private invite to the Party Plan at ${venueName}. Awaiting participant payment.`,
-                        metadata: { planId: plan.id, requestId: request.id },
+                        metadata: { planId: plan.id, requestId: request.id, isInvite: true, requestType: 'private_invite' },
                         idempotencyKey: `invite_accepted_awaiting_joiner_${request.id}`,
                     });
                 }
@@ -5057,12 +5221,15 @@ export const getJoinerRequests = async (req: Request, res: Response): Promise<vo
 
         const formatted = requests.map(reqItem => {
             const plan = (reqItem as any).plan;
-            const isInvite = !!(plan && plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(reqItem.requesterId));
+            const isInvite = reqItem.requestType === PartyPlanRequestType.PRIVATE_INVITE ||
+                reqItem.requestType === 'private_invite' ||
+                !!(plan && plan.selectedUsers && Array.isArray(plan.selectedUsers) && plan.selectedUsers.includes(reqItem.requesterId));
             const hostId = plan?.userId;
             return {
                 id: reqItem.id,
                 planId: reqItem.planId,
                 isInvite,
+                requestType: isInvite ? 'private_invite' : 'public_request',
                 senderId: isInvite ? hostId : reqItem.requesterId,
                 recipientId: isInvite ? reqItem.requesterId : hostId,
                 hostId,

@@ -19,6 +19,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { parseTimeParts, format12HourFromParts } from '../utils/dateTimeUtils';
 import { EventTimeLockService, parseBookingDateTime } from './EventTimeLockService';
+import { apiCache } from '../utils/apiCache';
 
 function normalize12h(timeStr?: string | null): string {
     const [h, m] = parseTimeParts(timeStr);
@@ -49,11 +50,24 @@ export interface SafePartnerProfile {
 }
 
 export class NightPartnerService {
+    public static invalidateUpcomingNightCaches() {
+        try {
+            apiCache.invalidatePattern('pp_feed');
+            apiCache.invalidatePattern('party_plans');
+            apiCache.invalidatePattern('events');
+            apiCache.invalidatePattern('upcoming_nights');
+            apiCache.invalidatePattern('bookings');
+            apiCache.invalidatePattern('group_party');
+        } catch (e) {
+            logger.warn(`[NightPartnerService] Cache invalidation error: ${e}`);
+        }
+    }
+
     private static async resolveVenue(venueId: string): Promise<Venue | null> {
         try {
             const venue = await Venue.findByPk(venueId);
             if (venue) return venue;
-        } catch (_) {}
+        } catch (_) { }
 
         const found = await Venue.findOne({
             where: {
@@ -125,6 +139,14 @@ export class NightPartnerService {
             });
         }
 
+        this.invalidateUpcomingNightCaches();
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate, timestamp: new Date().toISOString() });
+            }
+        } catch (_) { }
+
         return interest;
     }
 
@@ -166,6 +188,13 @@ export class NightPartnerService {
         }
 
         await interest.update({ status: NightInterestStatus.REMOVED });
+        this.invalidateUpcomingNightCaches();
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate, timestamp: new Date().toISOString() });
+            }
+        } catch (_) { }
         return true;
     }
 
@@ -532,7 +561,7 @@ export class NightPartnerService {
         await this.emitNotification(partnerId, {
             type: 'PARTNER_REQUEST_SENT',
             actorUserId: hostId,
-            title: 'Night Partner Invite 🌙',
+            title: 'Invite for Party Event 🌙',
             body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
             entityId: request.id,
             data: {
@@ -779,9 +808,9 @@ export class NightPartnerService {
         const amountToPay = isHost ? hostAmount : partnerAmount;
 
         let razorpayOrder: any;
-        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID && 
-                                process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && 
-                                process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
+        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' &&
+            process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
         if (hasRazorpayKeys) {
             try {
                 razorpayOrder = await razorpay.orders.create({
@@ -890,8 +919,8 @@ export class NightPartnerService {
         } else {
             // Razorpay signature verification
             const isMockPayment = razorpaySignature === 'mock_signature' ||
-                                  (razorpayOrderId && razorpayOrderId.startsWith('order_mock_')) ||
-                                  (razorpayOrderId && razorpayOrderId.startsWith('mock_'));
+                (razorpayOrderId && razorpayOrderId.startsWith('order_mock_')) ||
+                (razorpayOrderId && razorpayOrderId.startsWith('mock_'));
 
             const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
             hmac.update(`${razorpayOrderId}|${razorpayPaymentId}`);
@@ -1077,7 +1106,7 @@ export class NightPartnerService {
             try {
                 const venue = await Venue.findByPk(match.venueId);
                 if (venue?.name) venueName = venue.name;
-            } catch (_) {}
+            } catch (_) { }
 
             const isConfirmedOrPaid = match.status === NightPartnerMatchStatus.CONFIRMED ||
                 Boolean(match.bookingId) ||
@@ -1210,7 +1239,7 @@ export class NightPartnerService {
                             if (conv) {
                                 await conv.update({ status: ConversationStatus.ARCHIVED }, { transaction: t });
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     }
 
                     // 4. Update match status
@@ -1463,6 +1492,8 @@ export class NightPartnerService {
         }
     ) {
         try {
+            this.invalidateUpcomingNightCaches();
+
             await NotificationService.dispatch({
                 recipientUserId: userId,
                 actorUserId: payload.actorUserId,
@@ -1479,10 +1510,49 @@ export class NightPartnerService {
 
             const enrichedCard = await NightPartnerService.enrichUpcomingNightNotificationCard(payload.entityId, userId);
             const { io } = require('../server');
-            if (io && enrichedCard) {
-                io.to(`user_${userId}`).emit('notification_updated', enrichedCard);
-                io.to(`user_${userId}`).emit('upcoming_night_status_update', { nightId: payload.entityId, type: payload.type });
+            if (io) {
+                if (enrichedCard) {
+                    io.to(`user_${userId}`).emit('notification_updated', enrichedCard);
+                }
+                const eventPayload = {
+                    nightId: payload.entityId,
+                    type: payload.type,
+                    status: payload.type,
+                    recipientUserId: userId,
+                    actorUserId: payload.actorUserId,
+                    title: payload.title,
+                    body: payload.body,
+                    data: payload.data,
+                    timestamp: new Date().toISOString(),
+                };
+
+                io.to(`user_${userId}`).emit('upcoming_night_status_update', eventPayload);
                 io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_activity', nightId: payload.entityId, timestamp: new Date().toISOString() });
+
+                const typeLower = payload.type.toLowerCase();
+                if (typeLower.includes('cancel')) {
+                    io.to(`user_${userId}`).emit('upcoming_night_cancelled', eventPayload);
+                    io.to('live_feed').emit('upcoming_night_cancelled', eventPayload);
+                    io.to(`user_${userId}`).emit('booking_cancelled', eventPayload);
+                }
+                if (typeLower.includes('requested') || typeLower.includes('cancellation_requested')) {
+                    io.to(`user_${userId}`).emit('upcoming_night_cancellation_requested', eventPayload);
+                }
+                if (typeLower.includes('rejected') || typeLower.includes('declined')) {
+                    io.to(`user_${userId}`).emit('upcoming_night_cancellation_rejected', eventPayload);
+                }
+                if (typeLower.includes('partner_request_sent') || typeLower.includes('partner_request_created')) {
+                    io.to(`user_${userId}`).emit('partner_request_created', eventPayload);
+                    io.to(`user_${userId}`).emit('upcoming_night_created', eventPayload);
+                }
+                if (typeLower.includes('partner_request_accepted')) {
+                    io.to(`user_${userId}`).emit('partner_request_accepted', eventPayload);
+                    io.to('live_feed').emit('partner_request_accepted', eventPayload);
+                }
+                if (typeLower.includes('booking_confirmed')) {
+                    io.to(`user_${userId}`).emit('booking_confirmed', eventPayload);
+                    io.to('live_feed').emit('booking_confirmed', eventPayload);
+                }
             }
 
             try {
@@ -1491,8 +1561,8 @@ export class NightPartnerService {
                     userId,
                     action: `UPCOMING_NIGHT_${payload.type}`,
                     metadata: payload.data
-                }).catch(() => {});
-            } catch (aErr) {}
+                }).catch(() => { });
+            } catch (aErr) { }
         } catch (err) {
             logger.warn(`[NightPartnerService] Notification emit warning: ${err}`);
         }
@@ -1509,7 +1579,7 @@ export class NightPartnerService {
                 match = await NightPartnerMatch.findByPk(nightId, {
                     include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                 });
-            } catch (_) {}
+            } catch (_) { }
 
             if (!match) {
                 try {
@@ -1517,7 +1587,7 @@ export class NightPartnerService {
                         where: { [Op.or]: [{ bookingId: nightId }, { requestId: nightId }] },
                         include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                     });
-                } catch (_) {}
+                } catch (_) { }
             }
 
             let requestRecord: NightPartnerRequest | null = null;
@@ -1526,7 +1596,7 @@ export class NightPartnerService {
                     requestRecord = await NightPartnerRequest.findByPk(nightId, {
                         include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                     });
-                } catch (_) {}
+                } catch (_) { }
                 if (!requestRecord) {
                     return null;
                 }
@@ -1555,7 +1625,7 @@ export class NightPartnerService {
                     if (ad.imagePath) bannerImage = ad.imagePath;
                     if (ad.title) eventTitle = ad.title;
                 }
-            } catch (_) {}
+            } catch (_) { }
             if (bannerImage && !bannerImage.startsWith('http') && !bannerImage.startsWith('/')) {
                 bannerImage = `/${bannerImage.replace(/\\/g, '/')}`;
             }
@@ -1583,7 +1653,7 @@ export class NightPartnerService {
                         ],
                     });
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             const photos = (otherUser as any)?.photos || [];
             const primaryPhoto = photos.find((p: any) => p.isPrimary) || photos[0];
@@ -1619,7 +1689,7 @@ export class NightPartnerService {
             let statusText = 'Request Sent';
 
             if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
-                title = `Night Partner Invite 🌙 - ${venueName}`;
+                title = `Invite for Party Event 🌙 - ${venueName}`;
                 body = `${otherUserName} invited you to join for Upcoming Night at ${venueName}!`;
                 statusText = 'Invite Received';
             } else if (isCancelled) {
@@ -1691,7 +1761,7 @@ export class NightPartnerService {
                 actionButtons.push({ id: 'view_details', label: 'View Details', primary: false, action: 'VIEW_DETAILS' });
             }
 
-            const updatedIso = isMatch 
+            const updatedIso = isMatch
                 ? (match!.updatedAt ? match!.updatedAt.toISOString() : new Date().toISOString())
                 : (requestRecord!.updatedAt ? requestRecord!.updatedAt.toISOString() : new Date().toISOString());
 

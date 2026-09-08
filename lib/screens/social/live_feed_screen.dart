@@ -57,7 +57,8 @@ class NotificationAction {
 
 class UnifiedNotificationItem {
   final String id;
-  final String category; // 'booking', 'party_plan', 'stranger_meet', 'payment', 'wallet', 'chat', 'system', 'promotion', 'cancellation', 'reminder'
+  final String
+  category; // 'booking', 'party_plan', 'stranger_meet', 'payment', 'wallet', 'chat', 'system', 'promotion', 'cancellation', 'reminder'
   final String title;
   final String body;
   final DateTime createdAt;
@@ -65,7 +66,8 @@ class UnifiedNotificationItem {
   final bool isRead;
   final bool isExpired;
   final String priority; // 'CRITICAL', 'HIGH', 'NORMAL', 'LOW'
-  final String? badgeText; // 'NEW', 'ACTION REQUIRED', 'EXPIRES SOON', 'REMINDER', 'COMPLETED'
+  final String?
+  badgeText; // 'NEW', 'ACTION REQUIRED', 'EXPIRES SOON', 'REMINDER', 'COMPLETED'
   final Color accentColor;
   final IconData categoryIcon;
   final String? avatarUrl;
@@ -150,32 +152,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   String? _processingPaymentBookingId;
 
   void refreshFeed() {
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   int get totalUnreadCount {
-    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty
+        ? _cachedTimeline
+        : _buildUnifiedTimeline();
     return allTimelineItems.where((i) => !i.isRead && !i.isExpired).length;
   }
 
-  Set<String> get _localReadNotificationIds => ApiService.localReadNotificationIds;
+  Set<String> get _localReadNotificationIds =>
+      ApiService.localReadNotificationIds;
 
   void _onPlanPostedNotify() {
     if (mounted) {
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
     }
   }
 
   void _onProfileUpdateNotify() {
     if (mounted) {
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
     }
   }
 
@@ -196,9 +201,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (!kIsWeb) {
       try {
         _razorpay = Razorpay();
-        _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onLargePartyPaymentSuccess);
+        _razorpay!.on(
+          Razorpay.EVENT_PAYMENT_SUCCESS,
+          _onLargePartyPaymentSuccess,
+        );
         _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _onLargePartyPaymentError);
-        _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onLargePartyExternalWallet);
+        _razorpay!.on(
+          Razorpay.EVENT_EXTERNAL_WALLET,
+          _onLargePartyExternalWallet,
+        );
       } catch (e) {
         debugPrint('Razorpay init error: $e');
       }
@@ -206,7 +217,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Background sync timer every 15 seconds (sockets provide instant real-time pushes)
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      if (mounted &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         _loadFeed(showLoader: false);
       }
     });
@@ -215,16 +227,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.profileUpdateNotifier.addListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.addListener(_onAuthSessionChanged);
 
-    RealtimeSyncManager.instance.liveFeedNotifier.addListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.partyPlanNotifier.addListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.recentPostsNotifier.addListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.liveFeedNotifier.addListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.strangerMeetNotifier.addListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.partyPlanNotifier.addListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.recentPostsNotifier.addListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.globalSyncTick.addListener(
+      _onRealtimeLiveFeedChanged,
+    );
   }
 
   void _onRealtimeLiveFeedChanged() {
     if (!mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   @override
@@ -234,11 +256,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
 
-    RealtimeSyncManager.instance.liveFeedNotifier.removeListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.partyPlanNotifier.removeListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.recentPostsNotifier.removeListener(_onRealtimeLiveFeedChanged);
-    RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimeLiveFeedChanged);
+    RealtimeSyncManager.instance.liveFeedNotifier.removeListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.strangerMeetNotifier.removeListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.partyPlanNotifier.removeListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.recentPostsNotifier.removeListener(
+      _onRealtimeLiveFeedChanged,
+    );
+    RealtimeSyncManager.instance.globalSyncTick.removeListener(
+      _onRealtimeLiveFeedChanged,
+    );
     _disposeSocketListeners();
     _pollingTimer?.cancel();
     _pulseController.dispose();
@@ -262,167 +294,590 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.addSocketListener('venue_updated', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('event_created', _onPartyPlanRequestUpdated);
     ApiService.addSocketListener('event_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_made_public', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_guest_cancelled_prompt', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_rejected', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_relisted', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
-    ApiService.addSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
+    ApiService.addSocketListener(
+      'party_plan_reposted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_made_public',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_guest_cancelled_prompt',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_relisted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_request_accepted',
+      _onPartyPlanRequestAccepted,
+    );
+    ApiService.addSocketListener(
+      'party_plan_match_success',
+      _onPartyPlanMatchSuccess,
+    );
     ApiService.addSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
-    ApiService.addSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
-    ApiService.addSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_reach_prompt', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener(
+      'party_plan_joiner_paid',
+      _onPartyPlanJoinerPaid,
+    );
+    ApiService.addSocketListener(
+      'party_plan_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_cancellation_declined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_arrival_confirmed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_reach_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_reach_prompt',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_arrival_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_arrival_window_opened',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'party_plan_ticket_generated',
+      _onPartyPlanRequestUpdated,
+    );
     ApiService.addSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.addSocketListener('party_plan_partner_selected', _onPlanUnavailable);
-    ApiService.addSocketListener('notification_created', _onNotificationCreated);
-    ApiService.addSocketListener('notification_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('notification_received', _onNotificationCreated);
+    ApiService.addSocketListener(
+      'party_plan_partner_selected',
+      _onPlanUnavailable,
+    );
+    ApiService.addSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
+    ApiService.addSocketListener(
+      'notification_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'notification_received',
+      _onNotificationCreated,
+    );
     ApiService.addSocketListener('badge_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('live_feed_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('group_party_payment_success', _onGroupPartyUpdated);
-    ApiService.addSocketListener('large_party_status_update', _onGroupPartyUpdated);
-    ApiService.addSocketListener('large_party_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('large_party_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('large_party_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('large_party_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('group_party_status_update', _onGroupPartyUpdated);
-    ApiService.addSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_host_paid', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_joiner_paid', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_arrival_confirmed', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_host_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_host_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_created', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_status_update', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('upcoming_night_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('partner_request_created', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('partner_request_received', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('partner_request_accepted', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('partner_request_declined', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('partner_request_cancelled', _onPartyPlanRequestUpdated);
+    ApiService.addSocketListener(
+      'live_feed_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener('group_party_created', _onGroupPartyUpdated);
+    ApiService.addSocketListener(
+      'group_party_payment_success',
+      _onGroupPartyUpdated,
+    );
+    ApiService.addSocketListener('group_party_cancelled', _onGroupPartyUpdated);
+    ApiService.addSocketListener(
+      'large_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.addSocketListener(
+      'large_party_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'large_party_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'large_party_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'large_party_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'group_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_joiner_joined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_host_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_joiner_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_arrival_confirmed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_started',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_duration_extended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_host_confirmed_ended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_admin_confirmed_ended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_settled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_status_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_host_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_host_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_host_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_member_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'strangers_meet_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_status_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'upcoming_night_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'partner_request_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'partner_request_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'partner_request_accepted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'partner_request_declined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'partner_request_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
     ApiService.addSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
-    ApiService.addSocketListener('notifications_read_all', _onNotificationsReadAll);
+    ApiService.addSocketListener(
+      'wallet_refund_processed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'feed_refresh_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'notifications_read_all',
+      _onNotificationsReadAll,
+    );
   }
 
   void _disposeSocketListeners() {
     ApiService.removeSocketListener('party_plan_created', _onPartyPlanCreated);
     ApiService.removeSocketListener('party_plan_deleted', _onPartyPlanDeleted);
-    ApiService.removeSocketListener('party_plan_reposted', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_made_public', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_guest_cancelled_prompt', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_cancellation_declined', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_reach_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_reach_prompt', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_arrival_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_created', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_received', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_updated', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_rejected', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_relisted', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_request_accepted', _onPartyPlanRequestAccepted);
-    ApiService.removeSocketListener('party_plan_match_success', _onPartyPlanMatchSuccess);
-    ApiService.removeSocketListener('party_plan_host_paid', _onPartyPlanHostPaid);
-    ApiService.removeSocketListener('party_plan_joiner_paid', _onPartyPlanJoinerPaid);
-    ApiService.removeSocketListener('party_plan_arrival_confirmed', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_arrival_window_opened', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('party_plan_ticket_generated', _onPartyPlanRequestUpdated);
+    ApiService.removeSocketListener(
+      'party_plan_reposted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_made_public',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_guest_cancelled_prompt',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_cancellation_declined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_reach_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_reach_prompt',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_arrival_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_relisted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_request_accepted',
+      _onPartyPlanRequestAccepted,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_match_success',
+      _onPartyPlanMatchSuccess,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_host_paid',
+      _onPartyPlanHostPaid,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_joiner_paid',
+      _onPartyPlanJoinerPaid,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_arrival_confirmed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_arrival_window_opened',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'party_plan_ticket_generated',
+      _onPartyPlanRequestUpdated,
+    );
     ApiService.removeSocketListener('plan_unavailable', _onPlanUnavailable);
-    ApiService.removeSocketListener('party_plan_partner_selected', _onPlanUnavailable);
-    ApiService.removeSocketListener('notification_created', _onNotificationCreated);
-    ApiService.removeSocketListener('notification_updated', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('notification_received', _onNotificationCreated);
-    ApiService.removeSocketListener('badge_updated', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('live_feed_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('venue_booking_status_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('group_party_payment_success', _onGroupPartyUpdated);
-    ApiService.removeSocketListener('large_party_status_update', _onGroupPartyUpdated);
-    ApiService.removeSocketListener('large_party_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('large_party_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('large_party_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('large_party_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('group_party_status_update', _onGroupPartyUpdated);
-    ApiService.removeSocketListener('strangers_meet_created', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_joiner_joined', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_paid', _onPartyPlanHostPaid);
-    ApiService.removeSocketListener('strangers_meet_joiner_paid', _onPartyPlanJoinerPaid);
-    ApiService.removeSocketListener('strangers_meet_arrival_confirmed', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_started', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_duration_extended', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_confirmed_ended', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_admin_confirmed_ended', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_settled', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_updated', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_status_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_host_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_member_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('strangers_meet_refund_paid', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_created', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_status_update', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_cancellation_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_cancellation_approved', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('upcoming_night_cancellation_rejected', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('partner_request_created', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('partner_request_received', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('partner_request_accepted', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('partner_request_declined', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('partner_request_cancelled', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('wallet_updated', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('wallet_refund_processed', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('feed_refresh_requested', _onPartyPlanRequestUpdated);
-    ApiService.removeSocketListener('notifications_read_all', _onNotificationsReadAll);
+    ApiService.removeSocketListener(
+      'party_plan_partner_selected',
+      _onPlanUnavailable,
+    );
+    ApiService.removeSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
+    ApiService.removeSocketListener(
+      'notification_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'notification_received',
+      _onNotificationCreated,
+    );
+    ApiService.removeSocketListener(
+      'badge_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'live_feed_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'venue_booking_status_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'group_party_created',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'group_party_payment_success',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'group_party_cancelled',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'large_party_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'group_party_status_update',
+      _onGroupPartyUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_joiner_joined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_host_paid',
+      _onPartyPlanHostPaid,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_joiner_paid',
+      _onPartyPlanJoinerPaid,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_arrival_confirmed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_started',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_duration_extended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_host_confirmed_ended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_admin_confirmed_ended',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_settled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_status_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_host_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_host_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_host_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_member_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'strangers_meet_refund_paid',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_status_update',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_cancellation_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_cancellation_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'upcoming_night_cancellation_rejected',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'partner_request_created',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'partner_request_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'partner_request_accepted',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'partner_request_declined',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'partner_request_cancelled',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'wallet_updated',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'wallet_refund_processed',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'feed_refresh_requested',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'notifications_read_all',
+      _onNotificationsReadAll,
+    );
   }
 
   bool _hasPendingRefetch = false;
 
   void _onNotificationsReadAll(dynamic data) {
     if (!mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanRequestUpdated(dynamic data) {
     if (!mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -432,22 +887,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final notifMap = rawMap['notification'] is Map
           ? Map<String, dynamic>.from(rawMap['notification'])
           : rawMap;
-      final recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+      final recipientId =
+          (notifMap['recipientUserId'] ??
+                  notifMap['recipientId'] ??
+                  notifMap['userId'] ??
+                  '')
+              .toString();
       final currentUid = ApiService.currentUserId ?? '';
-      if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
+      if (recipientId.isNotEmpty &&
+          currentUid.isNotEmpty &&
+          recipientId != currentUid) {
         return;
       }
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
       _loadGroupPartyBookings();
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'New Notification 🔔',
         body: notifMap['body'] ?? '',
         data: notifMap['data'] is Map
             ? Map<String, dynamic>.from(notifMap['data'])
-            : (notifMap['metadata'] is Map ? Map<String, dynamic>.from(notifMap['metadata']) : notifMap),
+            : (notifMap['metadata'] is Map
+                  ? Map<String, dynamic>.from(notifMap['metadata'])
+                  : notifMap),
       );
     } else {
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
       _loadGroupPartyBookings();
     }
   }
@@ -456,68 +920,85 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (!mounted || !context.mounted) return;
     if (data is Map) {
       final notifMap = Map<String, dynamic>.from(data);
-      final recipientId = (notifMap['recipientUserId'] ?? notifMap['recipientId'] ?? notifMap['userId'] ?? '').toString();
+      final recipientId =
+          (notifMap['recipientUserId'] ??
+                  notifMap['recipientId'] ??
+                  notifMap['userId'] ??
+                  '')
+              .toString();
       final currentUid = ApiService.currentUserId ?? '';
-      if (recipientId.isNotEmpty && currentUid.isNotEmpty && recipientId != currentUid) {
+      if (recipientId.isNotEmpty &&
+          currentUid.isNotEmpty &&
+          recipientId != currentUid) {
         return;
       }
+      _loadFeed(showLoader: false, forceRefresh: true);
       _loadGroupPartyBookings();
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'Group Party Updated 🎉',
-        body: notifMap['body'] ?? notifMap['message'] ?? 'Your group party booking status has been updated.',
-        data: notifMap['data'] is Map ? Map<String, dynamic>.from(notifMap['data']) : null,
+        body:
+            notifMap['body'] ??
+            notifMap['message'] ??
+            'Your group party booking status has been updated.',
+        data: notifMap['data'] is Map
+            ? Map<String, dynamic>.from(notifMap['data'])
+            : null,
       );
     } else {
+      _loadFeed(showLoader: false, forceRefresh: true);
       _loadGroupPartyBookings();
     }
   }
 
   void _onPartyPlanCreated(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanDeleted(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanRequestAccepted(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanMatchSuccess(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanHostPaid(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanJoinerPaid(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPlanUnavailable(dynamic data) {
     if (!mounted || !context.mounted) return;
     if (data is Map) {
-      final pId = (data['planId'] ?? data['partyPlanId'] ?? data['id'])?.toString();
+      final pId = (data['planId'] ?? data['partyPlanId'] ?? data['id'])
+          ?.toString();
       if (pId != null && pId.isNotEmpty) {
         ApiService.markPartyPlanAsCancelledLocal(pId);
       }
     }
-    _loadFeed(showLoader: false);
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   Future<void> _loadGroupPartyBookings() async {
     final requestUserId = _sessionUserId;
     try {
       final list = await ApiService.fetchMyLargePartyBookings();
-      if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
+      if (mounted &&
+          requestUserId == ApiService.currentUserId &&
+          requestUserId == _sessionUserId) {
         setState(() {
           _largePartyBookings = list;
         });
@@ -529,7 +1010,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   bool _hasPendingForceRefresh = false;
 
-  Future<void> _loadFeed({bool showLoader = true, bool forceRefresh = false}) async {
+  Future<void> _loadFeed({
+    bool showLoader = true,
+    bool forceRefresh = false,
+  }) async {
     final requestUserId = _sessionUserId;
     if (_isFetchingFeed) {
       _hasPendingRefetch = true;
@@ -544,7 +1028,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     try {
       await ApiService.loadLocalReadIds();
       final responses = await Future.wait([
-        ApiService.fetchLiveFeedData(),
+        ApiService.fetchLiveFeedData(forceRefresh: forceRefresh),
         ApiService.fetchNotifications(forceRefresh: forceRefresh),
         ApiService.fetchMyLargePartyBookings(forceRefresh: forceRefresh),
         ApiService.fetchBookings(forceRefresh: forceRefresh),
@@ -554,7 +1038,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final notifs = responses[1] as List<Map<String, dynamic>>;
       final largeParties = responses[2] as List<Map<String, dynamic>>;
       final rawBookings = (responses[3] as List<dynamic>?) ?? [];
-      final userBookings = rawBookings.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList();
+      final userBookings = rawBookings
+          .whereType<Map>()
+          .map((b) => Map<String, dynamic>.from(b))
+          .toList();
 
       List<Map<String, dynamic>> combined = [
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
@@ -562,13 +1049,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
       ];
 
-      if (mounted && requestUserId == ApiService.currentUserId && requestUserId == _sessionUserId) {
+      if (mounted &&
+          requestUserId == ApiService.currentUserId &&
+          requestUserId == _sessionUserId) {
         _feedItems = combined;
         _largePartyBookings = largeParties;
         _userBookings = userBookings;
         _notifications = notifs.map((n) {
           final nId = n['id']?.toString() ?? '';
-          if (_localReadNotificationIds.contains(nId) || ApiService.localReadRequestIds.contains(nId)) {
+          if (_localReadNotificationIds.contains(nId) ||
+              ApiService.localReadRequestIds.contains(nId)) {
             return {...n, 'read': true, 'isRead': true};
           }
           return n;
@@ -581,7 +1071,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (e) {
       debugPrint('Error loading live feed: $e');
-      if (mounted && requestUserId == _sessionUserId) setState(() => _isLoading = false);
+      if (mounted && requestUserId == _sessionUserId) {
+        setState(() => _isLoading = false);
+      }
     } finally {
       _isFetchingFeed = false;
       if (_hasPendingRefetch && mounted) {
@@ -610,12 +1102,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> markAllNotificationsAsRead() async {
-    final allItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
+    final allItems = _cachedTimeline.isNotEmpty
+        ? _cachedTimeline
+        : _buildUnifiedTimeline();
     for (final item in allItems) {
-      if (item.badgeText == 'ACTION REQUIRED' || item.badgeText == 'INVITE' || item.badgeText == 'NEW REQUEST' || item.priority == 'CRITICAL') {
+      if (item.badgeText == 'ACTION REQUIRED' ||
+          item.badgeText == 'INVITE' ||
+          item.badgeText == 'NEW REQUEST' ||
+          item.priority == 'CRITICAL') {
         continue; // Active action required items keep their action badge
       }
-      final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_|venue_booking_timeline_)'), '');
+      final rawId =
+          item.rawData['id']?.toString() ??
+          item.id.replaceAll(
+            RegExp(r'^(gp_|pp_|sm_|venue_booking_timeline_)'),
+            '',
+          );
       if (rawId.isNotEmpty) {
         ApiService.localReadRequestIds.add(rawId);
         ApiService.localReadRequestIds.add(item.id);
@@ -632,11 +1134,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // ── Instant optimistic local update (0ms UI delay!) ──────────────
     if (mounted) {
-      _notifications = _notifications
-          .map((n) {
-            return {...n, 'read': true, 'isRead': true};
-          })
-          .toList();
+      _notifications = _notifications.map((n) {
+        return {...n, 'read': true, 'isRead': true};
+      }).toList();
       _cachedTimeline = _buildUnifiedTimeline();
       setState(() {});
       widget.onCountChanged?.call();
@@ -671,12 +1171,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final cleanReq = ApiService.cleanBookingId(reqId);
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
-      final rId = (f['id'] ?? f['requestId'] ?? f['data']?['id'] ?? '').toString();
+      final rId = (f['id'] ?? f['requestId'] ?? f['data']?['id'] ?? '')
+          .toString();
       final pId = (f['planId'] ?? f['partyPlanId'] ?? '').toString();
       final cleanF = ApiService.cleanBookingId(rId);
       final cleanP = ApiService.cleanBookingId(pId);
 
-      if (rId == reqId || cleanF == cleanReq || pId == reqId || cleanP == cleanReq) {
+      if (rId == reqId ||
+          cleanF == cleanReq ||
+          pId == reqId ||
+          cleanP == cleanReq) {
         final updated = Map<String, dynamic>.from(f);
         updated['status'] = newStatus;
         updated['requestStatus'] = newStatus;
@@ -691,8 +1195,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           };
         }
         if (updated['pendingIncomingRequests'] is List) {
-          final reqs = List<Map<String, dynamic>>.from(updated['pendingIncomingRequests']);
-          reqs.removeWhere((r) => (r['id']?.toString() == reqId || ApiService.cleanBookingId(r['id']?.toString() ?? '') == cleanReq));
+          final reqs = List<Map<String, dynamic>>.from(
+            updated['pendingIncomingRequests'],
+          );
+          reqs.removeWhere(
+            (r) =>
+                (r['id']?.toString() == reqId ||
+                ApiService.cleanBookingId(r['id']?.toString() ?? '') ==
+                    cleanReq),
+          );
           updated['pendingIncomingRequests'] = reqs;
         }
         _feedItems[i] = updated;
@@ -707,11 +1218,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final cleanReq = ApiService.cleanBookingId(reqId);
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
-      final rId = (f['id'] ?? f['requestId'] ?? f['inviteId'] ?? f['data']?['id'] ?? '').toString();
+      final rId =
+          (f['id'] ?? f['requestId'] ?? f['inviteId'] ?? f['data']?['id'] ?? '')
+              .toString();
       final pId = (f['planId'] ?? f['partyPlanId'] ?? '').toString();
       final cleanF = ApiService.cleanBookingId(rId);
       final cleanP = ApiService.cleanBookingId(pId);
-      if (rId == reqId || cleanF == cleanReq || pId == reqId || cleanP == cleanReq) {
+      if (rId == reqId ||
+          cleanF == cleanReq ||
+          pId == reqId ||
+          cleanP == cleanReq) {
         final updated = Map<String, dynamic>.from(f);
         updated['status'] = newStatus;
         updated['inviteStatus'] = newStatus;
@@ -729,17 +1245,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     widget.onCountChanged?.call();
   }
 
-  void _optimisticallyUpdateStrangersMeetJoinRequest(String meetId, String joinerId, String newStatus) {
+  void _optimisticallyUpdateStrangersMeetJoinRequest(
+    String meetId,
+    String joinerId,
+    String newStatus,
+  ) {
     final cleanMeet = ApiService.cleanBookingId(meetId);
     final cleanJoiner = ApiService.cleanBookingId(joinerId);
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
-      final mId = (f['meetId'] ?? f['strangersMeetId'] ?? f['data']?['meetId'] ?? f['data']?['strangersMeetId'] ?? f['id'] ?? '').toString();
-      final jId = (f['joinerId'] ?? f['id'] ?? f['data']?['joinerId'] ?? '').toString();
+      final mId =
+          (f['meetId'] ??
+                  f['strangersMeetId'] ??
+                  f['data']?['meetId'] ??
+                  f['data']?['strangersMeetId'] ??
+                  f['id'] ??
+                  '')
+              .toString();
+      final jId = (f['joinerId'] ?? f['id'] ?? f['data']?['joinerId'] ?? '')
+          .toString();
       final cleanM = ApiService.cleanBookingId(mId);
       final cleanJ = ApiService.cleanBookingId(jId);
 
-      if ((cleanM == cleanMeet || cleanMeet.isEmpty) && (cleanJ == cleanJoiner || jId == joinerId)) {
+      if ((cleanM == cleanMeet || cleanMeet.isEmpty) &&
+          (cleanJ == cleanJoiner || jId == joinerId)) {
         final updated = Map<String, dynamic>.from(f);
         updated['status'] = newStatus;
         updated['joinStatus'] = newStatus;
@@ -747,8 +1276,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else if (cleanM == cleanMeet || mId == meetId) {
         final updated = Map<String, dynamic>.from(f);
         if (updated['pendingIncomingRequests'] is List) {
-          final list = List<Map<String, dynamic>>.from(updated['pendingIncomingRequests']);
-          list.removeWhere((r) => r['id']?.toString() == joinerId || r['joinerId']?.toString() == joinerId);
+          final list = List<Map<String, dynamic>>.from(
+            updated['pendingIncomingRequests'],
+          );
+          list.removeWhere(
+            (r) =>
+                r['id']?.toString() == joinerId ||
+                r['joinerId']?.toString() == joinerId,
+          );
           updated['pendingIncomingRequests'] = list;
         }
         _feedItems[i] = updated;
@@ -759,7 +1294,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     widget.onCountChanged?.call();
   }
 
-  void _optimisticallyUpdateNightPartnerRequest(String matchId, String newStatus) {
+  void _optimisticallyUpdateNightPartnerRequest(
+    String matchId,
+    String newStatus,
+  ) {
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
       final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
@@ -773,7 +1311,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     for (int i = 0; i < _notifications.length; i++) {
       final n = _notifications[i];
-      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? '').toString();
+      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? '')
+          .toString();
       if (id == matchId || id.contains(matchId)) {
         _notifications[i] = {
           ...n,
@@ -787,26 +1326,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     widget.onCountChanged?.call();
   }
 
-  void _optimisticallyMarkBookingCancelled(String rawBookingId, {double? refundAmount, int? refundPercentage}) {
+  void _optimisticallyMarkBookingCancelled(
+    String rawBookingId, {
+    double? refundAmount,
+    int? refundPercentage,
+  }) {
     final cleanId = ApiService.cleanBookingId(rawBookingId);
     if (cleanId.isEmpty) return;
 
     for (int i = 0; i < _userBookings.length; i++) {
-      final bId = ApiService.cleanBookingId((_userBookings[i]['id'] ?? _userBookings[i]['bookingId'] ?? '').toString());
+      final bId = ApiService.cleanBookingId(
+        (_userBookings[i]['id'] ?? _userBookings[i]['bookingId'] ?? '')
+            .toString(),
+      );
       if (bId == cleanId) {
         _userBookings[i] = {
           ..._userBookings[i],
           'status': 'cancelled',
           'bookingStatus': 'cancelled',
           'paymentStatus': 'refunded',
-          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundAmount != null && refundAmount > 0)
+            'refundAmount': refundAmount,
           'refundPercentage': ?refundPercentage,
         };
       }
     }
 
     for (int i = 0; i < _largePartyBookings.length; i++) {
-      final bId = ApiService.cleanBookingId((_largePartyBookings[i]['id'] ?? _largePartyBookings[i]['bookingId'] ?? '').toString());
+      final bId = ApiService.cleanBookingId(
+        (_largePartyBookings[i]['id'] ??
+                _largePartyBookings[i]['bookingId'] ??
+                '')
+            .toString(),
+      );
       if (bId == cleanId) {
         _largePartyBookings[i] = {
           ..._largePartyBookings[i],
@@ -814,7 +1366,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           'overallStatus': 'cancelled',
           'cancelStatus': 'COMPLETED',
           'paymentStatus': 'refunded',
-          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundAmount != null && refundAmount > 0)
+            'refundAmount': refundAmount,
           'refundPercentage': ?refundPercentage,
         };
       }
@@ -823,34 +1376,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (int i = 0; i < _notifications.length; i++) {
       final n = _notifications[i];
       final nId = ApiService.cleanBookingId((n['id'] ?? '').toString());
-      final entityId = ApiService.cleanBookingId((n['entityId'] ?? n['data']?['bookingId'] ?? '').toString());
+      final entityId = ApiService.cleanBookingId(
+        (n['entityId'] ?? n['data']?['bookingId'] ?? '').toString(),
+      );
       if (nId.contains(cleanId) || entityId == cleanId) {
         _notifications[i] = {
           ...n,
           'status': 'cancelled',
           'paymentStatus': 'refunded',
-          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundAmount != null && refundAmount > 0)
+            'refundAmount': refundAmount,
           'refundPercentage': ?refundPercentage,
           'data': {
             if (n['data'] is Map) ...(n['data'] as Map<String, dynamic>),
             'status': 'cancelled',
             'paymentStatus': 'refunded',
-            if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+            if (refundAmount != null && refundAmount > 0)
+              'refundAmount': refundAmount,
             'refundPercentage': ?refundPercentage,
-          }
+          },
         };
       }
     }
 
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
-      final fId = ApiService.cleanBookingId((f['id'] ?? f['bookingId'] ?? '').toString());
+      final fId = ApiService.cleanBookingId(
+        (f['id'] ?? f['bookingId'] ?? '').toString(),
+      );
       if (fId == cleanId) {
         _feedItems[i] = {
           ...f,
           'status': 'cancelled',
           'paymentStatus': 'refunded',
-          if (refundAmount != null && refundAmount > 0) 'refundAmount': refundAmount,
+          if (refundAmount != null && refundAmount > 0)
+            'refundAmount': refundAmount,
           'refundPercentage': ?refundPercentage,
         };
       }
@@ -873,10 +1433,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _onLargePartyPaymentError(PaymentFailureResponse response) {
-    debugPrint('Large Party Payment Error: ${response.code} - ${response.message}');
+    debugPrint(
+      'Large Party Payment Error: ${response.code} - ${response.message}',
+    );
     _pendingLargePartyBookingId = null;
     if (mounted) {
-      final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+      final isCancelled =
+          response.code == Razorpay.PAYMENT_CANCELLED ||
           response.code == 2 ||
           (response.message != null &&
               (response.message!.toLowerCase().contains('cancel') ||
@@ -922,12 +1485,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _loadFeed(showLoader: false);
         TopNotificationBanner.show(
           title: 'Group Party Confirmed! 🎉',
-          body: 'Your payment was verified successfully. Tap to view your ticket!',
+          body:
+              'Your payment was verified successfully. Tap to view your ticket!',
           data: {'type': 'group_party_confirmed', 'partyId': bookingId},
         );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
+            content: Text(
+              '🎉 Group Party Paid successfully! Ticket is confirmed.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -938,7 +1504,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _initiateLargePartyPayment(Map<String, dynamic> booking) async {
-    final rawBookingId = booking['bookingId']?.toString() ??
+    final rawBookingId =
+        booking['bookingId']?.toString() ??
         booking['metadata']?['bookingId']?.toString() ??
         booking['metadata']?['partyId']?.toString() ??
         booking['entityId']?.toString() ??
@@ -946,7 +1513,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         booking['groupPartyId']?.toString() ??
         booking['data']?['partyId']?.toString() ??
         booking['data']?['bookingId']?.toString() ??
-        booking['id']?.toString() ?? '';
+        booking['id']?.toString() ??
+        '';
     final bookingId = ApiService.cleanBookingId(rawBookingId);
     if (bookingId.isEmpty) return;
 
@@ -955,312 +1523,410 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     setState(() => _processingPaymentBookingId = trackingId);
 
     try {
-      final venueName = booking['venue']?['name'] ?? booking['venueName'] ?? 'Venue';
-      final rawAmount = booking['totalAmount'] ?? booking['adminPaymentAmount'] ?? booking['amount'] ?? booking['price'] ?? 1999.0;
-      final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
+      final venueName =
+          booking['venue']?['name'] ?? booking['venueName'] ?? 'Venue';
+      final rawAmount =
+          booking['totalAmount'] ??
+          booking['adminPaymentAmount'] ??
+          booking['amount'] ??
+          booking['price'] ??
+          1999.0;
+      final double amount = (rawAmount is num)
+          ? rawAmount.toDouble()
+          : (double.tryParse(rawAmount.toString()) ?? 1999.0);
 
       final bool? sheetSuccess = await SmartCheckoutSheet.show(
-      context: context,
-      title: 'Group Party Booking',
-      subtitle: 'Deposit payment for Group Party at $venueName',
-      itemPrice: amount,
-      onWalletPayment: () async {
-        final res = await ApiService.payWithWallet(
-          amount: amount,
-          bookingId: bookingId,
-          paymentType: 'group_party',
-        );
-        if (res != null && res['success'] == true) {
-          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
-          final confirmRes = await ApiService.verifyLargePartyPayment(
-            bookingId,
-            razorpayOrderId: 'order_mock_wallet',
-            razorpayPaymentId: 'wallet_$transactionId',
-            razorpaySignature: 'mock_signature',
+        context: context,
+        title: 'Group Party Booking',
+        subtitle: 'Deposit payment for Group Party at $venueName',
+        itemPrice: amount,
+        onWalletPayment: () async {
+          final res = await ApiService.payWithWallet(
+            amount: amount,
+            bookingId: bookingId,
+            paymentType: 'group_party',
           );
-          if (confirmRes) {
-            return true;
+          if (res != null && res['success'] == true) {
+            final transactionId =
+                res['data']?['transactionId']?.toString() ?? 'wallet';
+            final confirmRes = await ApiService.verifyLargePartyPayment(
+              bookingId,
+              razorpayOrderId: 'order_mock_wallet',
+              razorpayPaymentId: 'wallet_$transactionId',
+              razorpaySignature: 'mock_signature',
+            );
+            if (confirmRes) {
+              return true;
+            }
           }
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(res?['message'] ?? 'Wallet payment failed'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
-        return false;
-      },
-      onDirectPayment: () async {
-        _pendingLargePartyBookingId = bookingId;
-        final result = await ApiService.initiateLargePartyPayment(bookingId);
-        if (result != null && result['success'] == true) {
-          final orderData = result['order'] ?? result['data'] ?? result;
-          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
-          final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
-          final num amountInPaise = orderData['amount'] ?? ((amount * 100).toInt());
-
-          if (kIsWeb || _razorpay == null) {
-            final bool? shouldConfirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: const Color(0xFF1E1035),
-                title: const Text('Direct Payment Gateway', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                content: Text('Simulate Razorpay payment of ₹${amount.toInt()} for Group Party at $venueName?', style: const TextStyle(color: Colors.white70)),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
-                    child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res?['message'] ?? 'Wallet payment failed'),
+                backgroundColor: Colors.redAccent,
               ),
             );
+          }
+          return false;
+        },
+        onDirectPayment: () async {
+          _pendingLargePartyBookingId = bookingId;
+          final result = await ApiService.initiateLargePartyPayment(bookingId);
+          if (result != null && result['success'] == true) {
+            final orderData = result['order'] ?? result['data'] ?? result;
+            final razorpayKey =
+                result['razorpayKeyId']?.toString() ??
+                orderData['key']?.toString() ??
+                '';
+            final orderId =
+                orderData['razorpayOrderId']?.toString() ??
+                orderData['id']?.toString() ??
+                '';
+            final num amountInPaise =
+                orderData['amount'] ?? ((amount * 100).toInt());
 
-            if (shouldConfirm == true) {
-              final success = await ApiService.verifyLargePartyPayment(
-                bookingId,
-                razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-                razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
-                razorpaySignature: 'mock_signature',
-              );
-              if (success && mounted) {
-                await _loadGroupPartyBookings();
-                _loadFeed(showLoader: false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
-                    backgroundColor: Colors.green,
+            if (kIsWeb || _razorpay == null) {
+              final bool? shouldConfirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E1035),
+                  title: const Text(
+                    'Direct Payment Gateway',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  content: Text(
+                    'Simulate Razorpay payment of ₹${amount.toInt()} for Group Party at $venueName?',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                      ),
+                      child: const Text(
+                        'Confirm Pay',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (shouldConfirm == true) {
+                final success = await ApiService.verifyLargePartyPayment(
+                  bookingId,
+                  razorpayOrderId: orderId.isNotEmpty
+                      ? orderId
+                      : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+                  razorpayPaymentId:
+                      'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
+                  razorpaySignature: 'mock_signature',
                 );
-                return true;
+                if (success && mounted) {
+                  await _loadGroupPartyBookings();
+                  _loadFeed(showLoader: false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '🎉 Group Party Paid successfully! Ticket is confirmed.',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  return true;
+                }
+                return false;
+              } else {
+                _pendingLargePartyBookingId = null;
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Payment cancelled.'),
+                      backgroundColor: Colors.black87,
+                    ),
+                  );
+                }
+                return false;
               }
-              return false;
-            } else {
+            }
+
+            final effectiveKey =
+                (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123')
+                ? razorpayKey
+                : 'rzp_test_T1rwVokR7tFger';
+            final options = {
+              'key': effectiveKey,
+              if (orderId.isNotEmpty && !orderId.startsWith('order_mock_'))
+                'order_id': orderId,
+              'amount': amountInPaise,
+              'name': 'Lunara – Group Party',
+              'description': 'Group Party at $venueName',
+              'prefill': {
+                'contact': booking['mobileNumber']?.toString() ?? '9999999999',
+                'email': 'user@lunara.app',
+              },
+              'theme': {'color': '#7C3AED'},
+            };
+
+            try {
+              _razorpay?.open(options);
+              return 'gateway_launched';
+            } catch (e) {
+              debugPrint('Razorpay open error: $e');
               _pendingLargePartyBookingId = null;
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Payment cancelled.'),
-                    backgroundColor: Colors.black87,
+                  SnackBar(
+                    content: Text('Could not open payment gateway: $e'),
+                    backgroundColor: Colors.redAccent,
                   ),
                 );
               }
               return false;
             }
-          }
-
-          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
-          final options = {
-            'key': effectiveKey,
-            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
-            'amount': amountInPaise,
-            'name': 'Lunara – Group Party',
-            'description': 'Group Party at $venueName',
-            'prefill': {
-              'contact': booking['mobileNumber']?.toString() ?? '9999999999',
-              'email': 'user@lunara.app',
-            },
-            'theme': {'color': '#7C3AED'},
-          };
-
-          try {
-            _razorpay?.open(options);
-            return 'gateway_launched';
-          } catch (e) {
-            debugPrint('Razorpay open error: $e');
+          } else if (mounted) {
             _pendingLargePartyBookingId = null;
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Could not open payment gateway: $e'),
-                  backgroundColor: Colors.redAccent,
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  result?['message']?.toString() ??
+                      'Failed to initiate payment gateway',
                 ),
-              );
-            }
-            return false;
-          }
-        } else if (mounted) {
-          _pendingLargePartyBookingId = null;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          return false;
-        }
-        return false;
-      },
-      onHybridPayment: (shortfall) async {
-        _pendingLargePartyBookingId = bookingId;
-        final result = await ApiService.initiateLargePartyPayment(bookingId);
-        if (result != null && result['success'] == true) {
-          final orderData = result['order'] ?? result['data'] ?? result;
-          final razorpayKey = result['razorpayKeyId']?.toString() ?? orderData['key']?.toString() ?? '';
-          final orderId = orderData['razorpayOrderId']?.toString() ?? orderData['id']?.toString() ?? '';
-          final shortfallPaise = (shortfall * 100).toInt();
-
-          if (kIsWeb || _razorpay == null) {
-            final bool? shouldConfirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: const Color(0xFF1E1035),
-                title: const Text('Smart Hybrid Payment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                content: Text('Pay shortfall of ₹${shortfall.toInt()} via Direct Gateway + remaining from wallet for Group Party at $venueName?', style: const TextStyle(color: Colors.white70)),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
-                    child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
+                backgroundColor: Colors.redAccent,
               ),
             );
+            return false;
+          }
+          return false;
+        },
+        onHybridPayment: (shortfall) async {
+          _pendingLargePartyBookingId = bookingId;
+          final result = await ApiService.initiateLargePartyPayment(bookingId);
+          if (result != null && result['success'] == true) {
+            final orderData = result['order'] ?? result['data'] ?? result;
+            final razorpayKey =
+                result['razorpayKeyId']?.toString() ??
+                orderData['key']?.toString() ??
+                '';
+            final orderId =
+                orderData['razorpayOrderId']?.toString() ??
+                orderData['id']?.toString() ??
+                '';
+            final shortfallPaise = (shortfall * 100).toInt();
 
-            if (shouldConfirm == true) {
-              await ApiService.payWithWallet(
-                amount: amount,
-                bookingId: bookingId,
-                paymentType: 'group_party',
-              );
-              final success = await ApiService.verifyLargePartyPayment(
-                bookingId,
-                razorpayOrderId: orderId.isNotEmpty ? orderId : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
-                razorpayPaymentId: 'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
-                razorpaySignature: 'mock_signature',
-              );
-              if (success && mounted) {
-                await _loadGroupPartyBookings();
-                _loadFeed(showLoader: false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🎉 Group Party Paid successfully! Ticket is confirmed.'),
-                    backgroundColor: Colors.green,
+            if (kIsWeb || _razorpay == null) {
+              final bool? shouldConfirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E1035),
+                  title: const Text(
+                    'Smart Hybrid Payment',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  content: Text(
+                    'Pay shortfall of ₹${shortfall.toInt()} via Direct Gateway + remaining from wallet for Group Party at $venueName?',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                      ),
+                      child: const Text(
+                        'Confirm Pay',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (shouldConfirm == true) {
+                await ApiService.payWithWallet(
+                  amount: amount,
+                  bookingId: bookingId,
+                  paymentType: 'group_party',
                 );
-                return true;
+                final success = await ApiService.verifyLargePartyPayment(
+                  bookingId,
+                  razorpayOrderId: orderId.isNotEmpty
+                      ? orderId
+                      : 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+                  razorpayPaymentId:
+                      'mock_payment_${DateTime.now().millisecondsSinceEpoch}',
+                  razorpaySignature: 'mock_signature',
+                );
+                if (success && mounted) {
+                  await _loadGroupPartyBookings();
+                  _loadFeed(showLoader: false);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '🎉 Group Party Paid successfully! Ticket is confirmed.',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  return true;
+                }
+                return false;
+              } else {
+                _pendingLargePartyBookingId = null;
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Payment cancelled.'),
+                      backgroundColor: Colors.black87,
+                    ),
+                  );
+                }
+                return false;
               }
-              return false;
-            } else {
+            }
+
+            final effectiveKey =
+                (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123')
+                ? razorpayKey
+                : 'rzp_test_T1rwVokR7tFger';
+            final options = {
+              'key': effectiveKey,
+              if (orderId.isNotEmpty && !orderId.startsWith('order_mock_'))
+                'order_id': orderId,
+              'amount': shortfallPaise,
+              'name': 'Lunara – Group Party Shortfall',
+              'description': 'Group Party Shortfall at $venueName',
+              'prefill': {
+                'contact': booking['mobileNumber']?.toString() ?? '9999999999',
+                'email': 'user@lunara.app',
+              },
+              'theme': {'color': '#7C3AED'},
+            };
+
+            try {
+              _razorpay?.open(options);
+              return 'gateway_launched';
+            } catch (e) {
+              debugPrint('Razorpay open error: $e');
               _pendingLargePartyBookingId = null;
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Payment cancelled.'),
-                    backgroundColor: Colors.black87,
+                  SnackBar(
+                    content: Text('Could not open payment gateway: $e'),
+                    backgroundColor: Colors.redAccent,
                   ),
                 );
               }
               return false;
             }
-          }
-
-          final effectiveKey = (razorpayKey.isNotEmpty && razorpayKey != 'rzp_test_123') ? razorpayKey : 'rzp_test_T1rwVokR7tFger';
-          final options = {
-            'key': effectiveKey,
-            if (orderId.isNotEmpty && !orderId.startsWith('order_mock_')) 'order_id': orderId,
-            'amount': shortfallPaise,
-            'name': 'Lunara – Group Party Shortfall',
-            'description': 'Group Party Shortfall at $venueName',
-            'prefill': {
-              'contact': booking['mobileNumber']?.toString() ?? '9999999999',
-              'email': 'user@lunara.app',
-            },
-            'theme': {'color': '#7C3AED'},
-          };
-
-          try {
-            _razorpay?.open(options);
-            return 'gateway_launched';
-          } catch (e) {
-            debugPrint('Razorpay open error: $e');
+          } else if (mounted) {
             _pendingLargePartyBookingId = null;
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Could not open payment gateway: $e'),
-                  backgroundColor: Colors.redAccent,
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  result?['message']?.toString() ??
+                      'Failed to initiate payment gateway',
                 ),
-              );
-            }
+                backgroundColor: Colors.redAccent,
+              ),
+            );
             return false;
           }
-        } else if (mounted) {
-          _pendingLargePartyBookingId = null;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result?['message']?.toString() ?? 'Failed to initiate payment gateway'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
           return false;
-        }
-        return false;
-      },
-    );
-
-    if (sheetSuccess == true && mounted) {
-      TopNotificationBanner.show(
-        title: 'Group Party Confirmed! 🎉',
-        body: 'Your group party booking was paid via Smart Wallet. Ticket generated!',
-        data: {'type': 'group_party_confirmed', 'partyId': bookingId},
+        },
       );
-      _optimisticallyUpdateLargePartyPayment(bookingId: bookingId);
-      ApiService.notifyFeedNeedsRefresh();
-      await _loadGroupPartyBookings();
-      _loadFeed(showLoader: false);
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LargePartyTicketScreen(
-              booking: booking,
-              venue: booking['venue'] is Map ? booking['venue'] : {},
-            ),
-          ),
+
+      if (sheetSuccess == true && mounted) {
+        TopNotificationBanner.show(
+          title: 'Group Party Confirmed! 🎉',
+          body:
+              'Your group party booking was paid via Smart Wallet. Ticket generated!',
+          data: {'type': 'group_party_confirmed', 'partyId': bookingId},
         );
+        _optimisticallyUpdateLargePartyPayment(bookingId: bookingId);
+        ApiService.notifyFeedNeedsRefresh();
+        await _loadGroupPartyBookings();
+        _loadFeed(showLoader: false);
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LargePartyTicketScreen(
+                booking: booking,
+                venue: booking['venue'] is Map ? booking['venue'] : {},
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[LiveFeed] Error in _initiateLargePartyPayment: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _processingPaymentBookingId = null);
       }
     }
-  } catch (e) {
-    debugPrint('[LiveFeed] Error in _initiateLargePartyPayment: $e');
-  } finally {
-    if (mounted) {
-      setState(() => _processingPaymentBookingId = null);
-    }
   }
-}
 
-  Future<void> _initiatePendingBookingPayment(Map<String, dynamic> payPayload) async {
+  Future<void> _initiatePendingBookingPayment(
+    Map<String, dynamic> payPayload,
+  ) async {
     final type = (payPayload['type'] ?? '').toString();
-    final rawBookingId = (payPayload['bookingId'] ?? payPayload['id'] ?? '').toString();
+    final rawBookingId = (payPayload['bookingId'] ?? payPayload['id'] ?? '')
+        .toString();
     final cleanBookingId = ApiService.cleanBookingId(rawBookingId);
     final planId = (payPayload['planId'] ?? '').toString();
     final groupPartyId = (payPayload['groupPartyId'] ?? '').toString();
-    final venueName = payPayload['venueName'] ?? payPayload['venue']?['name'] ?? 'Venue';
-    final rawAmount = payPayload['amount'] ?? payPayload['amountDue'] ?? payPayload['totalAmount'] ?? payPayload['depositAmount'] ?? 1999.0;
-    final double amount = (rawAmount is num) ? rawAmount.toDouble() : (double.tryParse(rawAmount.toString()) ?? 1999.0);
+    final venueName =
+        payPayload['venueName'] ?? payPayload['venue']?['name'] ?? 'Venue';
+    final rawAmount =
+        payPayload['amount'] ??
+        payPayload['amountDue'] ??
+        payPayload['totalAmount'] ??
+        payPayload['depositAmount'] ??
+        1999.0;
+    final double amount = (rawAmount is num)
+        ? rawAmount.toDouble()
+        : (double.tryParse(rawAmount.toString()) ?? 1999.0);
 
-    if (type == 'group_party' || groupPartyId.isNotEmpty || (payPayload['isLargeParty'] == true) || payPayload['goingMode'] == 'party_request') {
+    if (type == 'group_party' ||
+        groupPartyId.isNotEmpty ||
+        (payPayload['isLargeParty'] == true) ||
+        payPayload['goingMode'] == 'party_request') {
       await _initiateLargePartyPayment(payPayload);
       return;
     }
 
-    if (type == 'party_plan' || type == 'party_plan_join' || planId.isNotEmpty) {
+    if (type == 'party_plan' ||
+        type == 'party_plan_join' ||
+        planId.isNotEmpty) {
       if (planId.isNotEmpty) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PartyPlanDetailScreen(plan: {'id': planId, ...payPayload}),
+            builder: (_) =>
+                PartyPlanDetailScreen(plan: {'id': planId, ...payPayload}),
           ),
         );
       }
@@ -1269,7 +1935,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (cleanBookingId.isEmpty) return;
 
-    final trackingId = cleanBookingId.isNotEmpty ? cleanBookingId : rawBookingId;
+    final trackingId = cleanBookingId.isNotEmpty
+        ? cleanBookingId
+        : rawBookingId;
     if (_processingPaymentBookingId != null) return;
     setState(() => _processingPaymentBookingId = trackingId);
 
@@ -1286,7 +1954,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             paymentType: 'booking',
           );
           if (res != null && res['success'] == true) {
-            final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+            final transactionId =
+                res['data']?['transactionId']?.toString() ?? 'wallet';
             final confirmRes = await ApiService.payNowBooking(
               cleanBookingId,
               paymentMethod: 'wallet',
@@ -1326,7 +1995,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(wRes?['message'] ?? 'Wallet deduction failed'),
+                    content: Text(
+                      wRes?['message'] ?? 'Wallet deduction failed',
+                    ),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
@@ -1347,16 +2018,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (sheetSuccess == true && mounted) {
         TopNotificationBanner.show(
           title: 'Booking Confirmed! 🎉',
-          body: 'Your booking at $venueName was paid via Smart Wallet. Ticket is ready in Ticket Pocket!',
+          body:
+              'Your booking at $venueName was paid via Smart Wallet. Ticket is ready in Ticket Pocket!',
         );
         ApiService.notifyFeedNeedsRefresh();
         _loadFeed(showLoader: false);
         if (mounted) {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const TicketPocketScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const TicketPocketScreen()),
           );
         }
       }
@@ -1377,25 +2047,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final cleanBookingId = ApiService.cleanBookingId(bookingId);
     final num amountInPaise = (amount * 100).toInt();
     const razorpayKey = 'rzp_test_T1rwVokR7tFger';
-    final orderId = 'order_bk_${cleanBookingId}_${DateTime.now().millisecondsSinceEpoch}';
+    final orderId =
+        'order_bk_${cleanBookingId}_${DateTime.now().millisecondsSinceEpoch}';
 
     // On Web or desktop: require explicit confirmation dialog (cancel aborts cleanly without confirming)
-    if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.linux) {
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux) {
       final bool? shouldConfirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1E1035),
-          title: const Text('Direct Payment Gateway', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: Text('Confirm payment of ₹${amount.toInt()} for booking at $venueName?', style: const TextStyle(color: Colors.white70)),
+          title: const Text(
+            'Direct Payment Gateway',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            'Confirm payment of ₹${amount.toInt()} for booking at $venueName?',
+            style: const TextStyle(color: Colors.white70),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white54),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(backgroundColor: LunaraTheme.electricViolet),
-              child: const Text('Confirm Pay', style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: LunaraTheme.electricViolet,
+              ),
+              child: const Text(
+                'Confirm Pay',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -1406,7 +2094,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           cleanBookingId,
           paymentMethod: isHybrid ? 'hybrid' : 'razorpay',
           razorpayOrderId: orderId,
-          razorpayPaymentId: 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+          razorpayPaymentId:
+              'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           razorpaySignature: 'mock_signature',
         );
         if (confirmRes != null && mounted) {
@@ -1438,8 +2127,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // On mobile devices (Android / iOS): Open real Razorpay payment gateway
     final rzp = Razorpay();
 
-    rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
-      try { rzp.clear(); } catch (_) {}
+    rzp.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+      PaymentSuccessResponse response,
+    ) async {
+      try {
+        rzp.clear();
+      } catch (_) {}
 
       final confirmRes = await ApiService.payNowBooking(
         cleanBookingId,
@@ -1453,7 +2146,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _loadFeed(showLoader: false);
         TopNotificationBanner.show(
           title: 'Booking Confirmed! 🎉',
-          body: 'Your payment at $venueName was verified successfully. Digital ticket ready!',
+          body:
+              'Your payment at $venueName was verified successfully. Digital ticket ready!',
         );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1465,8 +2159,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     });
 
     rzp.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
-      try { rzp.clear(); } catch (_) {}
-      final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+      try {
+        rzp.clear();
+      } catch (_) {}
+      final isCancelled =
+          response.code == Razorpay.PAYMENT_CANCELLED ||
           response.code == 2 ||
           (response.message != null &&
               (response.message!.toLowerCase().contains('cancel') ||
@@ -1486,7 +2183,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     });
 
     rzp.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
-      try { rzp.clear(); } catch (_) {}
+      try {
+        rzp.clear();
+      } catch (_) {}
     });
 
     final options = {
@@ -1495,7 +2194,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       'name': 'Lunara – Booking',
       'description': 'Booking at $venueName',
       'prefill': {
-        'contact': mobileNumber ?? ApiService.cachedCurrentUser?.phone ?? '9999999999',
+        'contact':
+            mobileNumber ?? ApiService.cachedCurrentUser?.phone ?? '9999999999',
         'email': ApiService.cachedCurrentUser?.email ?? 'user@lunara.app',
       },
       'theme': {'color': '#7C3AED'},
@@ -1546,10 +2246,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       debugPrint('Error accepting request: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
         _loadFeed(showLoader: false, forceRefresh: true);
       }
@@ -1588,10 +2285,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       debugPrint('Error rejecting request: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
         _loadFeed(showLoader: false, forceRefresh: true);
       }
@@ -1604,7 +2298,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic> planMap,
     List<Map<String, dynamic>> requests,
   ) {
-    final venueName = planMap['venueName'] ?? planMap['venue']?['name'] ?? 'Venue';
+    final venueName =
+        planMap['venueName'] ?? planMap['venue']?['name'] ?? 'Venue';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1644,7 +2339,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.people_alt_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -1673,7 +2372,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white60,
+                      ),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
@@ -1685,17 +2387,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   shrinkWrap: true,
                   itemCount: requests.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 12),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final req = requests[index];
                     final reqUser = (req['requester'] is Map)
                         ? req['requester'] as Map<String, dynamic>
-                        : (req['user'] is Map ? req['user'] as Map<String, dynamic> : <String, dynamic>{});
-                    final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
+                        : (req['user'] is Map
+                              ? req['user'] as Map<String, dynamic>
+                              : <String, dynamic>{});
+                    final reqUserName =
+                        '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
+                            .trim();
                     final reqId = req['id']?.toString() ?? '';
-                    final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
-                    final foodPref = req['foodPreference']?.toString() ?? reqUser['foodPreference']?.toString();
-                    final drinkPref = req['drinkPreference']?.toString() ?? reqUser['drinkPreference']?.toString();
+                    final userBio =
+                        reqUser['profile']?['bio']?.toString() ??
+                        reqUser['bio']?.toString() ??
+                        '';
+                    final foodPref =
+                        req['foodPreference']?.toString() ??
+                        reqUser['foodPreference']?.toString();
+                    final drinkPref =
+                        req['drinkPreference']?.toString() ??
+                        reqUser['drinkPreference']?.toString();
 
                     return Container(
                       padding: const EdgeInsets.all(16),
@@ -1720,7 +2434,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
+                                      reqUserName.isNotEmpty
+                                          ? reqUserName
+                                          : 'Lunara Member',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 15,
@@ -1766,15 +2482,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                     Navigator.pop(ctx);
                                     _handleAcceptPartyPlan(reqId);
                                   },
-                                  icon: const Icon(Icons.check_circle_rounded, size: 16),
-                                  label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  icon: const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'Approve',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF7C3AED),
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1785,14 +2511,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                     Navigator.pop(ctx);
                                     _handleRejectPartyPlan(reqId);
                                   },
-                                  icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
-                                  label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  icon: const Icon(
+                                    Icons.cancel_rounded,
+                                    size: 16,
+                                    color: Colors.redAccent,
+                                  ),
+                                  label: const Text(
+                                    'Decline',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Color(0x40EF4444)),
+                                    side: const BorderSide(
+                                      color: Color(0x40EF4444),
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1815,13 +2555,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic> meetMap,
     List<Map<String, dynamic>> requests,
   ) {
-    final venueName = meetMap['venueName'] ?? meetMap['venue']?['name'] ?? 'Venue';
-    final meetId = meetMap['id']?.toString() ?? meetMap['meetId']?.toString() ?? '';
-    final int confirmedCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['confirmedCount'] ?? meetMap['paymentCount'] ?? 0).toString()) ?? 0;
-    final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+    final venueName =
+        meetMap['venueName'] ?? meetMap['venue']?['name'] ?? 'Venue';
+    final meetId =
+        meetMap['id']?.toString() ?? meetMap['meetId']?.toString() ?? '';
+    final int confirmedCount =
+        int.tryParse(
+          (meetMap['paidJoinersCount'] ??
+                  meetMap['slotsFilled'] ??
+                  meetMap['confirmedCount'] ??
+                  meetMap['paymentCount'] ??
+                  0)
+              .toString(),
+        ) ??
+        0;
+    final int totalCapacity =
+        int.tryParse(
+          (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString(),
+        ) ??
+        0;
     final String subtitleCount = totalCapacity > 0
         ? 'Stranger Meet at $venueName • $confirmedCount/$totalCapacity Confirmed'
-        : (confirmedCount > 0 ? 'Stranger Meet at $venueName • $confirmedCount Confirmed' : 'Stranger Meet at $venueName');
+        : (confirmedCount > 0
+              ? 'Stranger Meet at $venueName • $confirmedCount Confirmed'
+              : 'Stranger Meet at $venueName');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1861,7 +2618,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.people_alt_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -1890,7 +2651,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white60,
+                      ),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
@@ -1902,15 +2666,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   shrinkWrap: true,
                   itemCount: requests.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 12),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final req = requests[index];
                     final reqUser = (req['user'] is Map)
                         ? req['user'] as Map<String, dynamic>
-                        : (req['requester'] is Map ? req['requester'] as Map<String, dynamic> : <String, dynamic>{});
-                    final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
-                    final joinerId = req['joinerId']?.toString() ?? req['id']?.toString() ?? req['userId']?.toString() ?? '';
-                    final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';
+                        : (req['requester'] is Map
+                              ? req['requester'] as Map<String, dynamic>
+                              : <String, dynamic>{});
+                    final reqUserName =
+                        '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
+                            .trim();
+                    final joinerId =
+                        req['joinerId']?.toString() ??
+                        req['id']?.toString() ??
+                        req['userId']?.toString() ??
+                        '';
+                    final userBio =
+                        reqUser['profile']?['bio']?.toString() ??
+                        reqUser['bio']?.toString() ??
+                        '';
 
                     return Container(
                       padding: const EdgeInsets.all(16),
@@ -1935,7 +2711,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
+                                      reqUserName.isNotEmpty
+                                          ? reqUserName
+                                          : 'Lunara Member',
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 15,
@@ -1967,17 +2745,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 child: ElevatedButton.icon(
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    _handleStrangersMeetJoinAction(meetId, joinerId, 'accept');
+                                    _handleStrangersMeetJoinAction(
+                                      meetId,
+                                      joinerId,
+                                      'accept',
+                                    );
                                   },
-                                  icon: const Icon(Icons.check_circle_rounded, size: 16),
-                                  label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  icon: const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text(
+                                    'Approve',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF7C3AED),
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1986,16 +2778,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 child: OutlinedButton.icon(
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    _handleStrangersMeetJoinAction(meetId, joinerId, 'reject');
+                                    _handleStrangersMeetJoinAction(
+                                      meetId,
+                                      joinerId,
+                                      'reject',
+                                    );
                                   },
-                                  icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
-                                  label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                  icon: const Icon(
+                                    Icons.cancel_rounded,
+                                    size: 16,
+                                    color: Colors.redAccent,
+                                  ),
+                                  label: const Text(
+                                    'Decline',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Color(0x40EF4444)),
+                                    side: const BorderSide(
+                                      color: Color(0x40EF4444),
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -2020,9 +2830,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final prevFeedItems = List<Map<String, dynamic>>.from(_feedItems);
     setState(() {
-      _feedItems.removeWhere((item) =>
-          item['id']?.toString() == reqId ||
-          item['requestId']?.toString() == reqId);
+      _feedItems.removeWhere(
+        (item) =>
+            item['id']?.toString() == reqId ||
+            item['requestId']?.toString() == reqId,
+      );
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -2058,10 +2870,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           _feedItems = prevFeedItems;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -2100,10 +2909,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       debugPrint('Error accepting invite: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
         _loadFeed(showLoader: false, forceRefresh: true);
       }
@@ -2112,18 +2918,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  Future<void> _handleStrangersMeetJoinAction(String meetId, String joinerId, String action) async {
+  Future<void> _handleStrangersMeetJoinAction(
+    String meetId,
+    String joinerId,
+    String action,
+  ) async {
     final actionKey = 'sm_join_${action}_$joinerId';
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
     try {
-      final success = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, action);
+      final success = await ApiService.handleStrangersMeetJoinRequest(
+        meetId,
+        joinerId,
+        action,
+      );
       if (success) {
-        _optimisticallyUpdateStrangersMeetJoinRequest(meetId, joinerId, action == 'accept' ? 'accepted' : 'rejected');
+        _optimisticallyUpdateStrangersMeetJoinRequest(
+          meetId,
+          joinerId,
+          action == 'accept' ? 'accepted' : 'rejected',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(action == 'accept' ? 'Join request accepted!' : 'Join request declined.'),
+            content: Text(
+              action == 'accept'
+                  ? 'Join request accepted!'
+                  : 'Join request declined.',
+            ),
             backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
           ),
         );
@@ -2159,7 +2981,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String action, {
     String? rejectReason,
   }) async {
-    if (!OptimisticActionGuard.start('FEED_SM_CANCEL:$meetId:$cancellationId')) return;
+    if (!OptimisticActionGuard.start('FEED_SM_CANCEL:$meetId:$cancellationId')) {
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2168,7 +2992,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ? 'Cancellation approved.'
               : 'Cancellation request rejected.',
         ),
-        backgroundColor: action == 'accept' ? const Color(0xFF10B981) : Colors.grey,
+        backgroundColor: action == 'accept'
+            ? const Color(0xFF10B981)
+            : Colors.grey,
       ),
     );
 
@@ -2183,12 +3009,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final cleanMeet = ApiService.cleanBookingId(meetId);
         for (int i = 0; i < _feedItems.length; i++) {
           final item = _feedItems[i];
-          final mId = (item['id'] ?? item['meetId'] ?? item['strangersMeetId'] ?? '').toString();
+          final mId =
+              (item['id'] ?? item['meetId'] ?? item['strangersMeetId'] ?? '')
+                  .toString();
           if (mId == meetId || ApiService.cleanBookingId(mId) == cleanMeet) {
             final updated = Map<String, dynamic>.from(item);
             if (updated['pendingCancellationRequests'] is List) {
-              final list = List<Map<String, dynamic>>.from(updated['pendingCancellationRequests']);
-              list.removeWhere((c) => c['cancellationId']?.toString() == cancellationId || c['id']?.toString() == cancellationId);
+              final list = List<Map<String, dynamic>>.from(
+                updated['pendingCancellationRequests'],
+              );
+              list.removeWhere(
+                (c) =>
+                    c['cancellationId']?.toString() == cancellationId ||
+                    c['id']?.toString() == cancellationId,
+              );
               updated['pendingCancellationRequests'] = list;
             }
             _feedItems[i] = updated;
@@ -2201,7 +3035,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'Failed to process cancellation.'),
+            content: Text(
+              result['message'] ?? 'Failed to process cancellation.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -2223,7 +3059,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _markItemAsRead(UnifiedNotificationItem item) {
-    final rawId = item.rawData['id']?.toString() ?? item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
+    final rawId =
+        item.rawData['id']?.toString() ??
+        item.id.replaceAll(RegExp(r'^(gp_|pp_|sm_)'), '');
     if (rawId.isNotEmpty) {
       ApiService.localReadRequestIds.add(rawId);
       ApiService.localReadRequestIds.add(item.id);
@@ -2234,7 +3072,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     final notifId = item.rawData['id']?.toString();
     if (notifId != null && notifId.isNotEmpty) {
-      ApiService.patch('/api/mobile/user/notifications/$notifId/read', body: {});
+      ApiService.patch(
+        '/api/mobile/user/notifications/$notifId/read',
+        body: {},
+      );
     }
     if (mounted) {
       setState(() {});
@@ -2254,7 +3095,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             SizedBox(width: 10),
             Text(
               'Event Expired',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
           ],
         ),
@@ -2264,12 +3109,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           children: [
             Text(
               item.title,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               item.body,
-              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -2281,12 +3134,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
               child: Row(
                 children: const [
-                  Icon(Icons.info_outline_rounded, color: Colors.grey, size: 16),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'This event has passed its scheduled date or payment window. No actions can be performed.',
-                      style: TextStyle(color: Colors.white60, fontSize: 11.5, fontStyle: FontStyle.italic),
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11.5,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
                 ],
@@ -2298,11 +3159,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: LunaraTheme.electricViolet,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -2315,7 +3184,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _showExpiredItemDialog(item);
       return;
     }
-    final status = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '').toString().toLowerCase();
+    final status =
+        (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? '')
+            .toString()
+            .toLowerCase();
     final category = item.category.toLowerCase();
     final pendingReqs = item.rawData['pendingIncomingRequests'];
 
@@ -2323,10 +3195,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final meetData = item.rawData['plan'] is Map
           ? item.rawData['plan']
           : (item.rawData['meet'] is Map
-              ? item.rawData['meet']
-              : (item.rawData['data'] is Map ? item.rawData['data'] : item.rawData));
+                ? item.rawData['meet']
+                : (item.rawData['data'] is Map
+                      ? item.rawData['data']
+                      : item.rawData));
 
-      final meetId = meetData['id']?.toString() ??
+      final meetId =
+          meetData['id']?.toString() ??
           meetData['requestId']?.toString() ??
           meetData['meetId']?.toString() ??
           item.rawData['id']?.toString() ??
@@ -2335,25 +3210,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetData);
       postMap['type'] = 'strangers_meet';
       postMap['id'] = meetId;
-      if (item.rawData['venue'] is Map) postMap['venue'] = item.rawData['venue'];
-      if (item.rawData['venueName'] != null) postMap['venueName'] = item.rawData['venueName'];
-      if (item.rawData['venueImage'] != null) postMap['venueImage'] = item.rawData['venueImage'];
-      if (item.rawData['venueImageUrl'] != null) postMap['venueImageUrl'] = item.rawData['venueImageUrl'];
+      if (item.rawData['venue'] is Map) {
+        postMap['venue'] = item.rawData['venue'];
+      }
+      if (item.rawData['venueName'] != null) {
+        postMap['venueName'] = item.rawData['venueName'];
+      }
+      if (item.rawData['venueImage'] != null) {
+        postMap['venueImage'] = item.rawData['venueImage'];
+      }
+      if (item.rawData['venueImageUrl'] != null) {
+        postMap['venueImageUrl'] = item.rawData['venueImageUrl'];
+      }
       if (item.rawData['user'] is Map) postMap['user'] = item.rawData['user'];
       if (item.rawData['host'] is Map) postMap['host'] = item.rawData['host'];
 
       final Map<String, dynamic>? venueMap = (postMap['venue'] is Map)
           ? Map<String, dynamic>.from(postMap['venue'])
-          : (item.rawData['venue'] is Map ? Map<String, dynamic>.from(item.rawData['venue']) : null);
+          : (item.rawData['venue'] is Map
+                ? Map<String, dynamic>.from(item.rawData['venue'])
+                : null);
 
       try {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PostDetailScreen(
-              post: postMap,
-              venue: venueMap,
-            ),
+            builder: (_) => PostDetailScreen(post: postMap, venue: venueMap),
           ),
         ).then((_) => _loadFeed());
       } catch (e) {
@@ -2362,11 +3244,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return;
     } else if (category.contains('booking') || category.contains('group')) {
       final rawDataMap = Map<String, dynamic>.from(item.rawData);
-      final bookingData = Map<String, dynamic>.from(rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap);
-      final rawSt = bookingData['startTime'] ?? bookingData['time'] ?? bookingData['bookingTime'] ?? rawDataMap['startTime'] ?? rawDataMap['time'] ?? rawDataMap['bookingTime'];
+      final bookingData = Map<String, dynamic>.from(
+        rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap,
+      );
+      final rawSt =
+          bookingData['startTime'] ??
+          bookingData['time'] ??
+          bookingData['bookingTime'] ??
+          rawDataMap['startTime'] ??
+          rawDataMap['time'] ??
+          rawDataMap['bookingTime'];
       if (rawSt != null && rawSt.toString().trim().isNotEmpty) {
         String cleanSt = rawSt.toString().trim();
-        if (!cleanSt.toUpperCase().contains('AM') && !cleanSt.toUpperCase().contains('PM')) {
+        if (!cleanSt.toUpperCase().contains('AM') &&
+            !cleanSt.toUpperCase().contains('PM')) {
           final parts = cleanSt.split(':');
           if (parts.isNotEmpty) {
             int h = int.tryParse(parts[0].trim()) ?? 0;
@@ -2378,21 +3269,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
         bookingData['startTime'] = cleanSt;
       }
-      final venueMap = (bookingData['venue'] is Map) ? bookingData['venue'] as Map<dynamic, dynamic> : {'name': bookingData['venueName'] ?? 'Venue', 'id': bookingData['venueId']};
-      final dynamic rawLargeGuests = bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? bookingData['numberOfFriends'] ?? 0;
-      final int gcInt = rawLargeGuests is num ? rawLargeGuests.toInt() : (int.tryParse(rawLargeGuests.toString()) ?? 0);
-      final bool isLarge = gcInt > 20 ||
+      final venueMap = (bookingData['venue'] is Map)
+          ? bookingData['venue'] as Map<dynamic, dynamic>
+          : {
+              'name': bookingData['venueName'] ?? 'Venue',
+              'id': bookingData['venueId'],
+            };
+      final dynamic rawLargeGuests =
+          bookingData['numberOfGuests'] ??
+          bookingData['guestCount'] ??
+          bookingData['numberOfFriends'] ??
+          0;
+      final int gcInt = rawLargeGuests is num
+          ? rawLargeGuests.toInt()
+          : (int.tryParse(rawLargeGuests.toString()) ?? 0);
+      final bool isLarge =
+          gcInt > 20 ||
           bookingData['isLargePartyRequest'] == true ||
           bookingData['goingMode'] == 'party_request' ||
           category.contains('large');
 
       if (status == 'confirmed' || status == 'paid') {
         if (!isLarge) {
-          final dynamic rawTicketGuests = bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1;
-          final int guestsCount = rawTicketGuests is num ? rawTicketGuests.toInt() : (int.tryParse(rawTicketGuests.toString()) ?? 1);
+          final dynamic rawTicketGuests =
+              bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1;
+          final int guestsCount = rawTicketGuests is num
+              ? rawTicketGuests.toInt()
+              : (int.tryParse(rawTicketGuests.toString()) ?? 1);
           final bool isSolo = guestsCount <= 1;
-          final dynamic rawAmt = bookingData['totalAmount'] ?? bookingData['amount'] ?? 0;
-          final double amtVal = rawAmt is num ? rawAmt.toDouble() : (double.tryParse(rawAmt.toString()) ?? 0.0);
+          final dynamic rawAmt =
+              bookingData['totalAmount'] ?? bookingData['amount'] ?? 0;
+          final double amtVal = rawAmt is num
+              ? rawAmt.toDouble()
+              : (double.tryParse(rawAmt.toString()) ?? 0.0);
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -2403,8 +3312,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 table: isSolo ? 'Solo Entry' : 'Standard Table',
                 guests: guestsCount.toString(),
                 package: isSolo ? 'Solo Entry' : 'Standard Table',
-                totalPrice: amtVal > 0 ? '₹${amtVal.toStringAsFixed(0)}' : 'FREE (₹0)',
-                ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item.id)?.toString(),
+                totalPrice: amtVal > 0
+                    ? '₹${amtVal.toStringAsFixed(0)}'
+                    : 'FREE (₹0)',
+                ticketId:
+                    (bookingData['ticketCode'] ?? bookingData['id'] ?? item.id)
+                        ?.toString(),
                 ticketUrl: bookingData['ticketUrl']?.toString(),
                 status: 'CONFIRMED',
                 booking: bookingData,
@@ -2416,10 +3329,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => LargePartyTicketScreen(
-                booking: bookingData,
-                venue: venueMap,
-              ),
+              builder: (_) =>
+                  LargePartyTicketScreen(booking: bookingData, venue: venueMap),
             ),
           );
         }
@@ -2429,7 +3340,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       }
     } else if (category.contains('party') || category.contains('plan')) {
-      final planData = item.rawData['plan'] is Map ? item.rawData['plan'] : item.rawData;
+      final planData = item.rawData['plan'] is Map
+          ? item.rawData['plan']
+          : item.rawData;
       if (pendingReqs is List && pendingReqs.length > 1) {
         _showReviewPartyPlanRequestsModal(
           Map<String, dynamic>.from(planData),
@@ -2440,9 +3353,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PartyPlanDetailScreen(
-            plan: Map<String, dynamic>.from(planData),
-          ),
+          builder: (_) =>
+              PartyPlanDetailScreen(plan: Map<String, dynamic>.from(planData)),
         ),
       );
     } else if (category.contains('pay') || category.contains('wallet')) {
@@ -2523,7 +3435,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final cleanTime = timeStr.toUpperCase().trim();
       if (cleanTime.contains('AM') || cleanTime.contains('PM')) {
         final isPm = cleanTime.contains('PM');
-        final timeOnly = cleanTime.replaceAll('AM', '').replaceAll('PM', '').trim();
+        final timeOnly = cleanTime
+            .replaceAll('AM', '')
+            .replaceAll('PM', '')
+            .trim();
         final parts = timeOnly.split(':');
         if (parts.isNotEmpty) {
           int h = int.tryParse(parts[0]) ?? 0;
@@ -2589,7 +3504,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
       if (source['images'] is List && (source['images'] as List).isNotEmpty) {
         final img = (source['images'] as List).first;
-        final imgUrl = (img is Map) ? (img['url'] ?? img['filePath']) : img?.toString();
+        final imgUrl = (img is Map)
+            ? (img['url'] ?? img['filePath'])
+            : img?.toString();
         if (imgUrl != null) {
           final s = imgUrl.toString().trim();
           if (s.isNotEmpty && s != 'null' && s != 'undefined') return s;
@@ -2610,11 +3527,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (venue['images'] is List && (venue['images'] as List).isNotEmpty) {
         final firstImg = (venue['images'] as List).first;
         if (firstImg is Map) {
-          final fp = firstImg['filePath'] ?? firstImg['url'] ?? firstImg['image'];
-          if (fp != null && fp.toString().trim().isNotEmpty && fp.toString() != 'null') {
+          final fp =
+              firstImg['filePath'] ?? firstImg['url'] ?? firstImg['image'];
+          if (fp != null &&
+              fp.toString().trim().isNotEmpty &&
+              fp.toString() != 'null') {
             return fp.toString().trim();
           }
-        } else if (firstImg is String && firstImg.trim().isNotEmpty && firstImg != 'null') {
+        } else if (firstImg is String &&
+            firstImg.trim().isNotEmpty &&
+            firstImg != 'null') {
           return firstImg.trim();
         }
       }
@@ -2641,25 +3563,62 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   static bool _isPartyPlanItem(dynamic item) {
     if (item == null || item is! Map) return false;
-    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+    final map = item is Map<String, dynamic>
+        ? item
+        : Map<String, dynamic>.from(item);
 
     if (map['isPartyPlan'] == true) return true;
-    if (map['partyPlanId'] != null || map['partyEventId'] != null || map['planId'] != null) return true;
-    if (map['planDateTime'] != null || map['hostPaymentStatus'] != null) return true;
+    if (map['partyPlanId'] != null ||
+        map['partyEventId'] != null ||
+        map['planId'] != null) {
+      return true;
+    }
+    if (map['planDateTime'] != null || map['hostPaymentStatus'] != null) {
+      return true;
+    }
 
-    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
+    final cat =
+        (map['requestType'] ??
+                map['type'] ??
+                map['category'] ??
+                map['entityType'] ??
+                map['eventType'] ??
+                map['bookingType'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (cat.contains('party_plan') || cat == 'plan') return true;
 
-    final goingMode = (map['goingMode'] ?? map['booking']?['goingMode'] ?? map['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+    final goingMode =
+        (map['goingMode'] ??
+                map['booking']?['goingMode'] ??
+                map['metadata']?['goingMode'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (goingMode == 'plan') return true;
 
-    final partySubject = (map['partySubject'] ?? map['booking']?['partySubject'] ?? map['metadata']?['partySubject'] ?? '').toString().toLowerCase();
+    final partySubject =
+        (map['partySubject'] ??
+                map['booking']?['partySubject'] ??
+                map['metadata']?['partySubject'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (partySubject.contains('party plan')) return true;
 
-    final tablePackage = (map['tablePackage'] ?? map['booking']?['tablePackage'] ?? map['metadata']?['tablePackage'] ?? '').toString().toLowerCase();
+    final tablePackage =
+        (map['tablePackage'] ??
+                map['booking']?['tablePackage'] ??
+                map['metadata']?['tablePackage'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (tablePackage.contains('party plan')) return true;
 
-    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '')
+        .toString()
+        .toLowerCase();
     if (rawId.startsWith('party_plan') || rawId.startsWith('pp_')) return true;
 
     if (map['booking'] is Map) {
@@ -2671,7 +3630,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (map['metadata'] is Map) {
       if (_isPartyPlanItem(map['metadata'])) return true;
     }
-    if (map['specialRequests'] != null && map['specialRequests'].toString().contains('planId')) {
+    if (map['specialRequests'] != null &&
+        map['specialRequests'].toString().contains('planId')) {
       return true;
     }
 
@@ -2680,25 +3640,62 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   static bool _isStrangerMeetItem(dynamic item) {
     if (item == null || item is! Map) return false;
-    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+    final map = item is Map<String, dynamic>
+        ? item
+        : Map<String, dynamic>.from(item);
 
     if (map['isStrangersMeet'] == true) return true;
-    if (map['strangersMeetId'] != null || map['meetId'] != null || map['strangersMeetRequestId'] != null) return true;
+    if (map['strangersMeetId'] != null ||
+        map['meetId'] != null ||
+        map['strangersMeetRequestId'] != null) {
+      return true;
+    }
 
-    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
+    final cat =
+        (map['requestType'] ??
+                map['type'] ??
+                map['category'] ??
+                map['entityType'] ??
+                map['eventType'] ??
+                map['bookingType'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (cat.contains('stranger') || cat.contains('meet')) return true;
 
-    final goingMode = (map['goingMode'] ?? map['booking']?['goingMode'] ?? map['metadata']?['goingMode'] ?? '').toString().toLowerCase();
+    final goingMode =
+        (map['goingMode'] ??
+                map['booking']?['goingMode'] ??
+                map['metadata']?['goingMode'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (goingMode.contains('stranger')) return true;
 
-    final partySubject = (map['partySubject'] ?? map['booking']?['partySubject'] ?? map['metadata']?['partySubject'] ?? '').toString().toLowerCase();
+    final partySubject =
+        (map['partySubject'] ??
+                map['booking']?['partySubject'] ??
+                map['metadata']?['partySubject'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (partySubject.contains('stranger')) return true;
 
-    final tablePackage = (map['tablePackage'] ?? map['booking']?['tablePackage'] ?? map['metadata']?['tablePackage'] ?? '').toString().toLowerCase();
+    final tablePackage =
+        (map['tablePackage'] ??
+                map['booking']?['tablePackage'] ??
+                map['metadata']?['tablePackage'] ??
+                '')
+            .toString()
+            .toLowerCase();
     if (tablePackage.contains('stranger')) return true;
 
-    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
-    if (rawId.startsWith('strangers_meet') || rawId.startsWith('sm_')) return true;
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (rawId.startsWith('strangers_meet') || rawId.startsWith('sm_')) {
+      return true;
+    }
 
     if (map['booking'] is Map) {
       if (_isStrangerMeetItem(map['booking'])) return true;
@@ -2715,16 +3712,44 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   static bool _isUpcomingNightItem(dynamic item) {
     if (item == null || item is! Map) return false;
-    final map = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+    final map = item is Map<String, dynamic>
+        ? item
+        : Map<String, dynamic>.from(item);
 
-    if (map['isUpcomingNight'] == true || map['isNightPartner'] == true) return true;
-    if (map['nightId'] != null || map['nightPartnerId'] != null || map['upcomingNightId'] != null) return true;
+    if (map['isUpcomingNight'] == true || map['isNightPartner'] == true) {
+      return true;
+    }
+    if (map['nightId'] != null ||
+        map['nightPartnerId'] != null ||
+        map['upcomingNightId'] != null) {
+      return true;
+    }
 
-    final cat = (map['requestType'] ?? map['type'] ?? map['category'] ?? map['entityType'] ?? map['eventType'] ?? map['bookingType'] ?? '').toString().toLowerCase();
-    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match') || cat.contains('partner_request')) return true;
+    final cat =
+        (map['requestType'] ??
+                map['type'] ??
+                map['category'] ??
+                map['entityType'] ??
+                map['eventType'] ??
+                map['bookingType'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    if (cat.contains('upcoming_night') ||
+        cat.contains('night_partner') ||
+        cat.contains('night_match') ||
+        cat.contains('partner_request')) {
+      return true;
+    }
 
-    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '').toString().toLowerCase();
-    if (rawId.startsWith('upcoming_night') || rawId.startsWith('night_partner') || rawId.startsWith('un_')) return true;
+    final rawId = (map['id'] ?? map['bookingId'] ?? map['entityId'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (rawId.startsWith('upcoming_night') ||
+        rawId.startsWith('night_partner') ||
+        rawId.startsWith('un_')) {
+      return true;
+    }
 
     if (map['booking'] is Map) {
       if (_isUpcomingNightItem(map['booking'])) return true;
@@ -2789,11 +3814,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     final rawId = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
-    if (rawId.startsWith('upcoming_night_timeline_') || rawId.startsWith('upcoming_night_') || rawId.startsWith('un_')) {
-      return rawId.replaceAll('upcoming_night_timeline_', '').replaceAll('upcoming_night_', '').replaceAll('un_', '');
+    if (rawId.startsWith('upcoming_night_timeline_') ||
+        rawId.startsWith('upcoming_night_') ||
+        rawId.startsWith('un_')) {
+      return rawId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('upcoming_night_', '')
+          .replaceAll('un_', '');
     }
-    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
-    if (cat.contains('upcoming_night') || cat.contains('night_partner') || cat.contains('night_match') || cat.contains('partner_request')) {
+    final cat =
+        (item['requestType'] ??
+                item['type'] ??
+                item['category'] ??
+                item['entityType'] ??
+                item['eventType'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    if (cat.contains('upcoming_night') ||
+        cat.contains('night_partner') ||
+        cat.contains('night_match') ||
+        cat.contains('partner_request')) {
       if (rawId.isNotEmpty) return rawId;
     }
     return null;
@@ -2828,14 +3869,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final b = item['booking'] as Map<String, dynamic>;
       if (b['partyPlanId'] != null) return b['partyPlanId'].toString().trim();
       if (b['partyEventId'] != null) return b['partyEventId'].toString().trim();
-      if (b['goingMode']?.toString().toLowerCase() == 'plan' || b['partySubject']?.toString().toLowerCase() == 'party plan') {
-        final id = b['partyEventId']?.toString() ?? b['partyPlanId']?.toString() ?? b['id']?.toString() ?? '';
-        if (id.isNotEmpty) return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '');
+      if (b['goingMode']?.toString().toLowerCase() == 'plan' ||
+          b['partySubject']?.toString().toLowerCase() == 'party plan') {
+        final id =
+            b['partyEventId']?.toString() ??
+            b['partyPlanId']?.toString() ??
+            b['id']?.toString() ??
+            '';
+        if (id.isNotEmpty) {
+          return id
+              .replaceAll('pp_', '')
+              .replaceAll('party_plan_timeline_', '');
+        }
       }
     }
     if (item['plan'] is Map && item['plan']['id'] != null) {
-      final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
-      if (cat.contains('party') || cat == 'my_request' || cat == 'incoming_request') {
+      final String cat =
+          (item['requestType'] ??
+                  item['type'] ??
+                  item['category'] ??
+                  item['entityType'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      if (cat.contains('party') ||
+          cat == 'my_request' ||
+          cat == 'incoming_request') {
         if (!cat.contains('stranger') && !cat.contains('meet')) {
           final id = item['plan']['id'].toString().trim();
           if (id.isNotEmpty) return id;
@@ -2843,27 +3902,61 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     if (item['planId'] != null) {
-      final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
-      if (cat.contains('party') || cat == 'my_request' || cat == 'incoming_request') {
+      final String cat =
+          (item['requestType'] ??
+                  item['type'] ??
+                  item['category'] ??
+                  item['entityType'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      if (cat.contains('party') ||
+          cat == 'my_request' ||
+          cat == 'incoming_request') {
         if (!cat.contains('stranger') && !cat.contains('meet')) {
           final id = item['planId'].toString().trim();
           if (id.isNotEmpty) return id;
         }
       }
     }
-    final String type = (item['type'] ?? item['eventType'] ?? item['category'] ?? item['entityType'] ?? '').toString().toLowerCase();
-    final String goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? '').toString().toLowerCase();
-    final String partySubject = (item['partySubject'] ?? item['booking']?['partySubject'] ?? '').toString().toLowerCase();
+    final String type =
+        (item['type'] ??
+                item['eventType'] ??
+                item['category'] ??
+                item['entityType'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final String goingMode =
+        (item['goingMode'] ?? item['booking']?['goingMode'] ?? '')
+            .toString()
+            .toLowerCase();
+    final String partySubject =
+        (item['partySubject'] ?? item['booking']?['partySubject'] ?? '')
+            .toString()
+            .toLowerCase();
 
     if (goingMode == 'plan' || partySubject == 'party plan') {
-      final id = item['partyEventId']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? item['id']?.toString() ?? '';
-      if (id.isNotEmpty) return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '');
+      final id =
+          item['partyEventId']?.toString() ??
+          item['partyPlanId']?.toString() ??
+          item['planId']?.toString() ??
+          item['id']?.toString() ??
+          '';
+      if (id.isNotEmpty) {
+        return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '');
+      }
     }
 
-    if (type == 'party_plan' || type == 'party_plan_timeline' || type.contains('party_plan')) {
+    if (type == 'party_plan' ||
+        type == 'party_plan_timeline' ||
+        type.contains('party_plan')) {
       final id = item['id']?.toString() ?? item['entityId']?.toString() ?? '';
       if (id.isNotEmpty && !id.startsWith('sm_') && !id.startsWith('gp_')) {
-        return id.replaceAll('pp_', '').replaceAll('party_plan_timeline_', '').replaceAll('pp_host_deposit_', '');
+        return id
+            .replaceAll('pp_', '')
+            .replaceAll('party_plan_timeline_', '')
+            .replaceAll('pp_host_deposit_', '');
       }
     }
     return null;
@@ -2878,7 +3971,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['data']['meetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['metadata'] is Map && item['metadata']['strangersMeetId'] != null) {
+    if (item['metadata'] is Map &&
+        item['metadata']['strangersMeetId'] != null) {
       final id = item['metadata']['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
@@ -2898,7 +3992,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['planDetails']['id'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['data'] is Map && item['data']['planDetails'] is Map && item['data']['planDetails']['id'] != null) {
+    if (item['data'] is Map &&
+        item['data']['planDetails'] is Map &&
+        item['data']['planDetails']['id'] != null) {
       final id = item['data']['planDetails']['id'].toString().trim();
       if (id.isNotEmpty) return id;
     }
@@ -2906,23 +4002,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['strangersMeet']['id'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['data'] is Map && item['data']['strangersMeet'] is Map && item['data']['strangersMeet']['id'] != null) {
+    if (item['data'] is Map &&
+        item['data']['strangersMeet'] is Map &&
+        item['data']['strangersMeet']['id'] != null) {
       final id = item['data']['strangersMeet']['id'].toString().trim();
       if (id.isNotEmpty) return id;
     }
 
-    final String entityType = (item['entityType'] ?? '').toString().toLowerCase();
+    final String entityType = (item['entityType'] ?? '')
+        .toString()
+        .toLowerCase();
     final String eventType = (item['eventType'] ?? '').toString().toLowerCase();
-    final String reqType = (item['requestType'] ?? item['type'] ?? '').toString().toLowerCase();
+    final String reqType = (item['requestType'] ?? item['type'] ?? '')
+        .toString()
+        .toLowerCase();
     final String category = (item['category'] ?? '').toString().toLowerCase();
     final String title = (item['title'] ?? '').toString().toLowerCase();
     final String body = (item['body'] ?? '').toString().toLowerCase();
 
-    final bool isStranger = entityType.contains('stranger') ||
+    final bool isStranger =
+        entityType.contains('stranger') ||
         eventType.contains('stranger') ||
         reqType.contains('stranger') ||
         category.contains('stranger') ||
-        (title.contains('stranger meet') || body.contains('stranger meet') || (category == 'bookings' && entityType.contains('stranger')));
+        (title.contains('stranger meet') ||
+            body.contains('stranger meet') ||
+            (category == 'bookings' && entityType.contains('stranger')));
 
     if (isStranger) {
       if (item['plan'] is Map && item['plan']['id'] != null) {
@@ -2937,8 +4042,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (item['metadata'] is Map && item['metadata']['planId'] != null) {
         return item['metadata']['planId'].toString().trim();
       }
-      if (item['entityId'] != null && item['entityId'].toString().trim().isNotEmpty) {
-        return item['entityId'].toString().trim().replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '');
+      if (item['entityId'] != null &&
+          item['entityId'].toString().trim().isNotEmpty) {
+        return item['entityId']
+            .toString()
+            .trim()
+            .replaceAll('sm_', '')
+            .replaceAll('strangers_meet_timeline_', '');
       }
       if (item['data'] is Map && item['data']['requestId'] != null) {
         final id = item['data']['requestId'].toString().trim();
@@ -2954,31 +4064,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (item['request'] is Map && item['request']['id'] != null) {
         return item['request']['id'].toString().trim();
       }
-      if (item['joiner'] is Map && item['joiner']['strangersMeetRequestId'] != null) {
+      if (item['joiner'] is Map &&
+          item['joiner']['strangersMeetRequestId'] != null) {
         return item['joiner']['strangersMeetRequestId'].toString().trim();
       }
       final id = item['id']?.toString() ?? '';
       if (id.isNotEmpty && !id.startsWith('pp_') && !id.startsWith('gp_')) {
-        return id.replaceAll('sm_', '').replaceAll('strangers_meet_timeline_', '').replaceAll('sm_host_deposit_', '').replaceAll('sm_host_approved_', '');
+        return id
+            .replaceAll('sm_', '')
+            .replaceAll('strangers_meet_timeline_', '')
+            .replaceAll('sm_host_deposit_', '')
+            .replaceAll('sm_host_approved_', '');
       }
     }
     return null;
   }
 
   String? _extractGroupPartyId(Map<String, dynamic> item) {
-    final String cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? '').toString().toLowerCase();
-    final String paymentCategory = (item['paymentCategory'] ?? '').toString().toLowerCase();
+    final String cat =
+        (item['requestType'] ??
+                item['type'] ??
+                item['category'] ??
+                item['entityType'] ??
+                item['eventType'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final String paymentCategory = (item['paymentCategory'] ?? '')
+        .toString()
+        .toLowerCase();
     final String title = (item['title'] ?? '').toString().toLowerCase();
     final String body = (item['body'] ?? '').toString().toLowerCase();
 
     // Skip party plans
-    if (cat.contains('party_plan') || cat == 'party_plan' || item['partyPlanId'] != null || item['booking']?['goingMode']?.toString() == 'plan' || item['goingMode']?.toString() == 'plan') {
+    if (cat.contains('party_plan') ||
+        cat == 'party_plan' ||
+        item['partyPlanId'] != null ||
+        item['booking']?['goingMode']?.toString() == 'plan' ||
+        item['goingMode']?.toString() == 'plan') {
       return null;
     }
 
-    final dynamic rawGuests = item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 1;
-    final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 1);
-    final bool isLargeOrGroup = guestCount >= 2 ||
+    final dynamic rawGuests =
+        item['numberOfGuests'] ??
+        item['guestCount'] ??
+        item['numberOfFriends'] ??
+        item['booking']?['numberOfGuests'] ??
+        item['booking']?['guestCount'] ??
+        1;
+    final int guestCount = rawGuests is num
+        ? rawGuests.toInt()
+        : (int.tryParse(rawGuests.toString()) ?? 1);
+    final bool isLargeOrGroup =
+        guestCount >= 2 ||
         cat.contains('group_party') ||
         cat.contains('large_party') ||
         cat.contains('large_party_approved') ||
@@ -3015,7 +4153,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     if (item['data'] is Map && item['data']['bookingId'] != null) {
       final id = item['data']['bookingId'].toString().trim();
-      if (id.isNotEmpty && (isLargeOrGroup || item['data']['type']?.toString().contains('group_party') == true || item['data']['type']?.toString().contains('large_party') == true)) {
+      if (id.isNotEmpty &&
+          (isLargeOrGroup ||
+              item['data']['type']?.toString().contains('group_party') ==
+                  true ||
+              item['data']['type']?.toString().contains('large_party') ==
+                  true)) {
         return id;
       }
     }
@@ -3043,7 +4186,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['bookingId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['payActionPayload'] is Map && item['payActionPayload']['bookingId'] != null && isLargeOrGroup) {
+    if (item['payActionPayload'] is Map &&
+        item['payActionPayload']['bookingId'] != null &&
+        isLargeOrGroup) {
       final id = item['payActionPayload']['bookingId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
@@ -3079,11 +4224,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return null;
     }
 
-    final cat = (item['requestType'] ?? item['type'] ?? item['category'] ?? item['entityType'] ?? item['eventType'] ?? item['bookingType'] ?? '').toString().toLowerCase();
-    final goingMode = (item['goingMode'] ?? item['booking']?['goingMode'] ?? item['metadata']?['goingMode'] ?? '').toString().toLowerCase();
-    final dynamic rawGuests = item['numberOfGuests'] ?? item['guestCount'] ?? item['numberOfFriends'] ?? item['booking']?['numberOfGuests'] ?? item['booking']?['guestCount'] ?? 0;
-    final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 0);
-    final isLargeOrGroup = guestCount >= 2 ||
+    final cat =
+        (item['requestType'] ??
+                item['type'] ??
+                item['category'] ??
+                item['entityType'] ??
+                item['eventType'] ??
+                item['bookingType'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final goingMode =
+        (item['goingMode'] ??
+                item['booking']?['goingMode'] ??
+                item['metadata']?['goingMode'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final dynamic rawGuests =
+        item['numberOfGuests'] ??
+        item['guestCount'] ??
+        item['numberOfFriends'] ??
+        item['booking']?['numberOfGuests'] ??
+        item['booking']?['guestCount'] ??
+        0;
+    final int guestCount = rawGuests is num
+        ? rawGuests.toInt()
+        : (int.tryParse(rawGuests.toString()) ?? 0);
+    final isLargeOrGroup =
+        guestCount >= 2 ||
         item['isLargePartyRequest'] == true ||
         item['isLargeParty'] == true ||
         item['isGroupParty'] == true ||
@@ -3098,8 +4267,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return null;
     }
 
-    if (item['data'] is Map && (item['data']['type'] == 'venue_booking_timeline' || item['data']['type'] == 'venue_booking')) {
-      final id = (item['data']['bookingId'] ?? item['data']['id'])?.toString().trim();
+    if (item['data'] is Map &&
+        (item['data']['type'] == 'venue_booking_timeline' ||
+            item['data']['type'] == 'venue_booking')) {
+      final id = (item['data']['bookingId'] ?? item['data']['id'])
+          ?.toString()
+          .trim();
       if (id != null && id.isNotEmpty) return id;
     }
 
@@ -3107,21 +4280,42 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         item['eventType'] == 'booking_cancelled' ||
         item['eventType'] == 'booking_pending_payment' ||
         item['eventType'] == 'venue_booking_received') {
-      final id = (item['entityId'] ?? item['bookingId'] ?? item['data']?['bookingId'] ?? item['metadata']?['bookingId'])?.toString().trim();
+      final id =
+          (item['entityId'] ??
+                  item['bookingId'] ??
+                  item['data']?['bookingId'] ??
+                  item['metadata']?['bookingId'])
+              ?.toString()
+              .trim();
       if (id != null && id.isNotEmpty) return id;
     }
 
-    final id = item['bookingId'] ?? item['booking']?['id'] ?? item['booking']?['bookingId'] ?? item['data']?['bookingId'] ?? item['metadata']?['bookingId'];
+    final id =
+        item['bookingId'] ??
+        item['booking']?['id'] ??
+        item['booking']?['bookingId'] ??
+        item['data']?['bookingId'] ??
+        item['metadata']?['bookingId'];
     if (id != null && id.toString().trim().isNotEmpty) {
       return id.toString().trim();
     }
 
     final rawId = (item['id'] ?? item['entityId'])?.toString() ?? '';
-    if (rawId.startsWith('venue_booking_timeline_') || rawId.startsWith('solo_booking_') || rawId.startsWith('venue_booking_')) {
+    if (rawId.startsWith('venue_booking_timeline_') ||
+        rawId.startsWith('solo_booking_') ||
+        rawId.startsWith('venue_booking_')) {
       final cleanId = ApiService.cleanBookingId(rawId);
       if (cleanId.isNotEmpty) return cleanId;
-    } else if (rawId.isNotEmpty && (item['venueId'] != null || item['venue'] != null || item['bookingDate'] != null)) {
-      if (rawId.startsWith('party_plan_') || rawId.startsWith('pp_') || rawId.startsWith('strangers_meet_') || rawId.startsWith('sm_') || rawId.startsWith('group_party_') || rawId.startsWith('gp_')) {
+    } else if (rawId.isNotEmpty &&
+        (item['venueId'] != null ||
+            item['venue'] != null ||
+            item['bookingDate'] != null)) {
+      if (rawId.startsWith('party_plan_') ||
+          rawId.startsWith('pp_') ||
+          rawId.startsWith('strangers_meet_') ||
+          rawId.startsWith('sm_') ||
+          rawId.startsWith('group_party_') ||
+          rawId.startsWith('gp_')) {
         return null;
       }
       return rawId.trim();
@@ -3188,19 +4382,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _userBookings) {
-      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking) || _isUpcomingNightItem(booking)) {
+      if (_isPartyPlanItem(booking) ||
+          _isStrangerMeetItem(booking) ||
+          _isUpcomingNightItem(booking)) {
         continue; // Never render party plans, stranger meets, or upcoming nights as solo/table bookings!
       }
-      final dynamic rawGuests = booking['numberOfGuests'] ?? booking['guestCount'] ?? booking['numberOfFriends'] ?? 1;
-      final int guestCount = rawGuests is num ? rawGuests.toInt() : (int.tryParse(rawGuests.toString()) ?? 1);
-      final isLargeOrGroup = guestCount >= 2 ||
+      final dynamic rawGuests =
+          booking['numberOfGuests'] ??
+          booking['guestCount'] ??
+          booking['numberOfFriends'] ??
+          1;
+      final int guestCount = rawGuests is num
+          ? rawGuests.toInt()
+          : (int.tryParse(rawGuests.toString()) ?? 1);
+      final isLargeOrGroup =
+          guestCount >= 2 ||
           booking['isLargePartyRequest'] == true ||
           booking['isLargeParty'] == true ||
           booking['isGroupParty'] == true ||
           booking['isSmallGroupParty'] == true ||
           booking['isLargeBooking'] == true ||
-          (booking['goingMode'] ?? '').toString().toLowerCase() == 'party_request' ||
-          (booking['goingMode'] ?? '').toString().toLowerCase() == 'with_friends';
+          (booking['goingMode'] ?? '').toString().toLowerCase() ==
+              'party_request' ||
+          (booking['goingMode'] ?? '').toString().toLowerCase() ==
+              'with_friends';
       if (isLargeOrGroup) {
         final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString();
         if (gpId != null && gpId.isNotEmpty) {
@@ -3215,10 +4420,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     for (final booking in _largePartyBookings) {
-      if (_isPartyPlanItem(booking) || _isStrangerMeetItem(booking) || _isUpcomingNightItem(booking)) {
+      if (_isPartyPlanItem(booking) ||
+          _isStrangerMeetItem(booking) ||
+          _isUpcomingNightItem(booking)) {
         continue;
       }
-      final gpId = _extractGroupPartyId(booking) ?? booking['id']?.toString() ?? booking['bookingId']?.toString();
+      final gpId =
+          _extractGroupPartyId(booking) ??
+          booking['id']?.toString() ??
+          booking['bookingId']?.toString();
       if (gpId != null && gpId.isNotEmpty) {
         groupPartyGroups.putIfAbsent(gpId, () => []).add(booking);
       }
@@ -3228,7 +4438,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final entry in partyPlanGroups.entries) {
       final planId = entry.key;
       final planEntries = entry.value;
-      final smartCard = _buildAuthoritativePartyPlanCard(planId, planEntries, currentUserId);
+      final smartCard = _buildAuthoritativePartyPlanCard(
+        planId,
+        planEntries,
+        currentUserId,
+      );
       if (smartCard != null) {
         items.add(smartCard);
       }
@@ -3238,7 +4452,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final entry in strangersMeetGroups.entries) {
       final meetId = entry.key;
       final meetEntries = entry.value;
-      final smartCard = _buildAuthoritativeStrangersMeetCard(meetId, meetEntries, currentUserId);
+      final smartCard = _buildAuthoritativeStrangersMeetCard(
+        meetId,
+        meetEntries,
+        currentUserId,
+      );
       if (smartCard != null) {
         items.add(smartCard);
       }
@@ -3248,7 +4466,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final entry in upcomingNightGroups.entries) {
       final nightId = entry.key;
       final nightEntries = entry.value;
-      final smartCard = _buildAuthoritativeUpcomingNightCard(nightId, nightEntries, currentUserId);
+      final smartCard = _buildAuthoritativeUpcomingNightCard(
+        nightId,
+        nightEntries,
+        currentUserId,
+      );
       if (smartCard != null) {
         items.add(smartCard);
       }
@@ -3260,14 +4482,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final entry in groupPartyGroups.entries) {
       final partyId = entry.key;
       final partyEntries = entry.value;
-      final smartCard = _buildAuthoritativeGroupPartyCard(partyId, partyEntries, currentUserId);
+      final smartCard = _buildAuthoritativeGroupPartyCard(
+        partyId,
+        partyEntries,
+        currentUserId,
+      );
       if (smartCard != null) {
         items.add(smartCard);
         processedBookingIds.add(partyId);
         final cleanId = ApiService.cleanBookingId(partyId);
         if (cleanId.isNotEmpty) processedBookingIds.add(cleanId);
         for (final e in partyEntries) {
-          final bId = e['bookingId']?.toString() ?? e['id']?.toString() ?? e['data']?['bookingId']?.toString();
+          final bId =
+              e['bookingId']?.toString() ??
+              e['id']?.toString() ??
+              e['data']?['bookingId']?.toString();
           if (bId != null && bId.isNotEmpty) {
             processedBookingIds.add(bId);
             processedBookingIds.add(ApiService.cleanBookingId(bId));
@@ -3280,17 +4509,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final entry in soloBookingGroups.entries) {
       final bookingId = entry.key;
       final cleanId = ApiService.cleanBookingId(bookingId);
-      if (processedBookingIds.contains(bookingId) || processedBookingIds.contains(cleanId)) {
+      if (processedBookingIds.contains(bookingId) ||
+          processedBookingIds.contains(cleanId)) {
         continue; // Prevent duplicate solo card when party card was already built!
       }
       final bookingEntries = entry.value;
-      final smartCard = _buildAuthoritativeSoloBookingCard(bookingId, bookingEntries, currentUserId);
+      final smartCard = _buildAuthoritativeSoloBookingCard(
+        bookingId,
+        bookingEntries,
+        currentUserId,
+      );
       if (smartCard != null) {
         items.add(smartCard);
         processedBookingIds.add(bookingId);
         if (cleanId.isNotEmpty) processedBookingIds.add(cleanId);
         for (final e in bookingEntries) {
-          final bId = e['bookingId']?.toString() ?? e['id']?.toString() ?? e['data']?['bookingId']?.toString();
+          final bId =
+              e['bookingId']?.toString() ??
+              e['id']?.toString() ??
+              e['data']?['bookingId']?.toString();
           if (bId != null && bId.isNotEmpty) {
             processedBookingIds.add(bId);
             processedBookingIds.add(ApiService.cleanBookingId(bId));
@@ -3301,33 +4538,78 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // 6. Process General Push Notifications (Table Plans, System, Wallet, Promo)
     for (final n in nonPartyNotifications) {
-      final String goingMode = (n['goingMode'] ?? n['booking']?['goingMode'] ?? n['metadata']?['goingMode'] ?? '').toString().toLowerCase();
-      final String partySubject = (n['partySubject'] ?? n['booking']?['partySubject'] ?? n['metadata']?['partySubject'] ?? '').toString().toLowerCase();
-      final String cat = (n['requestType'] ?? n['type'] ?? n['category'] ?? n['entityType'] ?? n['eventType'] ?? '').toString().toLowerCase();
+      final String goingMode =
+          (n['goingMode'] ??
+                  n['booking']?['goingMode'] ??
+                  n['metadata']?['goingMode'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      final String partySubject =
+          (n['partySubject'] ??
+                  n['booking']?['partySubject'] ??
+                  n['metadata']?['partySubject'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      final String cat =
+          (n['requestType'] ??
+                  n['type'] ??
+                  n['category'] ??
+                  n['entityType'] ??
+                  n['eventType'] ??
+                  '')
+              .toString()
+              .toLowerCase();
       final String titleLower = (n['title'] ?? '').toString().toLowerCase();
       final String bodyLower = (n['body'] ?? '').toString().toLowerCase();
 
       // Skip party plan, stranger meet & upcoming night confirmation/reminders — consolidated into their dedicated cards
-      if (_isPartyPlanItem(n) || _isStrangerMeetItem(n) || _isUpcomingNightItem(n) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || cat.contains('upcoming_night') || cat.contains('night_partner') || (cat.contains('match_confirmed') && (n['metadata']?['planId'] != null || n['metadata']?['partyPlanId'] != null)) ||
-          goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
+      if (_isPartyPlanItem(n) ||
+          _isStrangerMeetItem(n) ||
+          _isUpcomingNightItem(n) ||
+          goingMode == 'plan' ||
+          partySubject.contains('party plan') ||
+          cat.contains('party_plan') ||
+          cat.contains('upcoming_night') ||
+          cat.contains('night_partner') ||
+          (cat.contains('match_confirmed') &&
+              (n['metadata']?['planId'] != null ||
+                  n['metadata']?['partyPlanId'] != null)) ||
+          goingMode.contains('stranger') ||
+          partySubject.contains('stranger') ||
+          cat.contains('stranger') ||
+          titleLower.contains('stranger meet') ||
+          bodyLower.contains('stranger meet')) {
         continue;
       }
 
       final notifBookingId = ApiService.cleanBookingId(
-        (n['data']?['bookingId'] ?? n['bookingId'] ?? n['entityId'] ?? n['id'] ?? '').toString()
+        (n['data']?['bookingId'] ??
+                n['bookingId'] ??
+                n['entityId'] ??
+                n['id'] ??
+                '')
+            .toString(),
       );
-      if (notifBookingId.isNotEmpty && processedBookingIds.contains(notifBookingId)) {
+      if (notifBookingId.isNotEmpty &&
+          processedBookingIds.contains(notifBookingId)) {
         continue; // Authoritative card already rendered for this booking!
       }
-      if (notifBookingId.isNotEmpty && (cat.contains('booking') || n['id']?.toString().startsWith('venue_booking_') == true)) {
+      if (notifBookingId.isNotEmpty &&
+          (cat.contains('booking') ||
+              n['id']?.toString().startsWith('venue_booking_') == true)) {
         processedBookingIds.add(notifBookingId);
       }
 
       final id = n['id']?.toString() ?? '';
-      final category = (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
+      final category = (n['category'] ?? n['entityType'] ?? 'system')
+          .toString()
+          .toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
       final body = n['body']?.toString() ?? '';
-      final isRead = n['read'] == true ||
+      final isRead =
+          n['read'] == true ||
           n['isRead'] == true ||
           (n['is_read'] == true) ||
           (n['isSeen'] == true) ||
@@ -3352,13 +4634,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         icon = Icons.payments_rounded;
         badge = 'PAYMENT';
         actionText = 'View Wallet';
-        actionTap = () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen()));
+        actionTap = () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+        );
       } else if (category.contains('wallet') || category.contains('credit')) {
         accentColor = const Color(0xFF3B82F6);
         icon = Icons.account_balance_wallet_rounded;
         badge = 'WALLET';
         actionText = 'Open Wallet';
-        actionTap = () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen()));
+        actionTap = () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+        );
       } else if (category.contains('chat') || category.contains('message')) {
         accentColor = const Color(0xFFEC4899);
         icon = Icons.chat_bubble_rounded;
@@ -3367,14 +4655,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFFEF4444);
         icon = Icons.cancel_rounded;
         badge = 'CANCELLED';
-      } else if (category.contains('super_like') || category.contains('superlike') || (n['type']?.toString().contains('super_like') == true) || (n['data']?['action'] == 'superlike')) {
+      } else if (category.contains('super_like') ||
+          category.contains('superlike') ||
+          (n['type']?.toString().contains('super_like') == true) ||
+          (n['data']?['action'] == 'superlike')) {
         accentColor = const Color(0xFF8B5CF6);
         icon = Icons.star_rounded;
         badge = 'SUPER LIKE';
-        final sId = (n['sender'] is Map ? n['sender']['id'] : null) ?? n['data']?['senderId'] ?? n['actorUserId'];
+        final sId =
+            (n['sender'] is Map ? n['sender']['id'] : null) ??
+            n['data']?['senderId'] ??
+            n['actorUserId'];
         if (sId != null && sId.toString().isNotEmpty) {
-          final sName = (n['sender'] is Map ? n['sender']['firstName'] : null) ?? n['data']?['senderName'] ?? 'Someone';
-          final sPhoto = (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ?? n['data']?['senderImage'];
+          final sName =
+              (n['sender'] is Map ? n['sender']['firstName'] : null) ??
+              n['data']?['senderName'] ??
+              'Someone';
+          final sPhoto =
+              (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ??
+              n['data']?['senderImage'];
           actionText = 'View Profile';
           actionTap = () => Navigator.push(
             context,
@@ -3383,7 +4682,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 user: User.fromJson({
                   'id': sId.toString(),
                   'firstName': sName.toString(),
-                  'photos': sPhoto != null ? [{'url': sPhoto.toString()}] : [],
+                  'photos': sPhoto != null
+                      ? [
+                          {'url': sPhoto.toString()},
+                        ]
+                      : [],
                 }),
               ),
             ),
@@ -3401,11 +4704,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       bool isExpired = false;
       final planData = n['plan'] is Map ? n['plan'] : n;
-      final rawDateTime = planData['planDateTime'] ?? planData['eventDateTime'] ?? planData['planDate'] ?? planData['partyDate'] ?? planData['bookingDate'] ?? n['entityDetails']?['planDateTime'] ?? n['entityDetails']?['eventDateTime'];
-      final rawStartTime = planData['startTime'] ?? planData['time'] ?? planData['bookingTime'] ?? n['entityDetails']?['startTime'];
+      final rawDateTime =
+          planData['planDateTime'] ??
+          planData['eventDateTime'] ??
+          planData['planDate'] ??
+          planData['partyDate'] ??
+          planData['bookingDate'] ??
+          n['entityDetails']?['planDateTime'] ??
+          n['entityDetails']?['eventDateTime'];
+      final rawStartTime =
+          planData['startTime'] ??
+          planData['time'] ??
+          planData['bookingTime'] ??
+          n['entityDetails']?['startTime'];
       if (rawDateTime != null) {
         final planTime = _parseEventDateTime(rawDateTime, rawStartTime);
-        if (planTime != null && DateTime.now().isAfter(planTime.add(const Duration(hours: 4)))) {
+        if (planTime != null &&
+            DateTime.now().isAfter(planTime.add(const Duration(hours: 4)))) {
           isExpired = true;
         }
       }
@@ -3427,57 +4742,91 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final actorMap = n['actor'] is Map
           ? Map<String, dynamic>.from(n['actor'])
-          : (n['sender'] is Map ? Map<String, dynamic>.from(n['sender']) : null);
+          : (n['sender'] is Map
+                ? Map<String, dynamic>.from(n['sender'])
+                : null);
 
-      items.add(UnifiedNotificationItem(
-        id: id,
-        category: category,
-        title: title,
-        body: body,
-        createdAt: createdAt,
-        timeAgo: timeAgo,
-        isRead: isRead,
-        isExpired: isExpired,
-        badgeText: badge,
-        accentColor: accentColor,
-        categoryIcon: icon,
-        avatarUrl: n['imageUrl']?.toString() ?? actorMap?['profilePhotoUrl']?.toString() ?? actorMap?['profileImageUrl']?.toString(),
-        senderUser: actorMap,
-        actionButtonText: actionText,
-        onActionTap: actionTap,
-        actions: isExpired ? null : actionsList,
-        rawData: n,
-      ));
+      items.add(
+        UnifiedNotificationItem(
+          id: id,
+          category: category,
+          title: title,
+          body: body,
+          createdAt: createdAt,
+          timeAgo: timeAgo,
+          isRead: isRead,
+          isExpired: isExpired,
+          badgeText: badge,
+          accentColor: accentColor,
+          categoryIcon: icon,
+          avatarUrl:
+              n['imageUrl']?.toString() ??
+              actorMap?['profilePhotoUrl']?.toString() ??
+              actorMap?['profileImageUrl']?.toString(),
+          senderUser: actorMap,
+          actionButtonText: actionText,
+          onActionTap: actionTap,
+          actions: isExpired ? null : actionsList,
+          rawData: n,
+        ),
+      );
     }
 
     // 6. Process Non-Party Feed Items (Pending Bookings, Table Plan Join Requests, System Action Items)
     for (final fi in nonPartyFeedItems) {
-      final String goingMode = (fi['goingMode'] ?? fi['booking']?['goingMode'] ?? '').toString().toLowerCase();
-      final String partySubject = (fi['partySubject'] ?? fi['booking']?['partySubject'] ?? '').toString().toLowerCase();
-      final String cat = (fi['requestType'] ?? fi['type'] ?? fi['category'] ?? fi['entityType'] ?? '').toString().toLowerCase();
+      final String goingMode =
+          (fi['goingMode'] ?? fi['booking']?['goingMode'] ?? '')
+              .toString()
+              .toLowerCase();
+      final String partySubject =
+          (fi['partySubject'] ?? fi['booking']?['partySubject'] ?? '')
+              .toString()
+              .toLowerCase();
+      final String cat =
+          (fi['requestType'] ??
+                  fi['type'] ??
+                  fi['category'] ??
+                  fi['entityType'] ??
+                  '')
+              .toString()
+              .toLowerCase();
       final String titleLower = (fi['title'] ?? '').toString().toLowerCase();
       final String bodyLower = (fi['body'] ?? '').toString().toLowerCase();
 
       // Skip party plans, stranger meets & upcoming nights — they are already rendered in their authoritative smart card
-      if (_isPartyPlanItem(fi) || _isStrangerMeetItem(fi) || _isUpcomingNightItem(fi) || goingMode == 'plan' || partySubject.contains('party plan') || cat.contains('party_plan') || cat.contains('upcoming_night') || cat.contains('night_partner') ||
-          goingMode.contains('stranger') || partySubject.contains('stranger') || cat.contains('stranger') || titleLower.contains('stranger meet') || bodyLower.contains('stranger meet')) {
+      if (_isPartyPlanItem(fi) ||
+          _isStrangerMeetItem(fi) ||
+          _isUpcomingNightItem(fi) ||
+          goingMode == 'plan' ||
+          partySubject.contains('party plan') ||
+          cat.contains('party_plan') ||
+          cat.contains('upcoming_night') ||
+          cat.contains('night_partner') ||
+          goingMode.contains('stranger') ||
+          partySubject.contains('stranger') ||
+          cat.contains('stranger') ||
+          titleLower.contains('stranger meet') ||
+          bodyLower.contains('stranger meet')) {
         continue;
       }
 
       final fiBookingId = ApiService.cleanBookingId(
         (fi['bookingId'] ??
-         fi['booking']?['id'] ??
-         fi['booking']?['bookingId'] ??
-         fi['payActionPayload']?['bookingId'] ??
-         fi['groupPartyId'] ??
-         fi['id'] ?? '').toString()
+                fi['booking']?['id'] ??
+                fi['booking']?['bookingId'] ??
+                fi['payActionPayload']?['bookingId'] ??
+                fi['groupPartyId'] ??
+                fi['id'] ??
+                '')
+            .toString(),
       );
       if (fiBookingId.isNotEmpty && processedBookingIds.contains(fiBookingId)) {
         continue; // Authoritative card already rendered! Keep ONLY ONE card!
       }
 
       final id = fi['id']?.toString() ?? '';
-      final isPendingPayment = fi['hasPendingPayment'] == true ||
+      final isPendingPayment =
+          fi['hasPendingPayment'] == true ||
           fi['type'] == 'pending_payment' ||
           fi['requestType'] == 'booking_payment' ||
           fi['paymentStatus'] == 'pending' ||
@@ -3487,11 +4836,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         processedBookingIds.add(fiBookingId);
       }
 
-      final dynamic rawAmt = fi['amountDue'] ?? fi['totalAmount'] ?? fi['depositAmount'] ?? 0;
-      final int displayAmt = (rawAmt is num) ? rawAmt.round() : (int.tryParse(rawAmt.toString().split('.').first) ?? 0);
-      final title = fi['title']?.toString() ??
-          (isPendingPayment ? 'Payment Required 💳' : (fi['partySubject'] ?? 'Table Booking'));
-      final body = fi['body']?.toString() ??
+      final dynamic rawAmt =
+          fi['amountDue'] ?? fi['totalAmount'] ?? fi['depositAmount'] ?? 0;
+      final int displayAmt = (rawAmt is num)
+          ? rawAmt.round()
+          : (int.tryParse(rawAmt.toString().split('.').first) ?? 0);
+      final title =
+          fi['title']?.toString() ??
+          (isPendingPayment
+              ? 'Payment Required 💳'
+              : (fi['partySubject'] ?? 'Table Booking'));
+      final body =
+          fi['body']?.toString() ??
           (isPendingPayment
               ? 'Action Required: Complete payment of ₹$displayAmt to confirm your reservation at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'}.'
               : 'Booking at ${fi['venueName'] ?? fi['venue']?['name'] ?? 'Venue'}');
@@ -3499,15 +4855,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final createdAt = _parseDateTime(fi['createdAt']);
       final timeAgo = _formatTimeAgo(fi['createdAt']);
 
-      Color accentColor = isPendingPayment ? const Color(0xFFF59E0B) : const Color(0xFF7C3AED);
-      IconData icon = isPendingPayment ? Icons.payment_rounded : Icons.confirmation_number_rounded;
+      Color accentColor = isPendingPayment
+          ? const Color(0xFFF59E0B)
+          : const Color(0xFF7C3AED);
+      IconData icon = isPendingPayment
+          ? Icons.payment_rounded
+          : Icons.confirmation_number_rounded;
       String? badge = isPendingPayment ? 'ACTION REQUIRED' : 'BOOKING';
       String? actionText = isPendingPayment ? 'Pay Now' : null;
       VoidCallback? actionTap;
 
       if (isPendingPayment) {
-        final bookingData = fi['booking'] is Map ? Map<String, dynamic>.from(fi['booking']) : fi;
-        final payPayload = fi['payActionPayload'] is Map ? Map<String, dynamic>.from(fi['payActionPayload']) : bookingData;
+        final bookingData = fi['booking'] is Map
+            ? Map<String, dynamic>.from(fi['booking'])
+            : fi;
+        final payPayload = fi['payActionPayload'] is Map
+            ? Map<String, dynamic>.from(fi['payActionPayload'])
+            : bookingData;
         actionTap = () => _initiatePendingBookingPayment(payPayload);
       }
 
@@ -3523,26 +4887,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
 
-      items.add(UnifiedNotificationItem(
-        id: id.isNotEmpty ? id : 'item_${DateTime.now().millisecondsSinceEpoch}',
-        category: 'booking',
-        title: title,
-        body: body,
-        createdAt: createdAt,
-        timeAgo: timeAgo,
-        isRead: isRead,
-        isExpired: false,
-        priority: isPendingPayment ? 'CRITICAL' : 'NORMAL',
-        badgeText: badge,
-        accentColor: accentColor,
-        categoryIcon: icon,
-        avatarUrl: _extractVenuePhoto(fi['venue']) ?? _extractVenuePhoto(fi) ?? fi['venueImageUrl']?.toString(),
-        actionButtonText: actionText,
-        onActionTap: actionTap,
-        actions: actionsList,
-        rawData: fi,
-        statusSummary: isPendingPayment ? 'Payment Pending' : (fi['status']?.toString().toUpperCase()),
-      ));
+      items.add(
+        UnifiedNotificationItem(
+          id: id.isNotEmpty
+              ? id
+              : 'item_${DateTime.now().millisecondsSinceEpoch}',
+          category: 'booking',
+          title: title,
+          body: body,
+          createdAt: createdAt,
+          timeAgo: timeAgo,
+          isRead: isRead,
+          isExpired: false,
+          priority: isPendingPayment ? 'CRITICAL' : 'NORMAL',
+          badgeText: badge,
+          accentColor: accentColor,
+          categoryIcon: icon,
+          avatarUrl:
+              _extractVenuePhoto(fi['venue']) ??
+              _extractVenuePhoto(fi) ??
+              fi['venueImageUrl']?.toString(),
+          actionButtonText: actionText,
+          onActionTap: actionTap,
+          actions: actionsList,
+          rawData: fi,
+          statusSummary: isPendingPayment
+              ? 'Payment Pending'
+              : (fi['status']?.toString().toUpperCase()),
+        ),
+      );
     }
 
     // Sort all timeline items:
@@ -3550,8 +4923,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // 2. Unread items second
     // 3. Descending by createdAt (lastActivityAt)
     items.sort((a, b) {
-      final aAction = (a.badgeText == 'ACTION REQUIRED' || a.badgeText == 'NEW REQUEST' || a.priority == 'CRITICAL' || a.badgeText == 'INVITE') ? 1 : 0;
-      final bAction = (b.badgeText == 'ACTION REQUIRED' || b.badgeText == 'NEW REQUEST' || b.priority == 'CRITICAL' || b.badgeText == 'INVITE') ? 1 : 0;
+      final aAction =
+          (a.badgeText == 'ACTION REQUIRED' ||
+              a.badgeText == 'NEW REQUEST' ||
+              a.priority == 'CRITICAL' ||
+              a.badgeText == 'INVITE')
+          ? 1
+          : 0;
+      final bAction =
+          (b.badgeText == 'ACTION REQUIRED' ||
+              b.badgeText == 'NEW REQUEST' ||
+              b.priority == 'CRITICAL' ||
+              b.badgeText == 'INVITE')
+          ? 1
+          : 0;
       if (aAction != bAction) return bAction - aAction;
 
       final aUnread = (!a.isRead && !a.isExpired) ? 1 : 0;
@@ -3576,11 +4961,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Extract best representative map
     Map<String, dynamic> partyMap = {};
     for (final e in entries) {
-      if (e['data'] is Map && (e['data']['type'] == 'group_party_timeline' || e['data']['partyId'] != null)) {
+      if (e['data'] is Map &&
+          (e['data']['type'] == 'group_party_timeline' ||
+              e['data']['partyId'] != null)) {
         partyMap = Map<String, dynamic>.from(e['data']);
         break;
       }
-      if (e['type'] == 'group_party_timeline' || e['category'] == 'group_party' || e['category'] == 'large_party') {
+      if (e['type'] == 'group_party_timeline' ||
+          e['category'] == 'group_party' ||
+          e['category'] == 'large_party') {
         partyMap = Map<String, dynamic>.from(e);
         break;
       }
@@ -3595,7 +4984,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Extract total amount to determine if this party is paid or free
     double totalAmount = 0.0;
     for (final e in entries) {
-      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['approvedAmount'] ?? e['adminPaymentAmount'] ?? e['charges'] ?? e['data']?['totalAmount'] ?? e['data']?['amount'];
+      final rawAmt =
+          e['totalAmount'] ??
+          e['amount'] ??
+          e['approvedAmount'] ??
+          e['adminPaymentAmount'] ??
+          e['charges'] ??
+          e['data']?['totalAmount'] ??
+          e['data']?['amount'];
       if (rawAmt is num && rawAmt > 0) {
         totalAmount = rawAmt.toDouble();
         break;
@@ -3613,9 +5009,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Ensure startTime is extracted from entries into partyMap
     for (final e in entries) {
-      final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['data']?['time'];
+      final st =
+          e['startTime'] ??
+          e['time'] ??
+          e['bookingTime'] ??
+          e['data']?['startTime'] ??
+          e['data']?['time'];
       if (st != null && st.toString().trim().isNotEmpty) {
-        partyMap['startTime'] = LunaraDateFormatter.normalizeTimeTo12Hour(st.toString());
+        partyMap['startTime'] = LunaraDateFormatter.normalizeTimeTo12Hour(
+          st.toString(),
+        );
         break;
       }
     }
@@ -3629,20 +5032,44 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     bool isExpiredFromServer = false;
 
     for (final e in entries) {
-      final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? e['adminApprovalStatus'] ?? '').toString().toLowerCase();
-      final paymentStatus = (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '').toString().toLowerCase();
+      final status =
+          (e['status'] ??
+                  e['bookingStatus'] ??
+                  e['data']?['status'] ??
+                  e['adminApprovalStatus'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      final paymentStatus =
+          (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
       final title = (e['title'] ?? '').toString().toLowerCase();
-      final eventType = (e['type'] ?? e['eventType'] ?? '').toString().toLowerCase();
+      final eventType = (e['type'] ?? e['eventType'] ?? '')
+          .toString()
+          .toLowerCase();
 
-      if (status == 'expired' || e['isExpired'] == true || e['data']?['isExpired'] == true) {
+      if (status == 'expired' ||
+          e['isExpired'] == true ||
+          e['data']?['isExpired'] == true) {
         isExpiredFromServer = true;
-      } else if (status == 'cancelled' || status == 'rejected' || paymentStatus == 'failed' || title.contains('cancelled') || title.contains('rejected')) {
+      } else if (status == 'cancelled' ||
+          status == 'rejected' ||
+          paymentStatus == 'failed' ||
+          title.contains('cancelled') ||
+          title.contains('rejected')) {
         isCancelled = true;
       } else if (status == 'completed' || title.contains('completed')) {
         isCompleted = true;
-      } else if (paymentStatus == 'paid' || eventType == 'payment_success' || status == 'payment_done' || e['adminApprovalStatus'] == 'payment_done') {
+      } else if (paymentStatus == 'paid' ||
+          eventType == 'payment_success' ||
+          status == 'payment_done' ||
+          e['adminApprovalStatus'] == 'payment_done') {
         isConfirmed = true;
-      } else if (status == 'approved' || status == 'awaiting_payment' || title.contains('approved') || eventType.contains('approved')) {
+      } else if (status == 'approved' ||
+          status == 'awaiting_payment' ||
+          title.contains('approved') ||
+          eventType.contains('approved')) {
         isApproved = true;
       } else if (status == 'pending' || paymentStatus == 'pending') {
         isPending = true;
@@ -3666,12 +5093,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     // Venue name
-    String venueName = partyMap['venueName'] ??
+    String venueName =
+        partyMap['venueName'] ??
         (partyMap['venue'] is Map ? partyMap['venue']['name'] : null) ??
         'Venue';
     if (venueName == 'Venue' || venueName.isEmpty) {
       for (final e in entries) {
-        final vn = e['venueName'] ?? (e['venue'] is Map ? e['venue']['name'] : null);
+        final vn =
+            e['venueName'] ?? (e['venue'] is Map ? e['venue']['name'] : null);
         if (vn != null && vn.toString().isNotEmpty) {
           venueName = vn.toString();
           break;
@@ -3681,7 +5110,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Guest count
     int guestCount = 5;
-    final rawGuests = partyMap['guestCount'] ??
+    final rawGuests =
+        partyMap['guestCount'] ??
         partyMap['numberOfFriends'] ??
         partyMap['numberOfGuests'];
     if (rawGuests is num && rawGuests > 0) {
@@ -3691,7 +5121,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (parsed != null && parsed > 0) guestCount = parsed;
     } else {
       for (final e in entries) {
-        final gc = e['guestCount'] ?? e['numberOfFriends'] ?? e['numberOfGuests'] ?? e['data']?['guestCount'];
+        final gc =
+            e['guestCount'] ??
+            e['numberOfFriends'] ??
+            e['numberOfGuests'] ??
+            e['data']?['guestCount'];
         if (gc is num && gc > 0) {
           guestCount = gc.toInt();
           break;
@@ -3711,7 +5145,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     for (final e in entries) {
       final eId = e['id']?.toString() ?? '';
-      final isRead = e['read'] == true ||
+      final isRead =
+          e['read'] == true ||
           e['isRead'] == true ||
           _localReadNotificationIds.contains(eId) ||
           ApiService.localReadRequestIds.contains(eId);
@@ -3728,7 +5163,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           }
         } catch (_) {}
       } else {
-        final dt = _parseEventDateTime(e['partyDate'] ?? e['bookingDate'], e['startTime'] ?? e['time']);
+        final dt = _parseEventDateTime(
+          e['partyDate'] ?? e['bookingDate'],
+          e['startTime'] ?? e['time'],
+        );
         if (dt != null && dt.isAfter(latestTime)) {
           latestTime = dt;
         }
@@ -3736,7 +5174,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     if (partyMap['lastActivityAt'] != null) {
       try {
-        final dt = DateTime.parse(partyMap['lastActivityAt'].toString()).toLocal();
+        final dt = DateTime.parse(
+          partyMap['lastActivityAt'].toString(),
+        ).toLocal();
         if (dt.isAfter(latestTime)) latestTime = dt;
       } catch (_) {}
     }
@@ -3750,14 +5190,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       latestTime = DateTime.now();
     }
 
-    dynamic rawPartyDate = partyMap['partyDate'] ?? partyMap['bookingDate'] ?? partyMap['eventDateTime'];
+    dynamic rawPartyDate =
+        partyMap['partyDate'] ??
+        partyMap['bookingDate'] ??
+        partyMap['eventDateTime'];
     dynamic rawStartTime = partyMap['startTime'] ?? partyMap['time'];
 
     if (rawPartyDate == null || rawPartyDate.toString().trim().isEmpty) {
       for (final e in entries) {
-        final d = e['partyDate'] ?? e['bookingDate'] ?? e['eventDateTime'] ?? e['date'] ??
-            e['data']?['partyDate'] ?? e['data']?['bookingDate'] ?? e['data']?['eventDateTime'] ??
-            e['booking']?['bookingDate'] ?? e['booking']?['partyDate'];
+        final d =
+            e['partyDate'] ??
+            e['bookingDate'] ??
+            e['eventDateTime'] ??
+            e['date'] ??
+            e['data']?['partyDate'] ??
+            e['data']?['bookingDate'] ??
+            e['data']?['eventDateTime'] ??
+            e['booking']?['bookingDate'] ??
+            e['booking']?['partyDate'];
         if (d != null && d.toString().trim().isNotEmpty) {
           rawPartyDate = d;
           break;
@@ -3766,9 +5216,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     if (rawStartTime == null || rawStartTime.toString().trim().isEmpty) {
       for (final e in entries) {
-        final st = e['startTime'] ?? e['time'] ?? e['bookingTime'] ??
-            e['data']?['startTime'] ?? e['data']?['time'] ?? e['data']?['bookingTime'] ??
-            e['booking']?['startTime'] ?? e['booking']?['time'];
+        final st =
+            e['startTime'] ??
+            e['time'] ??
+            e['bookingTime'] ??
+            e['data']?['startTime'] ??
+            e['data']?['time'] ??
+            e['data']?['bookingTime'] ??
+            e['booking']?['startTime'] ??
+            e['booking']?['time'];
         if (st != null && st.toString().trim().isNotEmpty) {
           rawStartTime = st;
           break;
@@ -3782,18 +5238,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String formattedTimeStr = '';
     if (parsedEventDate != null) {
       const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthNames = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       final w = weekdayNames[parsedEventDate.weekday - 1];
       final m = monthNames[parsedEventDate.month - 1];
-      final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+      final hour = parsedEventDate.hour % 12 == 0
+          ? 12
+          : parsedEventDate.hour % 12;
       final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
       final minute = parsedEventDate.minute.toString().padLeft(2, '0');
-      formattedTimeStr = ' on $w, ${parsedEventDate.day} $m at $hour:$minute $ampm';
+      formattedTimeStr =
+          ' on $w, ${parsedEventDate.day} $m at $hour:$minute $ampm';
     }
 
     // Construct Title, Body, Badge, and Actions
     String cardTitle = '👥 Group Party';
-    String cardBody = 'Your group party of $guestCount friends at $venueName$formattedTimeStr.';
+    String cardBody =
+        'Your group party of $guestCount friends at $venueName$formattedTimeStr.';
     Color accentColor = const Color(0xFF7C3AED);
     String badgeText = 'BOOKING';
     String? actionButtonText;
@@ -3804,36 +5277,64 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // guess only when the server hasn't reported one yet (e.g. stale card).
     bool isExpired = isExpiredFromServer;
     if (!isExpired) {
-      if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
+      if (parsedEventDate != null &&
+          DateTime.now().isAfter(
+            parsedEventDate.add(const Duration(hours: 4)),
+          )) {
         isExpired = true;
       }
     }
 
     // Distinguish Large Party (>20) vs Group Party (<=20)
-    final bool isExplicitlySmall = entries.any((e) => e['isSmallGroupParty'] == true) ||
+    final bool isExplicitlySmall =
+        entries.any((e) => e['isSmallGroupParty'] == true) ||
         partyMap['isSmallGroupParty'] == true;
-    final bool isLargeParty = !isExplicitlySmall &&
+    final bool isLargeParty =
+        !isExplicitlySmall &&
         (guestCount > 20 ||
             partyMap['isLargePartyRequest'] == true ||
             partyMap['isLargeBooking'] == true ||
             partyMap['type'] == 'large_party_timeline');
 
-    final String? cancelStatus = (partyMap['cancellationStatus'] ??
-        partyMap['cancellation_status'] ??
-        partyMap['refundStatus'] ??
-        partyMap['refund_status'] ??
-        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['cancellationStatus'] ??
-        entries.firstWhere((e) => e['cancellationStatus'] != null || e['cancellation_status'] != null || e['refundStatus'] != null, orElse: () => <String, dynamic>{})['refundStatus'])?.toString();
-    final dynamic rawRefund = partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount'];
+    final String? cancelStatus =
+        (partyMap['cancellationStatus'] ??
+                partyMap['cancellation_status'] ??
+                partyMap['refundStatus'] ??
+                partyMap['refund_status'] ??
+                entries.firstWhere(
+                  (e) =>
+                      e['cancellationStatus'] != null ||
+                      e['cancellation_status'] != null ||
+                      e['refundStatus'] != null,
+                  orElse: () => <String, dynamic>{},
+                )['cancellationStatus'] ??
+                entries.firstWhere(
+                  (e) =>
+                      e['cancellationStatus'] != null ||
+                      e['cancellation_status'] != null ||
+                      e['refundStatus'] != null,
+                  orElse: () => <String, dynamic>{},
+                )['refundStatus'])
+            ?.toString();
+    final dynamic rawRefund =
+        partyMap['cancellationRefundAmount'] ?? partyMap['refundAmount'];
     final double? refundAmt = rawRefund != null
-        ? (rawRefund is num ? rawRefund.toDouble() : double.tryParse(rawRefund.toString()))
+        ? (rawRefund is num
+              ? rawRefund.toDouble()
+              : double.tryParse(rawRefund.toString()))
         : null;
-    final String? rejectionReason = (partyMap['cancellationRejectionReason'] ?? partyMap['rejectionReason'] ?? partyMap['adminNotes'])?.toString();
+    final String? rejectionReason =
+        (partyMap['cancellationRejectionReason'] ??
+                partyMap['rejectionReason'] ??
+                partyMap['adminNotes'])
+            ?.toString();
 
     if (isExpired) {
       accentColor = const Color(0xFF9CA3AF);
       badgeText = 'EXPIRED';
-      cardTitle = isLargeParty ? 'Large Party Expired ⌛' : 'Group Party Expired ⌛';
+      cardTitle = isLargeParty
+          ? 'Large Party Expired ⌛'
+          : 'Group Party Expired ⌛';
       cardBody = 'Your party request at $venueName has expired.';
       actionButtonText = null;
       onActionTap = null;
@@ -3841,36 +5342,44 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       accentColor = const Color(0xFFF59E0B);
       badgeText = 'CANCELLATION REQUESTED';
       cardTitle = 'Cancellation Requested ⏳';
-      cardBody = 'Your cancellation request for $venueName is awaiting Lunara Admin review and refund calculation.';
+      cardBody =
+          'Your cancellation request for $venueName is awaiting Lunara Admin review and refund calculation.';
       actionButtonText = null;
       onActionTap = null;
     } else if (overallStatus == 'confirmed') {
       if (isLargeParty && cancelStatus == 'REJECTED') {
         cardTitle = 'Cancellation Not Approved ℹ️';
-        cardBody = 'Your cancellation was not approved: ${rejectionReason ?? "Request not approved per policy"}. Your Large Party at $venueName remains confirmed!';
+        cardBody =
+            'Your cancellation was not approved: ${rejectionReason ?? "Request not approved per policy"}. Your Large Party at $venueName remains confirmed!';
       } else {
-        cardTitle = isLargeParty ? 'Large Party Confirmed! 🎉' : 'Group Party Confirmed! 🎉';
-        cardBody = 'Your party of $guestCount guests at $venueName$formattedTimeStr is fully confirmed. Get ready!';
+        cardTitle = isLargeParty
+            ? 'Large Party Confirmed! 🎉'
+            : 'Group Party Confirmed! 🎉';
+        cardBody =
+            'Your party of $guestCount guests at $venueName$formattedTimeStr is fully confirmed. Get ready!';
       }
       badgeText = 'CONFIRMED';
       accentColor = const Color(0xFF10B981);
       actionButtonText = 'View Ticket';
       onActionTap = () {
         _markGroupPartyAsRead(entries);
-        final venueMap = (partyMap['venue'] is Map) ? partyMap['venue'] as Map<dynamic, dynamic> : {'name': venueName};
+        final venueMap = (partyMap['venue'] is Map)
+            ? partyMap['venue'] as Map<dynamic, dynamic>
+            : {'name': venueName};
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => LargePartyTicketScreen(
-              booking: partyMap,
-              venue: venueMap,
-            ),
+            builder: (_) =>
+                LargePartyTicketScreen(booking: partyMap, venue: venueMap),
           ),
         );
       };
     } else if (overallStatus == 'approved') {
-      cardTitle = isLargeParty ? 'Large Party Approved! 💳' : 'Payment Required 💳';
-      cardBody = 'Action Required: Complete payment${totalAmount > 0 ? " of ₹${totalAmount.toInt()}" : ""} to confirm your party at $venueName.';
+      cardTitle = isLargeParty
+          ? 'Large Party Approved! 💳'
+          : 'Payment Required 💳';
+      cardBody =
+          'Action Required: Complete payment${totalAmount > 0 ? " of ₹${totalAmount.toInt()}" : ""} to confirm your party at $venueName.';
       badgeText = 'ACTION REQUIRED';
       accentColor = const Color(0xFFF59E0B);
       actionButtonText = 'Pay Now';
@@ -3884,42 +5393,56 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         cancelStatus == 'REFUND_PROCESSING' ||
         cancelStatus == 'REFUND_PAID' ||
         cancelStatus == 'PENDING_PAYOUT') {
-      final bool isRefundCompleted = cancelStatus == 'COMPLETED' ||
+      final bool isRefundCompleted =
+          cancelStatus == 'COMPLETED' ||
           cancelStatus == 'REFUND_PAID' ||
           partyMap['refundStatus'] == 'COMPLETED';
-      final bool isRefundPendingPayout = cancelStatus == 'REFUND_PROCESSING' ||
+      final bool isRefundPendingPayout =
+          cancelStatus == 'REFUND_PROCESSING' ||
           cancelStatus == 'PENDING_PAYOUT' ||
           partyMap['refundStatus'] == 'PENDING_PAYOUT';
 
       if (isRefundCompleted) {
-        cardTitle = isLargeParty ? 'Large Party Refunded ✅' : 'Group Party Refunded ✅';
+        cardTitle = isLargeParty
+            ? 'Large Party Refunded ✅'
+            : 'Group Party Refunded ✅';
         badgeText = 'REFUND COMPLETED';
         accentColor = const Color(0xFF10B981);
         if (refundAmt != null && refundAmt > 0) {
-          cardBody = 'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} refund has been paid successfully.';
+          cardBody =
+              'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} refund has been paid successfully.';
         } else {
-          cardBody = 'Your party at $venueName was cancelled and refund has been completed.';
+          cardBody =
+              'Your party at $venueName was cancelled and refund has been completed.';
         }
       } else if (isRefundPendingPayout) {
-        cardTitle = isLargeParty ? 'Refund Processing ⏳' : 'Group Party Refund Processing ⏳';
+        cardTitle = isLargeParty
+            ? 'Refund Processing ⏳'
+            : 'Group Party Refund Processing ⏳';
         badgeText = 'REFUND PROCESSING';
         accentColor = const Color(0xFFF59E0B);
         if (refundAmt != null && refundAmt > 0) {
-          cardBody = 'Cancellation approved. Your refund of ₹${refundAmt.toInt()} is being processed to your payout details.';
+          cardBody =
+              'Cancellation approved. Your refund of ₹${refundAmt.toInt()} is being processed to your payout details.';
         } else {
-          cardBody = 'Cancellation approved. Your refund is being processed to your payout details.';
+          cardBody =
+              'Cancellation approved. Your refund is being processed to your payout details.';
         }
       } else {
-        cardTitle = isLargeParty ? 'Large Party Cancelled ❌' : 'Group Party Cancelled ❌';
+        cardTitle = isLargeParty
+            ? 'Large Party Cancelled ❌'
+            : 'Group Party Cancelled ❌';
         if (refundAmt != null && refundAmt > 0) {
           if (refundAmt <= 1500) {
             badgeText = 'REFUNDED TO WALLET';
             accentColor = const Color(0xFF10B981);
-            cardBody = 'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} has been credited to your Lunara Wallet.';
+            cardBody =
+                'Your party at $venueName was cancelled and ₹${refundAmt.toInt()} has been credited to your Lunara Wallet.';
           } else {
             badgeText = 'CANCELLED';
             accentColor = const Color(0xFFEF4444);
-            cardBody = 'Your party at $venueName was cancelled. A refund of ₹${refundAmt.toInt()} is being processed.';
+            cardBody =
+                'Your party at $venueName was cancelled. A refund of ₹${refundAmt.toInt()} is being processed.';
           }
         } else {
           cardBody = 'Your party request at $venueName was cancelled.';
@@ -3934,8 +5457,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (isLargeParty || !hasPendingPrice) {
         // Large party OR no price set yet → always show "Pending Approval" (no pay button)
-        cardTitle = isLargeParty ? 'Large Party Submitted ⏳' : 'Group Party Submitted ⏳';
-        cardBody = 'Your request for $guestCount guests at $venueName is pending admin approval. You\'ll be notified once it\'s reviewed.';
+        cardTitle = isLargeParty
+            ? 'Large Party Submitted ⏳'
+            : 'Group Party Submitted ⏳';
+        cardBody =
+            'Your request for $guestCount guests at $venueName is pending admin approval. You\'ll be notified once it\'s reviewed.';
         badgeText = 'PENDING APPROVAL';
         accentColor = const Color(0xFF8B5CF6);
         actionButtonText = null;
@@ -3943,7 +5469,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else {
         // Small group party where admin has set a price — payment required
         cardTitle = 'Payment Required 💳';
-        cardBody = 'Action Required: Complete payment of ₹${totalAmount.toInt()} to confirm your group party at $venueName.';
+        cardBody =
+            'Action Required: Complete payment of ₹${totalAmount.toInt()} to confirm your group party at $venueName.';
         badgeText = 'PAYMENT REQUIRED';
         accentColor = const Color(0xFFF59E0B);
         actionButtonText = 'Pay Now';
@@ -3956,14 +5483,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     List<NotificationAction>? actions;
     if (!isExpired && actionButtonText != null && onActionTap != null) {
-      final bool isProcessingPay = (actionButtonText == 'Pay Now' && _processingPaymentBookingId == partyId);
+      final bool isProcessingPay =
+          (actionButtonText == 'Pay Now' &&
+          _processingPaymentBookingId == partyId);
       actions = [
         NotificationAction(
           label: isProcessingPay ? 'Processing...' : actionButtonText,
           onTap: isProcessingPay ? () {} : onActionTap,
           isPrimary: true,
           isLoading: isProcessingPay,
-          icon: actionButtonText == 'Pay Now' ? Icons.payment_rounded : Icons.confirmation_number_rounded,
+          icon: actionButtonText == 'Pay Now'
+              ? Icons.payment_rounded
+              : Icons.confirmation_number_rounded,
         ),
       ];
 
@@ -3972,7 +5503,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ? '${parsedEventDate.year}-${parsedEventDate.month.toString().padLeft(2, '0')}-${parsedEventDate.day.toString().padLeft(2, '0')}'
             : (rawPartyDate?.toString() ?? '');
         final timeStr = parsedEventDate != null
-            ? LunaraDateFormatter.normalizeTimeTo12Hour('${parsedEventDate.hour}:${parsedEventDate.minute.toString().padLeft(2, '0')}')
+            ? LunaraDateFormatter.normalizeTimeTo12Hour(
+                '${parsedEventDate.hour}:${parsedEventDate.minute.toString().padLeft(2, '0')}',
+              )
             : (rawStartTime?.toString() ?? '');
         final cleanPartyId = ApiService.cleanBookingId(partyId);
 
@@ -3991,7 +5524,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 initialTime: timeStr,
                 initialAmountPaid: totalAmount,
                 onCancelled: () {
-                  _optimisticallyMarkBookingCancelled(cleanPartyId.isNotEmpty ? cleanPartyId : partyId);
+                  _optimisticallyMarkBookingCancelled(
+                    cleanPartyId.isNotEmpty ? cleanPartyId : partyId,
+                  );
                   ApiService.clearBookingCache();
                   _loadFeed(showLoader: false, forceRefresh: true);
                 },
@@ -4002,7 +5537,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    final String? venuePhoto = _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);
+    final String? venuePhoto =
+        _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);
 
     return UnifiedNotificationItem(
       id: 'group_party_timeline_$partyId',
@@ -4011,7 +5547,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       body: cardBody,
       createdAt: latestTime,
       timeAgo: _formatTimeAgo(latestTime.toIso8601String()),
-      isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'PAYMENT REQUIRED') ? false : !hasUnread,
+      isRead:
+          (badgeText == 'ACTION REQUIRED' || badgeText == 'PAYMENT REQUIRED')
+          ? false
+          : !hasUnread,
       isExpired: isExpired,
       badgeText: badgeText,
       accentColor: accentColor,
@@ -4062,7 +5601,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     Map<String, dynamic> bookingMap = {};
     for (final e in entries) {
-      if (e['data'] is Map && (e['data']['type'] == 'venue_booking_timeline' || e['data']['bookingId'] != null)) {
+      if (e['data'] is Map &&
+          (e['data']['type'] == 'venue_booking_timeline' ||
+              e['data']['bookingId'] != null)) {
         bookingMap = Map<String, dynamic>.from(e['data']);
         break;
       }
@@ -4081,7 +5622,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Extract total amount
     double totalAmount = 0.0;
     for (final e in entries) {
-      final rawAmt = e['totalAmount'] ?? e['amount'] ?? e['booking']?['totalAmount'] ?? e['data']?['totalAmount'] ?? e['data']?['amount'];
+      final rawAmt =
+          e['totalAmount'] ??
+          e['amount'] ??
+          e['booking']?['totalAmount'] ??
+          e['data']?['totalAmount'] ??
+          e['data']?['amount'];
       if (rawAmt is num && rawAmt > 0) {
         totalAmount = rawAmt.toDouble();
         break;
@@ -4098,9 +5644,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     // Extract venue name and date/time
-    String venueName = bookingMap['venueName'] ?? bookingMap['venue']?['name'] ?? 'Venue';
+    String venueName =
+        bookingMap['venueName'] ?? bookingMap['venue']?['name'] ?? 'Venue';
     for (final e in entries) {
-      final vName = e['venueName'] ?? e['venue']?['name'] ?? e['data']?['venueName'] ?? e['booking']?['venue']?['name'];
+      final vName =
+          e['venueName'] ??
+          e['venue']?['name'] ??
+          e['data']?['venueName'] ??
+          e['booking']?['venue']?['name'];
       if (vName != null && vName.toString().isNotEmpty) {
         venueName = vName.toString();
         break;
@@ -4108,21 +5659,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     String dateStr = bookingMap['bookingDate']?.toString() ?? '';
-    String timeStr = bookingMap['startTime']?.toString() ?? bookingMap['time']?.toString() ?? '';
+    String timeStr =
+        bookingMap['startTime']?.toString() ??
+        bookingMap['time']?.toString() ??
+        '';
     for (final e in entries) {
-      final d = e['bookingDate'] ?? e['data']?['bookingDate'] ?? e['booking']?['bookingDate'];
-      final t = e['startTime'] ?? e['time'] ?? e['bookingTime'] ?? e['data']?['startTime'] ?? e['booking']?['startTime'];
-      if (d != null && d.toString().isNotEmpty && dateStr.isEmpty) dateStr = d.toString();
-      if (t != null && t.toString().isNotEmpty && timeStr.isEmpty) timeStr = t.toString();
+      final d =
+          e['bookingDate'] ??
+          e['data']?['bookingDate'] ??
+          e['booking']?['bookingDate'];
+      final t =
+          e['startTime'] ??
+          e['time'] ??
+          e['bookingTime'] ??
+          e['data']?['startTime'] ??
+          e['booking']?['startTime'];
+      if (d != null && d.toString().isNotEmpty && dateStr.isEmpty) {
+        dateStr = d.toString();
+      }
+      if (t != null && t.toString().isNotEmpty && timeStr.isEmpty) {
+        timeStr = t.toString();
+      }
     }
     if (timeStr.isNotEmpty) {
       timeStr = LunaraDateFormatter.normalizeTimeTo12Hour(timeStr);
     }
 
-    final dynamic rawSoloGuests = bookingMap['numberOfGuests'] ?? bookingMap['guestCount'] ?? 1;
-    int guestCount = rawSoloGuests is num ? rawSoloGuests.toInt() : (int.tryParse(rawSoloGuests.toString()) ?? 1);
+    final dynamic rawSoloGuests =
+        bookingMap['numberOfGuests'] ?? bookingMap['guestCount'] ?? 1;
+    int guestCount = rawSoloGuests is num
+        ? rawSoloGuests.toInt()
+        : (int.tryParse(rawSoloGuests.toString()) ?? 1);
     for (final e in entries) {
-      final g = e['numberOfGuests'] ?? e['guestCount'] ?? e['data']?['guestCount'] ?? e['booking']?['numberOfGuests'];
+      final g =
+          e['numberOfGuests'] ??
+          e['guestCount'] ??
+          e['data']?['guestCount'] ??
+          e['booking']?['numberOfGuests'];
       if (g is num && g > 0) {
         guestCount = g.toInt();
         break;
@@ -4135,9 +5708,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    String ticketCode = (bookingMap['ticketCode'] ?? bookingMap['ticketId'] ?? '').toString();
+    String ticketCode =
+        (bookingMap['ticketCode'] ?? bookingMap['ticketId'] ?? '').toString();
     for (final e in entries) {
-      final tc = e['ticketCode'] ?? e['ticketId'] ?? e['data']?['ticketCode'] ?? e['booking']?['ticketCode'];
+      final tc =
+          e['ticketCode'] ??
+          e['ticketId'] ??
+          e['data']?['ticketCode'] ??
+          e['booking']?['ticketCode'];
       if (tc != null && tc.toString().isNotEmpty) {
         ticketCode = tc.toString();
         break;
@@ -4152,19 +5730,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     bool isRefunded = false;
 
     for (final e in entries) {
-      final status = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '').toString().toLowerCase();
-      final paymentStatus = (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '').toString().toLowerCase();
+      final status =
+          (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '')
+              .toString()
+              .toLowerCase();
+      final paymentStatus =
+          (e['paymentStatus'] ?? e['data']?['paymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
       final title = (e['title'] ?? '').toString().toLowerCase();
-      final eventType = (e['eventType'] ?? e['type'] ?? '').toString().toLowerCase();
+      final eventType = (e['eventType'] ?? e['type'] ?? '')
+          .toString()
+          .toLowerCase();
 
-      if (status == 'cancelled' || eventType == 'booking_cancelled' || title.contains('cancelled')) {
+      if (status == 'cancelled' ||
+          eventType == 'booking_cancelled' ||
+          title.contains('cancelled')) {
         isCancelled = true;
-        if (paymentStatus == 'refunded' || e['refundAmount'] != null) isRefunded = true;
+        if (paymentStatus == 'refunded' || e['refundAmount'] != null) {
+          isRefunded = true;
+        }
       } else if (status == 'completed' || title.contains('completed')) {
         isCompleted = true;
-      } else if (paymentStatus == 'paid' || status == 'confirmed' || eventType == 'booking_confirmed' || eventType == 'booking_paynow' || eventType == 'payment_success') {
+      } else if (paymentStatus == 'paid' ||
+          status == 'confirmed' ||
+          eventType == 'booking_confirmed' ||
+          eventType == 'booking_paynow' ||
+          eventType == 'payment_success') {
         isConfirmed = true;
-      } else if (status == 'pending' || paymentStatus == 'pending' || eventType == 'booking_pending_payment') {
+      } else if (status == 'pending' ||
+          paymentStatus == 'pending' ||
+          eventType == 'booking_pending_payment') {
         isPending = true;
       }
     }
@@ -4183,7 +5779,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     double refundAmount = 0.0;
     int? refundPercentage;
     for (final e in entries) {
-      final rawRefund = e['refundAmount'] ?? e['data']?['refundAmount'] ?? e['booking']?['refundAmount'];
+      final rawRefund =
+          e['refundAmount'] ??
+          e['data']?['refundAmount'] ??
+          e['booking']?['refundAmount'];
       if (rawRefund is num && rawRefund > 0) {
         refundAmount = rawRefund.toDouble();
         break;
@@ -4196,7 +5795,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     for (final e in entries) {
-      final rawPct = e['refundPercentage'] ?? e['data']?['refundPercentage'] ?? e['booking']?['refundPercentage'];
+      final rawPct =
+          e['refundPercentage'] ??
+          e['data']?['refundPercentage'] ??
+          e['booking']?['refundPercentage'];
       if (rawPct is num && rawPct > 0) {
         refundPercentage = rawPct.toInt();
         break;
@@ -4214,20 +5816,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       refundAmount = (totalAmount * pct / 100.0);
     }
 
-    final int effectivePct = refundPercentage ?? ((totalAmount > 0 && refundAmount > 0) ? ((refundAmount / totalAmount) * 100).round() : 100);
+    final int effectivePct =
+        refundPercentage ??
+        ((totalAmount > 0 && refundAmount > 0)
+            ? ((refundAmount / totalAmount) * 100).round()
+            : 100);
 
     final bool isSolo = guestCount <= 1;
-    final String bookingTypeLabel = isSolo ? 'Solo Booking' : 'Table Booking ($guestCount Guests)';
+    final String bookingTypeLabel = isSolo
+        ? 'Solo Booking'
+        : 'Table Booking ($guestCount Guests)';
     String title = '$bookingTypeLabel at $venueName 🎟';
     String body = isConfirmed
         ? 'Your reservation at $venueName is fully confirmed. Digital ticket is ready!'
         : (isCancelled
-            ? ((refundAmount > 0 || isRefunded)
-                ? 'Your booking was cancelled. $effectivePct% (₹${refundAmount.toStringAsFixed(0)}) refunded to your Lunara Wallet.'
-                : 'Your booking was cancelled.')
-            : (isCompleted
-                ? 'Hope you enjoyed your experience at $venueName!'
-                : 'Complete payment of ₹${totalAmount.toStringAsFixed(0)} to secure your table reservation.'));
+              ? ((refundAmount > 0 || isRefunded)
+                    ? 'Your booking was cancelled. $effectivePct% (₹${refundAmount.toStringAsFixed(0)}) refunded to your Lunara Wallet.'
+                    : 'Your booking was cancelled.')
+              : (isCompleted
+                    ? 'Hope you enjoyed your experience at $venueName!'
+                    : 'Complete payment of ₹${totalAmount.toStringAsFixed(0)} to secure your table reservation.'));
 
     String badge = 'CONFIRMED';
     Color accentColor = const Color(0xFF7C3AED);
@@ -4255,7 +5863,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           icon: Icons.confirmation_number_rounded,
           isPrimary: true,
           onTap: () {
-            final venueMap = bookingMap['venue'] is Map ? bookingMap['venue'] : {'name': venueName, 'id': bookingMap['venueId']};
+            final venueMap = bookingMap['venue'] is Map
+                ? bookingMap['venue']
+                : {'name': venueName, 'id': bookingMap['venueId']};
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -4266,7 +5876,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   table: isSolo ? 'Solo Entry' : 'Standard Table',
                   guests: guestCount.toString(),
                   package: isSolo ? 'Solo Entry' : 'Standard Table',
-                  totalPrice: totalAmount > 0 ? '₹${totalAmount.toStringAsFixed(0)}' : 'FREE (₹0)',
+                  totalPrice: totalAmount > 0
+                      ? '₹${totalAmount.toStringAsFixed(0)}'
+                      : 'FREE (₹0)',
                   ticketId: ticketCode.isNotEmpty ? ticketCode : bookingId,
                   ticketUrl: bookingMap['ticketUrl']?.toString(),
                   status: 'CONFIRMED',
@@ -4311,7 +5923,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               initialTime: timeStr,
               initialAmountPaid: totalAmount,
               onCancelled: () {
-                _optimisticallyMarkBookingCancelled(bookingId, refundAmount: refundAmount > 0 ? refundAmount : null, refundPercentage: effectivePct);
+                _optimisticallyMarkBookingCancelled(
+                  bookingId,
+                  refundAmount: refundAmount > 0 ? refundAmount : null,
+                  refundPercentage: effectivePct,
+                );
                 ApiService.clearBookingCache();
                 _loadFeed(showLoader: false, forceRefresh: true);
               },
@@ -4327,16 +5943,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           icon: Icons.credit_card_rounded,
           isPrimary: true,
           isLoading: isProcessingPayment,
-          onTap: isProcessingPayment ? () {} : () => _initiatePendingBookingPayment(bookingMap),
+          onTap: isProcessingPayment
+              ? () {}
+              : () => _initiatePendingBookingPayment(bookingMap),
         ),
       );
-    } else if (isCancelled && (isRefunded || refundAmount > 0 || totalAmount > 0)) {
+    } else if (isCancelled &&
+        (isRefunded || refundAmount > 0 || totalAmount > 0)) {
       actionsList.add(
         NotificationAction(
           label: 'View Wallet',
           icon: Icons.account_balance_wallet_rounded,
           isPrimary: true,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LunaraWalletScreen())),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+          ),
         ),
       );
     }
@@ -4345,7 +5967,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     bool hasUnread = false;
     for (final e in entries) {
       final eId = e['id']?.toString() ?? '';
-      final isRead = e['read'] == true ||
+      final isRead =
+          e['read'] == true ||
           e['isRead'] == true ||
           _localReadNotificationIds.contains(eId) ||
           ApiService.localReadRequestIds.contains(eId);
@@ -4361,16 +5984,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     if (bookingMap['lastActivityAt'] != null) {
       try {
-        final dt = DateTime.parse(bookingMap['lastActivityAt'].toString()).toLocal();
+        final dt = DateTime.parse(
+          bookingMap['lastActivityAt'].toString(),
+        ).toLocal();
         if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       } catch (_) {}
     }
     if (latestCreatedAt.millisecondsSinceEpoch == 0) {
-      latestCreatedAt = _parseDateTime(entries.first['createdAt'] ?? entries.first['updatedAt']);
+      latestCreatedAt = _parseDateTime(
+        entries.first['createdAt'] ?? entries.first['updatedAt'],
+      );
     }
-    if (_localReadNotificationIds.contains('venue_booking_timeline_$bookingId') ||
+    if (_localReadNotificationIds.contains(
+          'venue_booking_timeline_$bookingId',
+        ) ||
         _localReadNotificationIds.contains(bookingId) ||
-        ApiService.localReadRequestIds.contains('venue_booking_timeline_$bookingId') ||
+        ApiService.localReadRequestIds.contains(
+          'venue_booking_timeline_$bookingId',
+        ) ||
         ApiService.localReadRequestIds.contains(bookingId)) {
       hasUnread = false;
     }
@@ -4391,7 +6022,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       badgeText: badge,
       accentColor: accentColor,
       categoryIcon: icon,
-      avatarUrl: _extractVenuePhoto(bookingMap['venue']) ?? _extractVenuePhoto(bookingMap) ?? bookingMap['venueImageUrl']?.toString(),
+      avatarUrl:
+          _extractVenuePhoto(bookingMap['venue']) ??
+          _extractVenuePhoto(bookingMap) ??
+          bookingMap['venueImageUrl']?.toString(),
       actions: actionsList.isNotEmpty ? actionsList : null,
       rawData: {
         ...bookingMap,
@@ -4404,7 +6038,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'numberOfGuests': guestCount,
         'ticketCode': ticketCode,
       },
-      statusSummary: isCancelled ? 'Cancelled' : (isConfirmed ? 'Confirmed' : 'Payment Pending'),
+      statusSummary: isCancelled
+          ? 'Cancelled'
+          : (isConfirmed ? 'Confirmed' : 'Payment Pending'),
     );
   }
 
@@ -4433,19 +6069,71 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    final String requestId = (metadata['requestId'] ?? rawItem['requestId'] ?? rawItem['data']?['requestId'] ?? (rawItem['id']?.toString().startsWith('upcoming_night_timeline_') == false ? rawItem['id'] : null) ?? nightId).toString();
-    final String matchId = (metadata['matchId'] ?? rawItem['matchId'] ?? rawItem['data']?['matchId'] ?? '').toString();
-    final String targetRequestId = requestId.isNotEmpty ? requestId : (matchId.isNotEmpty ? matchId : nightId);
-    final String targetMatchId = matchId.isNotEmpty ? matchId : (requestId.isNotEmpty ? requestId : nightId);
+    final String requestId =
+        (metadata['requestId'] ??
+                rawItem['requestId'] ??
+                rawItem['data']?['requestId'] ??
+                (rawItem['id']?.toString().startsWith(
+                          'upcoming_night_timeline_',
+                        ) ==
+                        false
+                    ? rawItem['id']
+                    : null) ??
+                nightId)
+            .toString();
+    final String matchId =
+        (metadata['matchId'] ??
+                rawItem['matchId'] ??
+                rawItem['data']?['matchId'] ??
+                '')
+            .toString();
+    final String targetRequestId = requestId.isNotEmpty
+        ? requestId
+        : (matchId.isNotEmpty ? matchId : nightId);
+    final String targetMatchId = matchId.isNotEmpty
+        ? matchId
+        : (requestId.isNotEmpty ? requestId : nightId);
 
-    final String status = (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT').toString().toUpperCase();
-    final String stage = (metadata['stage'] ?? rawItem['stage'] ?? 'INVITE_SENT').toString().toUpperCase();
-    final String cancellationStatus = (metadata['cancellationStatus'] ?? rawItem['cancellationStatus'] ?? rawItem['data']?['cancellationStatus'] ?? 'NONE').toString().toUpperCase();
-    final String cancelledBy = (metadata['cancelledBy'] ?? rawItem['cancelledBy'] ?? rawItem['data']?['cancelledBy'] ?? '').toString();
+    final String status =
+        (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT')
+            .toString()
+            .toUpperCase();
+    final String stage =
+        (metadata['stage'] ?? rawItem['stage'] ?? 'INVITE_SENT')
+            .toString()
+            .toUpperCase();
+    final String cancellationStatus =
+        (metadata['cancellationStatus'] ??
+                rawItem['cancellationStatus'] ??
+                rawItem['data']?['cancellationStatus'] ??
+                'NONE')
+            .toString()
+            .toUpperCase();
+    final String cancelledBy =
+        (metadata['cancelledBy'] ??
+                rawItem['cancelledBy'] ??
+                rawItem['data']?['cancelledBy'] ??
+                '')
+            .toString();
 
-    final String hostId = (metadata['hostId'] ?? rawItem['hostId'] ?? rawItem['actorUserId'] ?? rawItem['senderId'] ?? '').toString();
-    final String partnerId = (metadata['partnerId'] ?? rawItem['partnerId'] ?? rawItem['recipientUserId'] ?? '').toString();
-    final String myId = (currentUserId.isNotEmpty ? currentUserId : ApiService.currentUserId ?? '').toString();
+    final String hostId =
+        (metadata['hostId'] ??
+                rawItem['hostId'] ??
+                rawItem['actorUserId'] ??
+                rawItem['senderId'] ??
+                '')
+            .toString();
+    final String partnerId =
+        (metadata['partnerId'] ??
+                rawItem['partnerId'] ??
+                rawItem['recipientUserId'] ??
+                '')
+            .toString();
+    final String myId =
+        (currentUserId.isNotEmpty
+                ? currentUserId
+                : ApiService.currentUserId ?? '')
+            .toString();
 
     bool isCurrentUserHost = false;
     if (metadata['isHost'] != null) {
@@ -4453,17 +6141,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (rawItem['isHost'] != null) {
       isCurrentUserHost = rawItem['isHost'] == true;
     } else if (metadata['userRole'] != null) {
-      isCurrentUserHost = metadata['userRole'].toString().toUpperCase() == 'HOST';
+      isCurrentUserHost =
+          metadata['userRole'].toString().toUpperCase() == 'HOST';
     } else if (rawItem['userRole'] != null) {
-      isCurrentUserHost = rawItem['userRole'].toString().toUpperCase() == 'HOST';
+      isCurrentUserHost =
+          rawItem['userRole'].toString().toUpperCase() == 'HOST';
     } else if (myId.isNotEmpty) {
       if (hostId.isNotEmpty && hostId == myId) {
         isCurrentUserHost = true;
       } else if (partnerId.isNotEmpty && partnerId == myId) {
         isCurrentUserHost = false;
-      } else if (rawItem['actorUserId'] != null && rawItem['actorUserId'].toString() == myId) {
+      } else if (rawItem['actorUserId'] != null &&
+          rawItem['actorUserId'].toString() == myId) {
         isCurrentUserHost = true;
-      } else if (rawItem['recipientUserId'] != null && rawItem['recipientUserId'].toString() == myId) {
+      } else if (rawItem['recipientUserId'] != null &&
+          rawItem['recipientUserId'].toString() == myId) {
         isCurrentUserHost = false;
       }
     } else {
@@ -4473,15 +6165,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final Map<String, dynamic> partnerData = metadata['partner'] is Map
         ? Map<String, dynamic>.from(metadata['partner'])
         : (rawItem['partner'] is Map
-            ? Map<String, dynamic>.from(rawItem['partner'])
-            : (rawItem['sender'] is Map ? Map<String, dynamic>.from(rawItem['sender']) : <String, dynamic>{}));
+              ? Map<String, dynamic>.from(rawItem['partner'])
+              : (rawItem['sender'] is Map
+                    ? Map<String, dynamic>.from(rawItem['sender'])
+                    : <String, dynamic>{}));
 
-    final String partnerName = partnerData['name']?.toString() ??
+    final String partnerName =
+        partnerData['name']?.toString() ??
         partnerData['firstName']?.toString() ??
         rawItem['senderName']?.toString() ??
         rawItem['otherUserName']?.toString() ??
         (isCurrentUserHost ? 'Night Partner' : 'Host');
-    final String? partnerPhoto = partnerData['photo']?.toString() ??
+    final String? partnerPhoto =
+        partnerData['photo']?.toString() ??
         partnerData['profilePhotoUrl']?.toString() ??
         partnerData['profileImageUrl']?.toString() ??
         rawItem['senderImage']?.toString() ??
@@ -4489,9 +6185,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     final Map<String, dynamic> eventData = metadata['event'] is Map
         ? Map<String, dynamic>.from(metadata['event'])
-        : (rawItem['event'] is Map ? Map<String, dynamic>.from(rawItem['event']) : <String, dynamic>{});
+        : (rawItem['event'] is Map
+              ? Map<String, dynamic>.from(rawItem['event'])
+              : <String, dynamic>{});
 
-    final String eventName = eventData['name']?.toString() ??
+    final String eventName =
+        eventData['name']?.toString() ??
         eventData['title']?.toString() ??
         metadata['eventName']?.toString() ??
         metadata['title']?.toString() ??
@@ -4499,7 +6198,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         rawItem['title']?.toString() ??
         '';
 
-    final String venueName = eventData['venueName']?.toString() ??
+    final String venueName =
+        eventData['venueName']?.toString() ??
         metadata['venue']?['name']?.toString() ??
         metadata['venueName']?.toString() ??
         rawItem['venueName']?.toString() ??
@@ -4509,20 +6209,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ? '$eventName • $venueName'
         : venueName;
 
-    final String dateStr = eventData['date']?.toString() ?? metadata['date']?.toString() ?? metadata['eventDate']?.toString() ?? rawItem['date']?.toString() ?? rawItem['eventDate']?.toString() ?? 'Tonight';
-    final String timeStr = eventData['time']?.toString() ?? metadata['time']?.toString() ?? metadata['eventTime']?.toString() ?? rawItem['time']?.toString() ?? rawItem['eventTime']?.toString() ?? '8:00 PM';
-    final String? venuePhoto = eventData['coverImageUrl']?.toString() ??
+    final String dateStr =
+        eventData['date']?.toString() ??
+        metadata['date']?.toString() ??
+        metadata['eventDate']?.toString() ??
+        rawItem['date']?.toString() ??
+        rawItem['eventDate']?.toString() ??
+        'Tonight';
+    final String timeStr =
+        eventData['time']?.toString() ??
+        metadata['time']?.toString() ??
+        metadata['eventTime']?.toString() ??
+        rawItem['time']?.toString() ??
+        rawItem['eventTime']?.toString() ??
+        '8:00 PM';
+    final String? venuePhoto =
+        eventData['coverImageUrl']?.toString() ??
         metadata['coverImageUrl']?.toString() ??
         metadata['venue']?['coverImageUrl']?.toString() ??
         _extractVenuePhoto(metadata['venue']) ??
         _extractVenuePhoto(rawItem);
 
-    final String? ticketId = metadata['ticketId']?.toString() ?? rawItem['ticketCode']?.toString();
-    final String? chatId = metadata['chatId']?.toString() ?? rawItem['conversationId']?.toString();
+    final String? ticketId =
+        metadata['ticketId']?.toString() ?? rawItem['ticketCode']?.toString();
+    final String? chatId =
+        metadata['chatId']?.toString() ?? rawItem['conversationId']?.toString();
 
     final bool isCancellationRequested = cancellationStatus == 'REQUESTED';
-    final bool isCanceller = isCancellationRequested && (cancelledBy.isNotEmpty ? cancelledBy == myId : false);
-    final bool isCancellationRecipient = isCancellationRequested && !isCanceller;
+    final bool isCanceller =
+        isCancellationRequested &&
+        (cancelledBy.isNotEmpty ? cancelledBy == myId : false);
+    final bool isCancellationRecipient =
+        isCancellationRequested && !isCanceller;
 
     Color accentColor = LunaraTheme.electricViolet;
     String badgeText = 'UPCOMING NIGHT';
@@ -4530,7 +6248,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String cardBody = 'Event at $displayTitle on $dateStr • $timeStr';
     List<NotificationAction> actionsList = [];
 
-    DateTime latestTime = _parseDateTime(rawItem['createdAt'] ?? rawItem['updatedAt']);
+    DateTime latestTime = _parseDateTime(
+      rawItem['createdAt'] ?? rawItem['updatedAt'],
+    );
 
     if (status == 'CANCELLED' || stage == 'CANCELLED') {
       accentColor = const Color(0xFFEF4444);
@@ -4542,8 +6262,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFFEF4444);
         badgeText = 'ACTION REQUIRED';
         cardTitle = 'Cancellation Request Received ⚠️';
-        final reason = (metadata['cancellationReason'] ?? rawItem['cancellationReason'] ?? 'Change of plans').toString();
-        cardBody = '$partnerName requested to cancel Upcoming Night at $displayTitle. Reason: "$reason". Please confirm to process refund or keep active.';
+        final reason =
+            (metadata['cancellationReason'] ??
+                    rawItem['cancellationReason'] ??
+                    'Change of plans')
+                .toString();
+        cardBody =
+            '$partnerName requested to cancel Upcoming Night at $displayTitle. Reason: "$reason". Please confirm to process refund or keep active.';
 
         final acceptCancelKey = 'accept_cancel_$targetMatchId';
         final rejectCancelKey = 'reject_cancel_$targetMatchId';
@@ -4556,31 +6281,45 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.check_circle_rounded,
             isPrimary: true,
             isLoading: isAcceptingCancel,
-            onTap: (isAcceptingCancel || isRejectingCancel) ? () {} : () async {
-              setState(() => _activeActionKeys.add(acceptCancelKey));
-              try {
-                final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, action: 'approve');
-                if (res != null && res['success'] == true) {
-                  _optimisticallyMarkBookingCancelled(targetMatchId);
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Upcoming night cancelled and refunded to wallet.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(res?['message'] ?? 'Could not process cancellation.'),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(acceptCancelKey));
-              }
-            },
+            onTap: (isAcceptingCancel || isRejectingCancel)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(acceptCancelKey));
+                    try {
+                      final res = await ApiService.cancelUpcomingNight(
+                        targetId: targetMatchId,
+                        action: 'approve',
+                      );
+                      if (res != null && res['success'] == true) {
+                        _optimisticallyMarkBookingCancelled(targetMatchId);
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Upcoming night cancelled and refunded to wallet.',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              res?['message'] ??
+                                  'Could not process cancellation.',
+                            ),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(acceptCancelKey),
+                        );
+                      }
+                    }
+                  },
           ),
         );
 
@@ -4590,36 +6329,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.close_rounded,
             isPrimary: false,
             isLoading: isRejectingCancel,
-            onTap: (isAcceptingCancel || isRejectingCancel) ? () {} : () async {
-              setState(() => _activeActionKeys.add(rejectCancelKey));
-              try {
-                final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, action: 'reject');
-                if (res != null && res['success'] == true) {
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Cancellation declined. Event remains confirmed.'),
-                      backgroundColor: Colors.blueGrey,
-                    ),
-                  );
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(rejectCancelKey));
-              }
-            },
+            onTap: (isAcceptingCancel || isRejectingCancel)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(rejectCancelKey));
+                    try {
+                      final res = await ApiService.cancelUpcomingNight(
+                        targetId: targetMatchId,
+                        action: 'reject',
+                      );
+                      if (res != null && res['success'] == true) {
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Cancellation declined. Event remains confirmed.',
+                            ),
+                            backgroundColor: Colors.blueGrey,
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(rejectCancelKey),
+                        );
+                      }
+                    }
+                  },
           ),
         );
       } else {
         accentColor = const Color(0xFFF59E0B);
         badgeText = 'PENDING';
         cardTitle = 'Cancellation Requested ⏳';
-        cardBody = 'Waiting for $partnerName to confirm cancellation of Upcoming Night at $displayTitle.';
+        cardBody =
+            'Waiting for $partnerName to confirm cancellation of Upcoming Night at $displayTitle.';
       }
     } else if (stage == 'FULLY_BOOKED' || status == 'CONFIRMED') {
       accentColor = const Color(0xFF10B981);
       badgeText = 'CONFIRMED';
       cardTitle = 'Upcoming Night Confirmed! 🎉';
-      cardBody = 'You and $partnerName are set for $displayTitle on $dateStr • $timeStr! Ticket is locked.';
+      cardBody =
+          'You and $partnerName are set for $displayTitle on $dateStr • $timeStr! Ticket is locked.';
 
       if (ticketId != null && ticketId.isNotEmpty) {
         actionsList.add(
@@ -4632,10 +6384,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 context,
                 MaterialPageRoute(
                   builder: (_) => DigitalTicketScreen(
-                    venue: {
-                      'name': venueName,
-                      'coverImageUrl': venuePhoto,
-                    },
+                    venue: {'name': venueName, 'coverImageUrl': venuePhoto},
                     date: dateStr,
                     time: timeStr,
                     guests: '2',
@@ -4684,7 +6433,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               context: context,
               builder: (ctx) => AlertDialog(
                 backgroundColor: const Color(0xFF1E1035),
-                title: const Text('Cancel Upcoming Night?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Cancel Upcoming Night?',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 content: const Text(
                   'Are you sure you want to cancel this Upcoming Night booking? Any refundable amount will be credited to your Lunara Wallet.',
                   style: TextStyle(color: Colors.white70),
@@ -4692,19 +6447,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Keep Booking', style: TextStyle(color: Colors.white54)),
+                    child: const Text(
+                      'Keep Booking',
+                      style: TextStyle(color: Colors.white54),
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(ctx, true),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-                    child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                    ),
+                    child: const Text(
+                      'Confirm Cancel',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
             );
 
             if (confirm == true) {
-              final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, reason: 'User requested cancellation');
+              final res = await ApiService.cancelUpcomingNight(
+                targetId: targetMatchId,
+                reason: 'User requested cancellation',
+              );
               if (res != null && res['success'] == true) {
                 _loadFeed(showLoader: false, forceRefresh: true);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -4716,7 +6482,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(res?['message'] ?? 'Could not cancel upcoming night. Please contact support.'),
+                    content: Text(
+                      res?['message'] ??
+                          'Could not cancel upcoming night. Please contact support.',
+                    ),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
@@ -4725,10 +6494,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           },
         ),
       );
-    } else if (stage == 'WAITING_FOR_PAYMENT' || status == 'ACCEPTED' || status == 'MATCHED') {
+    } else if (stage == 'WAITING_FOR_PAYMENT' ||
+        status == 'ACCEPTED' ||
+        status == 'MATCHED') {
       accentColor = const Color(0xFFF59E0B);
       badgeText = isCurrentUserHost ? 'ACTION REQUIRED' : 'WAITING FOR HOST';
-      cardTitle = isCurrentUserHost ? 'Invite Accepted! 💳' : 'Waiting for Confirmation 🎉';
+      cardTitle = isCurrentUserHost
+          ? 'Invite Accepted! 💳'
+          : 'Waiting for Confirmation 🎉';
       cardBody = isCurrentUserHost
           ? '$partnerName accepted your invite for $displayTitle! Complete payment to lock your match.'
           : 'You accepted the invite! Waiting for host ($partnerName) to complete booking payment.';
@@ -4763,7 +6536,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           isPrimary: false,
           color: Colors.red[400],
           onTap: () async {
-            final res = await ApiService.cancelUpcomingNight(targetId: targetMatchId, reason: 'Cancelled before booking');
+            final res = await ApiService.cancelUpcomingNight(
+              targetId: targetMatchId,
+              reason: 'Cancelled before booking',
+            );
             if (res != null && res['success'] == true) {
               _loadFeed(showLoader: false, forceRefresh: true);
             }
@@ -4775,8 +6551,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (!isCurrentUserHost) {
         accentColor = LunaraTheme.electricViolet;
         badgeText = 'INVITE';
-        cardTitle = 'Night Partner Invite 🌙';
-        cardBody = '$partnerName invited you to join for $displayTitle on $dateStr • $timeStr!';
+        cardTitle = 'Invite for Party Event🌙';
+        cardBody =
+            '$partnerName invited you to join for $displayTitle on $dateStr • $timeStr!';
 
         final acceptKey = 'accept_np_$targetRequestId';
         final declineKey = 'decline_np_$targetRequestId';
@@ -4789,33 +6566,48 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.check_circle_rounded,
             isPrimary: true,
             isLoading: isAccepting,
-            onTap: (isAccepting || isDeclining) ? () {} : () async {
-              setState(() => _activeActionKeys.add(acceptKey));
-              try {
-                final res = await ApiService.respondToNightPartnerRequestDetailed(requestId: targetRequestId, action: 'accept');
-                if (res['success'] == true) {
-                  _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'accepted');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Invite accepted! Waiting for booking confirmation. 🎉'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                } else {
-                  final errMsg = res['message']?.toString() ?? 'Could not accept invite. Match slot may already be filled.';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(errMsg),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(acceptKey));
-              }
-            },
+            onTap: (isAccepting || isDeclining)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(acceptKey));
+                    try {
+                      final res =
+                          await ApiService.respondToNightPartnerRequestDetailed(
+                            requestId: targetRequestId,
+                            action: 'accept',
+                          );
+                      if (res['success'] == true) {
+                        _optimisticallyUpdateNightPartnerRequest(
+                          targetRequestId,
+                          'accepted',
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Invite accepted! Waiting for booking confirmation. 🎉',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      } else {
+                        final errMsg =
+                            res['message']?.toString() ??
+                            'Could not accept invite. Match slot may already be filled.';
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(errMsg),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(acceptKey));
+                      }
+                    }
+                  },
           ),
         );
 
@@ -4826,40 +6618,54 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isDeclining,
             color: Colors.white54,
-            onTap: (isAccepting || isDeclining) ? () {} : () async {
-              setState(() => _activeActionKeys.add(declineKey));
-              try {
-                final res = await ApiService.respondToNightPartnerRequestDetailed(requestId: targetRequestId, action: 'decline');
-                if (res['success'] == true) {
-                  _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'rejected');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Invite declined.'),
-                      backgroundColor: Colors.grey,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                } else {
-                  final errMsg = res['message']?.toString() ?? 'Could not decline invite.';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(errMsg),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(declineKey));
-              }
-            },
+            onTap: (isAccepting || isDeclining)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(declineKey));
+                    try {
+                      final res =
+                          await ApiService.respondToNightPartnerRequestDetailed(
+                            requestId: targetRequestId,
+                            action: 'decline',
+                          );
+                      if (res['success'] == true) {
+                        _optimisticallyUpdateNightPartnerRequest(
+                          targetRequestId,
+                          'rejected',
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Invite declined.'),
+                            backgroundColor: Colors.grey,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      } else {
+                        final errMsg =
+                            res['message']?.toString() ??
+                            'Could not decline invite.';
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(errMsg),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(declineKey));
+                      }
+                    }
+                  },
           ),
         );
       } else {
         accentColor = const Color(0xFF8B5CF6);
         badgeText = 'INVITE SENT';
         cardTitle = 'Invite Sent ⏳';
-        cardBody = 'Invited $partnerName to join $displayTitle. Waiting for response.';
+        cardBody =
+            'Invited $partnerName to join $displayTitle. Waiting for response.';
 
         actionsList.add(
           NotificationAction(
@@ -4868,7 +6674,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.red[400],
             onTap: () async {
-              final res = await ApiService.cancelUpcomingNight(targetId: targetRequestId, reason: 'Host cancelled invite');
+              final res = await ApiService.cancelUpcomingNight(
+                targetId: targetRequestId,
+                reason: 'Host cancelled invite',
+              );
               if (res != null && res['success'] == true) {
                 _loadFeed(showLoader: false, forceRefresh: true);
               }
@@ -4885,7 +6694,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       body: cardBody,
       createdAt: latestTime,
       timeAgo: _formatTimeAgo(latestTime.toIso8601String()),
-      isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'INVITE') ? false : true,
+      isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'INVITE')
+          ? false
+          : true,
       isExpired: false,
       badgeText: badgeText,
       accentColor: accentColor,
@@ -4924,7 +6735,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         planMap = Map<String, dynamic>.from(e['plan']);
         break;
       } else if (e['type'] == 'party_plan' || e['category'] == 'party_plan') {
-        if (e['venue'] != null || e['creator'] != null || e['planDateTime'] != null) {
+        if (e['venue'] != null ||
+            e['creator'] != null ||
+            e['planDateTime'] != null) {
           planMap = Map<String, dynamic>.from(e);
           break;
         }
@@ -4945,15 +6758,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final venue = (planMap['venue'] is Map)
         ? planMap['venue'] as Map<String, dynamic>
         : <String, dynamic>{};
-    final venueName = venue['name']?.toString() ?? planMap['venueName']?.toString() ?? 'Party Venue';
+    final venueName =
+        venue['name']?.toString() ??
+        planMap['venueName']?.toString() ??
+        'Party Venue';
 
-    Map<String, dynamic> hostCreator = (planMap['creator'] is Map && (planMap['creator'] as Map).isNotEmpty)
+    Map<String, dynamic> hostCreator =
+        (planMap['creator'] is Map && (planMap['creator'] as Map).isNotEmpty)
         ? Map<String, dynamic>.from(planMap['creator'])
         : (planMap['host'] is Map && (planMap['host'] as Map).isNotEmpty
-            ? Map<String, dynamic>.from(planMap['host'])
-            : (planMap['user'] is Map && (planMap['user'] as Map).isNotEmpty
-                ? Map<String, dynamic>.from(planMap['user'])
-                : <String, dynamic>{}));
+              ? Map<String, dynamic>.from(planMap['host'])
+              : (planMap['user'] is Map && (planMap['user'] as Map).isNotEmpty
+                    ? Map<String, dynamic>.from(planMap['user'])
+                    : <String, dynamic>{}));
 
     if (hostCreator.isEmpty) {
       for (final e in entries) {
@@ -4971,9 +6788,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
         if (e['data'] is Map) {
           final d = e['data'] as Map;
-          if (d['creator'] is Map) { hostCreator = Map<String, dynamic>.from(d['creator']); break; }
-          if (d['host'] is Map) { hostCreator = Map<String, dynamic>.from(d['host']); break; }
-          if (d['user'] is Map) { hostCreator = Map<String, dynamic>.from(d['user']); break; }
+          if (d['creator'] is Map) {
+            hostCreator = Map<String, dynamic>.from(d['creator']);
+            break;
+          }
+          if (d['host'] is Map) {
+            hostCreator = Map<String, dynamic>.from(d['host']);
+            break;
+          }
+          if (d['user'] is Map) {
+            hostCreator = Map<String, dynamic>.from(d['user']);
+            break;
+          }
         }
       }
     }
@@ -4983,17 +6809,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final fn = hostCreator['firstName'] ?? hostCreator['name'];
       final ln = hostCreator['lastName'] ?? '';
       hostName = '$fn $ln'.trim();
-    } else if (planMap['hostName'] != null && planMap['hostName'].toString().trim().isNotEmpty) {
+    } else if (planMap['hostName'] != null &&
+        planMap['hostName'].toString().trim().isNotEmpty) {
       hostName = planMap['hostName'].toString().trim();
-    } else if (planMap['userName'] != null && planMap['userName'].toString().trim().isNotEmpty) {
+    } else if (planMap['userName'] != null &&
+        planMap['userName'].toString().trim().isNotEmpty) {
       hostName = planMap['userName'].toString().trim();
     } else if (planMap['hostFirstName'] != null) {
-      hostName = '${planMap['hostFirstName']} ${planMap['hostLastName'] ?? ''}'.trim();
+      hostName = '${planMap['hostFirstName']} ${planMap['hostLastName'] ?? ''}'
+          .trim();
     } else {
       hostName = 'Party Host';
     }
 
-    String? rawHostPhoto = _extractUserPhoto(hostCreator) ??
+    String? rawHostPhoto =
+        _extractUserPhoto(hostCreator) ??
         _extractUserPhoto(planMap['creator']) ??
         _extractUserPhoto(planMap['host']) ??
         _extractUserPhoto(planMap['user']) ??
@@ -5003,44 +6833,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (rawHostPhoto == null || rawHostPhoto.isEmpty) {
       for (final e in entries) {
-        rawHostPhoto = _extractUserPhoto(e['creator']) ??
+        rawHostPhoto =
+            _extractUserPhoto(e['creator']) ??
             _extractUserPhoto(e['host']) ??
             _extractUserPhoto(e['user']) ??
             _extractUserPhoto(e['sender']) ??
             _extractUserPhoto(e['actor']) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['creator']) : null) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['sender']) : null) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['creator']) : null,
+            ) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null,
+            ) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null,
+            ) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['sender']) : null,
+            ) ??
             _extractUserPhoto(e['data']) ??
             _extractUserPhoto(e);
         if (rawHostPhoto != null && rawHostPhoto.isNotEmpty) break;
       }
     }
 
-    String? hostPhoto = rawHostPhoto != null ? ApiService.formatImageUrl(rawHostPhoto) : null;
+    String? hostPhoto = rawHostPhoto != null
+        ? ApiService.formatImageUrl(rawHostPhoto)
+        : null;
 
     // Robustly extract planHostId from all possible locations
-    String planHostId = (planMap['userId'] ??
-        planMap['hostId'] ??
-        planMap['creatorId'] ??
-        hostCreator['id'] ??
-        planMap['payActionPayload']?['hostId'] ??
-        planMap['payActionPayload']?['userId'] ??
-        '').toString();
+    String planHostId =
+        (planMap['userId'] ??
+                planMap['hostId'] ??
+                planMap['creatorId'] ??
+                hostCreator['id'] ??
+                planMap['payActionPayload']?['hostId'] ??
+                planMap['payActionPayload']?['userId'] ??
+                '')
+            .toString();
 
     if (planHostId.isEmpty) {
       for (final e in entries) {
-        final hid = (e['hostId'] ??
-            e['userId'] ??
-            e['creatorId'] ??
-            e['metadata']?['hostId'] ??
-            e['metadata']?['userId'] ??
-            e['data']?['hostId'] ??
-            e['data']?['userId'] ??
-            e['payActionPayload']?['hostId'] ??
-            e['payActionPayload']?['userId'] ??
-            '').toString();
+        final hid =
+            (e['hostId'] ??
+                    e['userId'] ??
+                    e['creatorId'] ??
+                    e['metadata']?['hostId'] ??
+                    e['metadata']?['userId'] ??
+                    e['data']?['hostId'] ??
+                    e['data']?['userId'] ??
+                    e['payActionPayload']?['hostId'] ??
+                    e['payActionPayload']?['userId'] ??
+                    '')
+                .toString();
         if (hid.isNotEmpty) {
           planHostId = hid;
           break;
@@ -5048,23 +6893,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    final bool isHostExplicit = entries.any((e) =>
-        e['role'] == 'host' ||
-        e['payActionPayload']?['isHost'] == true ||
-        e['requestType'] == 'party_plan_host_deposit' ||
-        e['category'] == 'party_plan_host_deposit' ||
-        e['id']?.toString().startsWith('pending_pp_') == true ||
-        e['id']?.toString().startsWith('pp_host_deposit_') == true ||
-        (e['hostRazorpayOrderId'] != null && e['hostRazorpayOrderId'].toString().isNotEmpty && e['hostPaymentStatus'] != 'paid'));
+    final bool isHostExplicit = entries.any(
+      (e) =>
+          e['role'] == 'host' ||
+          e['payActionPayload']?['isHost'] == true ||
+          e['requestType'] == 'party_plan_host_deposit' ||
+          e['category'] == 'party_plan_host_deposit' ||
+          e['id']?.toString().startsWith('pending_pp_') == true ||
+          e['id']?.toString().startsWith('pp_host_deposit_') == true ||
+          (e['hostRazorpayOrderId'] != null &&
+              e['hostRazorpayOrderId'].toString().isNotEmpty &&
+              e['hostPaymentStatus'] != 'paid'),
+    );
 
-    final bool isHost = isHostExplicit ||
-        (currentUserId.isNotEmpty && (planHostId == currentUserId || planMap['role'] == 'host'));
+    final bool isHost =
+        isHostExplicit ||
+        (currentUserId.isNotEmpty &&
+            (planHostId == currentUserId || planMap['role'] == 'host'));
 
     if (isHost && (hostCreator.isEmpty || hostName == 'Party Host')) {
       final cu = ApiService.cachedCurrentUser;
       if (cu != null) {
         final cuName = '${cu.firstName} ${cu.lastName}'.trim();
-        final cuPhoto = cu.profilePhoto ?? (cu.photos.isNotEmpty ? cu.photos.first : null);
+        final cuPhoto =
+            cu.profilePhoto ?? (cu.photos.isNotEmpty ? cu.photos.first : null);
         hostCreator = {
           'id': currentUserId,
           'firstName': cu.firstName,
@@ -5099,7 +6951,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     if (hostPhoto != null) {
-      hostUserObj['photos'] = [{'url': hostPhoto, 'filePath': hostPhoto, 'isPrimary': true}];
+      hostUserObj['photos'] = [
+        {'url': hostPhoto, 'filePath': hostPhoto, 'isPrimary': true},
+      ];
     }
 
     final List<String> selectedUserIdsList = [];
@@ -5112,10 +6966,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
     for (final e in entries) {
-      final sUsers = e['selectedUsers'] ?? e['selectedUserIds'] ?? e['data']?['selectedUsers'] ?? e['metadata']?['selectedUsers'];
+      final sUsers =
+          e['selectedUsers'] ??
+          e['selectedUserIds'] ??
+          e['data']?['selectedUsers'] ??
+          e['metadata']?['selectedUsers'];
       if (sUsers is List) {
         for (final u in sUsers) {
-          if (u != null && u.toString().trim().isNotEmpty && !selectedUserIdsList.contains(u.toString().trim())) {
+          if (u != null &&
+              u.toString().trim().isNotEmpty &&
+              !selectedUserIdsList.contains(u.toString().trim())) {
             selectedUserIdsList.add(u.toString().trim());
           }
         }
@@ -5131,39 +6991,67 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
       final status = (e['status'] ?? '').toString().toLowerCase();
-      final String requesterId = (e['requesterId'] ?? e['requester']?['id'] ?? e['userId'] ?? e['actorUserId'] ?? '').toString();
-      final String recipientId = (e['recipientId'] ?? e['targetUserId'] ?? e['metadata']?['recipientId'] ?? e['metadata']?['targetUserId'] ?? '').toString();
+      final String requesterId =
+          (e['requesterId'] ??
+                  e['requester']?['id'] ??
+                  e['userId'] ??
+                  e['actorUserId'] ??
+                  '')
+              .toString();
+      final String recipientId =
+          (e['recipientId'] ??
+                  e['targetUserId'] ??
+                  e['metadata']?['recipientId'] ??
+                  e['metadata']?['targetUserId'] ??
+                  '')
+              .toString();
 
-      final bool isInvite = e['isInvite'] == true ||
+      final bool isInvite =
+          e['isInvite'] == true ||
+          e['requestType'] == 'private_invite' ||
           e['type'] == 'party_plan_invitation' ||
           e['requestType'] == 'party_plan_invitation' ||
           e['eventType'] == 'party_plan_invitation' ||
           e['type'] == 'party_plan_invite_sent' ||
           e['requestType'] == 'party_plan_invite_sent' ||
-          (selectedUserIdsList.isNotEmpty && (selectedUserIdsList.contains(requesterId) || selectedUserIdsList.contains(recipientId)));
+          (selectedUserIdsList.isNotEmpty &&
+              (selectedUserIdsList.contains(requesterId) ||
+                  selectedUserIdsList.contains(recipientId)));
 
-      if (reqType == 'my_request' || requesterId == currentUserId || (isInvite && recipientId == currentUserId)) {
+      if (reqType == 'my_request' ||
+          requesterId == currentUserId ||
+          (isInvite && recipientId == currentUserId)) {
         myRequest = e;
       }
       if (isHost) {
         if (isInvite) {
           if (status == 'pending') {
             pendingOutboundInvites.add(e);
-          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+          } else if (status == 'accepted' ||
+              status == 'payment_pending' ||
+              status == 'paid' ||
+              status == 'confirmed') {
             acceptedJoinerRequest = e;
           }
         } else {
           if (status == 'pending') {
             pendingIncomingRequests.add(e);
-          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+          } else if (status == 'accepted' ||
+              status == 'payment_pending' ||
+              status == 'paid' ||
+              status == 'confirmed') {
             acceptedJoinerRequest = e;
           }
         }
       } else {
-        if (reqType == 'incoming_request' || (isInvite && recipientId == currentUserId)) {
+        if (reqType == 'incoming_request' ||
+            (isInvite && recipientId == currentUserId)) {
           if (status == 'pending') {
             pendingIncomingRequests.add(e);
-          } else if (status == 'accepted' || status == 'payment_pending' || status == 'paid' || status == 'confirmed') {
+          } else if (status == 'accepted' ||
+              status == 'payment_pending' ||
+              status == 'paid' ||
+              status == 'confirmed') {
             acceptedJoinerRequest = e;
           }
         }
@@ -5175,68 +7063,118 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // 4. Format plan date & time
     String formattedDateTime = '';
-    final rawDateTime = planMap['planDateTime'] ?? planMap['eventDateTime'] ?? planMap['planDate'];
+    final rawDateTime =
+        planMap['planDateTime'] ??
+        planMap['eventDateTime'] ??
+        planMap['planDate'];
     final rawStartTime = planMap['startTime'] ?? planMap['time'];
     final parsedEventDate = _parseEventDateTime(rawDateTime, rawStartTime);
     if (parsedEventDate != null) {
       try {
         const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthNames = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
         final w = weekdayNames[parsedEventDate.weekday - 1];
         final m = monthNames[parsedEventDate.month - 1];
-        final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+        final hour = parsedEventDate.hour % 12 == 0
+            ? 12
+            : parsedEventDate.hour % 12;
         final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
         final minute = parsedEventDate.minute.toString().padLeft(2, '0');
-        formattedDateTime = '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
+        formattedDateTime =
+            '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
       } catch (_) {}
     }
 
     // 5. Expiration & Status Checks
     bool isExpired = false;
-    if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
+    if (parsedEventDate != null &&
+        DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
       isExpired = true;
     }
 
-    final String planStatus = (planMap['status'] ?? '').toString().toLowerCase();
-    final String lifecycleStatus = (planMap['lifecycleStatus'] ?? '').toString().toLowerCase();
-    final String hostPaymentStatus = (planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
+    final String planStatus = (planMap['status'] ?? '')
+        .toString()
+        .toLowerCase();
+    final String lifecycleStatus = (planMap['lifecycleStatus'] ?? '')
+        .toString()
+        .toLowerCase();
+    final String hostPaymentStatus = (planMap['hostPaymentStatus'] ?? '')
+        .toString()
+        .toLowerCase();
 
-    if (planStatus == 'expired' || lifecycleStatus == 'expired' || lifecycleStatus == 'payment_expired') {
+    if (planStatus == 'expired' ||
+        lifecycleStatus == 'expired' ||
+        lifecycleStatus == 'payment_expired') {
       isExpired = true;
     }
 
-    final bool isCancelled = planStatus == 'cancelled' ||
-        lifecycleStatus == 'cancelled';
+    final bool isCancelled =
+        planStatus == 'cancelled' || lifecycleStatus == 'cancelled';
 
-    final String hostReachStatus = (planMap['hostReachStatus'] ??
-        (planMap['hostArrivalConfirmed'] == true ? 'REACHED' : 'PENDING')).toString().toUpperCase();
-    final String partnerReachStatus = (acceptedJoinerRequest?['partnerReachStatus'] ??
-        myRequest?['partnerReachStatus'] ??
-        planMap['partnerReachStatus'] ??
-        ((acceptedJoinerRequest?['guestArrivalConfirmed'] == true || myRequest?['guestArrivalConfirmed'] == true) ? 'REACHED' : 'PENDING')).toString().toUpperCase();
+    final String hostReachStatus =
+        (planMap['hostReachStatus'] ??
+                (planMap['hostArrivalConfirmed'] == true
+                    ? 'REACHED'
+                    : 'PENDING'))
+            .toString()
+            .toUpperCase();
+    final String partnerReachStatus =
+        (acceptedJoinerRequest?['partnerReachStatus'] ??
+                myRequest?['partnerReachStatus'] ??
+                planMap['partnerReachStatus'] ??
+                ((acceptedJoinerRequest?['guestArrivalConfirmed'] == true ||
+                        myRequest?['guestArrivalConfirmed'] == true)
+                    ? 'REACHED'
+                    : 'PENDING'))
+            .toString()
+            .toUpperCase();
 
-    final bool hostIsReached = hostReachStatus == 'REACHED' || planMap['hostArrivalConfirmed'] == true;
+    final bool hostIsReached =
+        hostReachStatus == 'REACHED' || planMap['hostArrivalConfirmed'] == true;
     final bool hostIsNotReached = hostReachStatus == 'NOT_REACHED';
-    final bool partnerIsReached = partnerReachStatus == 'REACHED' ||
+    final bool partnerIsReached =
+        partnerReachStatus == 'REACHED' ||
         acceptedJoinerRequest?['guestArrivalConfirmed'] == true ||
         myRequest?['guestArrivalConfirmed'] == true;
     final bool partnerIsNotReached = partnerReachStatus == 'NOT_REACHED';
 
     final bool bothReached = hostIsReached && partnerIsReached;
     final String myReachStatus = isHost ? hostReachStatus : partnerReachStatus;
-    final bool myHasResponded = myReachStatus == 'REACHED' || myReachStatus == 'NOT_REACHED';
-    final String otherReachStatus = isHost ? partnerReachStatus : hostReachStatus;
+    final bool myHasResponded =
+        myReachStatus == 'REACHED' || myReachStatus == 'NOT_REACHED';
+    final String otherReachStatus = isHost
+        ? partnerReachStatus
+        : hostReachStatus;
 
-    final bool isRefunded = hostPaymentStatus == 'refunded' ||
+    final bool isRefunded =
+        hostPaymentStatus == 'refunded' ||
         (myRequest != null && myRequest['joinerPaymentStatus'] == 'refunded') ||
         lifecycleStatus == 'plan_completed' ||
         planStatus == 'completed' ||
-        planMap['paymentStatus']?.toString().toLowerCase().contains('refunded') == true;
+        planMap['paymentStatus']?.toString().toLowerCase().contains(
+              'refunded',
+            ) ==
+            true;
 
     final bool reach30mSent = planMap['reachConfirmation30mSent'] == true;
-    final bool inArrivalWindow = reach30mSent || (parsedEventDate != null &&
-        parsedEventDate.difference(DateTime.now()).inMinutes <= 35 &&
-        parsedEventDate.difference(DateTime.now()).inHours >= -24);
+    final bool inArrivalWindow =
+        reach30mSent ||
+        (parsedEventDate != null &&
+            parsedEventDate.difference(DateTime.now()).inMinutes <= 35 &&
+            parsedEventDate.difference(DateTime.now()).inHours >= -24);
 
     // A plan-level lifecycleStatus/acceptedJoinerRequest only genuinely reflects
     // the current viewer's own match when they're the host (there's only one
@@ -5244,16 +7182,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // must only trust their own myRequest — otherwise a rejected/pending/
     // uninvolved user viewing a plan that got matched with someone else would
     // incorrectly see "Match Confirmed" with working Chat/Ticket buttons.
-    final bool isConfirmed = (isHost && (lifecycleStatus == 'match_confirmed' ||
-            lifecycleStatus == 'chat_enabled' ||
-            lifecycleStatus == 'plan_completed' ||
-            (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'confirmed' || acceptedJoinerRequest['status'] == 'paid' || acceptedJoinerRequest['joinerPaymentStatus'] == 'paid')))) ||
-        (myRequest != null && (myRequest['status'] == 'confirmed' || myRequest['status'] == 'paid' || myRequest['joinerPaymentStatus'] == 'paid'));
+    final bool isConfirmed =
+        (isHost &&
+            (lifecycleStatus == 'match_confirmed' ||
+                lifecycleStatus == 'chat_enabled' ||
+                lifecycleStatus == 'plan_completed' ||
+                (acceptedJoinerRequest != null &&
+                    (acceptedJoinerRequest['status'] == 'confirmed' ||
+                        acceptedJoinerRequest['status'] == 'paid' ||
+                        acceptedJoinerRequest['joinerPaymentStatus'] ==
+                            'paid')))) ||
+        (myRequest != null &&
+            (myRequest['status'] == 'confirmed' ||
+                myRequest['status'] == 'paid' ||
+                myRequest['joinerPaymentStatus'] == 'paid'));
 
     String countdownLabel = '30m';
     String timeRemainingText = '';
     bool isPaymentExpired = false;
-    final rawDeadline = myRequest?['paymentDeadlineAt'] ??
+    final rawDeadline =
+        myRequest?['paymentDeadlineAt'] ??
         myRequest?['paymentTimeoutAt'] ??
         planMap['paymentDeadlineAt'] ??
         planMap['paymentTimeoutAt'];
@@ -5270,7 +7218,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final m = remaining.inMinutes;
           final s = remaining.inSeconds % 60;
           countdownLabel = '${m}m ${s.toString().padLeft(2, "0")}s';
-          timeRemainingText = '${m}m ${s.toString().padLeft(2, "0")}s remaining';
+          timeRemainingText =
+              '${m}m ${s.toString().padLeft(2, "0")}s remaining';
         }
       } catch (_) {}
     }
@@ -5282,7 +7231,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // 6. Contextual Title, Role, Partner & Actions
     Color accent = const Color(0xFF8B5CF6);
     String title = 'Let\'s party at $venueName! 🚀';
-    String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Party Plan at $venueName';
+    String body = formattedDateTime.isNotEmpty
+        ? '📅 $formattedDateTime'
+        : 'Party Plan at $venueName';
     String badge = 'PARTY PLAN';
     List<NotificationAction>? actionsList;
     Map<String, dynamic>? senderUser = hostUserObj;
@@ -5294,17 +7245,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String? statusSummary;
 
     if (isHost && acceptedJoinerRequest != null) {
-      final joinerReq = (acceptedJoinerRequest['requester'] is Map && (acceptedJoinerRequest['requester'] as Map).isNotEmpty)
+      final joinerReq =
+          (acceptedJoinerRequest['requester'] is Map &&
+              (acceptedJoinerRequest['requester'] as Map).isNotEmpty)
           ? Map<String, dynamic>.from(acceptedJoinerRequest['requester'])
-          : (acceptedJoinerRequest['user'] is Map && (acceptedJoinerRequest['user'] as Map).isNotEmpty
-              ? Map<String, dynamic>.from(acceptedJoinerRequest['user'])
-              : <String, dynamic>{
-                  'id': acceptedJoinerRequest['requesterId'],
-                  'name': acceptedJoinerRequest['requesterName'] ?? 'Joiner',
-                  'firstName': acceptedJoinerRequest['requesterName'] ?? 'Joiner',
-                  'profilePhotoUrl': acceptedJoinerRequest['requesterPhotoUrl'],
-                  'profileImageUrl': acceptedJoinerRequest['requesterPhotoUrl'],
-                });
+          : (acceptedJoinerRequest['user'] is Map &&
+                    (acceptedJoinerRequest['user'] as Map).isNotEmpty
+                ? Map<String, dynamic>.from(acceptedJoinerRequest['user'])
+                : <String, dynamic>{
+                    'id': acceptedJoinerRequest['requesterId'],
+                    'name': acceptedJoinerRequest['requesterName'] ?? 'Joiner',
+                    'firstName':
+                        acceptedJoinerRequest['requesterName'] ?? 'Joiner',
+                    'profilePhotoUrl':
+                        acceptedJoinerRequest['requesterPhotoUrl'],
+                    'profileImageUrl':
+                        acceptedJoinerRequest['requesterPhotoUrl'],
+                  });
       partnerUser = joinerReq;
       partnerRoleLabel = 'Guest:';
     }
@@ -5313,13 +7270,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final eType = (e['type'] ?? e['eventType'] ?? '').toString();
       final cat = (e['category'] ?? '').toString();
-      if (eType == 'party_plan_cancellation_requested' || cat == 'party_plan_cancellation_requested') {
+      if (eType == 'party_plan_cancellation_requested' ||
+          cat == 'party_plan_cancellation_requested') {
         pendingCancellationEntry = e;
         break;
       }
     }
 
-    final bool isCancellationRequested = (lifecycleStatus == 'cancellation_requested' || pendingCancellationEntry != null) && !isCancelled;
+    final bool isCancellationRequested =
+        (lifecycleStatus == 'cancellation_requested' ||
+            pendingCancellationEntry != null) &&
+        !isCancelled;
 
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
@@ -5332,7 +7293,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
       title = '❌ Party Plan Cancelled';
-      body = 'Party Plan at $venueName was cancelled. ₹99 Commitment Deposit has been credited to your Lunara Wallet.';
+      body =
+          'Party Plan at $venueName was cancelled. ₹99 Commitment Deposit has been credited to your Lunara Wallet.';
       statusSummary = 'Cancelled • Deposit Credited';
       actionsList = [
         NotificationAction(
@@ -5351,24 +7313,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           color: Colors.grey[200],
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+            MaterialPageRoute(
+              builder: (_) => PartyPlanDetailScreen(plan: planMap),
+            ),
           ).then((_) => _loadFeed(showLoader: false)),
         ),
       ];
     } else if (isCancellationRequested) {
-      final String requestedById = (pendingCancellationEntry?['requestedById'] ??
-          pendingCancellationEntry?['metadata']?['requestedById'] ??
-          pendingCancellationEntry?['actorUserId'] ??
-          '').toString();
+      final String requestedById =
+          (pendingCancellationEntry?['requestedById'] ??
+                  pendingCancellationEntry?['metadata']?['requestedById'] ??
+                  pendingCancellationEntry?['actorUserId'] ??
+                  '')
+              .toString();
       final bool isRecipient = requestedById.isNotEmpty
           ? requestedById != currentUserId
           : (isHost ? false : true);
       final String requesterName = (isHost && isRecipient)
-          ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Your partner')
+          ? (partnerUser?['firstName'] ??
+                partnerUser?['name'] ??
+                'Your partner')
           : (hostUserObj['firstName'] ?? hostUserObj['name'] ?? 'Host');
-      final String reasonKey = (pendingCancellationEntry?['reason'] ??
-          pendingCancellationEntry?['metadata']?['reason'] ??
-          'my_plans_changed').toString();
+      final String reasonKey =
+          (pendingCancellationEntry?['reason'] ??
+                  pendingCancellationEntry?['metadata']?['reason'] ??
+                  'my_plans_changed')
+              .toString();
       final Map<String, String> reasonLabels = {
         'my_plans_changed': 'My plans have changed',
         'not_available': 'I\'m not available anymore',
@@ -5379,16 +7349,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'other': 'Other reasons',
       };
       final reasonText = reasonLabels[reasonKey] ?? reasonKey;
-      final String cancelReqId = (pendingCancellationEntry?['requestId'] ??
-          pendingCancellationEntry?['metadata']?['requestId'] ??
-          '').toString();
+      final String cancelReqId =
+          (pendingCancellationEntry?['requestId'] ??
+                  pendingCancellationEntry?['metadata']?['requestId'] ??
+                  '')
+              .toString();
 
       accent = const Color(0xFFF59E0B);
       badge = isRecipient ? 'ACTION REQUIRED' : 'CANCELLATION PENDING';
 
       if (isRecipient) {
         title = '⚠️ Cancellation Requested';
-        body = '$requesterName has requested to cancel this Party Plan at $venueName.\nReason: "$reasonText"';
+        body =
+            '$requesterName has requested to cancel this Party Plan at $venueName.\nReason: "$reasonText"';
         statusSummary = 'Approval Required';
         final acceptCancelKey = 'accept_cancel_pp_$planId';
         final keepPlanKey = 'keep_plan_pp_$planId';
@@ -5402,35 +7375,50 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             isLoading: isAcceptingCancel,
             color: Colors.redAccent,
-            onTap: (isAcceptingCancel || isKeepingPlan) ? () {} : () async {
-              if (cancelReqId.isEmpty) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
-                ).then((_) => _loadFeed(showLoader: false));
-                return;
-              }
-              setState(() => _activeActionKeys.add(acceptCancelKey));
-              try {
-                final res = await ApiService.respondToPartyPlanCancellationRequest(
-                  planId: planId,
-                  requestId: cancelReqId,
-                  action: 'approve',
-                );
-                _optimisticallyUpdatePartyPlanRequest(planId, 'cancelled');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(res['message'] ?? 'Party Plan cancelled. Commitment deposit credited to wallet!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(acceptCancelKey));
-              }
-            },
+            onTap: (isAcceptingCancel || isKeepingPlan)
+                ? () {}
+                : () async {
+                    if (cancelReqId.isEmpty) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(plan: planMap),
+                        ),
+                      ).then((_) => _loadFeed(showLoader: false));
+                      return;
+                    }
+                    setState(() => _activeActionKeys.add(acceptCancelKey));
+                    try {
+                      final res =
+                          await ApiService.respondToPartyPlanCancellationRequest(
+                            planId: planId,
+                            requestId: cancelReqId,
+                            action: 'approve',
+                          );
+                      _optimisticallyUpdatePartyPlanRequest(
+                        planId,
+                        'cancelled',
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              res['message'] ??
+                                  'Party Plan cancelled. Commitment deposit credited to wallet!',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(acceptCancelKey),
+                        );
+                      }
+                    }
+                  },
           ),
           NotificationAction(
             label: isKeepingPlan ? 'Keeping...' : 'Keep Plan',
@@ -5438,40 +7426,51 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isKeepingPlan,
             color: Colors.grey[200],
-            onTap: (isAcceptingCancel || isKeepingPlan) ? () {} : () async {
-              if (cancelReqId.isEmpty) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
-                ).then((_) => _loadFeed(showLoader: false));
-                return;
-              }
-              setState(() => _activeActionKeys.add(keepPlanKey));
-              try {
-                final res = await ApiService.respondToPartyPlanCancellationRequest(
-                  planId: planId,
-                  requestId: cancelReqId,
-                  action: 'reject',
-                );
-                _optimisticallyUpdatePartyPlanRequest(planId, 'active');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(res['message'] ?? 'Cancellation declined. Party Plan remains active.'),
-                      backgroundColor: Colors.grey.shade800,
-                    ),
-                  );
-                  _loadFeed(showLoader: false, forceRefresh: true);
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(keepPlanKey));
-              }
-            },
+            onTap: (isAcceptingCancel || isKeepingPlan)
+                ? () {}
+                : () async {
+                    if (cancelReqId.isEmpty) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PartyPlanDetailScreen(plan: planMap),
+                        ),
+                      ).then((_) => _loadFeed(showLoader: false));
+                      return;
+                    }
+                    setState(() => _activeActionKeys.add(keepPlanKey));
+                    try {
+                      final res =
+                          await ApiService.respondToPartyPlanCancellationRequest(
+                            planId: planId,
+                            requestId: cancelReqId,
+                            action: 'reject',
+                          );
+                      _optimisticallyUpdatePartyPlanRequest(planId, 'active');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              res['message'] ??
+                                  'Cancellation declined. Party Plan remains active.',
+                            ),
+                            backgroundColor: Colors.grey.shade800,
+                          ),
+                        );
+                        _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(keepPlanKey));
+                      }
+                    }
+                  },
           ),
         ];
       } else {
         title = '⏳ Cancellation Request Sent';
-        body = 'You requested to cancel this Party Plan at $venueName. Waiting for the other participant to approve.';
+        body =
+            'You requested to cancel this Party Plan at $venueName. Waiting for the other participant to approve.';
         statusSummary = 'Waiting for Approval';
         actionsList = [
           NotificationAction(
@@ -5481,27 +7480,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
       }
     } else if (bothReached || isRefunded) {
       final otherId = isHost
-          ? (acceptedJoinerRequest?['requesterId'] ?? acceptedJoinerRequest?['requester']?['id'] ?? partnerUser?['id'] ?? '')
+          ? (acceptedJoinerRequest?['requesterId'] ??
+                acceptedJoinerRequest?['requester']?['id'] ??
+                partnerUser?['id'] ??
+                '')
           : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
-      final String partnerDisplayName = (isHost
-              ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Partner')
-              : (hostCreator['firstName'] ?? hostName))
-          .trim();
+      final String partnerDisplayName =
+          (isHost
+                  ? (partnerUser?['firstName'] ??
+                        partnerUser?['name'] ??
+                        'Partner')
+                  : (hostCreator['firstName'] ?? hostName))
+              .trim();
       final String? otherPhoto = isHost
-          ? (partnerUser?['profileImageUrl'] ?? partnerUser?['profilePhotoUrl'] ?? acceptedJoinerRequest?['requesterPhotoUrl'])
+          ? (partnerUser?['profileImageUrl'] ??
+                partnerUser?['profilePhotoUrl'] ??
+                acceptedJoinerRequest?['requesterPhotoUrl'])
           : hostPhoto;
 
       title = '🎉 Party Plan Confirmed';
       badge = 'COMPLETED';
       accent = const Color(0xFF10B981);
-      body = '✓ Both reached the venue • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
+      body =
+          '✓ Both reached the venue • 💰 ₹99 Deposit refunded to LUNARA Wallet.';
       statusSummary = '✓ Both Reached • ₹99 Refunded';
       actionsList = [
         NotificationAction(
@@ -5512,8 +7522,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             // Enrich planMap with already-resolved host data so the ticket
             // screen can render the host profile instantly (no async wait).
             final enrichedPlan = Map<String, dynamic>.from(planMap);
-            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
-            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) {
+              enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+            }
+            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) {
+              enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            }
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -5557,14 +7571,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ];
     } else if (isConfirmed && inArrivalWindow) {
       final otherId = isHost
-          ? (acceptedJoinerRequest?['requesterId'] ?? acceptedJoinerRequest?['requester']?['id'] ?? partnerUser?['id'] ?? '')
+          ? (acceptedJoinerRequest?['requesterId'] ??
+                acceptedJoinerRequest?['requester']?['id'] ??
+                partnerUser?['id'] ??
+                '')
           : (planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? ''));
-      final String partnerDisplayName = (isHost
-              ? (partnerUser?['firstName'] ?? partnerUser?['name'] ?? 'Partner')
-              : (hostCreator['firstName'] ?? hostName))
-          .trim();
+      final String partnerDisplayName =
+          (isHost
+                  ? (partnerUser?['firstName'] ??
+                        partnerUser?['name'] ??
+                        'Partner')
+                  : (hostCreator['firstName'] ?? hostName))
+              .trim();
       final String? otherPhoto = isHost
-          ? (partnerUser?['profileImageUrl'] ?? partnerUser?['profilePhotoUrl'] ?? acceptedJoinerRequest?['requesterPhotoUrl'])
+          ? (partnerUser?['profileImageUrl'] ??
+                partnerUser?['profilePhotoUrl'] ??
+                acceptedJoinerRequest?['requesterPhotoUrl'])
           : hostPhoto;
 
       final String hostStatusText = hostIsReached
@@ -5575,12 +7597,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           : (partnerIsNotReached ? '❌ Not reached' : '⚪ Waiting for response');
 
       title = myHasResponded
-          ? (myReachStatus == 'REACHED' ? '📍 Arrival Confirmed' : '📍 Venue Status Updated')
+          ? (myReachStatus == 'REACHED'
+                ? '📍 Arrival Confirmed'
+                : '📍 Venue Status Updated')
           : '📍 Have you reached the venue?';
       badge = myHasResponded ? 'CONFIRMED' : 'ACTION REQUIRED';
-      accent = myHasResponded ? const Color(0xFF6366F1) : const Color(0xFFF59E0B);
+      accent = myHasResponded
+          ? const Color(0xFF6366F1)
+          : const Color(0xFFF59E0B);
 
-      body = '📍 $venueName${formattedDateTime.isNotEmpty ? ' • $formattedDateTime' : ''}\n'
+      body =
+          '📍 $venueName${formattedDateTime.isNotEmpty ? ' • $formattedDateTime' : ''}\n'
           'Host (${isHost ? "You" : hostName}): $hostStatusText\n'
           'Partner (${!isHost ? "You" : partnerDisplayName}): $partnerStatusText';
 
@@ -5610,43 +7637,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             isLoading: isReachYes,
             color: const Color(0xFF10B981),
-            onTap: (isReachYes || isReachNo) ? () {} : () async {
-              setState(() => _activeActionKeys.add(reachYesKey));
-              try {
-                final res = await ApiService.confirmArrival(
-                  planId: planId,
-                  userId: currentUserId,
-                  hasArrived: true,
-                  stage: 'thirty_min_reach',
-                  source: 'LIVE_FEED_CARD',
-                );
-                if (context.mounted) {
-                  if (res['bothArrived'] == true) {
-                    PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
-                      context,
-                      venueName: venueName,
-                      plan: planMap,
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(res['message'] ?? 'Arrival confirmed! ₹99 refund will be credited once both arrive.'),
-                        backgroundColor: const Color(0xFF10B981),
-                      ),
-                    );
-                  }
-                  _loadFeed(showLoader: false);
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to confirm arrival: $e')),
-                  );
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(reachYesKey));
-              }
-            },
+            onTap: (isReachYes || isReachNo)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(reachYesKey));
+                    try {
+                      final res = await ApiService.confirmArrival(
+                        planId: planId,
+                        userId: currentUserId,
+                        hasArrived: true,
+                        stage: 'thirty_min_reach',
+                        source: 'LIVE_FEED_CARD',
+                      );
+                      if (context.mounted) {
+                        if (res['bothArrived'] == true) {
+                          PartyPlanArrivalDialog.showBothArrivedSuccessDialog(
+                            context,
+                            venueName: venueName,
+                            plan: planMap,
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                res['message'] ??
+                                    'Arrival confirmed! ₹99 refund will be credited once both arrive.',
+                              ),
+                              backgroundColor: const Color(0xFF10B981),
+                            ),
+                          );
+                        }
+                        _loadFeed(showLoader: false);
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to confirm arrival: $e'),
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(reachYesKey));
+                      }
+                    }
+                  },
           ),
         );
 
@@ -5657,35 +7693,44 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isReachNo,
             color: Colors.grey[200],
-            onTap: (isReachYes || isReachNo) ? () {} : () async {
-              setState(() => _activeActionKeys.add(reachNoKey));
-              try {
-                final res = await ApiService.confirmArrival(
-                  planId: planId,
-                  userId: currentUserId,
-                  hasArrived: false,
-                  stage: 'thirty_min_reach',
-                  source: 'LIVE_FEED_CARD',
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(res['message'] ?? 'Status updated: Not reached venue yet.'),
-                      backgroundColor: Colors.grey.shade800,
-                    ),
-                  );
-                  _loadFeed(showLoader: false);
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to update status: $e')),
-                  );
-                }
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(reachNoKey));
-              }
-            },
+            onTap: (isReachYes || isReachNo)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(reachNoKey));
+                    try {
+                      final res = await ApiService.confirmArrival(
+                        planId: planId,
+                        userId: currentUserId,
+                        hasArrived: false,
+                        stage: 'thirty_min_reach',
+                        source: 'LIVE_FEED_CARD',
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              res['message'] ??
+                                  'Status updated: Not reached venue yet.',
+                            ),
+                            backgroundColor: Colors.grey.shade800,
+                          ),
+                        );
+                        _loadFeed(showLoader: false);
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to update status: $e'),
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(reachNoKey));
+                      }
+                    }
+                  },
           ),
         );
       }
@@ -5701,8 +7746,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             // Enrich planMap with already-resolved host data so the ticket
             // screen can render the host profile instantly (no async wait).
             final enrichedPlan = Map<String, dynamic>.from(planMap);
-            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
-            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) {
+              enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+            }
+            if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) {
+              enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+            }
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -5747,7 +7796,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.red[50],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         );
@@ -5762,8 +7813,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         dynamic rawDeposit = planMap['depositAmount'];
         if (rawDeposit == null) {
           for (final e in entries) {
-            if (e['depositAmount'] != null) { rawDeposit = e['depositAmount']; break; }
-            if (e['amountDue'] != null) { rawDeposit = e['amountDue']; break; }
+            if (e['depositAmount'] != null) {
+              rawDeposit = e['depositAmount'];
+              break;
+            }
+            if (e['amountDue'] != null) {
+              rawDeposit = e['amountDue'];
+              break;
+            }
           }
         }
         final double depositAmt = rawDeposit is num
@@ -5772,7 +7829,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         String hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
         if (hostOrderId.isEmpty) {
           for (final e in entries) {
-            final oid = (e['hostRazorpayOrderId'] ?? e['payActionPayload']?['orderId'] ?? e['metadata']?['hostRazorpayOrderId'] ?? e['data']?['hostRazorpayOrderId'])?.toString();
+            final oid =
+                (e['hostRazorpayOrderId'] ??
+                        e['payActionPayload']?['orderId'] ??
+                        e['metadata']?['hostRazorpayOrderId'] ??
+                        e['data']?['hostRazorpayOrderId'])
+                    ?.toString();
             if (oid != null && oid.isNotEmpty) {
               hostOrderId = oid;
               break;
@@ -5782,7 +7844,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        body = 'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
+        body =
+            'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
         statusSummary = 'Deposit Required';
         actionsList = [
           NotificationAction(
@@ -5796,7 +7859,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 orderId: hostOrderId,
                 depositAmount: depositAmt,
                 onSuccess: () async {
-                  _optimisticallyUpdatePartyPlanPayment(planId: planId, isHost: true);
+                  _optimisticallyUpdatePartyPlanPayment(
+                    planId: planId,
+                    isHost: true,
+                  );
                   await _loadFeed(showLoader: false);
                 },
               );
@@ -5809,22 +7875,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ),
           ),
         ];
       } else if (isConfirmed) {
-        final joiner = (acceptedJoinerRequest != null && acceptedJoinerRequest['requester'] is Map)
+        final joiner =
+            (acceptedJoinerRequest != null &&
+                acceptedJoinerRequest['requester'] is Map)
             ? acceptedJoinerRequest['requester'] as Map<String, dynamic>
             : <String, dynamic>{};
-        final joinerName = '${joiner["firstName"] ?? "Party Partner"} ${joiner["lastName"] ?? ""}'.trim();
-        final joinerPhoto = joiner['profileImageUrl'] ?? joiner['profilePhotoUrl'];
-        final joinerId = joiner['id'] ?? acceptedJoinerRequest?['requesterId'] ?? '';
+        final joinerName =
+            '${joiner["firstName"] ?? "Party Partner"} ${joiner["lastName"] ?? ""}'
+                .trim();
+        final joinerPhoto =
+            joiner['profileImageUrl'] ?? joiner['profilePhotoUrl'];
+        final joinerId =
+            joiner['id'] ?? acceptedJoinerRequest?['requesterId'] ?? '';
 
         title = '🎉 Match Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Your Party Plan with $joinerName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
+        body =
+            'Your Party Plan with $joinerName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
         senderUser = joiner.isNotEmpty ? joiner : hostCreator;
         avatarUrl = joinerPhoto ?? hostPhoto;
 
@@ -5874,18 +7949,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.red[50],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
-      } else if (acceptedJoinerRequest != null && (acceptedJoinerRequest['status'] == 'accepted' || acceptedJoinerRequest['status'] == 'payment_pending')) {
-        final joiner = (acceptedJoinerRequest['requester'] is Map) ? acceptedJoinerRequest['requester'] as Map<String, dynamic> : <String, dynamic>{};
-        final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
+      } else if (acceptedJoinerRequest != null &&
+          (acceptedJoinerRequest['status'] == 'accepted' ||
+              acceptedJoinerRequest['status'] == 'payment_pending')) {
+        final joiner = (acceptedJoinerRequest['requester'] is Map)
+            ? acceptedJoinerRequest['requester'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        final joinerName =
+            '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'
+                .trim();
         final reqId = acceptedJoinerRequest['id']?.toString() ?? '';
 
-        final bool isPrivateMatched = isPrivatePlan || (selectedUserIdsList.contains(joiner['id']?.toString() ?? acceptedJoinerRequest['requesterId']?.toString()));
+        final bool isPrivateMatched =
+            isPrivatePlan ||
+            (selectedUserIdsList.contains(
+              joiner['id']?.toString() ??
+                  acceptedJoinerRequest['requesterId']?.toString(),
+            ));
 
-        title = isPrivateMatched ? '⏳ Invite Accepted — Awaiting Deposit' : '⏳ Approved — Awaiting Payment';
+        title = isPrivateMatched
+            ? '⏳ Invite Accepted — Awaiting Deposit'
+            : '⏳ Approved — Awaiting Payment';
         badge = 'AWAITING PAYMENT';
         body = isPrivateMatched
             ? '$joinerName accepted your private invite. Waiting for safety deposit payment to unlock chat.'
@@ -5909,15 +7999,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ),
           ),
         ];
-      } else if (isPrivatePlan || (pendingOutboundInvites.isNotEmpty && pendingIncomingRequests.isEmpty)) {
-        final inviteCount = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.length : (selectedUserIdsList.isNotEmpty ? selectedUserIdsList.length : 1);
-        final firstInvitee = pendingOutboundInvites.isNotEmpty ? pendingOutboundInvites.first['requester'] : null;
-        final inviteeName = (firstInvitee is Map && firstInvitee['firstName'] != null)
-            ? '${firstInvitee["firstName"]} ${firstInvitee["lastName"] ?? ""}'.trim()
+      } else if (isPrivatePlan ||
+          (pendingOutboundInvites.isNotEmpty &&
+              pendingIncomingRequests.isEmpty)) {
+        final inviteCount = pendingOutboundInvites.isNotEmpty
+            ? pendingOutboundInvites.length
+            : (selectedUserIdsList.isNotEmpty ? selectedUserIdsList.length : 1);
+        final firstInvitee = pendingOutboundInvites.isNotEmpty
+            ? pendingOutboundInvites.first['requester']
+            : null;
+        final inviteeName =
+            (firstInvitee is Map && firstInvitee['firstName'] != null)
+            ? '${firstInvitee["firstName"]} ${firstInvitee["lastName"] ?? ""}'
+                  .trim()
             : 'your invited friends';
 
         title = '💌 Private Invitations Sent';
@@ -5926,8 +8026,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body = inviteCount == 1
             ? 'You privately invited $inviteeName to your Party Plan at $venueName. Waiting for them to accept.'
             : inviteCount > 1
-                ? 'You privately invited $inviteCount friends to your Party Plan at $venueName. Waiting for them to accept.'
-                : 'Your Private Party Plan at $venueName is active. Waiting for your invited friends to accept.';
+            ? 'You privately invited $inviteCount friends to your Party Plan at $venueName. Waiting for them to accept.'
+            : 'Your Private Party Plan at $venueName is active. Waiting for your invited friends to accept.';
         statusSummary = 'Awaiting Friend Response';
         actionsList = [
           NotificationAction(
@@ -5936,7 +8036,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ),
           ),
           NotificationAction(
@@ -5946,25 +8048,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.red[50],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
         final firstReq = pendingIncomingRequests.first;
-        final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
-        final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
+        final reqUser = (firstReq['requester'] is Map)
+            ? firstReq['requester'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        final reqUserName =
+            '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'
+                .trim();
 
         if (pendingIncomingRequests.length == 1) {
           title = '📥 New Party Plan Request';
           badge = 'NEW REQUEST';
-          body = '$reqUserName requested to join your Party Plan at $venueName.';
+          body =
+              '$reqUserName requested to join your Party Plan at $venueName.';
           senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
           avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
 
           partnerUser = reqUser.isNotEmpty ? reqUser : null;
           partnerRoleLabel = 'Request from:';
-          statusSummary = isBothPlan ? 'Public Request Received' : 'Request Received';
+          statusSummary = isBothPlan
+              ? 'Public Request Received'
+              : 'Request Received';
 
           actionsList = [
             NotificationAction(
@@ -5973,7 +8084,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               isPrimary: true,
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(plan: planMap),
+                ),
               ).then((_) => _loadFeed(showLoader: false)),
             ),
             NotificationAction(
@@ -5981,20 +8094,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               icon: Icons.people_alt_rounded,
               isPrimary: false,
               color: Colors.grey[200],
-              onTap: () => _showReviewPartyPlanRequestsModal(planMap, pendingIncomingRequests),
+              onTap: () => _showReviewPartyPlanRequestsModal(
+                planMap,
+                pendingIncomingRequests,
+              ),
             ),
           ];
         } else {
           title = '📥 Join Requests Received';
           badge = 'REQUESTS (${pendingIncomingRequests.length})';
-          body = '${pendingIncomingRequests.length} users requested to join your Party Plan at $venueName.';
+          body =
+              '${pendingIncomingRequests.length} users requested to join your Party Plan at $venueName.';
           statusSummary = '${pendingIncomingRequests.length} Pending Requests';
           actionsList = [
             NotificationAction(
               label: 'Review Requests (${pendingIncomingRequests.length})',
               icon: Icons.people_alt_rounded,
               isPrimary: true,
-              onTap: () => _showReviewPartyPlanRequestsModal(planMap, pendingIncomingRequests),
+              onTap: () => _showReviewPartyPlanRequestsModal(
+                planMap,
+                pendingIncomingRequests,
+              ),
             ),
             NotificationAction(
               label: 'View Plan',
@@ -6003,7 +8123,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               color: Colors.grey[200],
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+                MaterialPageRoute(
+                  builder: (_) => PartyPlanDetailScreen(plan: planMap),
+                ),
               ).then((_) => _loadFeed(showLoader: false)),
             ),
           ];
@@ -6022,7 +8144,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ),
           ),
           NotificationAction(
@@ -6032,7 +8156,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.red[50],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
@@ -6043,35 +8169,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       partnerRoleLabel = 'Host:';
 
       final planVis = planMap['visibility']?.toString().toUpperCase() ?? '';
-      final selectedUsers = planMap['selectedUsers'];
-      final bool isPrivateInvite = (planVis == 'PRIVATE' || planVis == 'BOTH' || myRequest?['isPrivateInvite'] == true) &&
-          ((selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUserId)) || myRequest != null);
+      final selectedUsers = planMap['selectedUsers'] ?? planMap['selectedUserIds'];
+      final bool inSelectedUsers = (selectedUsers is List &&
+              selectedUsers.any((u) => u?.toString() == currentUserId)) ||
+          selectedUserIdsList.contains(currentUserId);
+      final bool isExplicitInvite = myRequest?['isInvite'] == true ||
+          myRequest?['requestType'] == 'private_invite' ||
+          myRequest?['type'] == 'party_plan_invitation' ||
+          myRequest?['isPrivateInvite'] == true;
+      final bool isPrivateInvite = inSelectedUsers ||
+          (planVis == 'PRIVATE' && myRequest != null) ||
+          isExplicitInvite;
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
 
-      final bool hasAnotherPartner = !isHost && !isConfirmed && (
-          (planMap['matchedRequestId'] != null &&
-              planMap['matchedRequestId'].toString().isNotEmpty &&
-              (myRequest == null || myRequest['id']?.toString() != planMap['matchedRequestId'].toString())) ||
-          (planMap['partnerId'] != null &&
-              planMap['partnerId'].toString().isNotEmpty &&
-              planMap['partnerId'].toString() != currentUserId) ||
-          myRequest?['cancellationReason'] == 'partner_already_selected' ||
-          myRequest?['reason'] == 'partner_already_selected' ||
-          entries.any((e) =>
-              e['eventType'] == 'plan_unavailable' ||
-              e['reason'] == 'partner_already_selected' ||
-              e['status'] == 'NO_LONGER_AVAILABLE' ||
-              e['metadata']?['reason'] == 'partner_already_selected' ||
-              (e['title'] != null && e['title'].toString().contains('Unavailable')))
-      );
+      final bool hasAnotherPartner =
+          !isHost &&
+          !isConfirmed &&
+          ((planMap['matchedRequestId'] != null &&
+                  planMap['matchedRequestId'].toString().isNotEmpty &&
+                  (myRequest == null ||
+                      myRequest['id']?.toString() !=
+                          planMap['matchedRequestId'].toString())) ||
+              (planMap['partnerId'] != null &&
+                  planMap['partnerId'].toString().isNotEmpty &&
+                  planMap['partnerId'].toString() != currentUserId) ||
+              myRequest?['cancellationReason'] == 'partner_already_selected' ||
+              myRequest?['reason'] == 'partner_already_selected' ||
+              entries.any(
+                (e) =>
+                    e['eventType'] == 'plan_unavailable' ||
+                    e['reason'] == 'partner_already_selected' ||
+                    e['status'] == 'NO_LONGER_AVAILABLE' ||
+                    e['metadata']?['reason'] == 'partner_already_selected' ||
+                    (e['title'] != null &&
+                        e['title'].toString().contains('Unavailable')),
+              ));
 
       if (isConfirmed) {
         title = '🎉 Match Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Your Party Plan with $hostName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
-        final otherId = planHostId.isNotEmpty ? planHostId : (hostCreator['id'] ?? '');
+        body =
+            'Your Party Plan with $hostName at $venueName is confirmed. Both deposits paid • Chat unlocked.';
+        final otherId = planHostId.isNotEmpty
+            ? planHostId
+            : (hostCreator['id'] ?? '');
         statusSummary = 'Both Deposits Paid • Chat Unlocked';
 
         actionsList = [
@@ -6102,8 +8245,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               // Enrich planMap with already-resolved host data so the ticket
               // screen can render the host profile instantly (no async wait).
               final enrichedPlan = Map<String, dynamic>.from(planMap);
-              if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
-              if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) enrichedPlan['creator'] = Map<String, dynamic>.from(hostCreator);
+              if (enrichedPlan['host'] == null && hostUserObj.isNotEmpty) {
+                enrichedPlan['host'] = Map<String, dynamic>.from(hostUserObj);
+              }
+              if (enrichedPlan['creator'] == null && hostCreator.isNotEmpty) {
+                enrichedPlan['creator'] = Map<String, dynamic>.from(
+                  hostCreator,
+                );
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -6123,7 +8272,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.red[50],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
@@ -6131,7 +8282,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = 'Party Plan Unavailable';
         badge = 'NO LONGER AVAILABLE';
         accent = const Color(0xFFEF4444);
-        body = 'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.';
+        body =
+            'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.';
         statusSummary = 'Unavailable';
 
         actionsList = [
@@ -6151,19 +8303,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const PlanHubScreen(autoShowCreatePlan: true)),
+              MaterialPageRoute(
+                builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
       } else if (myStatus == 'accepted' || myStatus == 'payment_pending') {
         final reqId = myRequest?['id']?.toString() ?? '';
-        title = isPrivateInvite ? '💌 Invite Accepted! Pay Deposit' : '✅ Approved! Pay Safety Deposit';
+        title = isPrivateInvite
+            ? '💌 Invite Accepted! Pay Deposit'
+            : '✅ Approved! Pay Safety Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
         body = isPrivateInvite
             ? 'You accepted $hostName\'s private invite! Pay safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm your match.'
             : '$hostName accepted your request! Pay your safety deposit within ${timeRemainingText.isNotEmpty ? timeRemainingText : countdownLabel} to confirm match.';
-        statusSummary = timeRemainingText.isNotEmpty ? timeRemainingText : 'Window: $countdownLabel';
+        statusSummary = timeRemainingText.isNotEmpty
+            ? timeRemainingText
+            : 'Window: $countdownLabel';
 
         actionsList = [
           NotificationAction(
@@ -6188,7 +8346,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 venueName: venueName,
                 depositAmount: 99.0,
                 onSuccess: () async {
-                  _optimisticallyUpdatePartyPlanPayment(planId: planId, isHost: false, requestId: reqId);
+                  _optimisticallyUpdatePartyPlanPayment(
+                    planId: planId,
+                    isHost: false,
+                    requestId: reqId,
+                  );
                   await _loadFeed(showLoader: false);
                 },
               );
@@ -6208,9 +8370,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PartyPlanDetailScreen(
-                    plan: enrichedPlan,
-                  ),
+                  builder: (_) => PartyPlanDetailScreen(plan: enrichedPlan),
                 ),
               ).then((_) => _loadFeed(showLoader: false));
             },
@@ -6220,26 +8380,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.cancel_rounded,
             isPrimary: false,
             color: Colors.grey[200],
-            onTap: () => isPrivateInvite ? _handleRejectPartyPlan(reqId) : _handleCancelMyRequest(reqId),
+            onTap: () => isPrivateInvite
+                ? _handleRejectPartyPlan(reqId)
+                : _handleCancelMyRequest(reqId),
           ),
         ];
-      } else if (isPrivateInvite && (myStatus == 'pending' || myStatus.isEmpty)) {
+      } else if (isPrivateInvite &&
+          (myStatus == 'pending' || myStatus.isEmpty)) {
         final reqId = myRequest?['id']?.toString() ?? planId;
         title = '💌 Private Party Invite!';
         badge = 'INVITE';
         accent = const Color(0xFF7C3AED);
-        body = '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
+        body =
+            '$hostName privately invited you to their Party Plan at $venueName. Accept to proceed!';
         statusSummary = 'Private Invite';
 
-        final isAcceptingInvite = _activeActionKeys.contains('accept_invite_$reqId');
-        final isDecliningInvite = _activeActionKeys.contains('reject_party_$reqId');
+        final isAcceptingInvite = _activeActionKeys.contains(
+          'accept_invite_$reqId',
+        );
+        final isDecliningInvite = _activeActionKeys.contains(
+          'reject_party_$reqId',
+        );
         actionsList = [
           NotificationAction(
             label: isAcceptingInvite ? 'Accepting...' : 'Accept',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
             isLoading: isAcceptingInvite,
-            onTap: (isAcceptingInvite || isDecliningInvite) ? () {} : () => _handleAcceptPartyPlanInvite(reqId),
+            onTap: (isAcceptingInvite || isDecliningInvite)
+                ? () {}
+                : () => _handleAcceptPartyPlanInvite(reqId),
           ),
           NotificationAction(
             label: isDecliningInvite ? 'Declining...' : 'Decline',
@@ -6247,14 +8417,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isDecliningInvite,
             color: Colors.grey[200],
-            onTap: (isAcceptingInvite || isDecliningInvite) ? () {} : () => _handleRejectPartyPlan(reqId),
+            onTap: (isAcceptingInvite || isDecliningInvite)
+                ? () {}
+                : () => _handleRejectPartyPlan(reqId),
           ),
         ];
       } else if (myStatus == 'pending') {
         final reqId = myRequest?['id']?.toString() ?? '';
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
-        body = 'Request sent to $hostName for Party Plan at $venueName. Waiting for host approval.';
+        body =
+            'Request sent to $hostName for Party Plan at $venueName. Waiting for host approval.';
         statusSummary = 'Pending Approval';
         actionsList = [
           NotificationAction(
@@ -6269,7 +8442,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '❌ Request Declined';
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
-        body = 'Your Party Plan request at $venueName was declined by $hostName.';
+        body =
+            'Your Party Plan request at $venueName was declined by $hostName.';
         statusSummary = 'Declined';
         actionsList = [
           NotificationAction(
@@ -6278,7 +8452,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
@@ -6295,7 +8471,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
@@ -6304,16 +8482,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final bool iSuperlikedThem = planMap['iSuperlikedThem'] == true;
         title = superLikedYou
             ? '⭐ Let\'s party at $venueName!'
-            : (iSuperlikedThem ? '💫 $hostName just posted a plan!' : '🎉 Party Plan at $venueName');
-        badge = superLikedYou ? 'SUPER LIKED YOU' : (iSuperlikedThem ? 'YOU SUPER LIKED THEM' : 'PARTY PLAN');
-        accent = (superLikedYou || iSuperlikedThem) ? const Color(0xFF8B5CF6) : accent;
+            : (iSuperlikedThem
+                  ? '💫 $hostName just posted a plan!'
+                  : '🎉 Party Plan at $venueName');
+        badge = superLikedYou
+            ? 'SUPER LIKED YOU'
+            : (iSuperlikedThem ? 'YOU SUPER LIKED THEM' : 'PARTY PLAN');
+        accent = (superLikedYou || iSuperlikedThem)
+            ? const Color(0xFF8B5CF6)
+            : accent;
         body = superLikedYou
             ? '💜 $hostName Super Liked you • $formattedDateTime'
             : (iSuperlikedThem
-                ? '💫 Someone you Super Liked is hosting • $formattedDateTime'
-                : (formattedDateTime.isNotEmpty
-                    ? '$hostName is hosting • $formattedDateTime'
-                    : '$hostName is hosting a Party Plan at $venueName.'));
+                  ? '💫 Someone you Super Liked is hosting • $formattedDateTime'
+                  : (formattedDateTime.isNotEmpty
+                        ? '$hostName is hosting • $formattedDateTime'
+                        : '$hostName is hosting a Party Plan at $venueName.'));
         actionsList = [
           NotificationAction(
             label: 'Request to Join',
@@ -6321,7 +8505,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: true,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => PartyPlanDetailScreen(plan: planMap)),
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
         ];
@@ -6331,10 +8517,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     DateTime latestCreatedAt = DateTime(2000);
     bool allRead = true;
     for (final e in entries) {
-      final dt = _parseDateTime(e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'] ?? e['postedAt']);
+      final dt = _parseDateTime(
+        e['lastActivityAt'] ??
+            e['updatedAt'] ??
+            e['createdAt'] ??
+            e['postedAt'],
+      );
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
-      final read = e['read'] == true ||
+      final read =
+          e['read'] == true ||
           e['isRead'] == true ||
           _localReadNotificationIds.contains(eId) ||
           ApiService.localReadRequestIds.contains(eId);
@@ -6352,7 +8544,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.localReadRequestIds.contains(planId)) {
       allRead = true;
     }
-    if (badge == 'ACTION REQUIRED' || badge == 'INVITE' || badge == 'NEW REQUEST') {
+    if (badge == 'ACTION REQUIRED' ||
+        badge == 'INVITE' ||
+        badge == 'NEW REQUEST') {
       allRead = false;
     }
 
@@ -6399,7 +8593,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else if (e['plan'] is Map && (e['plan'] as Map).isNotEmpty) {
         meetMap = Map<String, dynamic>.from(e['plan']);
         break;
-      } else if (e['requestType'] == 'stranger_meet' || e['category'] == 'stranger_meet') {
+      } else if (e['requestType'] == 'stranger_meet' ||
+          e['category'] == 'stranger_meet') {
         meetMap = Map<String, dynamic>.from(e);
         break;
       }
@@ -6417,16 +8612,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final venue = (meetMap['venue'] is Map)
         ? meetMap['venue'] as Map<String, dynamic>
         : <String, dynamic>{};
-    final venueName = venue['name']?.toString() ?? meetMap['venueName']?.toString() ?? 'Venue';
+    final venueName =
+        venue['name']?.toString() ??
+        meetMap['venueName']?.toString() ??
+        'Venue';
 
     final hostCreator = (meetMap['user'] is Map)
         ? meetMap['user'] as Map<String, dynamic>
         : (meetMap['host'] is Map
-            ? meetMap['host'] as Map<String, dynamic>
-            : <String, dynamic>{});
-    final hostName = '${hostCreator["firstName"] ?? meetMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'.trim();
+              ? meetMap['host'] as Map<String, dynamic>
+              : <String, dynamic>{});
+    final hostName =
+        '${hostCreator["firstName"] ?? meetMap["hostName"] ?? "Host"} ${hostCreator["lastName"] ?? ""}'
+            .trim();
 
-    String? rawMeetHostPhoto = _extractUserPhoto(hostCreator) ??
+    String? rawMeetHostPhoto =
+        _extractUserPhoto(hostCreator) ??
         _extractUserPhoto(meetMap['user']) ??
         _extractUserPhoto(meetMap['host']) ??
         _extractUserPhoto(meetMap['creator']) ??
@@ -6435,28 +8636,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (rawMeetHostPhoto == null || rawMeetHostPhoto.isEmpty) {
       for (final e in entries) {
-        rawMeetHostPhoto = _extractUserPhoto(e['user']) ??
+        rawMeetHostPhoto =
+            _extractUserPhoto(e['user']) ??
             _extractUserPhoto(e['host']) ??
             _extractUserPhoto(e['creator']) ??
             _extractUserPhoto(e['sender']) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null) ??
-            _extractUserPhoto(e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['user']) : null,
+            ) ??
+            _extractUserPhoto(
+              e['data'] is Map ? _extractUserPhoto(e['data']['host']) : null,
+            ) ??
             _extractUserPhoto(e['data']) ??
             _extractUserPhoto(e);
         if (rawMeetHostPhoto != null && rawMeetHostPhoto.isNotEmpty) break;
       }
     }
-    final hostPhoto = rawMeetHostPhoto != null ? ApiService.formatImageUrl(rawMeetHostPhoto) : null;
+    final hostPhoto = rawMeetHostPhoto != null
+        ? ApiService.formatImageUrl(rawMeetHostPhoto)
+        : null;
 
-    final String meetHostId = (meetMap['userId'] ??
-            meetMap['user_id'] ??
-            meetMap['hostId'] ??
-            meetMap['host_id'] ??
-            hostCreator['id'] ??
-            (meetMap['host'] is Map ? meetMap['host']['id'] : null) ??
-            '')
-        .toString();
-    final bool isHost = currentUserId.isNotEmpty &&
+    final String meetHostId =
+        (meetMap['userId'] ??
+                meetMap['user_id'] ??
+                meetMap['hostId'] ??
+                meetMap['host_id'] ??
+                hostCreator['id'] ??
+                (meetMap['host'] is Map ? meetMap['host']['id'] : null) ??
+                '')
+            .toString();
+    final bool isHost =
+        currentUserId.isNotEmpty &&
         (meetHostId == currentUserId ||
             meetMap['role'] == 'host' ||
             meetMap['isHost'] == true);
@@ -6468,8 +8678,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
       final status = (e['status'] ?? '').toString().toLowerCase();
-      final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '').toString().toLowerCase();
-      final String eRequesterId = (e['requesterId'] ?? e['requester']?['id'] ?? e['userId'] ?? e['actorUserId'] ?? e['data']?['userId'] ?? '').toString();
+      final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '')
+          .toString()
+          .toLowerCase();
+      final String eRequesterId =
+          (e['requesterId'] ??
+                  e['requester']?['id'] ??
+                  e['userId'] ??
+                  e['actorUserId'] ??
+                  e['data']?['userId'] ??
+                  '')
+              .toString();
       final String title = (e['title'] ?? '').toString().toLowerCase();
 
       if (!isHost &&
@@ -6483,7 +8702,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               title.contains('request sent'))) {
         myRequest = e;
       }
-      if (reqType == 'incoming_request' || (isHost && e['requester'] != null && eRequesterId != currentUserId)) {
+      if (reqType == 'incoming_request' ||
+          (isHost && e['requester'] != null && eRequesterId != currentUserId)) {
         if (status == 'pending') {
           pendingIncomingRequests.add(e);
         } else if (status == 'paid' || pStatus == 'paid') {
@@ -6496,40 +8716,68 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     String formattedDateTime = '';
-    final rawDateTime = meetMap['eventDateTime'] ?? meetMap['planDate'] ?? meetMap['partyDate'] ?? meetMap['bookingDate'];
+    final rawDateTime =
+        meetMap['eventDateTime'] ??
+        meetMap['planDate'] ??
+        meetMap['partyDate'] ??
+        meetMap['bookingDate'];
     final rawStartTime = meetMap['startTime'] ?? meetMap['time'];
     final parsedEventDate = _parseEventDateTime(rawDateTime, rawStartTime);
     if (parsedEventDate != null) {
       try {
         const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthNames = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ];
         final w = weekdayNames[parsedEventDate.weekday - 1];
         final m = monthNames[parsedEventDate.month - 1];
-        final hour = parsedEventDate.hour % 12 == 0 ? 12 : parsedEventDate.hour % 12;
+        final hour = parsedEventDate.hour % 12 == 0
+            ? 12
+            : parsedEventDate.hour % 12;
         final ampm = parsedEventDate.hour >= 12 ? 'PM' : 'AM';
         final minute = parsedEventDate.minute.toString().padLeft(2, '0');
-        formattedDateTime = '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
+        formattedDateTime =
+            '$w, ${parsedEventDate.day} $m • $hour:$minute $ampm';
       } catch (_) {}
     }
 
     bool isExpired = false;
-    if (parsedEventDate != null && DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
+    if (parsedEventDate != null &&
+        DateTime.now().isAfter(parsedEventDate.add(const Duration(hours: 4)))) {
       isExpired = true;
     }
     final meetStatus = (meetMap['status'] ?? '').toString().toLowerCase();
-    final hostPayStatus = (meetMap['paymentStatus'] ?? '').toString().toLowerCase();
-    if (meetStatus == 'completed' || meetStatus == 'expired' || meetStatus == 'cancelled') {
+    final hostPayStatus = (meetMap['paymentStatus'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (meetStatus == 'completed' ||
+        meetStatus == 'expired' ||
+        meetStatus == 'cancelled') {
       if (meetStatus == 'expired') isExpired = true;
     }
 
-    final dynamic rawCharges = meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0;
+    final dynamic rawCharges =
+        meetMap['chargesPerHead'] ?? myRequest?['chargesPerHead'] ?? 0.0;
     final double chargesPerHead = rawCharges is num
         ? rawCharges.toDouble()
         : (double.tryParse(rawCharges.toString()) ?? 0.0);
 
     Color accent = const Color(0xFF6366F1);
     String title = '🤝 Stranger Meet at $venueName';
-    String body = formattedDateTime.isNotEmpty ? '📅 $formattedDateTime' : 'Stranger Meet at $venueName';
+    String body = formattedDateTime.isNotEmpty
+        ? '📅 $formattedDateTime'
+        : 'Stranger Meet at $venueName';
     String badge = 'STRANGER MEET';
     List<NotificationAction>? actionsList;
     Map<String, dynamic>? senderUser = hostCreator;
@@ -6540,9 +8788,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String? partnerRoleLabel;
     String? statusSummary;
 
-    final rawExpectedEnd = meetMap['expectedEndAt'] ?? meetMap['expected_end_at'];
-    final DateTime? expectedEnd = rawExpectedEnd != null ? DateTime.tryParse(rawExpectedEnd.toString())?.toLocal() : null;
-    final String endFormatted = expectedEnd != null ? DateFormat('hh:mm a').format(expectedEnd) : '';
+    final rawExpectedEnd =
+        meetMap['expectedEndAt'] ?? meetMap['expected_end_at'];
+    final DateTime? expectedEnd = rawExpectedEnd != null
+        ? DateTime.tryParse(rawExpectedEnd.toString())?.toLocal()
+        : null;
+    final String endFormatted = expectedEnd != null
+        ? DateFormat('hh:mm a').format(expectedEnd)
+        : '';
 
     if (isExpired) {
       accent = const Color(0xFF9CA3AF);
@@ -6555,7 +8808,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       title = '🟢 START CONFIRMATION REQUIRED';
       badge = 'ACTION REQUIRED';
       accent = const Color(0xFF8B5CF6);
-      body = 'Scheduled: $formattedDateTime at $venueName. Has your meetup started?';
+      body =
+          'Scheduled: $formattedDateTime at $venueName. Has your meetup started?';
       statusSummary = 'Start Confirmation Required';
 
       if (isHost) {
@@ -6588,7 +8842,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         userRoleLabel = 'Hosted by';
         partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
         partnerRoleLabel = 'Host:';
-        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+        final otherId = meetHostId.isNotEmpty
+            ? meetHostId
+            : (hostCreator['id'] ?? '');
 
         actionsList = [
           NotificationAction(
@@ -6615,7 +8871,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       title = '🏁 END CONFIRMATION REQUIRED';
       badge = 'CONFIRM END';
       accent = const Color(0xFFF59E0B);
-      body = 'Expected end time ($endFormatted) reached. Has your meetup ended?';
+      body =
+          'Expected end time ($endFormatted) reached. Has your meetup ended?';
       statusSummary = 'End Confirmation Required';
 
       if (isHost) {
@@ -6649,7 +8906,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         userRoleLabel = 'Hosted by';
         partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
         partnerRoleLabel = 'Host:';
-        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+        final otherId = meetHostId.isNotEmpty
+            ? meetHostId
+            : (hostCreator['id'] ?? '');
 
         actionsList = [
           NotificationAction(
@@ -6717,7 +8976,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       actionsList = null;
     } else if (meetStatus == 'in_progress') {
       final startedFormatted = meetMap['startedAt'] != null
-          ? DateFormat('hh:mm a').format(DateTime.tryParse(meetMap['startedAt'].toString())?.toLocal() ?? DateTime.now())
+          ? DateFormat('hh:mm a').format(
+              DateTime.tryParse(meetMap['startedAt'].toString())?.toLocal() ??
+                  DateTime.now(),
+            )
           : '';
       title = '🟢 Stranger Meet In Progress';
       badge = 'LIVE / IN PROGRESS';
@@ -6755,7 +9017,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -6766,7 +9033,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         userRoleLabel = 'Hosted by';
         partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
         partnerRoleLabel = 'Host:';
-        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+        final otherId = meetHostId.isNotEmpty
+            ? meetHostId
+            : (hostCreator['id'] ?? '');
 
         actionsList = [
           NotificationAction(
@@ -6795,7 +9064,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -6820,7 +9094,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           onTap: () {
             try {
               final req = StrangersMeetRequest.fromJson(meetMap);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetTicketScreen(request: req),
+                ),
+              );
             } catch (e) {
               debugPrint('Error parsing SM ticket: $e');
             }
@@ -6844,7 +9123,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           onTap: () {
             try {
               final req = StrangersMeetRequest.fromJson(meetMap);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetTicketScreen(request: req),
+                ),
+              );
             } catch (e) {
               debugPrint('Error parsing SM ticket: $e');
             }
@@ -6852,13 +9136,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       ];
     } else if (meetStatus == 'completed' || meetStatus == 'settled') {
-      final amount = meetMap['settlementAmount'] ?? meetMap['settlement_amount'];
-      final String settlementStr = amount != null ? '₹${double.tryParse(amount.toString())?.toStringAsFixed(0) ?? amount}' : '';
+      final amount =
+          meetMap['settlementAmount'] ?? meetMap['settlement_amount'];
+      final String settlementStr = amount != null
+          ? '₹${double.tryParse(amount.toString())?.toStringAsFixed(0) ?? amount}'
+          : '';
       title = '✓ Meetup Completed & Settled';
       badge = 'SETTLED & COMPLETED';
       accent = const Color(0xFF10B981);
       body = isHost
-          ? (settlementStr.isNotEmpty ? 'Host payout of $settlementStr has been settled to your account.' : 'Your host payout has been settled.')
+          ? (settlementStr.isNotEmpty
+                ? 'Host payout of $settlementStr has been settled to your account.'
+                : 'Your host payout has been settled.')
           : 'This Stranger Meet was successfully completed.';
       statusSummary = 'Settled & Completed';
       userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
@@ -6870,7 +9159,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           onTap: () {
             try {
               final req = StrangersMeetRequest.fromJson(meetMap);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StrangersMeetTicketScreen(request: req),
+                ),
+              );
             } catch (e) {
               debugPrint('Error parsing SM ticket: $e');
             }
@@ -6880,18 +9174,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (isHost) {
       userRoleLabel = '👑 Your Stranger Meet';
 
-      if (meetStatus == 'pending' || meetStatus == 'request_sent' || meetStatus == 'pending_approval') {
+      if (meetStatus == 'pending' ||
+          meetStatus == 'request_sent' ||
+          meetStatus == 'pending_approval') {
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
         accent = const Color(0xFF8B5CF6);
-        body = 'Request sent to Admin for Stranger Meet at $venueName. Waiting for admin approval.';
+        body =
+            'Request sent to Admin for Stranger Meet at $venueName. Waiting for admin approval.';
         statusSummary = 'Waiting for Admin Approval';
         actionsList = null;
-      } else if ((meetStatus == 'approved' || meetStatus == 'accepted' || meetStatus == 'payment_pending') && (hostPayStatus == 'unpaid' || hostPayStatus == 'pending' || hostPayStatus.isEmpty)) {
+      } else if ((meetStatus == 'approved' ||
+              meetStatus == 'accepted' ||
+              meetStatus == 'payment_pending') &&
+          (hostPayStatus == 'unpaid' ||
+              hostPayStatus == 'pending' ||
+              hostPayStatus.isEmpty)) {
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        final rawDep = meetMap['paymentAmount'] ??
+        final rawDep =
+            meetMap['paymentAmount'] ??
             meetMap['payment_amount'] ??
             meetMap['adminPaymentAmount'] ??
             meetMap['admin_payment_amount'] ??
@@ -6921,7 +9224,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     builder: (_) => StrangersMeetPaymentScreen(
                       request: req,
                       onPaymentSuccess: () {
-                        _optimisticallyUpdateStrangerMeetPayment(meetId: req.id, isHost: true);
+                        _optimisticallyUpdateStrangerMeetPayment(
+                          meetId: req.id,
+                          isHost: true,
+                        );
                         _loadFeed(showLoader: false);
                       },
                       isJoinPayment: false,
@@ -6937,16 +9243,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else if (meetMap['hostCancellation'] is Map) {
         final hostCancel = meetMap['hostCancellation'] as Map<String, dynamic>;
         final String cancelStatus = hostCancel['status']?.toString() ?? '';
-        final String hostRefundStatus = hostCancel['hostRefundStatus']?.toString() ?? '';
-        final double hostRefundAmt = double.tryParse((hostCancel['hostRefundAmount'] ?? 0).toString()) ?? 0.0;
-        final String hostRefundDest = hostCancel['hostRefundDestination']?.toString() ?? 'UPI / Bank Account';
-        final String hostRef = hostCancel['hostSettlementTransactionId']?.toString() ?? '';
+        final String hostRefundStatus =
+            hostCancel['hostRefundStatus']?.toString() ?? '';
+        final double hostRefundAmt =
+            double.tryParse((hostCancel['hostRefundAmount'] ?? 0).toString()) ??
+            0.0;
+        final String hostRefundDest =
+            hostCancel['hostRefundDestination']?.toString() ??
+            'UPI / Bank Account';
+        final String hostRef =
+            hostCancel['hostSettlementTransactionId']?.toString() ?? '';
 
         if (hostRefundStatus == 'HOST_REFUND_PENDING_SETTLEMENT') {
           title = '💰 STRANGERS MEET REFUND';
           badge = 'PENDING';
           accent = const Color(0xFFF59E0B);
-          body = 'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nSettlement: Processing within 24 hours';
+          body =
+              'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nSettlement: Processing within 24 hours';
           statusSummary = 'Pending Settlement (within 24h)';
           actionsList = [
             NotificationAction(
@@ -6972,7 +9285,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           title = '💰 STRANGERS MEET REFUND';
           badge = 'SETTLED';
           accent = const Color(0xFF10B981);
-          body = 'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nStatus: ✓ Amount Settled${hostRef.isNotEmpty ? '\nReference: $hostRef' : ''}';
+          body =
+              'Cancellation approved\nRefund amount: ₹${hostRefundAmt.toStringAsFixed(0)}\nDestination: $hostRefundDest\nStatus: ✓ Amount Settled${hostRef.isNotEmpty ? '\nReference: $hostRef' : ''}';
           statusSummary = 'Settled';
           actionsList = [
             NotificationAction(
@@ -6998,7 +9312,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           title = '⏳ Cancellation Requested';
           badge = 'AWAITING ADMIN REVIEW';
           accent = const Color(0xFFF59E0B);
-          body = 'Your cancellation request has been submitted and is waiting for admin approval.';
+          body =
+              'Your cancellation request has been submitted and is waiting for admin approval.';
           statusSummary = 'Waiting for admin approval';
           actionsList = [
             NotificationAction(
@@ -7027,7 +9342,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final String hostWalletNote = hostRefundStatus == 'WALLET_CREDITED'
               ? ' Host deposit refund of ₹${hostRefundAmt.toStringAsFixed(0)} credited to Lunara Wallet.'
               : '';
-          body = 'You cancelled this Stranger Meet at $venueName. Participant refunds have been processed.$hostWalletNote';
+          body =
+              'You cancelled this Stranger Meet at $venueName. Participant refunds have been processed.$hostWalletNote';
           statusSummary = 'Cancelled • Refunds Processed';
           actionsList = [
             NotificationAction(
@@ -7078,11 +9394,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       } else if (meetMap['pendingCancellationRequests'] is List &&
           (meetMap['pendingCancellationRequests'] as List).isNotEmpty) {
-        final pendingCancellations = List<Map<String, dynamic>>.from(meetMap['pendingCancellationRequests']);
+        final pendingCancellations = List<Map<String, dynamic>>.from(
+          meetMap['pendingCancellationRequests'],
+        );
         final firstCancel = pendingCancellations.first;
         final cId = firstCancel['cancellationId']?.toString() ?? '';
         final cName = firstCancel['name']?.toString() ?? 'Participant';
-        final cPaid = firstCancel['paidAmount'] != null ? ' (₹${firstCancel['paidAmount']})' : '';
+        final cPaid = firstCancel['paidAmount'] != null
+            ? ' (₹${firstCancel['paidAmount']})'
+            : '';
 
         title = '⚠️ Cancellation Requested';
         badge = 'CANCELLATION REQUEST';
@@ -7091,8 +9411,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         statusSummary = 'Host Approval Required';
         final smAcceptCancelKey = 'sm_cancel_accept_$cId';
         final smRejectCancelKey = 'sm_cancel_reject_$cId';
-        final isSmAcceptingCancel = _activeActionKeys.contains(smAcceptCancelKey);
-        final isSmRejectingCancel = _activeActionKeys.contains(smRejectCancelKey);
+        final isSmAcceptingCancel = _activeActionKeys.contains(
+          smAcceptCancelKey,
+        );
+        final isSmRejectingCancel = _activeActionKeys.contains(
+          smRejectCancelKey,
+        );
 
         actionsList = [
           NotificationAction(
@@ -7100,14 +9424,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             icon: Icons.check_circle_rounded,
             isPrimary: true,
             isLoading: isSmAcceptingCancel,
-            onTap: (isSmAcceptingCancel || isSmRejectingCancel) ? () {} : () async {
-              setState(() => _activeActionKeys.add(smAcceptCancelKey));
-              try {
-                await _handleStrangersMeetCancellationAction(meetId, cId, 'accept');
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(smAcceptCancelKey));
-              }
-            },
+            onTap: (isSmAcceptingCancel || isSmRejectingCancel)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(smAcceptCancelKey));
+                    try {
+                      await _handleStrangersMeetCancellationAction(
+                        meetId,
+                        cId,
+                        'accept',
+                      );
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(smAcceptCancelKey),
+                        );
+                      }
+                    }
+                  },
           ),
           NotificationAction(
             label: isSmRejectingCancel ? 'Rejecting...' : 'Reject',
@@ -7115,19 +9449,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isSmRejectingCancel,
             color: Colors.grey[200],
-            onTap: (isSmAcceptingCancel || isSmRejectingCancel) ? () {} : () async {
-              setState(() => _activeActionKeys.add(smRejectCancelKey));
-              try {
-                await _handleStrangersMeetCancellationAction(meetId, cId, 'reject');
-              } finally {
-                if (mounted) setState(() => _activeActionKeys.remove(smRejectCancelKey));
-              }
-            },
+            onTap: (isSmAcceptingCancel || isSmRejectingCancel)
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(smRejectCancelKey));
+                    try {
+                      await _handleStrangersMeetCancellationAction(
+                        meetId,
+                        cId,
+                        'reject',
+                      );
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(smRejectCancelKey),
+                        );
+                      }
+                    }
+                  },
           ),
         ];
       } else if (pendingIncomingRequests.isNotEmpty) {
-        final int confirmedCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['confirmedCount'] ?? meetMap['paymentCount'] ?? 0).toString()) ?? 0;
-        final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
+        final int confirmedCount =
+            int.tryParse(
+              (meetMap['paidJoinersCount'] ??
+                      meetMap['slotsFilled'] ??
+                      meetMap['confirmedCount'] ??
+                      meetMap['paymentCount'] ??
+                      0)
+                  .toString(),
+            ) ??
+            0;
+        final int totalCapacity =
+            int.tryParse(
+              (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0)
+                  .toString(),
+            ) ??
+            0;
         final int pendingCount = pendingIncomingRequests.length;
         final countSubtitle = totalCapacity > 0
             ? ' • $confirmedCount/$totalCapacity Confirmed'
@@ -7135,13 +9493,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         if (pendingIncomingRequests.length == 1) {
           final firstReq = pendingIncomingRequests.first;
-          final reqUser = (firstReq['requester'] is Map) ? firstReq['requester'] as Map<String, dynamic> : <String, dynamic>{};
-          final reqUserName = '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'.trim();
+          final reqUser = (firstReq['requester'] is Map)
+              ? firstReq['requester'] as Map<String, dynamic>
+              : <String, dynamic>{};
+          final reqUserName =
+              '${reqUser["firstName"] ?? "A user"} ${reqUser["lastName"] ?? ""}'
+                  .trim();
           final joinerId = firstReq['id']?.toString() ?? '';
 
           title = '📥 Join Request Received';
           badge = 'NEW REQUEST';
-          body = '$reqUserName requested to join your Stranger Meet at $venueName.$countSubtitle';
+          body =
+              '$reqUserName requested to join your Stranger Meet at $venueName.$countSubtitle';
           senderUser = reqUser.isNotEmpty ? reqUser : hostCreator;
           avatarUrl = reqUser['profileImageUrl'] ?? reqUser['profilePhotoUrl'];
 
@@ -7151,15 +9514,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ? '1 Pending • $confirmedCount/$totalCapacity Confirmed'
               : '1 Pending • $confirmedCount Confirmed';
 
-          final isAcceptingSm = _activeActionKeys.contains('sm_join_accept_$joinerId');
-          final isDecliningSm = _activeActionKeys.contains('sm_join_reject_$joinerId');
+          final isAcceptingSm = _activeActionKeys.contains(
+            'sm_join_accept_$joinerId',
+          );
+          final isDecliningSm = _activeActionKeys.contains(
+            'sm_join_reject_$joinerId',
+          );
           actionsList = [
             NotificationAction(
               label: isAcceptingSm ? 'Accepting...' : 'Accept',
               icon: Icons.check_circle_rounded,
               isPrimary: true,
               isLoading: isAcceptingSm,
-              onTap: (isAcceptingSm || isDecliningSm) ? () {} : () => _handleStrangersMeetJoinAction(meetId, joinerId, 'accept'),
+              onTap: (isAcceptingSm || isDecliningSm)
+                  ? () {}
+                  : () => _handleStrangersMeetJoinAction(
+                      meetId,
+                      joinerId,
+                      'accept',
+                    ),
             ),
             NotificationAction(
               label: isDecliningSm ? 'Declining...' : 'Decline',
@@ -7167,13 +9540,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               isPrimary: false,
               isLoading: isDecliningSm,
               color: Colors.grey[200],
-              onTap: (isAcceptingSm || isDecliningSm) ? () {} : () => _handleStrangersMeetJoinAction(meetId, joinerId, 'reject'),
+              onTap: (isAcceptingSm || isDecliningSm)
+                  ? () {}
+                  : () => _handleStrangersMeetJoinAction(
+                      meetId,
+                      joinerId,
+                      'reject',
+                    ),
             ),
           ];
         } else {
           title = '📥 Join Requests Received';
           badge = 'REQUESTS ($pendingCount)';
-          body = '$pendingCount users requested to join your Stranger Meet at $venueName.$countSubtitle';
+          body =
+              '$pendingCount users requested to join your Stranger Meet at $venueName.$countSubtitle';
           statusSummary = totalCapacity > 0
               ? '$pendingCount Pending • $confirmedCount/$totalCapacity Confirmed'
               : '$pendingCount Pending • $confirmedCount Confirmed';
@@ -7182,20 +9562,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               label: 'Review Requests ($pendingCount)',
               icon: Icons.people_alt_rounded,
               isPrimary: true,
-              onTap: () => _showReviewStrangersMeetRequestsModal(meetMap, pendingIncomingRequests),
+              onTap: () => _showReviewStrangersMeetRequestsModal(
+                meetMap,
+                pendingIncomingRequests,
+              ),
             ),
           ];
         }
       } else if (paidJoinerRecord != null) {
-        final joiner = (paidJoinerRecord['requester'] is Map) ? paidJoinerRecord['requester'] as Map<String, dynamic> : <String, dynamic>{};
-        final joinerName = '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'.trim();
+        final joiner = (paidJoinerRecord['requester'] is Map)
+            ? paidJoinerRecord['requester'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        final joinerName =
+            '${joiner["firstName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'
+                .trim();
         final joinerId = joiner['id']?.toString() ?? '';
-        final joinerPhoto = joiner['profileImageUrl']?.toString() ?? joiner['profilePhotoUrl']?.toString();
+        final joinerPhoto =
+            joiner['profileImageUrl']?.toString() ??
+            joiner['profilePhotoUrl']?.toString();
 
         title = '🎉 Seat Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Your Stranger Meet with $joinerName at $venueName is locked! Chat unlocked.';
+        body =
+            'Your Stranger Meet with $joinerName at $venueName is locked! Chat unlocked.';
         senderUser = joiner.isNotEmpty ? joiner : hostCreator;
         avatarUrl = joinerPhoto ?? hostPhoto;
 
@@ -7246,7 +9636,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -7284,7 +9679,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -7296,17 +9696,39 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.grey[200],
             onTap: () {
-              final int actualPaidCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['joinedCount'] ?? 0).toString()) ?? 0;
+              final int actualPaidCount =
+                  int.tryParse(
+                    (meetMap['paidJoinersCount'] ??
+                            meetMap['slotsFilled'] ??
+                            meetMap['joinedCount'] ??
+                            0)
+                        .toString(),
+                  ) ??
+                  0;
               final double totalCollected = actualPaidCount * chargesPerHead;
-              final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
-              final double hostDeposit = double.tryParse((meetMap['paymentAmount'] ?? 0).toString()) ?? 0.0;
-              final String meetDate = parsedEventDate != null ? DateFormat('MMM dd, yyyy').format(parsedEventDate) : '';
-              final String meetTime = parsedEventDate != null ? DateFormat('hh:mm a').format(parsedEventDate) : '';
+              final int totalCapacity =
+                  int.tryParse(
+                    (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0)
+                        .toString(),
+                  ) ??
+                  0;
+              final double hostDeposit =
+                  double.tryParse((meetMap['paymentAmount'] ?? 0).toString()) ??
+                  0.0;
+              final String meetDate = parsedEventDate != null
+                  ? DateFormat('MMM dd, yyyy').format(parsedEventDate)
+                  : '';
+              final String meetTime = parsedEventDate != null
+                  ? DateFormat('hh:mm a').format(parsedEventDate)
+                  : '';
 
               StrangersMeetHostCancellationDialog.show(
                 context,
                 meetId: meetId,
-                subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
+                subject:
+                    meetMap['subject']?.toString() ??
+                    meetMap['title']?.toString() ??
+                    'Strangers Meet',
                 venueName: venueName,
                 joinedCount: actualPaidCount,
                 collectedAmount: totalCollected,
@@ -7327,7 +9749,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       partnerRoleLabel = 'Host:';
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
-      final myPaymentStatus = (myRequest?['joinerPaymentStatus'] ?? myRequest?['paymentStatus'] ?? '').toString().toLowerCase();
+      final myPaymentStatus =
+          (myRequest?['joinerPaymentStatus'] ??
+                  myRequest?['paymentStatus'] ??
+                  '')
+              .toString()
+              .toLowerCase();
       final myCancel = meetMap['myCancellation'] is Map
           ? Map<String, dynamic>.from(meetMap['myCancellation'])
           : null;
@@ -7335,11 +9762,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ? Map<String, dynamic>.from(meetMap['hostCancellation'])
           : null;
 
-      if (hostCancellation != null && hostCancellation['status'] == 'PENDING_ADMIN_REVIEW') {
+      if (hostCancellation != null &&
+          hostCancellation['status'] == 'PENDING_ADMIN_REVIEW') {
         title = '⏳ Host Cancellation Pending';
         badge = 'HOST CANCELLATION';
         accent = const Color(0xFFF59E0B);
-        body = 'The host has requested cancellation for this Stranger Meet. Lunara Admin is currently reviewing the request.';
+        body =
+            'The host has requested cancellation for this Stranger Meet. Lunara Admin is currently reviewing the request.';
         statusSummary = 'Admin Review In Progress';
         actionsList = [
           NotificationAction(
@@ -7350,23 +9779,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
             },
           ),
         ];
-      } else if (meetStatus == 'cancelled' || (hostCancellation != null &&
-          (hostCancellation['status'] == 'COMPLETED' ||
-              hostCancellation['status'] == 'REFUNDED' ||
-              hostCancellation['status'] == 'APPROVED' ||
-              hostCancellation['status'] == 'REFUND_PROCESSING'))) {
+      } else if (meetStatus == 'cancelled' ||
+          (hostCancellation != null &&
+              (hostCancellation['status'] == 'COMPLETED' ||
+                  hostCancellation['status'] == 'REFUNDED' ||
+                  hostCancellation['status'] == 'APPROVED' ||
+                  hostCancellation['status'] == 'REFUND_PROCESSING'))) {
         final refAmount = (myRequest?['paymentAmount'] ?? chargesPerHead);
         title = '🎉 Strangers Meet Cancelled';
         badge = 'REFUND PROCESSED';
         accent = const Color(0xFF10B981);
-        body = 'The Strangers Meet at $venueName was cancelled by the host. Your payment of ₹$refAmount has been refunded to your Lunara Wallet.';
+        body =
+            'The Strangers Meet at $venueName was cancelled by the host. Your payment of ₹$refAmount has been refunded to your Lunara Wallet.';
         statusSummary = 'Refund Processed';
         actionsList = [
           NotificationAction(
@@ -7377,7 +9813,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -7394,7 +9835,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '⏳ Cancellation Requested';
         badge = 'CANCELLATION PENDING';
         accent = const Color(0xFFF59E0B);
-        body = 'Your cancellation request for Stranger Meet at $venueName is awaiting host approval.';
+        body =
+            'Your cancellation request for Stranger Meet at $venueName is awaiting host approval.';
         statusSummary = 'Awaiting Host Approval';
         actionsList = [
           NotificationAction(
@@ -7405,7 +9847,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -7417,7 +9864,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '✓ Cancellation Approved';
         badge = 'REFUNDED';
         accent = const Color(0xFF10B981);
-        body = 'Your cancellation was approved by $hostName. ₹$ref has been refunded to your Lunara Wallet.';
+        body =
+            'Your cancellation was approved by $hostName. ₹$ref has been refunded to your Lunara Wallet.';
         statusSummary = '₹$ref Refunded to Wallet';
         actionsList = [
           NotificationAction(
@@ -7431,8 +9879,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         title = '🎉 Meet Confirmed!';
         badge = 'CONFIRMED';
         accent = const Color(0xFF10B981);
-        body = 'Your Stranger Meet with $hostName at $venueName is confirmed! Chat unlocked.';
-        final otherId = meetHostId.isNotEmpty ? meetHostId : (hostCreator['id'] ?? '');
+        body =
+            'Your Stranger Meet with $hostName at $venueName is confirmed! Chat unlocked.';
+        final otherId = meetHostId.isNotEmpty
+            ? meetHostId
+            : (hostCreator['id'] ?? '');
         statusSummary = 'Payment Done • Chat Unlocked';
 
         actionsList = [
@@ -7462,7 +9913,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: () {
               try {
                 final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => StrangersMeetTicketScreen(request: req)));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
               } catch (e) {
                 debugPrint('Error parsing SM ticket: $e');
               }
@@ -7475,17 +9931,41 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             color: Colors.grey[200],
             onTap: () {
               if (isHost) {
-                final int actualPaidCount = int.tryParse((meetMap['paidJoinersCount'] ?? meetMap['slotsFilled'] ?? meetMap['joinedCount'] ?? 0).toString()) ?? 0;
+                final int actualPaidCount =
+                    int.tryParse(
+                      (meetMap['paidJoinersCount'] ??
+                              meetMap['slotsFilled'] ??
+                              meetMap['joinedCount'] ??
+                              0)
+                          .toString(),
+                    ) ??
+                    0;
                 final double totalCollected = actualPaidCount * chargesPerHead;
-                final int totalCapacity = int.tryParse((meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString()) ?? 0;
-                final double hostDeposit = double.tryParse((meetMap['paymentAmount'] ?? 0).toString()) ?? 0.0;
-                final String meetDate = parsedEventDate != null ? DateFormat('MMM dd, yyyy').format(parsedEventDate) : '';
-                final String meetTime = parsedEventDate != null ? DateFormat('hh:mm a').format(parsedEventDate) : '';
+                final int totalCapacity =
+                    int.tryParse(
+                      (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0)
+                          .toString(),
+                    ) ??
+                    0;
+                final double hostDeposit =
+                    double.tryParse(
+                      (meetMap['paymentAmount'] ?? 0).toString(),
+                    ) ??
+                    0.0;
+                final String meetDate = parsedEventDate != null
+                    ? DateFormat('MMM dd, yyyy').format(parsedEventDate)
+                    : '';
+                final String meetTime = parsedEventDate != null
+                    ? DateFormat('hh:mm a').format(parsedEventDate)
+                    : '';
 
                 StrangersMeetHostCancellationDialog.show(
                   context,
                   meetId: meetId,
-                  subject: meetMap['subject']?.toString() ?? meetMap['title']?.toString() ?? 'Strangers Meet',
+                  subject:
+                      meetMap['subject']?.toString() ??
+                      meetMap['title']?.toString() ??
+                      'Strangers Meet',
                   venueName: venueName,
                   joinedCount: actualPaidCount,
                   collectedAmount: totalCollected,
@@ -7497,7 +9977,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   onCancelled: () => _loadFeed(),
                 );
               } else {
-                final double paid = (chargesPerHead > 0 ? chargesPerHead : double.tryParse((meetMap['paymentAmount'] ?? '0').toString()) ?? 0.0).toDouble();
+                final double paid =
+                    (chargesPerHead > 0
+                            ? chargesPerHead
+                            : double.tryParse(
+                                    (meetMap['paymentAmount'] ?? '0')
+                                        .toString(),
+                                  ) ??
+                                  0.0)
+                        .toDouble();
                 StrangersMeetCancellationDialog.show(
                   context,
                   meetId: meetId,
@@ -7511,11 +9999,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (myStatus == 'accepted' || myStatus == 'payment_pending') {
-        final feeLabel = chargesPerHead > 0 ? '₹${chargesPerHead.toStringAsFixed(0)}' : 'Entry Fee';
+        final feeLabel = chargesPerHead > 0
+            ? '₹${chargesPerHead.toStringAsFixed(0)}'
+            : 'Entry Fee';
         title = '✅ Accepted! Pay Entry Fee';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFFF59E0B);
-        body = '$hostName accepted your request! Pay $feeLabel to secure your spot at $venueName.';
+        body =
+            '$hostName accepted your request! Pay $feeLabel to secure your spot at $venueName.';
         statusSummary = 'Pay $feeLabel';
 
         actionsList = [
@@ -7545,20 +10036,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else if (myStatus == 'pending') {
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
-        body = 'Request sent to $hostName for Stranger Meet at $venueName. Waiting for host approval.';
+        body =
+            'Request sent to $hostName for Stranger Meet at $venueName. Waiting for host approval.';
         statusSummary = 'Pending Approval';
         actionsList = null;
       } else if (myStatus == 'rejected' || myStatus == 'declined') {
         title = '❌ Request Declined';
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
-        body = 'Your request to join Stranger Meet at $venueName was declined by $hostName.';
+        body =
+            'Your request to join Stranger Meet at $venueName was declined by $hostName.';
         statusSummary = 'Declined';
         actionsList = null;
       } else {
         final double charges = (meetMap['chargesPerHead'] is num
             ? (meetMap['chargesPerHead'] as num).toDouble()
-            : (double.tryParse((meetMap['chargesPerHead'] ?? '0').toString()) ?? 0.0));
+            : (double.tryParse((meetMap['chargesPerHead'] ?? '0').toString()) ??
+                  0.0));
         final feeLabel = charges > 0 ? ' (₹${charges.toStringAsFixed(0)})' : '';
 
         title = '🤝 Stranger Meet at $venueName';
@@ -7567,7 +10061,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ? '$hostName is hosting • $formattedDateTime'
             : '$hostName is hosting a Stranger Meet at $venueName.';
 
-        if (hostPayStatus == 'paid' || meetStatus == 'confirmed' || meetStatus == 'live') {
+        if (hostPayStatus == 'paid' ||
+            meetStatus == 'confirmed' ||
+            meetStatus == 'live') {
           actionsList = [
             NotificationAction(
               label: 'Request to Join$feeLabel',
@@ -7575,7 +10071,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               isPrimary: true,
               onTap: () {
                 try {
-                  final Map<String, dynamic> postMap = Map<String, dynamic>.from(meetMap);
+                  final Map<String, dynamic> postMap =
+                      Map<String, dynamic>.from(meetMap);
                   postMap['type'] = 'strangers_meet';
                   Navigator.push(
                     context,
@@ -7584,7 +10081,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     ),
                   );
                 } catch (e) {
-                  debugPrint('Error navigating to SM detail from live card: $e');
+                  debugPrint(
+                    'Error navigating to SM detail from live card: $e',
+                  );
                 }
               },
             ),
@@ -7599,10 +10098,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     DateTime latestCreatedAt = DateTime(2000);
     bool allRead = true;
     for (final e in entries) {
-      final dt = _parseDateTime(e['lastActivityAt'] ?? e['updatedAt'] ?? e['createdAt'] ?? e['postedAt']);
+      final dt = _parseDateTime(
+        e['lastActivityAt'] ??
+            e['updatedAt'] ??
+            e['createdAt'] ??
+            e['postedAt'],
+      );
       if (dt.isAfter(latestCreatedAt)) latestCreatedAt = dt;
       final eId = e['id']?.toString() ?? '';
-      final read = e['read'] == true ||
+      final read =
+          e['read'] == true ||
           e['isRead'] == true ||
           _localReadNotificationIds.contains(eId) ||
           ApiService.localReadRequestIds.contains(eId);
@@ -7620,7 +10125,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.localReadRequestIds.contains(meetId)) {
       allRead = true;
     }
-    if (badge == 'ACTION REQUIRED' || badge == 'NEW REQUEST' || badge == 'INVITE') {
+    if (badge == 'ACTION REQUIRED' ||
+        badge == 'NEW REQUEST' ||
+        badge == 'INVITE') {
       allRead = false;
     }
 
@@ -7651,6 +10158,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       statusSummary: statusSummary,
     );
   }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Filter Bottom Sheet
   // ─────────────────────────────────────────────────────────────────────────────
@@ -7663,23 +10171,66 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ),
       builder: (ctx) {
         final filters = [
-          {'id': 'ALL', 'label': 'All Notifications', 'icon': Icons.notifications_rounded},
-          {'id': 'BOOKINGS', 'label': 'Bookings & Invites', 'icon': Icons.confirmation_number_rounded},
-          {'id': 'PARTY_PLANS', 'label': 'Party Plans', 'icon': Icons.celebration_rounded},
-          {'id': 'STRANGER_MEETS', 'label': 'Stranger Meets', 'icon': Icons.people_alt_rounded},
-          {'id': 'PAYMENTS', 'label': 'Payments & Receipts', 'icon': Icons.payments_rounded},
-          {'id': 'WALLET', 'label': 'Wallet Balance', 'icon': Icons.account_balance_wallet_rounded},
-          {'id': 'CHAT', 'label': 'Messages & Chat', 'icon': Icons.chat_bubble_rounded},
-          {'id': 'EXPIRED', 'label': 'Expired Plans & Events', 'icon': Icons.history_rounded},
-          {'id': 'SYSTEM', 'label': 'System & Security', 'icon': Icons.security_rounded},
-          {'id': 'PROMOTIONS', 'label': 'Offers & Rewards', 'icon': Icons.card_giftcard_rounded},
+          {
+            'id': 'ALL',
+            'label': 'All Notifications',
+            'icon': Icons.notifications_rounded,
+          },
+          {
+            'id': 'BOOKINGS',
+            'label': 'Bookings & Invites',
+            'icon': Icons.confirmation_number_rounded,
+          },
+          {
+            'id': 'PARTY_PLANS',
+            'label': 'Party Plans',
+            'icon': Icons.celebration_rounded,
+          },
+          {
+            'id': 'STRANGER_MEETS',
+            'label': 'Stranger Meets',
+            'icon': Icons.people_alt_rounded,
+          },
+          {
+            'id': 'PAYMENTS',
+            'label': 'Payments & Receipts',
+            'icon': Icons.payments_rounded,
+          },
+          {
+            'id': 'WALLET',
+            'label': 'Wallet Balance',
+            'icon': Icons.account_balance_wallet_rounded,
+          },
+          {
+            'id': 'CHAT',
+            'label': 'Messages & Chat',
+            'icon': Icons.chat_bubble_rounded,
+          },
+          {
+            'id': 'EXPIRED',
+            'label': 'Expired Plans & Events',
+            'icon': Icons.history_rounded,
+          },
+          {
+            'id': 'SYSTEM',
+            'label': 'System & Security',
+            'icon': Icons.security_rounded,
+          },
+          {
+            'id': 'PROMOTIONS',
+            'label': 'Offers & Rewards',
+            'icon': Icons.card_giftcard_rounded,
+          },
         ];
 
         return StatefulBuilder(
           builder: (ctx, setBottomSheetState) {
             return SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -7715,7 +10266,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             },
                             child: const Text(
                               'Reset Filter',
-                              style: TextStyle(color: LunaraTheme.electricViolet, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: LunaraTheme.electricViolet,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                       ],
@@ -7729,24 +10283,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         itemBuilder: (context, index) {
                           final filter = filters[index];
                           final filterId = filter['id'] as String;
-                          final isSelected = _selectedCategoryFilter == filterId;
+                          final isSelected =
+                              _selectedCategoryFilter == filterId;
 
                           return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             leading: Icon(
                               filter['icon'] as IconData,
-                              color: isSelected ? LunaraTheme.electricViolet : Colors.grey[600],
+                              color: isSelected
+                                  ? LunaraTheme.electricViolet
+                                  : Colors.grey[600],
                             ),
                             title: Text(
                               filter['label'] as String,
                               style: TextStyle(
                                 fontSize: 14,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                color: isSelected ? LunaraTheme.electricViolet : Colors.black87,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? LunaraTheme.electricViolet
+                                    : Colors.black87,
                               ),
                             ),
                             trailing: isSelected
-                                ? const Icon(Icons.check_circle_rounded, color: LunaraTheme.electricViolet, size: 20)
+                                ? const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: LunaraTheme.electricViolet,
+                                    size: 20,
+                                  )
                                 : null,
                             onTap: () {
                               setState(() {
@@ -7787,20 +10355,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Icon(Icons.notifications_active_rounded, color: LunaraTheme.electricViolet, size: 24),
+                    const Icon(
+                      Icons.notifications_active_rounded,
+                      color: LunaraTheme.electricViolet,
+                      size: 24,
+                    ),
                     if (totalUnread > 0)
                       Positioned(
                         top: -2,
                         right: -4,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             totalUnread > 9 ? '9+' : '$totalUnread',
-                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -7830,7 +10409,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               // Mark all as read button
               TextButton.icon(
                 onPressed: markAllNotificationsAsRead,
-                icon: const Icon(Icons.done_all_rounded, size: 15, color: LunaraTheme.electricViolet),
+                icon: const Icon(
+                  Icons.done_all_rounded,
+                  size: 15,
+                  color: LunaraTheme.electricViolet,
+                ),
                 label: const Text(
                   'Read All',
                   style: TextStyle(
@@ -7840,7 +10423,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -7853,13 +10439,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet.withValues(alpha: 0.1) : Colors.grey[100],
+                    color: _selectedCategoryFilter != 'ALL'
+                        ? LunaraTheme.electricViolet.withValues(alpha: 0.1)
+                        : Colors.grey[100],
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.tune_rounded,
                     size: 18,
-                    color: _selectedCategoryFilter != 'ALL' ? LunaraTheme.electricViolet : Colors.black87,
+                    color: _selectedCategoryFilter != 'ALL'
+                        ? LunaraTheme.electricViolet
+                        : Colors.black87,
                   ),
                 ),
               ),
@@ -7874,18 +10464,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Build Status Filter Pills with Live Unread Counts
   // ─────────────────────────────────────────────────────────────────────────────
   int _countForPill(String pillId, List<UnifiedNotificationItem> allItems) {
-    if (pillId == 'ALL') return allItems.where((i) => !i.isRead && !i.isExpired).length;
-    if (pillId == 'EXPIRED') return allItems.where((i) => i.isExpired && !i.isRead).length;
+    if (pillId == 'ALL') {
+      return allItems.where((i) => !i.isRead && !i.isExpired).length;
+    }
+    if (pillId == 'EXPIRED') {
+      return allItems.where((i) => i.isExpired && !i.isRead).length;
+    }
     return allItems.where((item) {
       if (item.isExpired) return false;
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
-      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? item.rawData['stage'] ?? '').toString().toLowerCase();
-      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
+      final rawStatus =
+          (item.rawData['status'] ??
+                  item.rawData['paymentStatus'] ??
+                  item.rawData['stage'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '')
+          .toString()
+          .toLowerCase();
       bool matches = false;
       if (pillId == 'REQUESTS') {
-        matches = title.contains('request') ||
+        matches =
+            title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
             badge.contains('REQUEST') ||
@@ -7894,7 +10497,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             category.contains('upcoming_night') ||
             category.contains('night_partner');
       } else if (pillId == 'PENDING') {
-        matches = rawStatus.contains('pending') ||
+        matches =
+            rawStatus.contains('pending') ||
             rawStatus.contains('invite_sent') ||
             rawStatus.contains('waiting_for_payment') ||
             rawStatus.contains('requested') ||
@@ -7904,7 +10508,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('INVITE') ||
             badge.contains('WAITING');
       } else if (pillId == 'PAYMENT') {
-        matches = category.contains('pay') ||
+        matches =
+            category.contains('pay') ||
             category.contains('wallet') ||
             category.contains('deposit') ||
             rawStatus.contains('pay') ||
@@ -7914,16 +10519,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             title.contains('payment') ||
             title.contains('paid');
       } else if (pillId == 'CONFIRMED') {
-        matches = rawStatus.contains('confirmed') || rawStatus.contains('paid') || badge.contains('CONFIRMED') || title.contains('confirmed');
+        matches =
+            rawStatus.contains('confirmed') ||
+            rawStatus.contains('paid') ||
+            badge.contains('CONFIRMED') ||
+            title.contains('confirmed');
       } else if (pillId == 'SYSTEM') {
-        matches = category.contains('system') || category.contains('promo') || badge.contains('SYSTEM') || badge.contains('PROMO');
+        matches =
+            category.contains('system') ||
+            category.contains('promo') ||
+            badge.contains('SYSTEM') ||
+            badge.contains('PROMO');
       }
       return matches && !item.isRead;
     }).length;
   }
 
   Widget _buildStatusFilterBar() {
-    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty
+        ? _cachedTimeline
+        : _buildUnifiedTimeline();
     final pills = [
       {'id': 'ALL', 'label': 'All'},
       {'id': 'REQUESTS', 'label': 'Requests'},
@@ -7958,7 +10573,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     if (hasUnread) ...[
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: isSelected ? Colors.white : Colors.redAccent,
                           borderRadius: BorderRadius.circular(10),
@@ -7968,7 +10586,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w900,
-                            color: isSelected ? LunaraTheme.electricViolet : Colors.white,
+                            color: isSelected
+                                ? LunaraTheme.electricViolet
+                                : Colors.white,
                           ),
                         ),
                       ),
@@ -7994,11 +10614,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     color: isSelected
                         ? LunaraTheme.electricViolet
                         : hasUnread
-                            ? LunaraTheme.electricViolet.withValues(alpha: 0.3)
-                            : Colors.transparent,
+                        ? LunaraTheme.electricViolet.withValues(alpha: 0.3)
+                        : Colors.transparent,
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 visualDensity: VisualDensity.compact,
               ),
             );
@@ -8013,7 +10636,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final allTimelineItems = _cachedTimeline.isNotEmpty ? _cachedTimeline : _buildUnifiedTimeline();
+    final allTimelineItems = _cachedTimeline.isNotEmpty
+        ? _cachedTimeline
+        : _buildUnifiedTimeline();
 
     // Apply category filter
     final categoryFilteredItems = allTimelineItems.where((item) {
@@ -8022,7 +10647,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return item.isExpired;
       }
       if (_selectedCategoryFilter == 'BOOKINGS') {
-        return item.category == 'booking' || item.category == 'group' || item.category == 'upcoming_night' || item.category == 'night_partner';
+        return item.category == 'booking' ||
+            item.category == 'group' ||
+            item.category == 'upcoming_night' ||
+            item.category == 'night_partner';
       }
       if (_selectedCategoryFilter == 'PARTY_PLANS') {
         return item.category == 'party_plan';
@@ -8050,7 +10678,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Apply status pill filter (All, Requests, Pending, Payment, Confirmed, Expired, System)
     final filteredItems = categoryFilteredItems.where((item) {
-      if (_selectedStatusPill == 'EXPIRED' || _selectedCategoryFilter == 'EXPIRED') {
+      if (_selectedStatusPill == 'EXPIRED' ||
+          _selectedCategoryFilter == 'EXPIRED') {
         return item.isExpired;
       }
 
@@ -8064,8 +10693,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
-      final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? item.rawData['stage'] ?? '').toString().toLowerCase();
-      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
+      final rawStatus =
+          (item.rawData['status'] ??
+                  item.rawData['paymentStatus'] ??
+                  item.rawData['stage'] ??
+                  '')
+              .toString()
+              .toLowerCase();
+      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '')
+          .toString()
+          .toLowerCase();
 
       if (_selectedStatusPill == 'REQUESTS') {
         return title.contains('request') ||
@@ -8092,7 +10729,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('WAITING');
       }
       if (_selectedStatusPill == 'PAYMENT') {
-        final hasPayAction = item.actions?.any((act) => act.label.toLowerCase().contains('pay')) ?? false;
+        final hasPayAction =
+            item.actions?.any(
+              (act) => act.label.toLowerCase().contains('pay'),
+            ) ??
+            false;
         return category.contains('pay') ||
             category.contains('wallet') ||
             category.contains('deposit') ||
@@ -8112,25 +10753,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             hasPayAction;
       }
       if (_selectedStatusPill == 'CONFIRMED') {
-        return rawStatus.contains('confirmed') || rawStatus.contains('paid') || badge.contains('CONFIRMED') || title.contains('confirmed');
+        return rawStatus.contains('confirmed') ||
+            rawStatus.contains('paid') ||
+            badge.contains('CONFIRMED') ||
+            title.contains('confirmed');
       }
       if (_selectedStatusPill == 'SYSTEM') {
-        return category.contains('system') || category.contains('promo') || badge.contains('SYSTEM') || badge.contains('PROMO');
+        return category.contains('system') ||
+            category.contains('promo') ||
+            badge.contains('SYSTEM') ||
+            badge.contains('PROMO');
       }
       return true;
     }).toList();
 
     // Count total unread active items
-    final totalUnread = allTimelineItems.where((i) => !i.isRead && !i.isExpired).length;
+    final totalUnread = allTimelineItems
+        .where((i) => !i.isRead && !i.isExpired)
+        .length;
 
     // Date grouping into TODAY, YESTERDAY, EARLIER
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
 
-    final todayItems = filteredItems.where((i) => i.createdAt.isAfter(todayStart)).toList();
-    final yesterdayItems = filteredItems.where((i) => i.createdAt.isAfter(yesterdayStart) && i.createdAt.isBefore(todayStart)).toList();
-    final earlierItems = filteredItems.where((i) => i.createdAt.isBefore(yesterdayStart)).toList();
+    final todayItems = filteredItems
+        .where((i) => i.createdAt.isAfter(todayStart))
+        .toList();
+    final yesterdayItems = filteredItems
+        .where(
+          (i) =>
+              i.createdAt.isAfter(yesterdayStart) &&
+              i.createdAt.isBefore(todayStart),
+        )
+        .toList();
+    final earlierItems = filteredItems
+        .where((i) => i.createdAt.isBefore(yesterdayStart))
+        .toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
@@ -8141,7 +10800,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             _buildStatusFilterBar(),
             Expanded(
               child: _isLoading && filteredItems.isEmpty
-                  ? const Center(child: CircularProgressIndicator(color: LunaraTheme.electricViolet))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: LunaraTheme.electricViolet,
+                      ),
+                    )
                   : RefreshIndicator(
                       onRefresh: () async {
                         await _loadFeed();
@@ -8157,22 +10820,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.notifications_none_rounded, size: 64, color: Colors.grey[400]),
+                                      Icon(
+                                        Icons.notifications_none_rounded,
+                                        size: 64,
+                                        color: Colors.grey[400],
+                                      ),
                                       const SizedBox(height: 16),
                                       Text(
-                                        _selectedStatusPill == 'EXPIRED' || _selectedCategoryFilter == 'EXPIRED'
+                                        _selectedStatusPill == 'EXPIRED' ||
+                                                _selectedCategoryFilter ==
+                                                    'EXPIRED'
                                             ? 'No expired plans or notifications'
                                             : _selectedCategoryFilter != 'ALL'
-                                                ? 'No notifications in this category'
-                                                : _selectedStatusPill != 'ALL'
-                                                    ? 'No $_selectedStatusPill notifications'
-                                                    : 'No notifications yet',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[700]),
+                                            ? 'No notifications in this category'
+                                            : _selectedStatusPill != 'ALL'
+                                            ? 'No $_selectedStatusPill notifications'
+                                            : 'No notifications yet',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey[700],
+                                        ),
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
                                         'Your timeline updates will appear here dynamically',
-                                        style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey[500],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -8180,20 +10856,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               ],
                             )
                           : ListView(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: [
                                 if (todayItems.isNotEmpty) ...[
                                   _buildDateSectionHeader('TODAY'),
-                                  ...todayItems.map((item) => _buildSmartNotificationCard(item)),
+                                  ...todayItems.map(
+                                    (item) => _buildSmartNotificationCard(item),
+                                  ),
                                 ],
                                 if (yesterdayItems.isNotEmpty) ...[
                                   _buildDateSectionHeader('YESTERDAY'),
-                                  ...yesterdayItems.map((item) => _buildSmartNotificationCard(item)),
+                                  ...yesterdayItems.map(
+                                    (item) => _buildSmartNotificationCard(item),
+                                  ),
                                 ],
                                 if (earlierItems.isNotEmpty) ...[
                                   _buildDateSectionHeader('EARLIER'),
-                                  ...earlierItems.map((item) => _buildSmartNotificationCard(item)),
+                                  ...earlierItems.map(
+                                    (item) => _buildSmartNotificationCard(item),
+                                  ),
                                 ],
                                 const SizedBox(height: 40),
                               ],
@@ -8247,7 +10932,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         color: item.isRead ? Colors.white : const Color(0xFFF5F3FF),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: item.isRead ? Colors.grey[200]! : LunaraTheme.electricViolet.withValues(alpha: 0.3),
+          color: item.isRead
+              ? Colors.grey[200]!
+              : LunaraTheme.electricViolet.withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
@@ -8269,9 +10956,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 // Left Accent Bar
                 Container(
                   width: 5,
-                  decoration: BoxDecoration(
-                    color: item.accentColor,
-                  ),
+                  decoration: BoxDecoration(color: item.accentColor),
                 ),
                 // Card Content Body
                 Expanded(
@@ -8285,22 +10970,40 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             // Avatar or Category Icon
-                            if (item.senderUser != null || (item.avatarUrl != null && item.avatarUrl!.isNotEmpty))
+                            if (item.senderUser != null ||
+                                (item.avatarUrl != null &&
+                                    item.avatarUrl!.isNotEmpty))
                               Builder(
                                 builder: (_) {
-                                  final String? resolvedPhoto = item.senderUser?['profilePhotoUrl']?.toString() ??
-                                      item.senderUser?['profileImageUrl']?.toString() ??
-                                      item.senderUser?['photoUrl']?.toString() ??
-                                      item.senderUser?['profilePhoto']?.toString() ??
+                                  final String? resolvedPhoto =
+                                      item.senderUser?['profilePhotoUrl']
+                                          ?.toString() ??
+                                      item.senderUser?['profileImageUrl']
+                                          ?.toString() ??
+                                      item.senderUser?['photoUrl']
+                                          ?.toString() ??
+                                      item.senderUser?['profilePhoto']
+                                          ?.toString() ??
                                       item.avatarUrl;
 
-                                  final Map<String, dynamic> userMap = Map<String, dynamic>.from(item.senderUser ?? {});
-                                  if (resolvedPhoto != null && resolvedPhoto.isNotEmpty && resolvedPhoto != 'null') {
+                                  final Map<String, dynamic> userMap =
+                                      Map<String, dynamic>.from(
+                                        item.senderUser ?? {},
+                                      );
+                                  if (resolvedPhoto != null &&
+                                      resolvedPhoto.isNotEmpty &&
+                                      resolvedPhoto != 'null') {
                                     userMap['profilePhotoUrl'] = resolvedPhoto;
                                     userMap['profileImageUrl'] = resolvedPhoto;
                                     userMap['photoUrl'] = resolvedPhoto;
                                     userMap['profilePhoto'] = resolvedPhoto;
-                                    userMap['photos'] = [{'url': resolvedPhoto, 'filePath': resolvedPhoto, 'isPrimary': true}];
+                                    userMap['photos'] = [
+                                      {
+                                        'url': resolvedPhoto,
+                                        'filePath': resolvedPhoto,
+                                        'isPrimary': true,
+                                      },
+                                    ];
                                   }
 
                                   return LunaraProfileImage(
@@ -8312,7 +11015,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                             'firstName': item.title,
                                           },
                                     radius: 18,
-                                    isInteractive: item.senderUser != null && item.senderUser!['id'] != null,
+                                    isInteractive:
+                                        item.senderUser != null &&
+                                        item.senderUser!['id'] != null,
                                   );
                                 },
                               )
@@ -8320,17 +11025,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: item.accentColor.withValues(alpha: 0.12),
+                                  color: item.accentColor.withValues(
+                                    alpha: 0.12,
+                                  ),
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(item.categoryIcon, size: 18, color: item.accentColor),
+                                child: Icon(
+                                  item.categoryIcon,
+                                  size: 18,
+                                  color: item.accentColor,
+                                ),
                               ),
                             const SizedBox(width: 10),
 
                             // Badge Tag
                             if (item.badgeText != null)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: item.badgeText == 'EXPIRED'
                                       ? Colors.grey[300]!
@@ -8375,14 +11089,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
 
                         // ── Role & Participant Info Box ──
-                        if (item.partnerUser != null || item.userRoleLabel != null) ...[
+                        if (item.partnerUser != null ||
+                            item.userRoleLabel != null) ...[
                           const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                              ),
                             ),
                             child: Row(
                               children: [
@@ -8390,13 +11110,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   LunaraProfileImage(
                                     userData: item.partnerUser!,
                                     radius: 15,
-                                    isInteractive: item.partnerUser!['id'] != null,
+                                    isInteractive:
+                                        item.partnerUser!['id'] != null,
                                   ),
                                   const SizedBox(width: 8),
                                 ],
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       if (item.userRoleLabel != null)
                                         Text(
@@ -8410,7 +11132,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                         ),
                                       if (item.partnerUser != null)
                                         Text(
-                                          '${item.partnerRoleLabel ?? "With:"} ${item.partnerUser!["firstName"] ?? item.partnerUser!["name"] ?? "User"} ${item.partnerUser!["lastName"] ?? ""}'.trim(),
+                                          '${item.partnerRoleLabel ?? "With:"} ${item.partnerUser!["firstName"] ?? item.partnerUser!["name"] ?? "User"} ${item.partnerUser!["lastName"] ?? ""}'
+                                              .trim(),
                                           style: const TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
@@ -8424,7 +11147,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 ),
                                 if (item.statusSummary != null)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFEDE9FE),
                                       borderRadius: BorderRadius.circular(6),
@@ -8453,7 +11179,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             color: Colors.grey[700],
                             height: 1.3,
                           ),
-                          maxLines: (item.category == 'party_plan' || item.body.contains('\n')) ? 6 : 3,
+                          maxLines:
+                              (item.category == 'party_plan' ||
+                                  item.body.contains('\n'))
+                              ? 6
+                              : 3,
                           overflow: TextOverflow.ellipsis,
                         ),
 
@@ -8462,7 +11192,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           const SizedBox(height: 8),
                           Row(
                             children: const [
-                              Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey),
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 14,
+                                color: Colors.grey,
+                              ),
                               SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -8479,7 +11213,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ],
 
                         // Action Buttons Wrap (Accept/Decline/Pay/View Ticket/Chat)
-                        if (item.actions != null && item.actions!.isNotEmpty) ...[
+                        if (item.actions != null &&
+                            item.actions!.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Align(
                             alignment: Alignment.centerRight,
@@ -8489,8 +11224,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               alignment: WrapAlignment.end,
                               children: item.actions!.map((action) {
                                 final isPrimary = action.isPrimary;
-                                final btnColor = action.color ?? (isPrimary ? item.accentColor : Colors.grey[200]!);
-                                final textColor = isPrimary ? Colors.white : Colors.black87;
+                                final btnColor =
+                                    action.color ??
+                                    (isPrimary
+                                        ? item.accentColor
+                                        : Colors.grey[200]!);
+                                final textColor = isPrimary
+                                    ? Colors.white
+                                    : Colors.black87;
                                 final isLoading = action.isLoading;
 
                                 return ElevatedButton.icon(
@@ -8501,18 +11242,28 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                           height: 14,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              isPrimary ? Colors.white : LunaraTheme.electricViolet,
-                                            ),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  isPrimary
+                                                      ? Colors.white
+                                                      : LunaraTheme
+                                                            .electricViolet,
+                                                ),
                                           ),
                                         )
                                       : (action.icon != null
-                                          ? Icon(action.icon, size: 15, color: textColor)
-                                          : const SizedBox.shrink()),
+                                            ? Icon(
+                                                action.icon,
+                                                size: 15,
+                                                color: textColor,
+                                              )
+                                            : const SizedBox.shrink()),
                                   label: Text(
                                     action.label,
                                     style: TextStyle(
-                                      color: isLoading ? textColor.withValues(alpha: 0.6) : textColor,
+                                      color: isLoading
+                                          ? textColor.withValues(alpha: 0.6)
+                                          : textColor,
                                       fontSize: 13,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -8520,16 +11271,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: btnColor,
                                     foregroundColor: textColor,
-                                    disabledBackgroundColor: btnColor.withValues(alpha: 0.7),
-                                    disabledForegroundColor: textColor.withValues(alpha: 0.7),
+                                    disabledBackgroundColor: btnColor
+                                        .withValues(alpha: 0.7),
+                                    disabledForegroundColor: textColor
+                                        .withValues(alpha: 0.7),
                                     elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
                                     minimumSize: const Size(80, 40),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                       side: !isPrimary
-                                          ? BorderSide(color: Colors.grey[300]!, width: 0.8)
+                                          ? BorderSide(
+                                              color: Colors.grey[300]!,
+                                              width: 0.8,
+                                            )
                                           : BorderSide.none,
                                     ),
                                   ),
@@ -8579,7 +11339,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           paymentType: 'host_deposit',
         );
         if (res != null && res['success'] == true) {
-          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final transactionId =
+              res['data']?['transactionId']?.toString() ?? 'wallet';
           final paymentConfirmed = await ApiService.verifyHostPayment(
             cleanPlanId,
             'order_mock_wallet',
@@ -8620,7 +11381,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (sheetSuccess == true && mounted) {
       TopNotificationBanner.show(
         title: 'Plan Activated! 🎉',
-        body: 'Host Safety Deposit paid via Smart Wallet! Your plan is now LIVE in the feed.',
+        body:
+            'Host Safety Deposit paid via Smart Wallet! Your plan is now LIVE in the feed.',
       );
       ApiService.notifyFeedNeedsRefresh();
       await onSuccess();
@@ -8639,7 +11401,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String razorpayKey = 'rzp_test_123';
     if (initRes != null && initRes['success'] == true) {
       currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
-      if (initRes['razorpayKeyId'] != null && initRes['razorpayKeyId'].toString().isNotEmpty) {
+      if (initRes['razorpayKeyId'] != null &&
+          initRes['razorpayKeyId'].toString().isNotEmpty) {
         razorpayKey = initRes['razorpayKeyId'].toString();
       }
     }
@@ -8649,7 +11412,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     // Intercept mock orders or test keys to avoid Razorpay SDK code 0 error on devices
-    if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
+    if (currentOrderId.startsWith('order_mock_') ||
+        razorpayKey == 'rzp_test_123' ||
+        currentOrderId.startsWith('mock_')) {
       final paymentConfirmed = await ApiService.verifyHostPayment(
         cleanPlanId,
         currentOrderId,
@@ -8671,8 +11436,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     late Razorpay razorpay;
     razorpay = Razorpay();
 
-    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
-      final pId = response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+      PaymentSuccessResponse response,
+    ) async {
+      final pId =
+          response.paymentId ??
+          'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
       final oId = response.orderId ?? currentOrderId;
       final sig = response.signature ?? 'mock_signature';
 
@@ -8688,7 +11457,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         await onSuccess();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Host Safety Deposit Paid! Your plan is fully activated.'),
+            content: Text(
+              '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -8698,7 +11469,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (!paymentConfirmed) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Payment verification failed. Please refresh and try again.'),
+              content: Text(
+                'Payment verification failed. Please refresh and try again.',
+              ),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -8713,19 +11486,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           );
         } else {
-          const msg = 'Payment verification failed. Please refresh and try again.';
+          const msg =
+              'Payment verification failed. Please refresh and try again.';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Payment Failed: $msg'), backgroundColor: Colors.redAccent),
+            SnackBar(
+              content: Text('Payment Failed: $msg'),
+              backgroundColor: Colors.redAccent,
+            ),
           );
         }
       }
     });
 
-    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) async {
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+      PaymentFailureResponse response,
+    ) async {
       razorpay.clear();
-      debugPrint('[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}');
+      debugPrint(
+        '[PAYMENT-07] Razorpay error callback: code=${response.code}, message=${response.message}',
+      );
       if (mounted) {
-        if ((response.code == 0 || response.code == 2) && (razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('order_mock_'))) {
+        if ((response.code == 0 || response.code == 2) &&
+            (razorpayKey == 'rzp_test_123' ||
+                currentOrderId.startsWith('order_mock_'))) {
           final mockConfirmed = await ApiService.verifyHostPayment(
             cleanPlanId,
             currentOrderId,
@@ -8736,7 +11519,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             await onSuccess();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('🎉 Host Safety Deposit Paid! Plan is activated.'),
+                content: Text(
+                  '🎉 Host Safety Deposit Paid! Plan is activated.',
+                ),
                 backgroundColor: Colors.green,
               ),
             );
@@ -8744,7 +11529,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           }
         }
 
-        final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED ||
+        final isCancelled =
+            response.code == Razorpay.PAYMENT_CANCELLED ||
             response.code == 2 ||
             response.code == 0 ||
             (response.message != null &&
@@ -8756,23 +11542,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (isCancelled) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Payment cancelled. You can complete your deposit payment anytime.'),
+              content: Text(
+                'Payment cancelled. You can complete your deposit payment anytime.',
+              ),
               backgroundColor: Colors.black87,
               duration: Duration(seconds: 3),
             ),
           );
         } else {
-          final errText = response.message != null && response.message!.isNotEmpty
+          final errText =
+              response.message != null && response.message!.isNotEmpty
               ? response.message!
               : 'Payment error (code ${response.code})';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Payment Failed: $errText'), backgroundColor: Colors.redAccent),
+            SnackBar(
+              content: Text('Payment Failed: $errText'),
+              backgroundColor: Colors.redAccent,
+            ),
           );
         }
       }
     });
 
-    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+      ExternalWalletResponse response,
+    ) {
       razorpay.clear();
     });
 
@@ -8804,7 +11598,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     for (int i = 0; i < _feedItems.length; i++) {
       final item = _feedItems[i];
-      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? '');
+      final rawId = ApiService.cleanBookingId(
+        item['id']?.toString() ??
+            item['partyPlanId']?.toString() ??
+            item['planId']?.toString() ??
+            '',
+      );
       if (rawId == cleanId || rawId == planId) {
         final updated = Map<String, dynamic>.from(item);
         if (isHost) {
@@ -8845,7 +11644,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     for (int i = 0; i < _feedItems.length; i++) {
       final item = _feedItems[i];
-      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['strangersMeetId']?.toString() ?? item['meetId']?.toString() ?? '');
+      final rawId = ApiService.cleanBookingId(
+        item['id']?.toString() ??
+            item['strangersMeetId']?.toString() ??
+            item['meetId']?.toString() ??
+            '',
+      );
       if (rawId == cleanId || rawId == meetId) {
         final updated = Map<String, dynamic>.from(item);
         if (isHost) {
@@ -8876,13 +11680,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  void _optimisticallyUpdateLargePartyPayment({
-    required String bookingId,
-  }) {
+  void _optimisticallyUpdateLargePartyPayment({required String bookingId}) {
     final cleanId = ApiService.cleanBookingId(bookingId);
     for (int i = 0; i < _largePartyBookings.length; i++) {
       final b = _largePartyBookings[i];
-      final rawId = ApiService.cleanBookingId(b['id']?.toString() ?? b['bookingId']?.toString() ?? '');
+      final rawId = ApiService.cleanBookingId(
+        b['id']?.toString() ?? b['bookingId']?.toString() ?? '',
+      );
       if (rawId == cleanId || rawId == bookingId) {
         _largePartyBookings[i] = {
           ...b,
@@ -8900,7 +11704,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Map<String, dynamic>? _findMyRequestForPlan(String planId) {
     final cleanId = ApiService.cleanBookingId(planId);
     for (final item in _feedItems) {
-      final rawId = ApiService.cleanBookingId(item['id']?.toString() ?? item['partyPlanId']?.toString() ?? item['planId']?.toString() ?? '');
+      final rawId = ApiService.cleanBookingId(
+        item['id']?.toString() ??
+            item['partyPlanId']?.toString() ??
+            item['planId']?.toString() ??
+            '',
+      );
       if (rawId == cleanId || rawId == planId) {
         if (item['myRequest'] is Map) {
           return Map<String, dynamic>.from(item['myRequest'] as Map);
@@ -8944,7 +11753,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           paymentType: 'joiner_deposit',
         );
         if (res != null && res['success'] == true) {
-          final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+          final transactionId =
+              res['data']?['transactionId']?.toString() ?? 'wallet';
           final paymentConfirmed = await ApiService.verifyJoinerPayment(
             cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
             'order_mock_wallet',
@@ -9002,12 +11812,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     required double depositAmount,
     required Future<void> Function() onSuccess,
   }) async {
-    final initRes = await ApiService.initiateJoinerPayment(cleanReqId.isNotEmpty ? cleanReqId : partyPlanId);
+    final initRes = await ApiService.initiateJoinerPayment(
+      cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
+    );
     String currentOrderId = '';
     String razorpayKey = 'rzp_test_123';
     if (initRes != null && initRes['success'] == true) {
       currentOrderId = (initRes['razorpayOrderId'] ?? '').toString();
-      if (initRes['razorpayKeyId'] != null && initRes['razorpayKeyId'].toString().isNotEmpty) {
+      if (initRes['razorpayKeyId'] != null &&
+          initRes['razorpayKeyId'].toString().isNotEmpty) {
         razorpayKey = initRes['razorpayKeyId'].toString();
       }
     }
@@ -9016,7 +11829,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       currentOrderId = 'order_mock_${DateTime.now().millisecondsSinceEpoch}';
     }
 
-    if (currentOrderId.startsWith('order_mock_') || razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('mock_')) {
+    if (currentOrderId.startsWith('order_mock_') ||
+        razorpayKey == 'rzp_test_123' ||
+        currentOrderId.startsWith('mock_')) {
       final paymentConfirmed = await ApiService.verifyJoinerPayment(
         cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
         currentOrderId,
@@ -9027,7 +11842,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         await onSuccess();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+            content: Text(
+              '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -9038,8 +11855,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     late Razorpay razorpay;
     razorpay = Razorpay();
 
-    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
-      final pId = response.paymentId ?? 'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
+    razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (
+      PaymentSuccessResponse response,
+    ) async {
+      final pId =
+          response.paymentId ??
+          'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
       final oId = response.orderId ?? currentOrderId;
       final sig = response.signature ?? 'mock_signature';
 
@@ -9055,7 +11876,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         await onSuccess();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+            content: Text(
+              '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -9071,7 +11894,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Payment verification failed. Please refresh and try again.'),
+              content: Text(
+                'Payment verification failed. Please refresh and try again.',
+              ),
               backgroundColor: Colors.redAccent,
             ),
           );
@@ -9079,11 +11904,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     });
 
-    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) async {
+    razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (
+      PaymentFailureResponse response,
+    ) async {
       razorpay.clear();
-      debugPrint('Razorpay Joiner Error: ${response.code} - ${response.message}');
+      debugPrint(
+        'Razorpay Joiner Error: ${response.code} - ${response.message}',
+      );
       if (mounted) {
-        if ((response.code == 0 || response.code == 2) && (razorpayKey == 'rzp_test_123' || currentOrderId.startsWith('order_mock_'))) {
+        if ((response.code == 0 || response.code == 2) &&
+            (razorpayKey == 'rzp_test_123' ||
+                currentOrderId.startsWith('order_mock_'))) {
           final mockConfirmed = await ApiService.verifyJoinerPayment(
             cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
             currentOrderId,
@@ -9094,24 +11925,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             await onSuccess();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.'),
+                content: Text(
+                  '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+                ),
                 backgroundColor: Colors.green,
               ),
             );
             return;
           }
         }
-        final isCancelled = response.code == Razorpay.PAYMENT_CANCELLED || response.code == 2 || response.code == 0;
+        final isCancelled =
+            response.code == Razorpay.PAYMENT_CANCELLED ||
+            response.code == 2 ||
+            response.code == 0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isCancelled ? 'Payment cancelled.' : 'Payment Failed: ${response.message ?? "Error"}'),
+            content: Text(
+              isCancelled
+                  ? 'Payment cancelled.'
+                  : 'Payment Failed: ${response.message ?? "Error"}',
+            ),
             backgroundColor: isCancelled ? Colors.black87 : Colors.redAccent,
           ),
         );
       }
     });
 
-    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+    razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (
+      ExternalWalletResponse response,
+    ) {
       razorpay.clear();
     });
 
@@ -9140,7 +11982,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _loadFeed();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Meetup marked as ended. Admin will verify settlement.', style: TextStyle(color: Colors.white)),
+            content: Text(
+              'Meetup marked as ended. Admin will verify settlement.',
+              style: TextStyle(color: Colors.white),
+            ),
             backgroundColor: Color(0xFF1E1E2E),
             behavior: SnackBarBehavior.floating,
           ),
@@ -9150,7 +11995,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', ''), style: const TextStyle(color: Colors.white)),
+            content: Text(
+              e.toString().replaceAll('Exception: ', ''),
+              style: const TextStyle(color: Colors.white),
+            ),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
           ),
@@ -9167,7 +12015,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Mark as Not Started?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
         ),
         content: const Text(
           'Are you sure this Strangers Meet did not take place? This will close the meetup.',
@@ -9176,15 +12028,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white60),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Yes, Not Started', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Yes, Not Started',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -9198,7 +12061,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _loadFeed();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Strangers Meet marked as not started.', style: TextStyle(color: Colors.white)),
+            content: Text(
+              'Strangers Meet marked as not started.',
+              style: TextStyle(color: Colors.white),
+            ),
             backgroundColor: Color(0xFF1E1E2E),
             behavior: SnackBarBehavior.floating,
           ),
@@ -9208,7 +12074,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', ''), style: const TextStyle(color: Colors.white)),
+            content: Text(
+              e.toString().replaceAll('Exception: ', ''),
+              style: const TextStyle(color: Colors.white),
+            ),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
           ),
@@ -9217,4 +12086,3 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 }
-

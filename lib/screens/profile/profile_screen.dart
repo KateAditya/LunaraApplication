@@ -96,10 +96,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         superlikesPerCycle = innerPkg != null ? (innerPkg as Map)['superlikesPerCycle'] as int? ?? 0 : 0;
       }
 
+      final subProvider = SubscriptionProvider.instance;
+      final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes || dailyLikes == -1 || dailyLikes == 'unlimited';
+      final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes || superlikesRemaining >= 9999;
+
       setState(() {
-        _dailyLikesLimit = dailyLikes == -1 ? 999999 : (dailyLikes as int? ?? 999999);
+        _dailyLikesLimit = hasUnlimitedLikes ? 999999 : (dailyLikes as int? ?? 7);
         _dailyLikesUsed = dailyLikesUsed;
-        _superlikesRemaining = superlikesPerCycle == 0 ? 999999 : superlikesRemaining;
+        _superlikesRemaining = isUnlimitedSuper ? 999999 : superlikesRemaining;
         _superlikesPerCycle = superlikesPerCycle;
         _dailyBacktracksLimit = dailyBacktracks == -1 ? 999999 : (dailyBacktracks as int? ?? 3);
         _dailyBacktracksUsed = dailyBacktracksUsed;
@@ -354,22 +358,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
+    final isAlreadyLiked = currentAction == 'like' || targetUser.isLiked;
 
-    // If already liked, clicking "like" again retains the like
-    if (currentAction == 'like') {
-      _showAlreadyLikedSnack(targetUser.firstName, isSuperLike: false);
+    // If already liked, clicking "like" again unlikes (toggle)
+    if (isAlreadyLiked) {
+      final ok = await ApiService.unlikeUser(targetUserId: targetId);
+      if (!mounted) return;
+      if (ok) {
+        setState(() {
+          _swipedActions.remove(targetId);
+        });
+        unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed like for ${targetUser.firstName}'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
       return;
     }
 
-    // Daily like limit guard (only if not downgrading from superlike)
-    if (currentAction != 'superlike' && _dailyLikesUsed >= _dailyLikesLimit) {
+    // Daily like limit guard
+    final subProvider = SubscriptionProvider.instance;
+    final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes || _dailyLikesLimit == 999999;
+    if (!hasUnlimitedLikes && !subProvider.canLike && _dailyLikesUsed >= _dailyLikesLimit) {
       _showLimitReachedSnack();
       return;
     }
 
     // Fire API first — only apply optimistic UI once the server confirms
-    // the like was actually accepted (previously this mutated state before
-    // the call resolved, so a rejected like still showed as successful).
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
     if (!mounted) return;
 
@@ -380,23 +400,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() {
       _swipedActions[targetId] = 'like';
-      if (currentAction == 'superlike') {
-        // Return the superlike count
-        if (_superlikesPerCycle > 0) _superlikesRemaining++;
-      } else {
-        _dailyLikesUsed++;
-      }
+      _dailyLikesUsed++;
     });
 
-    // SubscriptionProvider (used by profile_hub_screen.dart and others to
-    // display remaining likes/superlikes) is a process-lifetime singleton
-    // with its own cache — nothing else in the swipe flow ever invalidated
-    // it, so those displays could keep showing a stale count long after it
-    // actually changed. Force a refetch so it stays accurate.
     unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
-
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
-
     _checkUsageWarning(res);
   }
 
@@ -457,19 +465,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final currentAction = _swipedActions[targetId];
 
     // If already superliked, clicking "superlike" again retains it
-    if (currentAction == 'superlike') {
+    if (currentAction == 'superlike' || targetUser.isSuperLiked) {
       _showAlreadyLikedSnack(targetUser.firstName, isSuperLike: true);
       return;
     }
 
     // Superlikes remaining guard (always validate against plan limit)
-    if (_superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
+    final subProvider = SubscriptionProvider.instance;
+    final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes || _superlikesRemaining >= 9999;
+    if (!isUnlimitedSuper && !subProvider.canSuperLike && _superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
       _showSuperLikeLimitSnack();
       return;
     }
 
-    // Fire API first — only apply optimistic UI once the server confirms
-    // the superlike was actually accepted.
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
     if (!mounted) return;
 
@@ -480,19 +488,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() {
       _swipedActions[targetId] = 'superlike';
-      if (currentAction == 'like') {
-        // Upgrading: consume one superlike
-        if (_superlikesPerCycle > 0) _superlikesRemaining--;
-      } else {
-        if (_superlikesPerCycle > 0) _superlikesRemaining--;
-        _dailyLikesUsed++;
-      }
+      if (_superlikesPerCycle > 0 && !isUnlimitedSuper) _superlikesRemaining--;
     });
 
     unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
-
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
-
     _checkUsageWarning(res);
   }
 
@@ -718,8 +718,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           user: prevUser,
           isMe: prevUser.id == ApiService.currentUserId,
           swipedAction: _swipedActions[prevUser.id],
-          isLikeDisabled: _dailyLikesUsed >= _dailyLikesLimit,
-          isSuperLikeDisabled: _superlikesPerCycle > 0 && _superlikesRemaining <= 0,
+          isLikeDisabled: !SubscriptionProvider.instance.hasUnlimitedLikes && (_dailyLikesLimit != 999999 && _dailyLikesUsed >= _dailyLikesLimit),
+          isSuperLikeDisabled: !SubscriptionProvider.instance.isElite && !SubscriptionProvider.instance.status.isUnlimitedSuperlikes && (_superlikesPerCycle > 0 && _superlikesRemaining <= 0),
           onNope: () => _handleNope(),
           onLike: () => _handleLike(),
           onSuper: () => _handleSuperLike(),
@@ -877,8 +877,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final currentUserId = _displayUser!.id;
     final currentSwipedAction = _swipedActions[currentUserId];
-    final isLikeDisabled = _dailyLikesUsed >= _dailyLikesLimit;
-    final isSuperLikeDisabled = _superlikesPerCycle > 0 && _superlikesRemaining <= 0;
+    final isLikeDisabled = !SubscriptionProvider.instance.hasUnlimitedLikes && (_dailyLikesLimit != 999999 && _dailyLikesUsed >= _dailyLikesLimit);
+    final isSuperLikeDisabled = !SubscriptionProvider.instance.isElite && !SubscriptionProvider.instance.status.isUnlimitedSuperlikes && (_superlikesPerCycle > 0 && _superlikesRemaining <= 0);
 
     final currentProfileWidget = ProfileDetailView(
       key: ValueKey(_displayUser!.id),

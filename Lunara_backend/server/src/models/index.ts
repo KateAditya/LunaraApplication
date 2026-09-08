@@ -817,6 +817,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancelled_by UUID;`,
             `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS cancellation_reason VARCHAR(100);`,
             `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS previous_status VARCHAR(50);`,
+            `ALTER TABLE party_plan_requests ADD COLUMN IF NOT EXISTS request_type VARCHAR(50) DEFAULT 'public_request';`,
 
             `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS expiration_alert_sent BOOLEAN DEFAULT false;`,
             `ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS reminder1_day_sent BOOLEAN DEFAULT false;`,

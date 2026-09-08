@@ -11,6 +11,10 @@ export enum PartyPlanRequestStatus {
     PAYMENT_FAILED = 'payment_failed',
 }
 
+export enum PartyPlanRequestType {
+    PUBLIC_REQUEST = 'public_request',
+    PRIVATE_INVITE = 'private_invite',
+}
 
 export enum PartyPlanJoinerPaymentStatus {
     UNPAID = 'unpaid',
@@ -22,6 +26,7 @@ export interface PartyPlanRequestAttributes {
     id: string;
     planId: string;
     requesterId: string;
+    requestType?: PartyPlanRequestType | string;
     status: PartyPlanRequestStatus;
     joinerPaymentStatus: PartyPlanJoinerPaymentStatus;
     joinerRazorpayOrderId?: string;
@@ -54,7 +59,7 @@ export interface PartyPlanRequestAttributes {
 export interface PartyPlanRequestCreationAttributes
     extends Optional<
         PartyPlanRequestAttributes,
-        'id' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus' | 'guestFirstCheckStatus' | 'guestFirstCheckRespondedAt' | 'guestFinalCheckStatus' | 'guestFinalCheckRespondedAt' | 'partnerReachStatus' | 'partnerReachConfirmedAt' | 'partnerReachConfirmationSource' | 'partnerReachNotificationId'
+        'id' | 'requestType' | 'status' | 'joinerPaymentStatus' | 'latLangCheckIn' | 'createdAt' | 'updatedAt' | 'guestArrivalConfirmed' | 'guestArrivalTime' | 'cancelledAt' | 'cancelledBy' | 'cancellationReason' | 'previousStatus' | 'guestFirstCheckStatus' | 'guestFirstCheckRespondedAt' | 'guestFinalCheckStatus' | 'guestFinalCheckRespondedAt' | 'partnerReachStatus' | 'partnerReachConfirmedAt' | 'partnerReachConfirmationSource' | 'partnerReachNotificationId'
     > {}
 
 class PartyPlanRequest
@@ -63,6 +68,7 @@ class PartyPlanRequest
     public id!: string;
     public planId!: string;
     public requesterId!: string;
+    public requestType!: PartyPlanRequestType | string;
     public status!: PartyPlanRequestStatus;
     public joinerPaymentStatus!: PartyPlanJoinerPaymentStatus;
     public joinerRazorpayOrderId?: string;
@@ -107,6 +113,12 @@ PartyPlanRequest.init(
             field: 'requester_id',
             references: { model: 'users', key: 'id' },
             onDelete: 'CASCADE',
+        },
+        requestType: {
+            type: DataTypes.STRING(50),
+            allowNull: false,
+            defaultValue: PartyPlanRequestType.PUBLIC_REQUEST,
+            field: 'request_type',
         },
         status: {
             type: DataTypes.ENUM(...Object.values(PartyPlanRequestStatus)),
@@ -223,6 +235,9 @@ PartyPlanRequest.init(
             { fields: ['plan_id', 'status'] },
             { fields: ['requester_id', 'status'] },
             { fields: ['plan_id', 'requester_id'] },
+            { fields: ['request_type'] },
+            { fields: ['plan_id', 'request_type'] },
+            { fields: ['requester_id', 'request_type'] },
             { fields: ['created_at'] },
         ],
     }

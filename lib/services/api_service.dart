@@ -1296,7 +1296,7 @@ class ApiService {
   }) async {
     final now = DateTime.now();
     if (!forceRefresh && venueId == null && date == null && _cachedLiveFeedData != null && _liveFeedCacheTime != null) {
-      if (now.difference(_liveFeedCacheTime!).inSeconds < 30) {
+      if (now.difference(_liveFeedCacheTime!).inSeconds < 5) {
         return _cachedLiveFeedData!;
       }
     }
@@ -1689,6 +1689,7 @@ class ApiService {
         body: {'userId': userId},
       );
       if (response.statusCode == 200) {
+        notifyFeedNeedsRefresh();
         return true;
       }
     } catch (e) {
@@ -2003,6 +2004,7 @@ class ApiService {
       if (response.body.isNotEmpty) {
         final Map<String, dynamic> decoded = jsonDecode(response.body);
         if (decoded['success'] == true) {
+          clearBookingCache();
           notifyFeedNeedsRefresh();
         }
         return decoded;
@@ -2063,7 +2065,13 @@ class ApiService {
       );
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+          RealtimeSyncManager.instance.triggerStrangerMeetSync();
+          return true;
+        }
+        return false;
       } else {
         try {
           final data = jsonDecode(response.body);
@@ -2207,7 +2215,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
         notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to confirm payment';
@@ -2233,7 +2243,12 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+          RealtimeSyncManager.instance.triggerStrangerMeetSync();
+          return true;
+        }
       }
     } catch (e) {
       debugPrint('updateStrangersMeetCharges error: $e');
@@ -2286,7 +2301,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
         notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to confirm join payment';
@@ -2309,6 +2326,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to complete strangers meet';
@@ -2339,6 +2359,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if ((response.statusCode == 201 || response.statusCode == 200) && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to send join request';
@@ -2365,6 +2388,7 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
@@ -2392,6 +2416,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
         final msg = data['message'] ?? data['error'] ?? 'Failed to submit settlement request';
@@ -2437,6 +2464,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         throw Exception(data['message'] ?? 'Failed to start meetup');
@@ -2467,6 +2497,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         throw Exception(data['message'] ?? 'Failed to extend meetup duration');
@@ -2489,6 +2522,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         throw Exception(data['message'] ?? 'Failed to mark meetup as not started');
@@ -2511,6 +2547,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
         throw Exception(data['message'] ?? 'Failed to confirm meetup ended');
@@ -2545,6 +2584,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return {'success': true, 'message': data['message'], 'data': data['data']};
       } else {
         return {
@@ -2583,6 +2625,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return {'success': true, 'message': data['message'], 'data': data['data']};
       } else {
         return {
@@ -2620,6 +2665,9 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return {'success': true, 'message': data['message'], 'data': data['data']};
       } else {
         return {
@@ -2677,6 +2725,8 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
         return {'success': true, 'message': data['message'], 'data': data['data']};
       } else {
         return {
@@ -4458,7 +4508,11 @@ class ApiService {
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          notifyFeedNeedsRefresh();
+          RealtimeSyncManager.instance.triggerLiveFeedSync();
+          return true;
+        }
       }
     } catch (e) {
       debugPrint('markNightInterested error: $e');
@@ -4483,7 +4537,11 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          notifyFeedNeedsRefresh();
+          RealtimeSyncManager.instance.triggerLiveFeedSync();
+          return true;
+        }
       }
     } catch (e) {
       debugPrint('removeNightInterest error: $e');
@@ -4587,6 +4645,9 @@ class ApiService {
         },
       );
       final data = jsonDecode(response.body);
+      clearBookingCache();
+      notifyFeedNeedsRefresh();
+      RealtimeSyncManager.instance.triggerLiveFeedSync();
       if (data is Map<String, dynamic>) {
         return data;
       }
@@ -4623,6 +4684,7 @@ class ApiService {
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 || (data is Map && data['success'] == true)) {
+        clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerLiveFeedSync();
         if (data is Map<String, dynamic>) {
@@ -4683,6 +4745,7 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
+          clearBookingCache();
           notifyFeedNeedsRefresh();
           RealtimeSyncManager.instance.triggerLiveFeedSync();
           return Map<String, dynamic>.from(data['data']);
@@ -4709,6 +4772,7 @@ class ApiService {
         body: requestBody,
       );
       if (response.statusCode == 200) {
+        clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerLiveFeedSync();
         final data = jsonDecode(response.body);
@@ -5008,6 +5072,10 @@ class ApiService {
       try {
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) {
+          if (data['success'] == true) {
+            clearBookingCache();
+            notifyFeedNeedsRefresh();
+          }
           return data;
         }
       } catch (_) {}
@@ -5036,7 +5104,12 @@ class ApiService {
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['success'] == true;
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+          return true;
+        }
+        return false;
       }
     } catch (e) {
       debugPrint('verifyGroupPartyPayment error: $e');
@@ -5782,7 +5855,11 @@ class ApiService {
         '/api/mobile/plans/$planId/cancellation-request',
         body,
       );
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final resData = jsonDecode(response.body) as Map<String, dynamic>;
+      if (resData['success'] == true) {
+        notifyFeedNeedsRefresh();
+      }
+      return resData;
     } catch (e) {
       debugPrint('requestPartyPlanCancellation error: $e');
       return {'success': false, 'message': 'Network error: $e'};
@@ -5824,7 +5901,11 @@ class ApiService {
           'action': action,
         },
       );
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final resData = jsonDecode(response.body) as Map<String, dynamic>;
+      if (resData['success'] == true) {
+        notifyFeedNeedsRefresh();
+      }
+      return resData;
     } catch (e) {
       debugPrint('respondToPartyPlanCancellationRequest error: $e');
       return {'success': false, 'message': 'Network error: $e'};

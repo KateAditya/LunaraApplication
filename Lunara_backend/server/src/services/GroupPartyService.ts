@@ -13,6 +13,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { BookingPolicyService } from './BookingPolicyService';
 import { BookingPolicyType } from '../models/BookingPolicyConfig';
+import apiCache from '../utils/apiCache';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -226,6 +227,12 @@ export class GroupPartyService {
                 this.emitNotifications(userId, venue.name, 'free_confirmed', groupParty.id, numberOfFriends);
             }
 
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+            apiCache.invalidatePrefix('bookings');
+            apiCache.invalidatePrefix('group_party');
+
             return {
                 partyType: PartyType.SMALL,
                 record: groupParty,
@@ -275,6 +282,12 @@ export class GroupPartyService {
             );
 
             this.emitNotifications(userId, venue.name, 'large_submitted', booking.id, numberOfFriends);
+
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+            apiCache.invalidatePrefix('bookings');
+            apiCache.invalidatePrefix('group_party');
 
             return {
                 partyType: PartyType.LARGE,
@@ -392,6 +405,23 @@ export class GroupPartyService {
         const venue = await Venue.findByPk(groupParty.venueId);
         this.emitNotifications(groupParty.userId, venue?.name || 'Venue', 'small_paid', groupParty.id, groupParty.numberOfFriends);
 
+        // Invalidate Redis/In-memory API caches immediately
+        apiCache.invalidatePrefix('pp_feed');
+        apiCache.invalidatePrefix('party_plans');
+        apiCache.invalidatePrefix('bookings');
+        apiCache.invalidatePrefix('group_party');
+
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
+                io.to(`user_${groupParty.userId}`).emit('group_party_status_update', { partyId: groupParty.id, status: 'confirmed' });
+                io.emit('live_feed_update', { action: 'group_party_confirmed', partyId: groupParty.id });
+            }
+        } catch (socketErr: any) {
+            logger.warn('GroupParty socket emit failed: ' + socketErr.message);
+        }
+
         return groupParty;
     }
 
@@ -420,6 +450,23 @@ export class GroupPartyService {
 
             await PlanEligibilityService.releaseLock(partyId);
             logger.info(`[GroupPartyService] Cancelled pending GroupParty ${partyId} and released lock for user ${userId}`);
+
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+            apiCache.invalidatePrefix('bookings');
+            apiCache.invalidatePrefix('group_party');
+
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${userId}`).emit('group_party_status_update', { partyId, status: 'cancelled' });
+                    io.emit('live_feed_update', { action: 'group_party_cancelled', partyId });
+                }
+            } catch (socketErr: any) {
+                logger.warn('GroupParty cancel socket emit failed: ' + socketErr.message);
+            }
+
             return true;
         } catch (err: any) {
             logger.error(`[GroupPartyService] Error cancelling pending GroupParty ${partyId}:`, err);

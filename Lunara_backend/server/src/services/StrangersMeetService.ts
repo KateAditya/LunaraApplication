@@ -19,6 +19,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import AuditLog from '../models/AuditLog';
 import { formatTime12Hour, formatDateTimeFull } from '../utils/dateTimeUtils';
+import apiCache from '../utils/apiCache';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
@@ -47,6 +48,19 @@ export interface CreateStrangersMeetPayload {
 export class StrangersMeetService {
     public static readonly MIN_PERSONS = 21;
     public static readonly MAX_PERSONS = 50;
+
+    public static invalidateStrangersMeetCaches() {
+        try {
+            apiCache.invalidatePattern('pp_feed');
+            apiCache.invalidatePattern('party_plans');
+            apiCache.invalidatePattern('strangers_meet');
+            apiCache.invalidatePattern('sm_feed');
+            apiCache.invalidatePattern('bookings');
+            apiCache.invalidatePattern('tickets');
+        } catch (e) {
+            logger.warn(`[StrangersMeetService] Cache invalidation error: ${e}`);
+        }
+    }
 
     /**
      * Server-side capacity & input validation
@@ -342,13 +356,17 @@ export class StrangersMeetService {
                 logger.warn(`[StrangersMeetService] FCM Push warning: ${pushErr}`);
             }
 
-            // 3. Send Socket.IO Real-time Events
+            // 3. Send Socket.IO Real-time Events & Invalidate Cache
             try {
+                StrangersMeetService.invalidateStrangersMeetCaches();
+
                 const { io } = require('../server');
                 if (io) {
                     const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(entityId, recipientUserId);
+                    const eventData = { entityId, meetId: entityId, eventType, card, ...(metadata || {}) };
 
-                    io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', { entityId, eventType, card });
+                    io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', eventData);
+                    io.to(`user_${recipientUserId}`).emit(eventType, eventData);
                     io.to(`user_${recipientUserId}`).emit('notification_updated', {
                         id: `strangers_meet_timeline_${entityId}`,
                         title,
@@ -357,12 +375,32 @@ export class StrangersMeetService {
                         updatedAt: new Date().toISOString()
                     });
 
-                    // Broadcast single-card update
+                    // Broadcast live feed timeline refresh
+                    io.to('live_feed').emit('live_feed_update', {
+                        type: 'strangers_meet_update',
+                        entityId,
+                        eventType
+                    });
                     io.emit('live_feed_update', {
                         type: 'strangers_meet_update',
                         entityId,
                         eventType
                     });
+
+                    const typeLower = (eventType || '').toLowerCase();
+                    if (typeLower.includes('cancel')) {
+                        io.to(`user_${recipientUserId}`).emit('strangers_meet_cancelled', eventData);
+                        io.emit('strangers_meet_cancelled', eventData);
+                    }
+                    if (typeLower.includes('join')) {
+                        io.to(`user_${recipientUserId}`).emit('strangers_meet_joiner_joined', eventData);
+                    }
+                    if (typeLower.includes('deposit') || typeLower.includes('host_paid')) {
+                        io.to(`user_${recipientUserId}`).emit('strangers_meet_host_paid', eventData);
+                    }
+                    if (typeLower.includes('joiner_paid') || typeLower.includes('member_paid')) {
+                        io.to(`user_${recipientUserId}`).emit('strangers_meet_joiner_paid', eventData);
+                    }
                 }
             } catch (sockErr) {
                 logger.warn(`[StrangersMeetService] Socket emit warning: ${sockErr}`);

@@ -88,10 +88,30 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
     // frame is already complete — no waiting for the network round-trip.
     _prefillFromWidget();
     _fetchTicketData();
+
+    ApiService.addSocketListener('group_party_payment_success', _onSocketUpdate);
+    ApiService.addSocketListener('group_party_status_update', _onSocketUpdate);
+    ApiService.addSocketListener('large_party_status_update', _onSocketUpdate);
+    ApiService.addSocketListener('large_party_cancellation_approved', _onSocketUpdate);
+    ApiService.addSocketListener('large_party_cancellation_rejected', _onSocketUpdate);
+    ApiService.addSocketListener('large_party_refund_paid', _onSocketUpdate);
+    ApiService.addSocketListener('group_party_cancelled', _onSocketUpdate);
+  }
+
+  void _onSocketUpdate(dynamic data) {
+    if (!mounted) return;
+    _fetchTicketData();
   }
 
   @override
   void dispose() {
+    ApiService.removeSocketListener('group_party_payment_success', _onSocketUpdate);
+    ApiService.removeSocketListener('group_party_status_update', _onSocketUpdate);
+    ApiService.removeSocketListener('large_party_status_update', _onSocketUpdate);
+    ApiService.removeSocketListener('large_party_cancellation_approved', _onSocketUpdate);
+    ApiService.removeSocketListener('large_party_cancellation_rejected', _onSocketUpdate);
+    ApiService.removeSocketListener('large_party_refund_paid', _onSocketUpdate);
+    ApiService.removeSocketListener('group_party_cancelled', _onSocketUpdate);
     _positionStreamSubscription?.cancel();
     _countdownTimer?.cancel();
     if (!kIsWeb) {

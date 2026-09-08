@@ -72,11 +72,14 @@ UserLike.init(
         indexes: [
             {
                 unique: true,
-                fields: ['user_id', 'target_user_id'],
-                name: 'idx_user_target_like_unique',
+                fields: ['user_id', 'target_user_id', 'action_type'],
+                name: 'idx_user_target_action_like_unique',
             },
             {
                 fields: ['user_id', 'action_type'],
+            },
+            {
+                fields: ['target_user_id', 'action_type'],
             },
             {
                 fields: ['created_at'],

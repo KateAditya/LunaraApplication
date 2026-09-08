@@ -404,6 +404,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
 
         const [
             superLikesFromMatches,
+            likesCount,
             superLikesFromLikes,
             partyPlansCnt,
             strangersMeetCnt,
@@ -419,12 +420,19 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             activeSub,
             existingSwipe,
             existingUserLike,
+            existingUserSuperLike,
         ] = await Promise.all([
             UserMatch.count({
                 where: {
                     user2Id: userId,
                     matchReason: 'superlike',
                     status: { [Op.in]: ['pending', 'connected'] }
+                }
+            }),
+            UserLike.count({
+                where: {
+                    targetUserId: userId,
+                    actionType: 'like'
                 }
             }),
             UserLike.count({
@@ -488,7 +496,17 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 ? UserLike.findOne({
                     where: {
                         userId: requesterUserId,
-                        targetUserId: userId
+                        targetUserId: userId,
+                        actionType: 'like'
+                    }
+                }).catch(() => null)
+                : Promise.resolve(null),
+            shouldCheckRequester
+                ? UserLike.findOne({
+                    where: {
+                        userId: requesterUserId,
+                        targetUserId: userId,
+                        actionType: 'superlike'
                     }
                 }).catch(() => null)
                 : Promise.resolve(null),
@@ -540,24 +558,17 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         const planSuperlikesBase = planSuperlikesMap[subscriptionTier] ?? 0;
         const superLikesCount = receivedSuperLikes + planSuperlikesBase;
 
-        // Check if the requesting user has already liked/superliked target user
+        // Check if the requesting user has already liked/superliked target user independently
         let isLiked = false;
         let isSuperLiked = false;
         let swipeStatus: string | null = null;
         if (shouldCheckRequester) {
-            const userLikeAction = existingUserLike?.actionType;
-            if (userLikeAction === 'superlike') {
-                isLiked = true;
-                isSuperLiked = true;
-                swipeStatus = existingSwipe?.status || 'pending';
-            } else if (userLikeAction === 'like') {
-                isLiked = true;
-                isSuperLiked = false;
-                swipeStatus = existingSwipe?.status || 'pending';
-            } else if (existingSwipe) {
-                isLiked = ['pending', 'connected'].includes(existingSwipe.status as string);
-                isSuperLiked = isLiked && existingSwipe.matchReason === 'superlike';
+            isLiked = !!existingUserLike || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string) && existingSwipe.matchReason !== 'superlike');
+            isSuperLiked = !!existingUserSuperLike || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string) && existingSwipe.matchReason === 'superlike');
+            if (existingSwipe) {
                 swipeStatus = existingSwipe.status;
+            } else if (isLiked || isSuperLiked) {
+                swipeStatus = 'pending';
             }
         }
 
@@ -569,6 +580,8 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 isLiked,
                 isSuperLiked,
                 swipeStatus,
+                likesCount,
+                likeCount: likesCount,
                 superLikesCount,
                 plansCount,
                 subscriptionTier,
@@ -774,6 +787,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit);
 
+        const likedUserIdsSet = new Set<string>();
+        const superlikedUserIdsSet = new Set<string>();
         const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
 
         if (allUserIds.length > 0 && currentUserId) {
@@ -798,19 +813,25 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                         status: s.status,
                         matchReason: s.matchReason || 'like'
                     };
+                    if (['pending', 'connected'].includes(s.status)) {
+                        if (s.matchReason === 'superlike') {
+                            superlikedUserIdsSet.add(s.user2Id);
+                        } else {
+                            likedUserIdsSet.add(s.user2Id);
+                        }
+                    }
                 });
             }
 
-            // Merge UserLike rows into mySwipesMap
+            // Merge UserLike rows independently
             if (myUserLikes && Array.isArray(myUserLikes)) {
                 myUserLikes.forEach((l: any) => {
                     if (l && l.targetUserId) {
-                        const existing = mySwipesMap[l.targetUserId];
-                        const isSuper = l.actionType === 'superlike';
-                        mySwipesMap[l.targetUserId] = {
-                            status: existing?.status || 'pending',
-                            matchReason: isSuper ? 'superlike' : (existing?.matchReason || 'like'),
-                        };
+                        if (l.actionType === 'like') {
+                            likedUserIdsSet.add(l.targetUserId);
+                        } else if (l.actionType === 'superlike') {
+                            superlikedUserIdsSet.add(l.targetUserId);
+                        }
                     }
                 });
             }
@@ -891,8 +912,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 : (user.profileImageUrl ?? null);
 
             const mySwipe = mySwipesMap[user.id];
-            const isLiked = !!mySwipe && ['pending', 'connected'].includes(mySwipe.status as string);
-            const isSuperLiked = isLiked && mySwipe.matchReason === 'superlike';
+            const isLiked = likedUserIdsSet.has(user.id);
+            const isSuperLiked = superlikedUserIdsSet.has(user.id);
 
             return {
                 id: user.id,
@@ -1350,37 +1371,47 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             return res.status(403).json({ success: false, message: 'Cannot interact with this user.' });
         }
 
-        // 0.5 Save permanent profile like/superlike record in UserLike table asynchronously
-        UserLike.upsert({
-            userId,
-            targetUserId,
-            actionType: action,
-        }).catch(dbErr => {
-            logger.warn('[swipeUser] Failed to upsert UserLike:', dbErr);
-        });
-
-        // Helper to check swipe types
-        const isSuperlikeRecord = (swipe: any) => swipe && swipe.matchReason === 'superlike';
-        const isLikeRecord = (swipe: any) => swipe && swipe.status !== 'declined' && swipe.matchReason !== 'superlike';
         const isNopeRecord = (swipe: any) => swipe && swipe.status === 'declined';
 
-        // 1. If duplicate swipe action on existing record, retain it permanently (do NOT delete).
-        // NOTE: liking a previously superlikes profile is intentionally ALLOWED (it is not a duplicate).
-        // Only a like-after-like or superlike-after-superlike or nope-after-nope is considered duplicate.
-        if (existingMySwipe) {
-            const isDuplicateLike = (action === 'like' && isLikeRecord(existingMySwipe));
-            const isDuplicateSuperlike = (action === 'superlike' && isSuperlikeRecord(existingMySwipe));
-            const isDuplicateNope = (action === 'nope' && isNopeRecord(existingMySwipe));
-
-            if (isDuplicateLike || isDuplicateSuperlike || isDuplicateNope) {
+        // 1. If duplicate swipe action on existing record, retain it permanently (do NOT re-consume or delete).
+        if (action === 'like') {
+            const existingLike = await UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } });
+            if (existingLike) {
+                const hasSuper = !!(await UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } }));
                 return res.status(200).json({
                     success: true,
-                    message: `Already ${action}d`,
+                    message: 'Already liked',
                     data: existingMySwipe,
-                    matched: existingMySwipe.status === 'connected',
+                    matched: existingMySwipe?.status === 'connected',
                     action: 'retained',
+                    isLiked: true,
+                    isSuperLiked: hasSuper,
                 });
             }
+        } else if (action === 'superlike') {
+            const existingSuper = await UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } });
+            if (existingSuper) {
+                const hasLike = !!(await UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }));
+                return res.status(200).json({
+                    success: true,
+                    message: 'Already superliked',
+                    data: existingMySwipe,
+                    matched: existingMySwipe?.status === 'connected',
+                    action: 'retained',
+                    isLiked: hasLike,
+                    isSuperLiked: true,
+                });
+            }
+        } else if (action === 'nope' && existingMySwipe && isNopeRecord(existingMySwipe)) {
+            return res.status(200).json({
+                success: true,
+                message: 'Already noped',
+                data: existingMySwipe,
+                matched: false,
+                action: 'retained',
+                isLiked: false,
+                isSuperLiked: false,
+            });
         }
 
         // 1.5 Enforce subscription limit checks for Like / Superlike with 75% Threshold Alert
@@ -1455,6 +1486,13 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     }
                 }
             }
+
+            // Persist like in UserLike table
+            await UserLike.upsert({
+                userId,
+                targetUserId,
+                actionType: 'like',
+            });
         } else if (action === 'superlike') {
             const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'superlike', 1, {
                 requestId: `SUPERLIKE_${userId}_${targetUserId}_${Date.now()}`,
@@ -1527,6 +1565,13 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     }
                 }
             }
+
+            // Persist superlike in UserLike table
+            await UserLike.upsert({
+                userId,
+                targetUserId,
+                actionType: 'superlike',
+            });
         }
 
         // 2. If action is nope (declining/ignoring)
@@ -1537,7 +1582,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 existingMySwipe.compatibilityScore = 0;
                 existingMySwipe.matchReason = undefined;
                 await existingMySwipe.save();
-                return res.status(200).json({ success: true, data: existingMySwipe, matched: false });
+                return res.status(200).json({ success: true, data: existingMySwipe, matched: false, isLiked: false, isSuperLiked: false });
             } else {
                 const match = await UserMatch.create({
                     user1Id: userId,
@@ -1546,7 +1591,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     status: 'declined' as any,
                     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
                 });
-                return res.status(200).json({ success: true, data: match, matched: false });
+                return res.status(200).json({ success: true, data: match, matched: false, isLiked: false, isSuperLiked: false });
             }
         }
 
@@ -1563,10 +1608,12 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 
             let mySwipe;
             if (existingMySwipe) {
-                // Update existing swipe
+                // Update existing swipe without destroying previous superlike matchReason
                 existingMySwipe.status = 'connected' as any;
                 existingMySwipe.compatibilityScore = action === 'superlike' ? 95 : (existingOppositeSwipe.compatibilityScore || 85);
-                existingMySwipe.matchReason = action === 'superlike' ? 'superlike' : undefined;
+                if (action === 'superlike' || existingMySwipe.matchReason === 'superlike') {
+                    existingMySwipe.matchReason = 'superlike';
+                }
                 mySwipe = await existingMySwipe.save();
             } else {
                 // Create new connected swipe
@@ -1674,18 +1721,37 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     logger.error('[swipeUser] Failed to emit new_match socket event / push notification:', emitErr);
                 }
 
+                const [finalLikeRow, finalSuperRow] = await Promise.all([
+                    UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }),
+                    UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } }),
+                ]);
+
                 return res.status(200).json({
                     success: true,
                     data: mySwipe,
                     matched: true,
                     conversationId: conversation.id,
                     usageWarning,
+                    isLiked: !!finalLikeRow,
+                    isSuperLiked: !!finalSuperRow,
                 });
             } catch (chatErr) {
                 logger.error('[swipeUser] Failed to init free chat, but match still created:', chatErr);
             }
 
-            return res.status(200).json({ success: true, data: mySwipe, matched: true, usageWarning });
+            const [finalLikeRow, finalSuperRow] = await Promise.all([
+                UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }),
+                UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } }),
+            ]);
+
+            return res.status(200).json({
+                success: true,
+                data: mySwipe,
+                matched: true,
+                usageWarning,
+                isLiked: !!finalLikeRow,
+                isSuperLiked: !!finalSuperRow,
+            });
         }
 
         // 4. Otherwise (no mutual match yet), create/update to pending match record
@@ -1694,7 +1760,9 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
         if (existingMySwipe) {
             existingMySwipe.status = 'pending' as any;
             existingMySwipe.compatibilityScore = score;
-            existingMySwipe.matchReason = action === 'superlike' ? 'superlike' : undefined;
+            if (action === 'superlike' || existingMySwipe.matchReason === 'superlike') {
+                existingMySwipe.matchReason = 'superlike';
+            }
             match = await existingMySwipe.save();
         } else {
             match = await UserMatch.create({
@@ -1860,7 +1928,19 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             logger.error('[swipeUser] Failed to send push notification/socket:', fcmErr);
         }
 
-        return res.status(200).json({ success: true, data: match, matched: false, usageWarning });
+        const [finalLikeRow, finalSuperRow] = await Promise.all([
+            UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }),
+            UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } }),
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            data: match,
+            matched: false,
+            usageWarning,
+            isLiked: !!finalLikeRow,
+            isSuperLiked: !!finalSuperRow,
+        });
 
     } catch (error: any) {
         logger.error('[MobileUser] Error processing swipe:', error);
@@ -1884,9 +1964,14 @@ export const unlikeUser = async (req: Request, res: Response): Promise<Response>
             return res.status(400).json({ success: false, message: 'Cannot target yourself' });
         }
 
-        // Delete UserLike record
+        // Delete ONLY the 'like' record from UserLike table (preserve superlike if present)
         await UserLike.destroy({
-            where: { userId, targetUserId }
+            where: { userId, targetUserId, actionType: 'like' }
+        });
+
+        // Check if superlike record still exists
+        const remainingSuperLike = await UserLike.findOne({
+            where: { userId, targetUserId, actionType: 'superlike' }
         });
 
         // Update UserMatch record if present
@@ -1895,26 +1980,31 @@ export const unlikeUser = async (req: Request, res: Response): Promise<Response>
         });
 
         if (existingMatch) {
-            existingMatch.status = 'declined' as any;
-            await existingMatch.save();
+            if (remainingSuperLike) {
+                existingMatch.status = 'pending' as any;
+                existingMatch.matchReason = 'superlike';
+                await existingMatch.save();
+            } else {
+                existingMatch.status = 'declined' as any;
+                existingMatch.matchReason = undefined;
+                await existingMatch.save();
+            }
         }
 
         // Log engagement event
-        const { EngagementService } = await import('../services/engagementService');
-        await EngagementService.logLikeRemoved(userId, targetUserId);
-
-        // Emit Socket event to target user
         try {
-            const { io } = require('../server');
-            if (io) {
-                io.to(`user_${targetUserId}`).emit('like_removed', {
-                    senderId: userId,
-                    targetUserId,
-                });
-            }
+            const { EngagementService } = await import('../services/engagementService');
+            await EngagementService.logLikeRemoved(userId, targetUserId);
         } catch (_) {}
 
-        return res.status(200).json({ success: true, message: 'Like removed successfully' });
+        // Unlike is 100% silent to the target user (no push/socket/in-app alert)
+
+        return res.status(200).json({
+            success: true,
+            message: 'Like removed successfully',
+            isLiked: false,
+            isSuperLiked: !!remainingSuperLike,
+        });
     } catch (error: any) {
         logger.error('[MobileUser] Error in unlikeUser:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
@@ -2142,26 +2232,16 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
         }
 
-        // Check UserLike table for permanent persistent like/superlike state
-        const swipeActionRecord = await UserLike.findOne({
-            where: {
-                userId,
-                targetUserId,
-            }
-        });
+        // Check UserLike table independently for like and superlike
+        const [likeRecord, superLikeRecord, existingSwipe] = await Promise.all([
+            UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }),
+            UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } }),
+            UserMatch.findOne({ where: { user1Id: userId, user2Id: targetUserId } }),
+        ]);
 
-        // Check all-time swipe on this specific target (persists across days & refreshes)
-        const existingSwipe = await UserMatch.findOne({
-            where: {
-                user1Id: userId,
-                user2Id: targetUserId,
-            }
-        });
-
-        const actionType = swipeActionRecord?.actionType || (existingSwipe?.matchReason === 'superlike' ? 'superlike' : existingSwipe?.status === 'declined' ? 'nope' : existingSwipe ? 'like' : null);
-        const alreadyLiked = actionType === 'like' || actionType === 'superlike' || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string));
-        const alreadySuperLiked = actionType === 'superlike' || (alreadyLiked && existingSwipe?.matchReason === 'superlike');
-        const alreadyNoped = actionType === 'nope' || actionType === 'dislike' || (!!existingSwipe && existingSwipe.status === 'declined');
+        const alreadyLiked = !!likeRecord || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string) && existingSwipe.matchReason !== 'superlike');
+        const alreadySuperLiked = !!superLikeRecord || (!!existingSwipe && ['pending', 'connected'].includes(existingSwipe.status as string) && existingSwipe.matchReason === 'superlike');
+        const alreadyNoped = !alreadyLiked && !alreadySuperLiked && !!existingSwipe && existingSwipe.status === 'declined';
 
         // Daily likes: use the exact same SubscriptionService accessors that
         // swipeUser's consumeUsage('daily_likes') gate enforces, so the

@@ -17,6 +17,7 @@ import { NotificationService } from '../services/NotificationService';
 import { sendMulticastPushNotification } from '../services/fcmService';
 import { PlanEligibilityService } from '../services/PlanEligibilityService';
 import { logger } from '../config/logger';
+import apiCache from '../utils/apiCache';
 
 /**
  * Helper: Check 3-hour cancellation window
@@ -264,10 +265,14 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 });
             }
 
+            // Invalidate Redis/In-memory API caches immediately
+            apiCache.invalidatePrefix('pp_feed');
+            apiCache.invalidatePrefix('party_plans');
+
             // Real-time socket notification & live feed card update
             const { io } = require('../server');
             if (io) {
-                io.to(`user_${recipientUserId}`).emit('party_plan_cancellation_requested', {
+                const cancelPayload = {
                     planId: plan.id,
                     requestId: cancellationRequest.id,
                     requestedById: userId,
@@ -276,9 +281,16 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                     reason: cancellationRequest.reason,
                     otherReasonText: cancellationRequest.otherReasonText,
                     requestedAt: cancellationRequest.requestedAt,
-                });
+                    status: CancellationRequestStatus.PENDING,
+                    lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED,
+                };
+                io.to(`user_${recipientUserId}`).emit('party_plan_cancellation_requested', cancelPayload);
+                io.to(`user_${userId}`).emit('party_plan_cancellation_requested', cancelPayload);
+                io.to(`user_${recipientUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
+                io.to(`user_${userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
                 io.emit('live_feed_update', {
                     type: 'party_plan_cancellation_requested',
+                    action: 'cancellation_requested',
                     planId: plan.id,
                     requestId: cancellationRequest.id,
                 });
@@ -413,14 +425,25 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     });
                 }
 
+                // Invalidate Redis/In-memory API caches immediately
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
                 const { io } = require('../server');
                 if (io) {
-                    io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_cancellation_declined', {
+                    const declinePayload = {
                         planId: plan.id,
                         requestId: cancellationRequest.id,
-                    });
+                        status: CancellationRequestStatus.REJECTED,
+                        lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED,
+                    };
+                    io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_cancellation_declined', declinePayload);
+                    io.to(`user_${userId}`).emit('party_plan_cancellation_declined', declinePayload);
+                    io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
+                    io.to(`user_${userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
                     io.emit('live_feed_update', {
                         type: 'party_plan_cancellation_declined',
+                        action: 'cancellation_declined',
                         planId: plan.id,
                     });
                 }
@@ -711,20 +734,42 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                         });
                     }
 
+                    // Invalidate Redis/In-memory API caches immediately
+                    apiCache.invalidatePrefix('pp_feed');
+                    apiCache.invalidatePrefix('party_plans');
+
                     // Socket events — live feed update
                     const { io } = require('../server');
-                    io.to(`user_${lockedPlan.userId}`).emit('party_plan_cancelled', {
-                        planId: lockedPlan.id,
-                        mutualCancellation: true,
-                        walletCredited: hostDeposit,
-                    });
-                    io.to(`user_${joinerId}`).emit('party_plan_cancelled', {
-                        planId: lockedPlan.id,
-                        mutualCancellation: true,
-                        walletCredited: joinerDeposit,
-                    });
-                    // Remove from public live feed
-                    io.emit('party_plan_deleted', { planId: lockedPlan.id });
+                    if (io) {
+                        const cancelHostPayload = {
+                            planId: lockedPlan.id,
+                            requestId: cancellationRequest.id,
+                            mutualCancellation: true,
+                            walletCredited: hostDeposit,
+                            status: PartyPlanStatus.CANCELLED,
+                            lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
+                        };
+                        const cancelJoinerPayload = {
+                            planId: lockedPlan.id,
+                            requestId: cancellationRequest.id,
+                            mutualCancellation: true,
+                            walletCredited: joinerDeposit,
+                            status: PartyPlanStatus.CANCELLED,
+                            lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
+                        };
+                        io.to(`user_${lockedPlan.userId}`).emit('party_plan_cancelled', cancelHostPayload);
+                        io.to(`user_${joinerId}`).emit('party_plan_cancelled', cancelJoinerPayload);
+                        io.to(`user_${lockedPlan.userId}`).emit('party_plan_updated', { planId: lockedPlan.id, status: PartyPlanStatus.CANCELLED, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED });
+                        io.to(`user_${joinerId}`).emit('party_plan_updated', { planId: lockedPlan.id, status: PartyPlanStatus.CANCELLED, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED });
+                        // Remove from public live feed
+                        io.emit('party_plan_deleted', { planId: lockedPlan.id });
+                        io.emit('live_feed_update', {
+                            type: 'party_plan_cancelled',
+                            action: 'cancellation_approved',
+                            planId: lockedPlan.id,
+                            requestId: cancellationRequest.id,
+                        });
+                    }
                 } catch (asyncErr: any) {
                     logger.warn('[CancellationApprove] Async notification error:', asyncErr.message);
                 }
