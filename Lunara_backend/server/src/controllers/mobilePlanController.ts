@@ -13,7 +13,7 @@ import User from '../models/User';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import UserProfile from '../models/UserProfile';
-import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
@@ -332,18 +332,20 @@ export const getLiveFeed = async (req: Request, res: Response) => {
             }
         }
 
-        // Party Plans: The Host MUST ALWAYS see their own party plan (even before paying the deposit so they can pay it).
-        // Other viewers only see public party plans that are live and paid.
+        // Party Plans: The public feed only surfaces party plans that are live and paid.
+        // The Host's own unpaid plans are returned separately in myHostPartyPlans (pendingPayments).
         const partyPlansWhere: any = viewerId
             ? {
                 status: PartyPlanStatus.ACTIVE,
+                isLive: true,
+                hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                 [Op.or]: [
                     { userId: viewerId as string },
                     ...(superLikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public', isLive: true, hostPaymentStatus: 'paid' }]
+                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
                         : []),
                     ...(mySuperlikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public', isLive: true, hostPaymentStatus: 'paid' }]
+                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public' }]
                         : [])
                 ]
             }

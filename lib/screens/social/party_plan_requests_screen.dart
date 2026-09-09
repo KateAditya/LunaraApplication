@@ -38,6 +38,9 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     RealtimeSyncManager.instance.liveFeedNotifier.addListener(_onRealtimeUpdate);
     RealtimeSyncManager.instance.globalSyncTick.addListener(_onRealtimeUpdate);
 
+    ApiService.addSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.addSocketListener('party_plan_request_updated', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_request_accepted', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_request_rejected', _onSocketUpdate);
     ApiService.addSocketListener('party_plan_request_cancelled', _onSocketUpdate);
@@ -54,6 +57,9 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
     RealtimeSyncManager.instance.liveFeedNotifier.removeListener(_onRealtimeUpdate);
     RealtimeSyncManager.instance.globalSyncTick.removeListener(_onRealtimeUpdate);
 
+    ApiService.removeSocketListener('party_plan_request_created', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_received', _onSocketUpdate);
+    ApiService.removeSocketListener('party_plan_request_updated', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_request_accepted', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_request_rejected', _onSocketUpdate);
     ApiService.removeSocketListener('party_plan_request_cancelled', _onSocketUpdate);

@@ -163,10 +163,27 @@ class RealtimeSyncManager with WidgetsBindingObserver {
     };
 
     // 1. Party Plan & Recent Posts
-    if (eventType.startsWith('party_plan_') || eventType.startsWith('post_') || entity == 'party_plan' || entity == 'post') {
+    if (eventType.startsWith('party_plan_') || eventType.startsWith('post_') || eventType == 'live_feed_update' || entity == 'party_plan' || entity == 'post') {
+      ApiService.clearBookingCache();
+      final targetPlanId = (data['partyPlanId'] ?? data['planId'] ?? (entity == 'party_plan' ? entityId : '')).toString();
+      if (targetPlanId.isNotEmpty) {
+        if (eventType == 'party_plan_request_created' ||
+            eventType == 'party_plan_request_received' ||
+            eventType == 'party_plan_request_accepted' ||
+            eventType == 'party_plan_request_updated' ||
+            eventType == 'party_plan_match_success') {
+          ApiService.markPartyPlanAsRequestedLocal(targetPlanId, data);
+        } else if (eventType == 'party_plan_request_cancelled' ||
+            eventType == 'party_plan_request_rejected' ||
+            eventType == 'party_plan_cancelled' ||
+            eventType == 'party_plan_deleted') {
+          ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+        }
+      }
       partyPlanNotifier.value = eventEnvelope;
       recentPostsNotifier.value = eventEnvelope;
       liveFeedNotifier.value = eventEnvelope;
+      ApiService.planPostedNotifier.value++;
     }
 
     // 2. Stranger Meets

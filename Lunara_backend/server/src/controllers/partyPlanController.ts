@@ -1497,17 +1497,24 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
                     });
                 }
 
-                if (plan.visibility === PartyPlanVisibility.BOTH) {
+                apiCache.invalidatePrefix('pp_feed');
+                apiCache.invalidatePrefix('party_plans');
+
+                if (plan.visibility === PartyPlanVisibility.PUBLIC || plan.visibility === PartyPlanVisibility.BOTH) {
                     try {
                         const { io } = require('../server');
-                        io.to('live_feed').emit('live_feed_update', {
-                            type: 'party_plan_created',
-                            partyPlanId: plan.id,
-                        });
+                        if (io) {
+                            io.emit('party_plan_created', plan);
+                            io.to('live_feed').emit('live_feed_update', {
+                                type: 'party_plan_created',
+                                partyPlanId: plan.id,
+                                plan,
+                            });
+                        }
                     } catch (_) { }
                 }
 
-                res.json({ success: true, message: 'Payment verified. Private invitations dispatched.', data: plan });
+                res.json({ success: true, message: 'Payment verified. Party plan is now live.', data: plan });
                 return;
             }
         } else {
@@ -1546,19 +1553,15 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
         if (requesterId) {
             where[Op.and] = [
                 {
+                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                    isLive: true,
                     [Op.or]: [
-                        { userId: requesterId }, // Host can see their own plan (to pay deposit)
+                        { userId: requesterId },
+                        { visibility: PartyPlanVisibility.PUBLIC },
+                        { visibility: PartyPlanVisibility.BOTH },
                         {
-                            hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                            isLive: true,
-                            [Op.or]: [
-                                { visibility: PartyPlanVisibility.PUBLIC },
-                                { visibility: PartyPlanVisibility.BOTH },
-                                {
-                                    visibility: PartyPlanVisibility.PRIVATE,
-                                    selectedUsers: { [Op.contains]: [requesterId] },
-                                },
-                            ],
+                            visibility: PartyPlanVisibility.PRIVATE,
+                            selectedUsers: { [Op.contains]: [requesterId] },
                         },
                     ],
                 },
@@ -2739,6 +2742,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                     };
                     io.to(`user_${request.requesterId}`).emit('party_plan_request_accepted', acceptPayload);
                     io.to(`user_${plan.userId}`).emit('party_plan_request_accepted', acceptPayload);
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_updated', acceptPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', acceptPayload);
                     io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
 

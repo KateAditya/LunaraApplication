@@ -4286,10 +4286,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                               'firstName': cu.firstName,
                                               'lastName': cu.lastName,
                                               'profileImageUrl': photo,
-                                              'profilePhotoUrl': photo,
                                             };
                                           }
-                                          ApiService.registerOptimisticPartyPlan(planData);
                                         }
                                       } catch (_) {}
 
