@@ -1037,13 +1037,26 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                       shape: BoxShape.circle,
                       gradient: LunaraTheme.amberGlow,
                       boxShadow: [
-                        BoxShadow(
-                          color: Colors.amber.withValues(
-                            alpha: isDark ? 0.35 : 0.15,
+                        if (widget.canBacktrack) ...[
+                          BoxShadow(
+                            color: const Color(0xFFFFB703).withValues(alpha: 0.65),
+                            blurRadius: 18,
+                            spreadRadius: 3,
+                            offset: const Offset(0, 3),
                           ),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
+                          BoxShadow(
+                            color: const Color(0xFFFF8800).withValues(alpha: 0.35),
+                            blurRadius: 26,
+                            spreadRadius: 6,
+                          ),
+                        ] else
+                          BoxShadow(
+                            color: Colors.amber.withValues(
+                              alpha: isDark ? 0.35 : 0.15,
+                            ),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
                       ],
                     ),
                     child: IconButton(
@@ -1136,15 +1149,26 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               end: Alignment.bottomRight,
                             ),
                       boxShadow: [
-                        BoxShadow(
-                          color: isLiked
-                              ? const Color(0xFF00C853).withValues(alpha: 0.5)
-                              : const Color(
-                                  0xFF00B5FF,
-                                ).withValues(alpha: isDark ? 0.4 : 0.2),
-                          blurRadius: isLiked ? 16 : 12,
-                          offset: const Offset(0, 5),
-                        ),
+                        if (isLiked) ...[
+                          BoxShadow(
+                            color: const Color(0xFF00C853).withValues(alpha: 0.75),
+                            blurRadius: 22,
+                            spreadRadius: 4,
+                            offset: const Offset(0, 3),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFF69F0AE).withValues(alpha: 0.45),
+                            blurRadius: 32,
+                            spreadRadius: 8,
+                          ),
+                        ] else
+                          BoxShadow(
+                            color: const Color(
+                              0xFF00B5FF,
+                            ).withValues(alpha: isDark ? 0.4 : 0.2),
+                            blurRadius: 12,
+                            offset: const Offset(0, 5),
+                          ),
                       ],
                     ),
                     child: IconButton(
@@ -1349,15 +1373,26 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               end: Alignment.bottomRight,
                             ),
                       boxShadow: [
-                        BoxShadow(
-                          color: isSuperLiked
-                              ? const Color(0xFFFFD700).withValues(alpha: 0.6)
-                              : const Color(
-                                  0xFF7F00FF,
-                                ).withValues(alpha: isDark ? 0.35 : 0.15),
-                          blurRadius: isSuperLiked ? 18 : 10,
-                          offset: const Offset(0, 4),
-                        ),
+                        if (isSuperLiked) ...[
+                          BoxShadow(
+                            color: const Color(0xFFFFD700).withValues(alpha: 0.8),
+                            blurRadius: 22,
+                            spreadRadius: 5,
+                            offset: const Offset(0, 3),
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFFFF8C00).withValues(alpha: 0.5),
+                            blurRadius: 32,
+                            spreadRadius: 8,
+                          ),
+                        ] else
+                          BoxShadow(
+                            color: const Color(
+                              0xFF7F00FF,
+                            ).withValues(alpha: isDark ? 0.35 : 0.15),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
                       ],
                     ),
                     child: IconButton(

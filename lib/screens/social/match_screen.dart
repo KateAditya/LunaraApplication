@@ -120,25 +120,12 @@ class _MatchScreenState extends State<MatchScreen>
           // Calculate match percentage dynamically
           final matchPct = ApiService.calculateMatchPercentage(u);
 
-          final profileMap = {
-            'id': u.id,
-            'name': u.fullName.toUpperCase(),
-            'age': u.age ?? 25,
-            'vibe': (u.occupation ?? 'Night Owl').toUpperCase(),
-            'verified': u.isVerified,
-            'distance': '1.2 km away',
-            'image': u.profilePhoto ?? 'https://picsum.photos/400/600',
-            'isAsset': false,
-            'interests': u.interests,
-            'matchChance': matchPct / 100.0,
-          };
-
           // O(1) instantaneous lookup via HashMap (eliminates O(N*M) nested scans)
           final outgoingSwipe = outgoingByTargetId[u.id];
           final incomingSwipe = incomingBySenderId[u.id];
 
-          bool isLiked = false;
-          bool isSuperLiked = false;
+          bool isLiked = u.isLiked;
+          bool isSuperLiked = u.isSuperLiked;
           bool isMatched = false;
 
           if (outgoingSwipe != null) {
@@ -172,6 +159,22 @@ class _MatchScreenState extends State<MatchScreen>
               }
             }
           }
+
+          final profileMap = {
+            'id': u.id,
+            'name': u.fullName.toUpperCase(),
+            'age': u.age ?? 25,
+            'vibe': (u.occupation ?? 'Night Owl').toUpperCase(),
+            'verified': u.isVerified,
+            'distance': '1.2 km away',
+            'image': u.profilePhoto ?? 'https://picsum.photos/400/600',
+            'isAsset': false,
+            'interests': u.interests,
+            'matchChance': matchPct / 100.0,
+            'isLiked': isLiked,
+            'isSuperLiked': isSuperLiked,
+            'isMatched': isMatched,
+          };
 
           if (isMatched) {
             resolvedMatched.add(profileMap);
@@ -433,8 +436,14 @@ class _MatchScreenState extends State<MatchScreen>
     final restored = _swipedHistory.removeLast();
     final targetUserId = (restored['id'] ?? restored['_id'])?.toString() ?? '';
 
-    // Optimistically restore to UI
+    // Optimistically restore to UI and reset swipe status
     setState(() {
+      _likedProfiles.removeWhere((p) => (p['id'] ?? p['_id'])?.toString() == targetUserId);
+      _superLikedProfiles.removeWhere((p) => (p['id'] ?? p['_id'])?.toString() == targetUserId);
+      _matchedProfiles.removeWhere((p) => (p['id'] ?? p['_id'])?.toString() == targetUserId);
+      restored['isLiked'] = false;
+      restored['isSuperLiked'] = false;
+      restored['isMatched'] = false;
       _profiles.insert(0, restored);
     });
     SubscriptionProvider.instance.optimisticConsume(VipAction.backtrack);
@@ -1036,12 +1045,37 @@ class _MatchScreenState extends State<MatchScreen>
         final provider = SubscriptionProvider.instance;
         final superRemaining = provider.superlikesRemaining;
         final backtrackRemaining = provider.backtracksRemaining;
+        final dailyLikesRemaining = provider.dailyLikesRemaining;
+        final hasUnlimitedLikes = provider.hasUnlimitedLikes;
+        final likeExhausted = !hasUnlimitedLikes && dailyLikesRemaining <= 0;
         final superIsUnlimited = provider.isElite || provider.status.isUnlimitedSuperlikes || superRemaining >= 9999;
         final backtrackIsUnlimited = provider.isElite || provider.status.hasUnlimitedBacktracks || backtrackRemaining >= 9999;
         final superLabel = superIsUnlimited ? '∞' : '$superRemaining';
         final backtrackLabel = backtrackIsUnlimited ? '∞' : '$backtrackRemaining';
         final superExhausted = !superIsUnlimited && superRemaining <= 0;
         final backtrackExhausted = !backtrackIsUnlimited && backtrackRemaining <= 0;
+
+        final topProfile = _profiles.isNotEmpty ? _profiles.first : null;
+        final topId = topProfile != null ? (topProfile['id'] ?? topProfile['_id'])?.toString() : null;
+
+        final isTopLiked = topProfile != null && (
+            topProfile['isLiked'] == true ||
+            topProfile['alreadyLiked'] == true ||
+            topProfile['swipeStatus'] == 'liked' ||
+            topProfile['swipeStatus'] == 'pending' ||
+            topProfile['swipeStatus'] == 'connected' ||
+            (topId != null && _likedProfiles.any((p) => (p['id'] ?? p['_id'])?.toString() == topId))
+        );
+
+        final isTopSuperLiked = topProfile != null && (
+            topProfile['isSuperLiked'] == true ||
+            topProfile['alreadySuperLiked'] == true ||
+            topProfile['matchReason'] == 'superlike' ||
+            topProfile['swipeStatus'] == 'superlike' ||
+            (topId != null && _superLikedProfiles.any((p) => (p['id'] ?? p['_id'])?.toString() == topId))
+        );
+
+        final canBacktrack = _swipedHistory.isNotEmpty && !backtrackExhausted;
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1050,9 +1084,12 @@ class _MatchScreenState extends State<MatchScreen>
             children: [
               _interactionButton(
                 icon: Icons.replay,
-                color: backtrackExhausted
-                    ? const Color(0xFFFFB703).withValues(alpha: 0.4)
-                    : const Color(0xFFFFB703),
+                color: canBacktrack
+                    ? const Color(0xFFFFB703)
+                    : const Color(0xFFFFB703).withValues(alpha: 0.35),
+                isGlowing: canBacktrack,
+                glowColor: const Color(0xFFFFB703),
+                gradient: canBacktrack ? LunaraTheme.amberGlow : null,
                 onTap: _rewindLastSwipe,
                 label: 'REWIND',
                 badgeText: backtrackLabel,
@@ -1067,25 +1104,47 @@ class _MatchScreenState extends State<MatchScreen>
                 label: 'NOPE',
               ),
               _interactionButton(
-                icon: Icons.favorite,
-                color: LunaraTheme.accentVivid,
+                icon: isTopLiked ? Icons.favorite : Icons.favorite_border,
+                color: isTopLiked
+                    ? const Color(0xFF00C853)
+                    : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
+                iconColor: isTopLiked ? Colors.white : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
+                isGlowing: isTopLiked,
+                glowColor: const Color(0xFF00C853),
+                gradient: isTopLiked
+                    ? const LinearGradient(
+                        colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
                 onTap: () {
                   _swipeCard(true, customAction: 'like');
                 },
                 isLarge: true,
-                label: 'LIKE',
+                label: isTopLiked ? 'LIKED' : 'LIKE',
               ),
               _interactionButton(
-                icon: Icons.star,
-                color: superExhausted
-                    ? LunaraTheme.primaryRich.withValues(alpha: 0.4)
-                    : LunaraTheme.primaryRich,
+                icon: isTopSuperLiked ? Icons.star : Icons.star_border,
+                color: isTopSuperLiked
+                    ? const Color(0xFFFFD700)
+                    : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
+                iconColor: isTopSuperLiked ? Colors.white : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
+                isGlowing: isTopSuperLiked,
+                glowColor: const Color(0xFFFFD700),
+                gradient: isTopSuperLiked
+                    ? const LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
                 onTap: () {
                   _swipeCard(true, customAction: 'superlike');
                 },
-                label: 'SUPER',
+                label: isTopSuperLiked ? 'SUPER' : 'SUPER',
                 badgeText: superLabel,
-                badgeColor: superExhausted ? Colors.grey : LunaraTheme.primaryRich,
+                badgeColor: superExhausted ? Colors.grey : (isTopSuperLiked ? const Color(0xFFFFD700) : LunaraTheme.primaryRich),
               ),
               _buildBoostButton(provider),
             ],
@@ -1103,8 +1162,13 @@ class _MatchScreenState extends State<MatchScreen>
     required String label,
     String? badgeText,
     Color? badgeColor,
+    Gradient? gradient,
+    bool isGlowing = false,
+    Color? glowColor,
+    Color? iconColor,
   }) {
     final double size = isLarge ? 74 : 54;
+    final effectiveGlowColor = glowColor ?? color;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1114,22 +1178,51 @@ class _MatchScreenState extends State<MatchScreen>
             GestureDetector(
               onTap: onTap,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: const Duration(milliseconds: 250),
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
-                  color: Colors.black,
+                  color: gradient == null ? Colors.black : null,
+                  gradient: gradient,
                   shape: BoxShape.circle,
-                  border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.25),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
+                  border: Border.all(
+                    color: isGlowing
+                        ? effectiveGlowColor
+                        : color.withValues(alpha: 0.5),
+                    width: isGlowing ? 2.5 : 2,
+                  ),
+                  boxShadow: isGlowing
+                      ? [
+                          BoxShadow(
+                            color: effectiveGlowColor.withValues(alpha: 0.7),
+                            blurRadius: 20,
+                            spreadRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                          BoxShadow(
+                            color: (effectiveGlowColor == const Color(0xFF00C853)
+                                    ? const Color(0xFF69F0AE)
+                                    : effectiveGlowColor == const Color(0xFFFFD700)
+                                        ? const Color(0xFFFF8C00)
+                                        : effectiveGlowColor)
+                                .withValues(alpha: 0.45),
+                            blurRadius: 30,
+                            spreadRadius: 8,
+                          ),
+                        ]
+                      : [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.25),
+                            blurRadius: 15,
+                            spreadRadius: 2,
+                          ),
+                        ],
                 ),
-                child: Icon(icon, color: color, size: isLarge ? 30 : 22),
+                child: Icon(
+                  icon,
+                  color: iconColor ?? (isGlowing ? Colors.white : color),
+                  size: isLarge ? 30 : 22,
+                ),
               ),
             ),
             // Remaining count badge
@@ -1160,7 +1253,7 @@ class _MatchScreenState extends State<MatchScreen>
         Text(
           label,
           style: TextStyle(
-            color: color.withValues(alpha: 0.8),
+            color: isGlowing ? effectiveGlowColor : color.withValues(alpha: 0.8),
             fontSize: 9,
             fontWeight: FontWeight.bold,
             letterSpacing: 1,

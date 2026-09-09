@@ -379,8 +379,28 @@ class User {
                       : (data['reward_points'] != null
                           ? int.tryParse(data['reward_points'].toString()) ?? 0
                           : 0)))),
-      isLiked: _parseBool(json['isLiked']) || _parseBool(data['isLiked']),
-      isSuperLiked: _parseBool(json['isSuperLiked']) || _parseBool(data['isSuperLiked']),
+      isLiked: _parseBool(json['isLiked']) ||
+          _parseBool(data['isLiked']) ||
+          _parseBool(data['liked']) ||
+          _parseBool(json['liked']) ||
+          _parseBool(data['alreadyLiked']) ||
+          _parseBool(json['alreadyLiked']) ||
+          data['swipeStatus'] == 'liked' ||
+          data['swipeStatus'] == 'pending' ||
+          data['swipeStatus'] == 'connected' ||
+          json['swipeStatus'] == 'liked' ||
+          json['swipeStatus'] == 'pending' ||
+          json['swipeStatus'] == 'connected',
+      isSuperLiked: _parseBool(json['isSuperLiked']) ||
+          _parseBool(data['isSuperLiked']) ||
+          _parseBool(data['superliked']) ||
+          _parseBool(json['superliked']) ||
+          _parseBool(data['alreadySuperLiked']) ||
+          _parseBool(json['alreadySuperLiked']) ||
+          _parseBool(data['is_superliked']) ||
+          _parseBool(json['is_superliked']) ||
+          data['matchReason'] == 'superlike' ||
+          json['matchReason'] == 'superlike',
     );
   }
 
