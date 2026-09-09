@@ -7151,9 +7151,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String lifecycleStatus = (planMap['lifecycleStatus'] ?? '')
         .toString()
         .toLowerCase();
-    final String hostPaymentStatus = (planMap['hostPaymentStatus'] ?? '')
-        .toString()
-        .toLowerCase();
+    bool anyHostPaid = false;
+    for (final e in entries) {
+      final hps = (e['hostPaymentStatus'] ??
+              e['plan']?['hostPaymentStatus'] ??
+              e['paymentStatus'] ??
+              '')
+          .toString()
+          .toLowerCase();
+      if (hps == 'paid' ||
+          hps == 'completed' ||
+          e['isLive'] == true ||
+          e['plan']?['isLive'] == true) {
+        anyHostPaid = true;
+        break;
+      }
+    }
+    final String hostPaymentStatus = anyHostPaid
+        ? 'paid'
+        : (planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
 
     if (planStatus == 'expired' ||
         lifecycleStatus == 'expired' ||
@@ -11484,9 +11500,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body:
             'Host Safety Deposit paid via Smart Wallet! Your plan is now LIVE in the feed.',
       );
+      ApiService.clearBookingCache();
       ApiService.notifyFeedNeedsRefresh();
       await onSuccess();
-      _loadFeed(showLoader: false);
+      _loadFeed(showLoader: false, forceRefresh: true);
     }
   }
 
@@ -11702,22 +11719,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final cleanId = ApiService.cleanBookingId(planId);
     bool changed = false;
 
+    // 1. Remove any stale pending_payment entries for this plan
+    _feedItems.removeWhere((item) {
+      final id = item['id']?.toString() ?? '';
+      final pId = ApiService.cleanBookingId(
+        (item['planId'] ?? item['partyPlanId'] ?? item['id'])?.toString() ??
+            '',
+      );
+      if (id.startsWith('pending_pp_') ||
+          item['type'] == 'pending_payment' ||
+          item['requestType'] == 'party_plan_host_deposit') {
+        if (pId == cleanId || pId == planId || id.contains(cleanId)) {
+          changed = true;
+          return true;
+        }
+      }
+      return false;
+    });
+
     for (int i = 0; i < _feedItems.length; i++) {
       final item = _feedItems[i];
       final rawId = ApiService.cleanBookingId(
         item['id']?.toString() ??
             item['partyPlanId']?.toString() ??
             item['planId']?.toString() ??
+            item['plan']?['id']?.toString() ??
             '',
       );
       if (rawId == cleanId || rawId == planId) {
         final updated = Map<String, dynamic>.from(item);
         if (isHost) {
           updated['hostPaymentStatus'] = 'paid';
+          updated['paymentStatus'] = 'paid';
           updated['isLive'] = true;
           updated['status'] = 'active';
+          if (updated['plan'] is Map) {
+            updated['plan'] = {
+              ...Map<String, dynamic>.from(updated['plan'] as Map),
+              'hostPaymentStatus': 'paid',
+              'paymentStatus': 'paid',
+              'isLive': true,
+              'status': 'active',
+            };
+          }
         } else {
           updated['joinerPaymentStatus'] = 'paid';
+          updated['paymentStatus'] = 'paid';
           updated['status'] = 'confirmed';
           updated['requestStatus'] = 'confirmed';
           if (updated['myRequest'] is Map) {

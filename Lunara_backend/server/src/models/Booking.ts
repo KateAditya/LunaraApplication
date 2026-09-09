@@ -510,6 +510,8 @@ Booking.init(
             { fields: ['user_id', 'status'] },
             { fields: ['venue_id', 'booking_date'] },
             { fields: ['is_large_party_request', 'admin_approval_status'] },
+            { fields: ['is_large_party_request', 'admin_approval_status', 'payment_status', 'expires_at'] },
+            { fields: ['user_id', 'status', 'payment_status', 'booking_date'] },
             { fields: ['created_at'] },
             { fields: ['booking_number'], unique: true },
         ],

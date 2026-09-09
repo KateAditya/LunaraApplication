@@ -514,6 +514,8 @@ PartyPlan.init(
             { fields: ['venue_id', 'status'] },
             { fields: ['user_id', 'plan_date_time'] },
             { fields: ['user_id', 'plan_date_time', 'status'] },
+            { fields: ['status', 'is_live', 'host_payment_status', 'plan_date_time'] },
+            { fields: ['user_id', 'status', 'is_live'] },
         ],
     }
 );
