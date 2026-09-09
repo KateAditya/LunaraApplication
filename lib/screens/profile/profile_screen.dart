@@ -358,7 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
-    final isAlreadyLiked = currentAction == 'like';
+    final isAlreadyLiked = currentAction == 'like' || targetUser.isLiked;
 
     // If already liked, clicking "like" again unlikes (toggle)
     if (isAlreadyLiked) {
@@ -367,8 +367,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (ok) {
         setState(() {
           _swipedActions.remove(targetId);
+          _displayUser = _displayUser?.copyWith(isLiked: false);
         });
-        unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
+        unawaited(SubscriptionProvider.instance.refresh());
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -383,27 +384,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // Daily like limit guard
     final subProvider = SubscriptionProvider.instance;
-    final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes || _dailyLikesLimit == 999999;
-    if (!hasUnlimitedLikes && !subProvider.canLike && _dailyLikesUsed >= _dailyLikesLimit) {
-      _showLimitReachedSnack();
+    final validation = subProvider.validateAction(VipAction.like);
+    if (!validation.allowed) {
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.dailyLikes,
+        customMessage: validation.message,
+      );
       return false;
     }
+
+    subProvider.optimisticConsume(VipAction.like);
 
     // Fire API first — only apply optimistic UI once the server confirms
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
     if (!mounted) return false;
 
     if (res == null || res['limitReached'] == true) {
-      _showLimitReachedSnack();
+      subProvider.rollbackConsume(VipAction.like);
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.dailyLikes,
+        customMessage: res?['message'],
+      );
       return false;
     }
 
     setState(() {
       _swipedActions[targetId] = 'like';
       _dailyLikesUsed++;
+      _displayUser = _displayUser?.copyWith(isLiked: true);
     });
 
-    unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
+    unawaited(SubscriptionProvider.instance.refresh());
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
     _checkUsageWarning(res);
     return true;
@@ -471,28 +484,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return true;
     }
 
-    // Superlikes remaining guard (always validate against plan limit)
+    // Superlikes remaining guard (always validate against SubscriptionProvider)
     final subProvider = SubscriptionProvider.instance;
-    final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes || _superlikesRemaining >= 9999;
-    if (!isUnlimitedSuper && !subProvider.canSuperLike && _superlikesPerCycle > 0 && _superlikesRemaining <= 0) {
-      _showSuperLikeLimitSnack();
+    final validation = subProvider.validateAction(VipAction.superlike);
+    if (!validation.allowed) {
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.superLike,
+        customMessage: validation.message,
+      );
       return false;
     }
+
+    subProvider.optimisticConsume(VipAction.superlike);
 
     final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
     if (!mounted) return false;
 
     if (res == null || res['limitReached'] == true) {
-      _showSuperLikeLimitSnack();
+      subProvider.rollbackConsume(VipAction.superlike);
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.superLike,
+        customMessage: res?['message'],
+      );
       return false;
     }
 
     setState(() {
       _swipedActions[targetId] = 'superlike';
-      if (_superlikesPerCycle > 0 && !isUnlimitedSuper) _superlikesRemaining--;
+      _displayUser = _displayUser?.copyWith(isSuperLiked: true);
     });
 
-    unawaited(SubscriptionProvider.instance.refreshAfterPurchase());
+    unawaited(SubscriptionProvider.instance.refresh());
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
     _checkUsageWarning(res);
     return true;
@@ -665,15 +689,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 
 
-  void _showLimitReachedSnack() {
-    if (!mounted) return;
-    showSubscriptionLimitDialog(context, feature: SubLimitFeature.dailyLikes);
-  }
 
-  void _showSuperLikeLimitSnack() {
-    if (!mounted) return;
-    showSubscriptionLimitDialog(context, feature: SubLimitFeature.superLike);
-  }
 
   void _showBacktrackUpgradePrompt() {
     if (!mounted) return;
@@ -879,8 +895,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final currentUserId = _displayUser!.id;
     final currentSwipedAction = _swipedActions[currentUserId];
-    final isLikeDisabled = !SubscriptionProvider.instance.hasUnlimitedLikes && (_dailyLikesLimit != 999999 && _dailyLikesUsed >= _dailyLikesLimit);
-    final isSuperLikeDisabled = !SubscriptionProvider.instance.isElite && !SubscriptionProvider.instance.status.isUnlimitedSuperlikes && (_superlikesPerCycle > 0 && _superlikesRemaining <= 0);
+    final isLikeDisabled = !SubscriptionProvider.instance.canLike;
+    final isSuperLikeDisabled = !SubscriptionProvider.instance.canSuperLike;
 
     final currentProfileWidget = ProfileDetailView(
       key: ValueKey(_displayUser!.id),

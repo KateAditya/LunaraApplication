@@ -414,19 +414,24 @@ class SubscriptionProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final data = await ApiService.fetchSubscriptionStatus();
-      if (data.isNotEmpty) {
-        _status = PlanStatus.fromJson(data);
+      final results = await Future.wait([
+        ApiService.fetchSubscriptionStatus(),
+        ApiService.fetchEntitlementsSummary(),
+      ]);
+      final statusData = results[0];
+      final entitlementsData = results[1];
+
+      if (statusData.isNotEmpty) {
+        _status = PlanStatus.fromJson(statusData);
         _lastFetched = DateTime.now();
         _optimisticLikesOffset = 0;
         _optimisticSuperlikesOffset = 0;
         _optimisticBoostsOffset = 0;
         _optimisticBacktracksOffset = 0;
-        // Clear stale entitlements so math.max uses the fresh status value
-        // instead of an outdated cached entitlements count.  Will be
-        // re-populated by the background call below.
-        _entitlementsSummary = null;
         _checkAndDispatchExpirationAlert();
+      }
+      if (entitlementsData.isNotEmpty) {
+        _entitlementsSummary = EntitlementsSummaryModel.fromJson(entitlementsData);
       }
     } catch (e) {
       debugPrint('[SubscriptionProvider] refresh error: $e');
@@ -434,9 +439,6 @@ class SubscriptionProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
-    // Re-fetch entitlements in the background so addon balances stay accurate.
-    // Not awaited — the status data above is already fresh and shown to the user.
-    fetchEntitlementsSummary();
   }
 
   /// Fetches the full breakdown of plan entitlements, usage, and separated add-on balances.

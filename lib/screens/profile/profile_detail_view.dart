@@ -102,9 +102,9 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       }
     } else {
       _currentUser = widget.user;
-      if (widget.swipedAction == 'like') {
+      if (widget.swipedAction == 'like' || widget.user.isLiked) {
         _isLiked = true;
-      } else if (widget.swipedAction == 'superlike') {
+      } else if (widget.swipedAction == 'superlike' || widget.user.isSuperLiked) {
         _isSuperLiked = true;
       } else if (widget.swipedAction == null && oldWidget.swipedAction != null) {
         _isLiked = false;
@@ -118,11 +118,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       final status = await ApiService.fetchSwipeStatus(_currentUser.id);
       if (mounted && status.isNotEmpty) {
         setState(() {
-          if (status.containsKey('alreadyLiked')) {
-            _isLiked = status['alreadyLiked'] == true;
+          if (status['alreadyLiked'] == true) {
+            _isLiked = true;
+            _currentUser = _currentUser.copyWith(isLiked: true);
           }
-          if (status.containsKey('alreadySuperLiked')) {
-            _isSuperLiked = status['alreadySuperLiked'] == true;
+          if (status['alreadySuperLiked'] == true) {
+            _isSuperLiked = true;
+            _currentUser = _currentUser.copyWith(isSuperLiked: true);
           }
         });
       }
@@ -1005,19 +1007,19 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       builder: (_, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
 
-        final isSuperLiked = _isSuperLiked || widget.swipedAction == 'superlike';
-        final isLiked = _isLiked || widget.swipedAction == 'like';
+        final isSuperLiked = _isSuperLiked || widget.swipedAction == 'superlike' || widget.user.isSuperLiked || _currentUser.isSuperLiked;
+        final isLiked = _isLiked || widget.swipedAction == 'like' || widget.user.isLiked || _currentUser.isLiked;
 
         final subProvider = SubscriptionProvider.instance;
         final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes;
         final bool canLike = hasUnlimitedLikes || subProvider.canLike;
         // Disabled (grey) only if user has no likes left and not unlimited, AND not already liked
-        final likeDisabled = !isLiked && !hasUnlimitedLikes && (!canLike || widget.isLikeDisabled);
+        final likeDisabled = !isLiked && !hasUnlimitedLikes && !canLike;
 
         final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes;
         final bool canSuperLike = isUnlimitedSuper || subProvider.canSuperLike;
         // Disabled (grey) only when user has no superlikes and not unlimited, AND not already superliked
-        final superLikeDisabled = !isSuperLiked && !isUnlimitedSuper && (!canSuperLike || widget.isSuperLikeDisabled);
+        final superLikeDisabled = !isSuperLiked && !isUnlimitedSuper && !canSuperLike;
 
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1278,7 +1280,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 }
 
                                 if (mounted) {
-                                  setState(() => _isLiked = success);
+                                  setState(() {
+                                    _isLiked = success;
+                                    if (success) {
+                                      _currentUser = _currentUser.copyWith(isLiked: true);
+                                    }
+                                  });
                                 }
                               } catch (e) {
                                 if (mounted) {
@@ -1451,7 +1458,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 }
 
                                 if (mounted) {
-                                  setState(() => _isSuperLiked = success);
+                                  setState(() {
+                                    _isSuperLiked = success;
+                                    if (success) {
+                                      _currentUser = _currentUser.copyWith(isSuperLiked: true);
+                                    }
+                                  });
                                 }
                               } catch (e) {
                                 if (mounted) {

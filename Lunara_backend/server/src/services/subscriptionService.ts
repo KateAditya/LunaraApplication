@@ -18,6 +18,7 @@ import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription
 import SubscriptionPlanFeature from '../models/SubscriptionPlanFeature';
 import SubscriptionFeature from '../models/SubscriptionFeature';
 import SubscriptionUsage, { UsagePeriod } from '../models/SubscriptionUsage';
+import UserAddon, { UserAddonStatus } from '../models/UserAddon';
 import PartyPlan from '../models/PartyPlan';
 import { logger } from '../config/logger';
 
@@ -844,6 +845,34 @@ export class SubscriptionService {
                 };
             }
 
+            let addonSuperlikes = 0;
+            let addonBoosts = 0;
+            let addonBacktracks = 0;
+            let addonPartyPlans = 0;
+            try {
+                const userAddons = await UserAddon.findAll({
+                    where: {
+                        userId,
+                        status: UserAddonStatus.ACTIVE,
+                        remainingQuantity: { [Op.gt]: 0 },
+                    },
+                });
+                for (const ua of userAddons) {
+                    const r = Number(ua.remainingQuantity) || 0;
+                    if (ua.featureKey === 'superlike') addonSuperlikes += r;
+                    else if (ua.featureKey === 'profile_boost') addonBoosts += r;
+                    else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo') addonBacktracks += r;
+                    else if (ua.featureKey === 'party_creation') addonPartyPlans += r;
+                }
+            } catch (err) {
+                logger.warn('[subscriptionService.getFullStatus] Could not fetch user addons:', err);
+            }
+
+            const planSuperlikes = (tier === 'ELITE') ? 9999 : (subscription?.superlikesRemaining ?? 0);
+            const planSuperlikesPerCycle = (tier === 'ELITE') ? 9999 : (plan?.superlikesPerCycle ?? 0);
+            const planBoosts = (tier === 'ELITE') ? 9999 : (subscription?.boostsRemaining ?? 0);
+            const planBoostsPerCycle = (tier === 'ELITE') ? 9999 : (plan?.boostsPerCycle ?? 0);
+
             return {
                 isActive: !!subscription,
                 tier,
@@ -856,10 +885,10 @@ export class SubscriptionService {
                 isExpiringSoon,
                 isExpired,
                 expirationAlert,
-                superlikesRemaining: (tier === 'ELITE') ? 9999 : (subscription?.superlikesRemaining ?? 0),
-                superlikesPerCycle: (tier === 'ELITE') ? 9999 : (plan?.superlikesPerCycle ?? 0),
-                boostsRemaining: (tier === 'ELITE') ? 9999 : (subscription?.boostsRemaining ?? 0),
-                boostsPerCycle: (tier === 'ELITE') ? 9999 : (plan?.boostsPerCycle ?? 0),
+                superlikesRemaining: (tier === 'ELITE') ? 9999 : (planSuperlikes + addonSuperlikes),
+                superlikesPerCycle: (tier === 'ELITE') ? 9999 : (planSuperlikesPerCycle + addonSuperlikes),
+                boostsRemaining: (tier === 'ELITE') ? 9999 : (planBoosts + addonBoosts),
+                boostsPerCycle: (tier === 'ELITE') ? 9999 : (planBoostsPerCycle + addonBoosts),
                 hasPriorityVisibility: plan?.hasPriorityVisibility ?? (['PRO', 'ELITE'].includes(tier)),
                 hasTrustBadge: plan?.hasTrustBadge ?? (['PRO', 'ELITE'].includes(tier)),
                 hasEliteBadge: plan?.hasEliteBadge ?? (tier === 'ELITE'),
@@ -871,9 +900,9 @@ export class SubscriptionService {
                 dailyMatchRequestsUsed: usageMap['daily_match_requests'] ?? 0,
                 dailyPostsLimit: featuresOut['daily_posts']?.limit ?? (plan ? ((plan.dailyPosts === -1 || plan.dailyPosts >= 9999) ? 'unlimited' : plan.dailyPosts) : 5),
                 dailyPostsUsed: usageMap['daily_posts'] ?? 0,
-                dailyBacktrackLimit: (tier === 'ELITE') ? 'unlimited' : (featuresOut['daily_backtracks']?.limit ?? (plan ? plan.backtrackLimit : 3)),
+                dailyBacktrackLimit: (tier === 'ELITE') ? 'unlimited' : (featuresOut['daily_backtracks']?.limit ?? ((plan ? plan.backtrackLimit : 3) + addonBacktracks)),
                 dailyBacktrackUsed: usageMap['daily_backtracks'] ?? 0,
-                partyPlanLimit: featuresOut['party_creation']?.limit ?? (plan ? ((plan.partyPlanLimit === -1 || plan.partyPlanLimit >= 9999) ? 'unlimited' : plan.partyPlanLimit) : 1),
+                partyPlanLimit: featuresOut['party_creation']?.limit ?? (plan ? ((plan.partyPlanLimit === -1 || plan.partyPlanLimit >= 9999) ? 'unlimited' : (plan.partyPlanLimit + addonPartyPlans)) : (1 + addonPartyPlans)),
                 partyPlanPeriodDays: featuresOut['party_creation']?.periodDays ?? (plan ? plan.partyPlanPeriodDays : 7),
                 features: featuresOut,
                 usage: usageMap,

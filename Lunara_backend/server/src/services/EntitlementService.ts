@@ -647,8 +647,13 @@ export class EntitlementService {
             let currentSuperlikes = activeSub ? activeSub.superlikesRemaining : 0;
             if (activeSub && (currentSuperlikes == null || currentSuperlikes === undefined)) {
                 currentSuperlikes = activePkg?.superlikesPerCycle || 0;
+                await UserSubscription.update(
+                    { superlikesRemaining: currentSuperlikes },
+                    { where: { id: activeSub.id }, transaction: t }
+                );
+                activeSub.superlikesRemaining = currentSuperlikes;
             }
-            if (normalizedKey === 'superlike' && activeSub && currentSuperlikes > 0) {
+            if (normalizedKey === 'superlike' && activeSub && currentSuperlikes >= amount) {
                 const [affected] = await UserSubscription.update(
                     { superlikesRemaining: sequelize.literal(`superlikes_remaining - ${amount}`) },
                     {
@@ -661,7 +666,19 @@ export class EntitlementService {
                 );
 
                 if (affected > 0) {
-                    const newRemaining = Math.max(0, activeSub.superlikesRemaining - amount);
+                    const newRemaining = Math.max(0, currentSuperlikes - amount);
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: normalizedKey,
+                            status: UserAddonStatus.ACTIVE,
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const totalRemaining = newRemaining + addonRemaining;
+
                     await EntitlementAuditLog.create({
                         userId,
                         subscriptionId: activeSub.id,
@@ -669,7 +686,7 @@ export class EntitlementService {
                         action: 'PLAN_ENTITLEMENT_CONSUMED',
                         source: 'PLAN',
                         quantity: -amount,
-                        oldValue: { superlikesRemaining: activeSub.superlikesRemaining },
+                        oldValue: { superlikesRemaining: currentSuperlikes },
                         newValue: { superlikesRemaining: newRemaining },
                         requestId: options.requestId,
                         metadata: options.metadata,
@@ -679,7 +696,7 @@ export class EntitlementService {
                     RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                         featureKey: 'superlike',
                         source: 'PLAN',
-                        remaining: newRemaining,
+                        remaining: totalRemaining,
                     });
 
                     return {
@@ -687,15 +704,24 @@ export class EntitlementService {
                         source: 'PLAN',
                         consumed: amount,
                         planRemaining: newRemaining,
-                        totalRemaining: newRemaining,
-                        // totalGranted = plan cycle allocation + any active addon quantities
-                        totalGranted: (activePkg?.superlikesPerCycle || 0),
+                        addonRemaining,
+                        totalRemaining,
+                        totalGranted: (activePkg?.superlikesPerCycle || 0) + userAddons.reduce((acc, a) => acc + (Number(a.purchasedQuantity) || 0), 0),
                     };
                 }
             }
 
             // Regular Plan Quota: Profile Boosts
-            if (normalizedKey === 'profile_boost' && activeSub && activeSub.boostsRemaining > 0) {
+            let currentBoosts = activeSub ? activeSub.boostsRemaining : 0;
+            if (activeSub && (currentBoosts == null || currentBoosts === undefined)) {
+                currentBoosts = activePkg?.boostsPerCycle || 0;
+                await UserSubscription.update(
+                    { boostsRemaining: currentBoosts },
+                    { where: { id: activeSub.id }, transaction: t }
+                );
+                activeSub.boostsRemaining = currentBoosts;
+            }
+            if (normalizedKey === 'profile_boost' && activeSub && currentBoosts >= amount) {
                 const [affected] = await UserSubscription.update(
                     { boostsRemaining: sequelize.literal(`boosts_remaining - ${amount}`) },
                     {
@@ -708,7 +734,19 @@ export class EntitlementService {
                 );
 
                 if (affected > 0) {
-                    const newRemaining = Math.max(0, activeSub.boostsRemaining - amount);
+                    const newRemaining = Math.max(0, currentBoosts - amount);
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: normalizedKey,
+                            status: UserAddonStatus.ACTIVE,
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const totalRemaining = newRemaining + addonRemaining;
+
                     await EntitlementAuditLog.create({
                         userId,
                         subscriptionId: activeSub.id,
@@ -716,7 +754,7 @@ export class EntitlementService {
                         action: 'PLAN_ENTITLEMENT_CONSUMED',
                         source: 'PLAN',
                         quantity: -amount,
-                        oldValue: { boostsRemaining: activeSub.boostsRemaining },
+                        oldValue: { boostsRemaining: currentBoosts },
                         newValue: { boostsRemaining: newRemaining },
                         requestId: options.requestId,
                         metadata: options.metadata,
@@ -726,7 +764,7 @@ export class EntitlementService {
                     RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                         featureKey: 'profile_boost',
                         source: 'PLAN',
-                        remaining: newRemaining,
+                        remaining: totalRemaining,
                     });
 
                     return {
@@ -734,7 +772,9 @@ export class EntitlementService {
                         source: 'PLAN',
                         consumed: amount,
                         planRemaining: newRemaining,
-                        totalRemaining: newRemaining,
+                        addonRemaining,
+                        totalRemaining,
+                        totalGranted: (activePkg?.boostsPerCycle || 0) + userAddons.reduce((acc, a) => acc + (Number(a.purchasedQuantity) || 0), 0),
                     };
                 }
             }
@@ -762,6 +802,20 @@ export class EntitlementService {
                 }
                 await availableAddon.save({ transaction: t });
 
+                // Find remaining across all active addons
+                const otherAddons = await UserAddon.findAll({
+                    where: {
+                        userId,
+                        featureKey: normalizedKey,
+                        status: UserAddonStatus.ACTIVE,
+                        remainingQuantity: { [Op.gt]: 0 },
+                    },
+                    transaction: t,
+                });
+                const totalAddonRemaining = otherAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                const planRemaining = activeSub ? ((normalizedKey === 'superlike' ? activeSub.superlikesRemaining : activeSub.boostsRemaining) || 0) : 0;
+                const totalRemaining = planRemaining + totalAddonRemaining;
+
                 await EntitlementAuditLog.create({
                     userId,
                     addonId: availableAddon.id,
@@ -779,15 +833,16 @@ export class EntitlementService {
                 RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                     featureKey: normalizedKey,
                     source: 'ADDON',
-                    remaining: newRemaining,
+                    remaining: totalRemaining,
                 });
 
                 return {
                     success: true,
                     source: 'ADDON',
                     consumed: amount,
-                    addonRemaining: newRemaining,
-                    totalRemaining: newRemaining,
+                    addonRemaining: totalAddonRemaining,
+                    planRemaining,
+                    totalRemaining,
                 };
             }
 
