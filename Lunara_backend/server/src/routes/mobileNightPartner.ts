@@ -97,6 +97,39 @@ router.get(
 );
 
 /**
+ * POST /api/mobile/nights/invite-payment/initiate
+ * Host initiates payment for sending an invitation (Self Pay vs Split)
+ */
+router.post(
+    '/invite-payment/initiate',
+    [
+        authenticate,
+        body('venueId').notEmpty().withMessage('venueId is required'),
+        body('eventDate').notEmpty().withMessage('eventDate is required'),
+        body('paymentMode').isIn(['SELF_PAY', 'SPLIT']).withMessage('paymentMode must be SELF_PAY or SPLIT'),
+        validate,
+    ],
+    ctrl.initiateInviteOrder
+);
+
+/**
+ * POST /api/mobile/nights/invite-payment/verify
+ * Host verifies payment and sends the invitation
+ */
+router.post(
+    '/invite-payment/verify',
+    [
+        authenticate,
+        body('partnerId').notEmpty().withMessage('partnerId is required'),
+        body('venueId').notEmpty().withMessage('venueId is required'),
+        body('eventDate').notEmpty().withMessage('eventDate is required'),
+        body('paymentMode').isIn(['SELF_PAY', 'SPLIT']).withMessage('paymentMode must be SELF_PAY or SPLIT'),
+        validate,
+    ],
+    ctrl.verifyInvitePaymentAndSend
+);
+
+/**
  * POST /api/mobile/nights/requests
  * Host sends a partner request
  */

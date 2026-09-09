@@ -17,6 +17,9 @@ export interface NightPartnerRequestAttributes {
     eventDate: Date;
     eventTime?: string;
     paymentMode?: 'SELF_PAY' | 'SPLIT';
+    hostPaid?: boolean;
+    hostAmount?: number;
+    razorpayOrderId?: string;
     status: NightPartnerRequestStatus;
     expiresAt: Date;
     nightInterestId?: string;
@@ -30,7 +33,19 @@ export interface NightPartnerRequestAttributes {
 export interface NightPartnerRequestCreationAttributes
     extends Optional<
         NightPartnerRequestAttributes,
-        'id' | 'eventTime' | 'paymentMode' | 'status' | 'nightInterestId' | 'createdAt' | 'updatedAt' | 'reminder2hSent' | 'reminder1hSent' | 'reminder30mSent'
+        | 'id'
+        | 'eventTime'
+        | 'paymentMode'
+        | 'hostPaid'
+        | 'hostAmount'
+        | 'razorpayOrderId'
+        | 'status'
+        | 'nightInterestId'
+        | 'createdAt'
+        | 'updatedAt'
+        | 'reminder2hSent'
+        | 'reminder1hSent'
+        | 'reminder30mSent'
     > {}
 
 class NightPartnerRequest
@@ -43,6 +58,9 @@ class NightPartnerRequest
     public eventDate!: Date;
     public eventTime?: string;
     public paymentMode?: 'SELF_PAY' | 'SPLIT';
+    public hostPaid?: boolean;
+    public hostAmount?: number;
+    public razorpayOrderId?: string;
     public status!: NightPartnerRequestStatus;
     public expiresAt!: Date;
     public nightInterestId?: string;
@@ -93,6 +111,22 @@ NightPartnerRequest.init(
             allowNull: false,
             defaultValue: 'SELF_PAY',
             field: 'payment_mode',
+        },
+        hostPaid: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'host_paid',
+        },
+        hostAmount: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: true,
+            field: 'host_amount',
+        },
+        razorpayOrderId: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'razorpay_order_id',
         },
         status: {
             type: DataTypes.ENUM(...Object.values(NightPartnerRequestStatus)),

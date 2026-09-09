@@ -448,6 +448,278 @@ export class NightPartnerService {
     }
 
     /**
+     * Host initiates payment order for sending an invitation (Self Pay vs Split)
+     */
+    public static async initiateInviteOrder(
+        _hostId: string,
+        venueId: string,
+        _eventDate: string,
+        paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY'
+    ): Promise<{ razorpayOrderId: string; razorpayKeyId: string; amount: number; amountToPay: number; currency: string }> {
+        const venue = await this.resolveVenue(venueId);
+        if (!venue) throw new Error('VENUE_NOT_FOUND');
+
+        // Calculate authoritative price from venue configuration (2 tickets total)
+        const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
+        const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+        const amountToPay = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
+
+        let razorpayOrder: any;
+        const hasRazorpayKeys = process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' &&
+            process.env.RAZORPAY_KEY_ID !== 'rzp_test_123';
+
+        if (hasRazorpayKeys) {
+            try {
+                razorpayOrder = await razorpay.orders.create({
+                    amount: Math.round(amountToPay * 100),
+                    currency: 'INR',
+                    receipt: `invite_${Date.now()}`,
+                });
+            } catch (err: any) {
+                logger.error('Razorpay invite order creation failed, falling back to mock:', err);
+                razorpayOrder = {
+                    id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+                    amount: Math.round(amountToPay * 100),
+                    currency: 'INR',
+                };
+            }
+        } else {
+            razorpayOrder = {
+                id: `order_mock_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+                amount: Math.round(amountToPay * 100),
+                currency: 'INR',
+            };
+        }
+
+        return {
+            razorpayOrderId: razorpayOrder.id,
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_123',
+            amount: razorpayOrder.amount,
+            amountToPay,
+            currency: razorpayOrder.currency || 'INR',
+        };
+    }
+
+    /**
+     * Verify payment and create & send NightPartnerRequest atomically
+     */
+    public static async verifyInvitePaymentAndSend(params: {
+        hostId: string;
+        partnerId: string;
+        venueId: string;
+        eventDate: string;
+        eventTime?: string;
+        paymentMode: 'SELF_PAY' | 'SPLIT';
+        razorpayOrderId: string;
+        razorpayPaymentId: string;
+        razorpaySignature: string;
+        paymentMethod?: 'razorpay' | 'wallet';
+    }): Promise<NightPartnerRequest> {
+        const {
+            hostId,
+            partnerId,
+            venueId,
+            eventDate,
+            eventTime,
+            paymentMode,
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
+            paymentMethod = 'razorpay',
+        } = params;
+
+        if (hostId === partnerId) {
+            throw new Error('CANNOT_REQUEST_SELF');
+        }
+
+        const venue = await this.resolveVenue(venueId);
+        if (!venue) throw new Error('VENUE_NOT_FOUND');
+
+        // Check if host already has an active match for this night
+        const existingMatch = await NightPartnerMatch.findOne({
+            where: {
+                hostId,
+                venueId: venue.id,
+                eventDate: new Date(eventDate),
+                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+            },
+        });
+
+        if (existingMatch) {
+            throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
+        }
+
+        // Time-lock checks
+        const eventDateTime = parseBookingDateTime(eventDate, eventTime);
+        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: venue.id });
+        if (!hostTimeLock.allowed) {
+            const err: any = new Error(hostTimeLock.message);
+            err.code = 'FOUR_HOUR_TIME_LOCK';
+            err.timeLock = hostTimeLock;
+            throw err;
+        }
+
+        const partnerTimeLock = await EventTimeLockService.validateFourHourGap(partnerId, eventDateTime, 'party_plan');
+        if (!partnerTimeLock.allowed) {
+            const partnerUser = await User.findByPk(partnerId, { attributes: ['firstName', 'lastName'] });
+            const partnerName = partnerUser?.firstName || 'The selected partner';
+            const err: any = new Error(`${partnerName} already has another plan scheduled around this time. Please choose another event or partner.`);
+            err.code = 'USER_ALREADY_HAS_PLAN';
+            err.timeLock = partnerTimeLock;
+            throw err;
+        }
+
+        // Calculate amount to verify
+        const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
+        const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+        const requiredAmount = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
+
+        // Payment verification
+        if (paymentMethod === 'wallet') {
+            const SmartWallet = (await import('../models/SmartWallet')).default;
+            const WalletTransaction = (await import('../models/WalletTransaction')).default;
+
+            const wallet = await SmartWallet.findOne({ where: { userId: hostId } });
+            if (!wallet || Number(wallet.balance) < requiredAmount) {
+                throw new Error('INSUFFICIENT_WALLET_BALANCE');
+            }
+
+            const openingBal = Number(wallet.balance);
+            const closingBal = openingBal - requiredAmount;
+            await sequelize.transaction(async (t) => {
+                await wallet.decrement('balance', { by: requiredAmount, transaction: t });
+                await WalletTransaction.create({
+                    walletId: wallet.id,
+                    userId: hostId,
+                    amount: requiredAmount,
+                    openingBalance: openingBal,
+                    closingBalance: closingBal,
+                    transactionType: 'booking_payment' as any,
+                    status: 'success' as any,
+                    reference: `invite_${Date.now()}`,
+                }, { transaction: t });
+            });
+        } else {
+            const isMockPayment = razorpaySignature === 'mock_signature' ||
+                (razorpayOrderId && razorpayOrderId.startsWith('order_mock_')) ||
+                (razorpayOrderId && razorpayOrderId.startsWith('mock_'));
+
+            if (!isMockPayment) {
+                const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'secret123');
+                hmac.update(`${razorpayOrderId}|${razorpayPaymentId}`);
+                const generatedSignature = hmac.digest('hex');
+
+                if (generatedSignature !== razorpaySignature) {
+                    throw new Error('PAYMENT_FAILED');
+                }
+            }
+        }
+
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 Hours expiry
+
+        const [request, created] = await NightPartnerRequest.findOrCreate({
+            where: {
+                hostId,
+                partnerId,
+                venueId: venue.id,
+                eventDate: new Date(eventDate),
+            },
+            defaults: {
+                hostId,
+                partnerId,
+                venueId: venue.id,
+                eventDate: new Date(eventDate),
+                eventTime: eventTime || '20:00',
+                paymentMode,
+                hostPaid: true,
+                hostAmount: requiredAmount,
+                razorpayOrderId,
+                status: NightPartnerRequestStatus.PENDING,
+                expiresAt,
+            },
+        });
+
+        if (!created) {
+            await request.update({
+                status: NightPartnerRequestStatus.PENDING,
+                hostPaid: true,
+                hostAmount: requiredAmount,
+                razorpayOrderId,
+                expiresAt,
+                eventTime: eventTime || request.eventTime || '20:00',
+                paymentMode,
+            });
+        }
+
+        // Fetch Host Profile info for notification delivery
+        const hostUser = await User.findByPk(hostId, {
+            attributes: ['id', 'firstName', 'lastName', 'isVerified'],
+            include: [
+                { model: UserProfile, as: 'profile' },
+                { model: UserPhoto, as: 'photos' },
+            ],
+        });
+
+        const hostName = hostUser?.firstName || 'A Lunara member';
+        const hostPhotos = (hostUser as any)?.photos || [];
+        const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
+
+        // Send Push & Real-time Socket Notification to Partner
+        await this.emitNotification(partnerId, {
+            type: 'PARTNER_REQUEST_SENT',
+            actorUserId: hostId,
+            title: 'Invite for Party Event 🌙',
+            body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
+            entityId: request.id,
+            data: {
+                requestId: request.id,
+                nightId: request.id,
+                venueId: venue.id,
+                venueName: venue.name,
+                eventName: venue.name,
+                eventDate,
+                eventTime: normalize12h(eventTime || request.eventTime || '20:00'),
+                hostId,
+                hostName,
+                partnerId,
+                recipientUserId: partnerId,
+                actorUserId: hostId,
+                isHost: false,
+                userRole: 'PARTNER',
+                paymentMode,
+                status: 'PENDING',
+                stage: 'INVITE_SENT',
+                actor: {
+                    id: hostId,
+                    firstName: hostUser?.firstName || 'Host',
+                    lastName: hostUser?.lastName || '',
+                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                    isVerified: !!hostUser?.isVerified,
+                },
+                sender: {
+                    id: hostId,
+                    firstName: hostUser?.firstName || 'Host',
+                    lastName: hostUser?.lastName || '',
+                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                    isVerified: !!hostUser?.isVerified,
+                },
+                event: {
+                    venueName: venue.name,
+                    name: venue.name,
+                    date: eventDate,
+                    time: eventTime || request.eventTime || '20:00',
+                    coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                },
+                actions: ['ACCEPT', 'DECLINE'],
+            },
+        });
+
+        this.invalidateUpcomingNightCaches();
+        return request;
+    }
+
+    /**
      * Host sends partner request to an interested user or direct invitee (Idempotent)
      */
     public static async sendPartnerRequest(
@@ -622,7 +894,7 @@ export class NightPartnerService {
         requestId: string,
         partnerId: string,
         action: 'accept' | 'decline'
-    ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch }> {
+    ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch; booking?: Booking; conversation?: Conversation }> {
         return await sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
             const request = await NightPartnerRequest.findByPk(requestId, {
                 lock: t.LOCK.UPDATE,
@@ -709,7 +981,115 @@ export class NightPartnerService {
                 await otherReq.update({ status: NightPartnerRequestStatus.CANCELLED }, { transaction: t });
             }
 
-            // Create Match Record
+            // Calculate amounts
+            const pricing = await VenueBookingService.calculateAuthoritativePrice(request.venueId, 'Confirmation Charges', 2);
+            const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+            const isSplit = request.paymentMode === 'SPLIT';
+            const hostAmount = isSplit ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
+            const partnerAmount = isSplit ? Math.round((totalAmount / 2) * 100) / 100 : 0;
+            const isHostPrepaid = request.hostPaid === true;
+
+            // If Host already paid upfront via SELF_PAY, confirm booking immediately!
+            if (isHostPrepaid && !isSplit) {
+                const bookingNumber = `NIGHT-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+                const booking = await Booking.create({
+                    bookingNumber,
+                    userId: request.hostId,
+                    venueId: request.venueId,
+                    bookingDate: new Date(request.eventDate),
+                    startTime: request.eventTime || '20:00',
+                    numberOfGuests: 2,
+                    totalAmount,
+                    depositAmount: 0,
+                    commissionAmount: Math.round(totalAmount * 0.1 * 100) / 100,
+                    goingMode: GoingMode.PARTY_REQUEST,
+                    tablePackage: 'Upcoming Night Match',
+                    isUpcomingNight: true,
+                    status: BookingStatus.CONFIRMED,
+                    paymentStatus: PaymentStatus.PAID,
+                    paymentMode: BookingPaymentMode.PAY_NOW,
+                    razorpayOrderId: request.razorpayOrderId,
+                }, { transaction: t });
+
+                const [participantOne, participantTwo] = [request.hostId, request.partnerId].sort();
+                let conversation = await Conversation.findOne({
+                    where: { participantOne, participantTwo },
+                    transaction: t,
+                });
+
+                if (!conversation) {
+                    conversation = await Conversation.create({
+                        participantOne,
+                        participantTwo,
+                        status: ConversationStatus.ACTIVE,
+                        contextType: 'night_match',
+                    }, { transaction: t });
+                } else {
+                    await conversation.update({
+                        status: ConversationStatus.ACTIVE,
+                        contextType: 'night_match',
+                    }, { transaction: t });
+                }
+
+                const match = await NightPartnerMatch.create({
+                    hostId: request.hostId,
+                    partnerId: request.partnerId,
+                    venueId: request.venueId,
+                    eventDate: request.eventDate,
+                    eventTime: request.eventTime,
+                    requestId: request.id,
+                    paymentMode: NightPartnerPaymentMode.SELF_PAY,
+                    status: NightPartnerMatchStatus.CONFIRMED,
+                    totalAmount,
+                    hostAmount,
+                    partnerAmount: 0,
+                    hostPaid: true,
+                    partnerPaid: true,
+                    bookingId: booking.id,
+                    conversationId: conversation.id,
+                    maxPartners: 1,
+                }, { transaction: t });
+
+                try {
+                    await generateTicketForBookingHelper(booking.id);
+                } catch (tErr) {
+                    logger.error(`[NightPartnerService] Ticket generation error for Booking ${booking.id}:`, tErr);
+                }
+
+                const venue = await Venue.findByPk(request.venueId);
+                const venueName = venue?.name || 'Venue';
+
+                this.emitNotification(request.hostId, {
+                    type: 'BOOKING_CONFIRMED',
+                    title: 'Booking Confirmed! 🎉',
+                    body: `Your partner accepted your invitation! Upcoming Night at ${venueName} is confirmed with tickets generated.`,
+                    entityId: match.id,
+                    data: { matchId: match.id, bookingId: booking.id, conversationId: conversation.id },
+                });
+
+                this.emitNotification(request.partnerId, {
+                    type: 'BOOKING_CONFIRMED',
+                    title: 'Booking Confirmed! 🎉',
+                    body: `You joined the Upcoming Night at ${venueName}! Host paid all tickets. Chat is unlocked & ticket ready.`,
+                    entityId: match.id,
+                    data: { matchId: match.id, bookingId: booking.id, conversationId: conversation.id },
+                });
+
+                // Inform other invited partners that slot was filled
+                for (const otherReq of otherPendingRequests) {
+                    this.emitNotification(otherReq.partnerId, {
+                        type: 'PARTNER_REQUEST_EXPIRED',
+                        title: 'Upcoming Night Update',
+                        body: 'The host has already found an event partner. Please find another event partner.',
+                        entityId: otherReq.id,
+                        data: { requestId: otherReq.id, status: 'CANCELLED', reason: 'SLOT_FILLED' },
+                    });
+                }
+
+                return { request, match, booking, conversation };
+            }
+
+            // Create Match Record (SPLIT or Payment Pending)
             const match = await NightPartnerMatch.create({
                 hostId: request.hostId,
                 partnerId: request.partnerId,
@@ -717,45 +1097,50 @@ export class NightPartnerService {
                 eventDate: request.eventDate,
                 eventTime: request.eventTime,
                 requestId: request.id,
-                paymentMode: (request.paymentMode as any) || NightPartnerPaymentMode.SELF_PAY,
-                status: NightPartnerMatchStatus.MATCHED,
+                paymentMode: isSplit ? NightPartnerPaymentMode.SPLIT : NightPartnerPaymentMode.SELF_PAY,
+                status: isHostPrepaid ? NightPartnerMatchStatus.PAYMENT_PENDING : NightPartnerMatchStatus.MATCHED,
+                totalAmount,
+                hostAmount,
+                partnerAmount,
+                hostPaid: isHostPrepaid,
+                partnerPaid: false,
                 maxPartners: 1,
             }, { transaction: t });
 
-            // Auto-remove / deactivate any open find-partner party plans for host and partner at this venue on this date
-            try {
-                const PartyPlan = (await import('../models/PartyPlan')).default;
-                const { PartyPlanStatus } = await import('../models/PartyPlan');
-                await PartyPlan.update(
-                    { status: PartyPlanStatus.CANCELLED, isLive: false },
-                    {
-                        where: {
-                            userId: { [Op.in]: [request.hostId, request.partnerId] },
-                            venueId: request.venueId,
-                            status: PartyPlanStatus.ACTIVE,
-                        },
-                        transaction: t,
-                    }
-                );
-            } catch (pPlanErr) {
-                logger.warn(`[NightPartnerService] Non-fatal: could not update party plans upon match: ${pPlanErr}`);
-            }
+            // If SPLIT and Host is already paid, notify partner to pay their share
+            if (isSplit && isHostPrepaid) {
+                this.emitNotification(request.partnerId, {
+                    type: 'PAYMENT_PENDING',
+                    title: 'Pay Your Share (Split) 💳',
+                    body: `You accepted the invite! Host already paid their share. Please pay your share (₹${partnerAmount}) to confirm tickets.`,
+                    entityId: match.id,
+                    data: { matchId: match.id, amount: partnerAmount, paymentMode: 'SPLIT' },
+                });
 
-            // Notify Host to complete payment
-            this.emitNotification(request.hostId, {
-                type: 'PARTNER_REQUEST_ACCEPTED',
-                title: 'It\'s a Match! 🎉',
-                body: `Your partner accepted your request! Tap to complete payment and confirm booking.`,
-                entityId: match.id,
-                data: { matchId: match.id, venueId: request.venueId, eventDate: request.eventDate },
-            });
+                this.emitNotification(request.hostId, {
+                    type: 'PARTNER_REQUEST_ACCEPTED',
+                    title: 'Partner Accepted! 🎉',
+                    body: `Your partner accepted! Waiting for their split ticket payment to confirm booking.`,
+                    entityId: match.id,
+                    data: { matchId: match.id, venueId: request.venueId, eventDate: request.eventDate },
+                });
+            } else {
+                // Notify Host to complete payment
+                this.emitNotification(request.hostId, {
+                    type: 'PARTNER_REQUEST_ACCEPTED',
+                    title: 'It\'s a Match! 🎉',
+                    body: `Your partner accepted your request! Tap to complete payment and confirm booking.`,
+                    entityId: match.id,
+                    data: { matchId: match.id, venueId: request.venueId, eventDate: request.eventDate },
+                });
+            }
 
             // Inform other invited partners that slot was filled
             for (const otherReq of otherPendingRequests) {
                 this.emitNotification(otherReq.partnerId, {
                     type: 'PARTNER_REQUEST_EXPIRED',
                     title: 'Upcoming Night Update',
-                    body: 'Another partner has already joined this upcoming night with the host.',
+                    body: 'The host has already found an event partner. Please find another event partner.',
                     entityId: otherReq.id,
                     data: { requestId: otherReq.id, status: 'CANCELLED', reason: 'SLOT_FILLED' },
                 });
@@ -766,7 +1151,7 @@ export class NightPartnerService {
     }
 
     /**
-     * Host cancels a pending request
+     * Host cancels a pending request (direct cancellation with smart wallet refund if paid)
      */
     public static async cancelRequest(requestId: string, hostId: string): Promise<boolean> {
         const request = await NightPartnerRequest.findByPk(requestId);
@@ -777,7 +1162,51 @@ export class NightPartnerService {
             throw new Error('CANNOT_CANCEL_ACCEPTED_REQUEST');
         }
 
-        await request.update({ status: NightPartnerRequestStatus.CANCELLED });
+        if (request.status === NightPartnerRequestStatus.CANCELLED) {
+            return true;
+        }
+
+        await sequelize.transaction(async (t) => {
+            await request.update({ status: NightPartnerRequestStatus.CANCELLED }, { transaction: t });
+
+            // If host paid for the invite, refund host atomically to Smart Wallet
+            if (request.hostPaid && request.hostAmount && Number(request.hostAmount) > 0) {
+                try {
+                    const SmartWallet = (await import('../models/SmartWallet')).default;
+                    const WalletTransaction = (await import('../models/WalletTransaction')).default;
+
+                    let hostWallet = await SmartWallet.findOne({ where: { userId: hostId }, transaction: t });
+                    if (!hostWallet) {
+                        hostWallet = await SmartWallet.create({ userId: hostId, balance: 0 }, { transaction: t });
+                    }
+                    const openingBal = Number(hostWallet.balance || 0);
+                    const refundAmt = Number(request.hostAmount);
+                    const closingBal = openingBal + refundAmt;
+                    await hostWallet.increment('balance', { by: refundAmt, transaction: t });
+                    await WalletTransaction.create({
+                        walletId: hostWallet.id,
+                        userId: hostId,
+                        amount: refundAmt,
+                        openingBalance: openingBal,
+                        closingBalance: closingBal,
+                        transactionType: 'refund' as any,
+                        status: 'success' as any,
+                        reference: `req_cancel_${request.id}`,
+                    }, { transaction: t });
+                } catch (wErr) {
+                    logger.warn(`[NightPartnerService] Wallet refund warning on request cancellation: ${wErr}`);
+                }
+            }
+        });
+
+        this.emitNotification(request.partnerId, {
+            type: 'PARTNER_REQUEST_CANCELLED',
+            title: 'Upcoming Night Request Cancelled',
+            body: 'The host has cancelled the invitation.',
+            entityId: request.id,
+        });
+
+        this.invalidateUpcomingNightCaches();
         return true;
     }
 
@@ -1858,3 +2287,6 @@ export class NightPartnerService {
         }
     }
 }
+
+export default NightPartnerService;
+

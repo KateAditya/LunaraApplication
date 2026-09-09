@@ -4660,6 +4660,81 @@ class ApiService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> initiateNightInvitePayment({
+    required String venueId,
+    required String date,
+    required String paymentMode,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/nights/invite-payment/initiate',
+        body: {
+          'hostId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+          'paymentMode': paymentMode,
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Map<String, dynamic>.from(data['data']);
+        }
+      }
+    } catch (e) {
+      debugPrint('initiateNightInvitePayment error: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> verifyNightInvitePayment({
+    required String partnerId,
+    required String venueId,
+    required String date,
+    String? time,
+    required String paymentMode,
+    String? razorpayOrderId,
+    String? razorpayPaymentId,
+    String? razorpaySignature,
+    String paymentMethod = 'razorpay',
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    try {
+      final response = await post(
+        '/api/mobile/nights/invite-payment/verify',
+        body: {
+          'hostId': userId,
+          'partnerId': partnerId,
+          'venueId': venueId,
+          'eventDate': date,
+          'eventTime': time ?? '20:00',
+          'paymentMode': paymentMode,
+          'razorpayOrderId': razorpayOrderId,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+          'paymentMethod': paymentMethod,
+        },
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 || (data is Map && data['success'] == true)) {
+        clearBookingCache();
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerLiveFeedSync();
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+        return {'success': true};
+      }
+      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Verification failed'};
+    } catch (e) {
+      debugPrint('verifyNightInvitePayment error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   static Future<bool> respondToNightPartnerRequest({
     required String requestId,
     required String action, // 'accept' | 'decline'

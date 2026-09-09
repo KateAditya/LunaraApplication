@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { NightPartnerService } from '../services/NightPartnerService';
+import NightPartnerService from '../services/NightPartnerService';
 import { logger } from '../config/logger';
 
 export const checkUserInterest = async (req: Request, res: Response): Promise<void> => {
@@ -113,6 +113,88 @@ export const getPartnerProfilePreview = async (req: Request, res: Response): Pro
     } catch (err: any) {
         logger.error('getPartnerProfilePreview error:', err);
         res.status(400).json({ success: false, message: err.message || 'Failed to fetch partner profile preview' });
+    }
+};
+
+export const initiateInviteOrder = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { venueId, eventDate, paymentMode } = req.body;
+        const hostId = req.user!.id;
+        if (!venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
+            return;
+        }
+
+        const orderData = await NightPartnerService.initiateInviteOrder(
+            hostId,
+            String(venueId),
+            String(eventDate),
+            paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
+        );
+        res.json({
+            success: true,
+            ...orderData,
+        });
+    } catch (err: any) {
+        logger.error('initiateInviteOrder error:', err);
+        res.status(400).json({ success: false, message: err.message || 'Failed to initiate invite payment' });
+    }
+};
+
+export const verifyInvitePaymentAndSend = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const {
+            partnerId,
+            venueId,
+            eventDate,
+            eventTime,
+            paymentMode,
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            paymentMethod,
+        } = req.body;
+        const hostId = req.user!.id;
+
+        if (!partnerId || !venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'partnerId, venueId, and eventDate are required' });
+            return;
+        }
+
+        const isWallet = paymentMethod?.toString().toLowerCase().includes('wallet');
+        if (!isWallet && (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
+            res.status(400).json({ success: false, message: 'Payment verification parameters are required' });
+            return;
+        }
+
+        const partnerRequest = await NightPartnerService.verifyInvitePaymentAndSend({
+            hostId,
+            partnerId,
+            venueId,
+            eventDate,
+            eventTime,
+            paymentMode: paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY',
+            razorpayOrderId: razorpay_order_id || 'wallet_payment',
+            razorpayPaymentId: razorpay_payment_id || 'wallet_payment',
+            razorpaySignature: razorpay_signature || 'mock_signature',
+            paymentMethod: isWallet ? 'wallet' : 'razorpay',
+        });
+
+        res.status(201).json({
+            success: true,
+            message: 'Payment verified and invitation sent successfully! 🎉',
+            data: partnerRequest,
+        });
+    } catch (err: any) {
+        logger.error('verifyInvitePaymentAndSend error:', err);
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to verify payment and send invitation',
+            ...(err.timeLock || {}),
+        });
     }
 };
 
@@ -288,6 +370,8 @@ export default {
     getInterestedPartners,
     getAvailableInvitees,
     getPartnerProfilePreview,
+    initiateInviteOrder,
+    verifyInvitePaymentAndSend,
     sendPartnerRequest,
     respondToRequest,
     cancelRequest,
