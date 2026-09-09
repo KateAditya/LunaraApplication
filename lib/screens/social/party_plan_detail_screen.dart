@@ -303,6 +303,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     try {
       final res = await ApiService.acceptPartyPlanRequest(reqId);
       if (res != null) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
+        ApiService.planPostedNotifier.value++;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -356,6 +359,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     try {
       final success = await ApiService.rejectPartyPlanRequest(reqId);
       if (success) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
+        ApiService.planPostedNotifier.value++;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

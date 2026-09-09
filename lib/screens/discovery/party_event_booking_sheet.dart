@@ -199,6 +199,9 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
   void _navigateToTicket(String ticketCode, double totalPrice) {
     if (!mounted) return;
+    ApiService.clearBookingCache();
+    ApiService.notifyFeedNeedsRefresh();
+    ApiService.planPostedNotifier.value++;
     Navigator.pop(context); // Close bottom sheet
 
     final venueMap = widget.event['venueMap'] ?? widget.event['venue'];

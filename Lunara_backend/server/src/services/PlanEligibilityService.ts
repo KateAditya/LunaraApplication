@@ -150,6 +150,7 @@ export class PlanEligibilityService {
         existingPlanId?: string;
         existingPlanType?: string;
         details?: any;
+        config?: PlanTimeLockConfigAttributes;
     }> {
         // Active plan limits, daily/weekly limits, and time lock restrictions apply ONLY to Party Plans ('party_plan').
         // Group parties, large group parties, strangers meet, solo bookings, and regular table bookings are completely exempt.
@@ -340,7 +341,7 @@ export class PlanEligibilityService {
             };
         }
 
-        return { eligible: true };
+        return { eligible: true, config };
     }
 
     /**
@@ -378,8 +379,8 @@ export class PlanEligibilityService {
             // Execute original plan creation controller logic
             const result = await callback(t);
 
-            // Fetch config to calculate lock times
-            const config = await this.resolveConfig(userId, planType);
+            // Use already-resolved config to calculate lock times (avoid duplicate DB query)
+            const config = eligibility.config || await this.resolveConfig(userId, planType);
             const startTime = typeof startTimeInput === 'string' ? new Date(startTimeInput) : startTimeInput;
             const cooldownMs = config.defaultCooldownHours * 60 * 60 * 1000;
             const endTime = new Date(startTime.getTime() + cooldownMs);

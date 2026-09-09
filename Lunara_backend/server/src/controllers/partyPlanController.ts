@@ -2936,6 +2936,8 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
                     };
                     io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', cancelPayload);
                     io.to(`user_${callerUserId}`).emit('party_plan_request_cancelled', cancelPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', cancelPayload);
+                    io.to(`user_${callerUserId}`).emit('party_plan_request_updated', cancelPayload);
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                     io.to(`user_${callerUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                     io.emit('live_feed_update', { action: 'request_cancelled', planId: plan.id, requestId: request.id });
@@ -3062,6 +3064,8 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
                 };
                 io.to(`user_${plan.userId}`).emit('party_plan_request_cancelled', cancelPayload);
                 io.to(`user_${request.requesterId}`).emit('party_plan_request_cancelled', cancelPayload);
+                io.to(`user_${plan.userId}`).emit('party_plan_request_updated', cancelPayload);
+                io.to(`user_${request.requesterId}`).emit('party_plan_request_updated', cancelPayload);
                 io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                 io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
 
@@ -3425,6 +3429,8 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     };
                     io.to(`user_${request.requesterId}`).emit('party_plan_request_rejected', rejectPayload);
                     io.to(`user_${plan.userId}`).emit('party_plan_request_rejected', rejectPayload);
+                    io.to(`user_${request.requesterId}`).emit('party_plan_request_updated', rejectPayload);
+                    io.to(`user_${plan.userId}`).emit('party_plan_request_updated', rejectPayload);
                     io.to(`user_${request.requesterId}`).emit('plan_unavailable', {
                         planId: plan.id, requestId: request.id,
                     });

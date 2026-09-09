@@ -4202,23 +4202,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   }
 
                                   try {
-                                    // Instant pre-validation against party plan limit
-                                    try {
-                                      final limitRes = await ApiService.get('/api/mobile/subscriptions/party-plan-limit');
-                                      if (limitRes.statusCode == 200) {
-                                        final limitData = jsonDecode(limitRes.body)['data'];
-                                        if (limitData != null && limitData['allowed'] == false) {
-                                          setSheetState(() => isPosting = false);
-                                          showSubscriptionLimitDialog(
-                                            context,
-                                            feature: SubLimitFeature.partyCreation,
-                                            customMessage: limitData['message'],
-                                          );
-                                          return;
-                                        }
-                                      }
-                                    } catch (_) {}
-
                                     final response = await ApiService.post(
                                       '/api/mobile/party-plans',
                                       body: {

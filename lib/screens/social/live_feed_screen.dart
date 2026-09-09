@@ -1047,6 +1047,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ...List<Map<String, dynamic>>.from(data['feed'] ?? []),
         ...List<Map<String, dynamic>>.from(data['myRequests'] ?? []),
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
+        ...List<Map<String, dynamic>>.from(data['pendingPayments'] ?? []),
       ];
 
       if (mounted &&
@@ -1184,9 +1185,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final updated = Map<String, dynamic>.from(f);
         updated['status'] = newStatus;
         updated['requestStatus'] = newStatus;
-        if (newStatus == 'cancelled') {
-          updated['lifecycleStatus'] = 'cancelled';
-          updated['isCancelled'] = true;
+        if (newStatus == 'cancelled' || newStatus == 'rejected' || newStatus == 'withdrawn') {
+          updated['lifecycleStatus'] = newStatus == 'cancelled' ? 'cancelled' : updated['lifecycleStatus'];
+          updated['isCancelled'] = newStatus == 'cancelled';
+          if (pId.isNotEmpty) {
+            ApiService.markPartyPlanAsCancelledLocal(pId);
+          } else if (rId.isNotEmpty) {
+            ApiService.markPartyPlanAsCancelledLocal(rId);
+          }
+        } else if (newStatus == 'accepted') {
+          updated['lifecycleStatus'] = 'payment_pending';
+          updated['matchedRequestId'] = reqId;
+          if (pId.isNotEmpty) {
+            ApiService.markPartyPlanAsRequestedLocal(pId, {'id': reqId, 'planId': pId, 'status': 'accepted'});
+          }
         }
         if (updated['myRequest'] is Map) {
           updated['myRequest'] = {
@@ -2225,6 +2237,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final res = await ApiService.acceptPartyPlanRequest(reqId);
       if (res != null) {
         _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Request accepted successfully!'),
@@ -2264,6 +2278,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final success = await ApiService.rejectPartyPlanRequest(reqId);
       if (success) {
         _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Request declined.'),
@@ -2829,13 +2845,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (!OptimisticActionGuard.start('FEED_CANCEL_REQ:$reqId')) return;
 
     final prevFeedItems = List<Map<String, dynamic>>.from(_feedItems);
-    setState(() {
-      _feedItems.removeWhere(
-        (item) =>
-            item['id']?.toString() == reqId ||
-            item['requestId']?.toString() == reqId,
-      );
-    });
+    _optimisticallyUpdatePartyPlanRequest(reqId, 'cancelled');
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Request cancelled successfully.'),
@@ -2849,11 +2860,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         success = await ApiService.withdrawPartyPlanRequest(reqId);
       }
       if (success) {
-        _loadFeed(showLoader: false);
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
+        _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (mounted) {
           setState(() {
             _feedItems = prevFeedItems;
+            _cachedTimeline = _buildUnifiedTimeline();
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -2868,6 +2882,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         setState(() {
           _feedItems = prevFeedItems;
+          _cachedTimeline = _buildUnifiedTimeline();
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
@@ -7885,27 +7900,44 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accent = const Color(0xFF8B5CF6);
         body =
             'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
-        statusSummary = 'Deposit Required';
+        final isPayingHost = _activeActionKeys.contains('pay_host_pp_$planId');
         actionsList = [
           NotificationAction(
-            label: 'Pay Deposit (₹${depositAmt.toStringAsFixed(0)})',
+            label: isPayingHost
+                ? 'Opening Gateway...'
+                : 'Pay Deposit (₹${depositAmt.toStringAsFixed(0)})',
             icon: Icons.payment_rounded,
             isPrimary: true,
-            onTap: () async {
-              await _startHostRazorpayDirectPaymentInLiveFeed(
-                partyPlanId: planId,
-                venueName: venueName,
-                orderId: hostOrderId,
-                depositAmount: depositAmt,
-                onSuccess: () async {
-                  _optimisticallyUpdatePartyPlanPayment(
-                    planId: planId,
-                    isHost: true,
-                  );
-                  await _loadFeed(showLoader: false);
-                },
-              );
-            },
+            isLoading: isPayingHost,
+            onTap: isPayingHost
+                ? () {}
+                : () async {
+                    setState(
+                      () => _activeActionKeys.add('pay_host_pp_$planId'),
+                    );
+                    try {
+                      await _startHostRazorpayDirectPaymentInLiveFeed(
+                        partyPlanId: planId,
+                        venueName: venueName,
+                        orderId: hostOrderId,
+                        depositAmount: depositAmt,
+                        onSuccess: () async {
+                          _optimisticallyUpdatePartyPlanPayment(
+                            planId: planId,
+                            isHost: true,
+                          );
+                          await _loadFeed(showLoader: false);
+                        },
+                      );
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () =>
+                              _activeActionKeys.remove('pay_host_pp_$planId'),
+                        );
+                      }
+                    }
+                  },
           ),
           NotificationAction(
             label: 'View Plan',
@@ -8021,15 +8053,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             : 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
         partnerUser = joiner.isNotEmpty ? joiner : null;
         partnerRoleLabel = 'Partner:';
-        statusSummary = 'Awaiting Joiner Deposit';
-
+        final isRevokingJoiner = _activeActionKeys.contains('reject_party_$reqId');
         actionsList = [
           NotificationAction(
-            label: 'Revoke',
+            label: isRevokingJoiner ? 'Revoking...' : 'Revoke',
             icon: Icons.cancel_rounded,
             isPrimary: false,
+            isLoading: isRevokingJoiner,
             color: Colors.grey[200],
-            onTap: () => _handleRejectPartyPlan(reqId),
+            onTap: isRevokingJoiner ? () {} : () => _handleRejectPartyPlan(reqId),
           ),
           NotificationAction(
             label: 'View Plan',
@@ -8362,38 +8394,54 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ? timeRemainingText
             : 'Window: $countdownLabel';
 
+        final isPayingJoiner = _activeActionKeys.contains(
+          'pay_joiner_pp_$planId',
+        );
+        final isDecliningOrWithdrawing =
+            _activeActionKeys.contains('FEED_CANCEL_REQ:$reqId') ||
+            _activeActionKeys.contains('reject_party_$reqId');
+
         actionsList = [
           NotificationAction(
-            label: isPaymentExpired
-                ? 'Payment Window Expired'
-                : 'Pay Deposit (₹99) • $countdownLabel',
+            label: isPayingJoiner
+                ? 'Opening Gateway...'
+                : (isPaymentExpired
+                    ? 'Payment Window Expired'
+                    : 'Pay Deposit (₹99) • $countdownLabel'),
             icon: Icons.payment_rounded,
             isPrimary: true,
-            onTap: () async {
-              if (isPaymentExpired) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Payment window has expired.'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-              await _startJoinerRazorpayDirectPaymentInLiveFeed(
-                partyPlanId: planId,
-                requestId: reqId,
-                venueName: venueName,
-                depositAmount: 99.0,
-                onSuccess: () async {
-                  _optimisticallyUpdatePartyPlanPayment(
-                    planId: planId,
-                    isHost: false,
-                    requestId: reqId,
-                  );
-                  await _loadFeed(showLoader: false);
-                },
-              );
-            },
+            isLoading: isPayingJoiner,
+            onTap: (isPayingJoiner || isPaymentExpired)
+                ? () {}
+                : () async {
+                    setState(
+                      () => _activeActionKeys.add('pay_joiner_pp_$planId'),
+                    );
+                    try {
+                      await _startJoinerRazorpayDirectPaymentInLiveFeed(
+                        partyPlanId: planId,
+                        requestId: reqId,
+                        venueName: venueName,
+                        depositAmount: 99.0,
+                        onSuccess: () async {
+                          _optimisticallyUpdatePartyPlanPayment(
+                            planId: planId,
+                            isHost: false,
+                            requestId: reqId,
+                          );
+                          await _loadFeed(showLoader: false);
+                        },
+                      );
+                    } finally {
+                      if (mounted) {
+                        setState(
+                          () => _activeActionKeys.remove(
+                            'pay_joiner_pp_$planId',
+                          ),
+                        );
+                      }
+                    }
+                  },
           ),
           NotificationAction(
             label: 'View Plan',
@@ -8415,13 +8463,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
           NotificationAction(
-            label: isPrivateInvite ? 'Decline' : 'Withdraw',
+            label: isDecliningOrWithdrawing
+                ? (isPrivateInvite ? 'Declining...' : 'Withdrawing...')
+                : (isPrivateInvite ? 'Decline' : 'Withdraw'),
             icon: Icons.cancel_rounded,
             isPrimary: false,
+            isLoading: isDecliningOrWithdrawing,
             color: Colors.grey[200],
-            onTap: () => isPrivateInvite
-                ? _handleRejectPartyPlan(reqId)
-                : _handleCancelMyRequest(reqId),
+            onTap: isDecliningOrWithdrawing
+                ? () {}
+                : () => isPrivateInvite
+                    ? _handleRejectPartyPlan(reqId)
+                    : _handleCancelMyRequest(reqId),
           ),
         ];
       } else if (isPrivateInvite &&
@@ -8467,14 +8520,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'REQUEST SENT';
         body =
             'Request sent to $hostName for Party Plan at $venueName. Waiting for host approval.';
-        statusSummary = 'Pending Approval';
+        final isWithdrawingPending =
+            _activeActionKeys.contains('FEED_CANCEL_REQ:$reqId');
         actionsList = [
           NotificationAction(
-            label: 'Withdraw Request',
+            label: isWithdrawingPending ? 'Withdrawing...' : 'Withdraw Request',
             icon: Icons.cancel_rounded,
             isPrimary: false,
+            isLoading: isWithdrawingPending,
             color: Colors.grey[200],
-            onTap: () => _handleCancelMyRequest(reqId),
+            onTap: isWithdrawingPending
+                ? () {}
+                : () => _handleCancelMyRequest(reqId),
           ),
         ];
       } else if (myStatus == 'rejected' || myStatus == 'declined') {
@@ -8853,6 +8910,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (isHost) {
         userRoleLabel = '👑 Your Stranger Meet';
+        final isMarkingNotStarted = _activeActionKeys.contains('sm_not_started_$meetId');
         actionsList = [
           NotificationAction(
             label: 'Started',
@@ -8870,11 +8928,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             },
           ),
           NotificationAction(
-            label: 'Not Started',
+            label: isMarkingNotStarted ? 'Marking...' : 'Not Started',
             icon: Icons.cancel_outlined,
             isPrimary: false,
+            isLoading: isMarkingNotStarted,
             color: Colors.redAccent,
-            onTap: () => _handleMarkStrangersMeetNotStarted(meetId),
+            onTap: isMarkingNotStarted ? () {} : () => _handleMarkStrangersMeetNotStarted(meetId),
           ),
         ];
       } else {
@@ -8916,12 +8975,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (isHost) {
         userRoleLabel = '👑 Your Stranger Meet';
+        final isEndingMeet = _activeActionKeys.contains('sm_end_$meetId');
         actionsList = [
           NotificationAction(
-            label: 'Yes, Ended',
+            label: isEndingMeet ? 'Ending...' : 'Yes, Ended',
             icon: Icons.check_circle_rounded,
             isPrimary: true,
-            onTap: () => _handleConfirmStrangersMeetEndedDirect(meetId),
+            isLoading: isEndingMeet,
+            onTap: isEndingMeet ? () {} : () => _handleConfirmStrangersMeetEndedDirect(meetId),
           ),
           NotificationAction(
             label: 'Still Going',
@@ -11461,7 +11522,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'mock_signature',
       );
       if (paymentConfirmed && mounted) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         await onSuccess();
+        _loadFeed(showLoader: false, forceRefresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🎉 Host Safety Deposit Paid! Your plan is live.'),
@@ -11493,7 +11557,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       razorpay.clear();
       if (paymentConfirmed && mounted) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         await onSuccess();
+        _loadFeed(showLoader: false, forceRefresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -11912,7 +11979,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       razorpay.clear();
       if (paymentConfirmed && mounted) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         await onSuccess();
+        _loadFeed(showLoader: false, forceRefresh: true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -11923,7 +11993,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       } else if (mounted) {
         if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
+          ApiService.clearBookingCache();
+          ApiService.notifyFeedNeedsRefresh();
           await onSuccess();
+          _loadFeed(showLoader: false, forceRefresh: true);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('🎉 Safety Deposit Paid! Match confirmed.'),
@@ -12015,6 +12088,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _handleConfirmStrangersMeetEndedDirect(String meetId) async {
+    final actionKey = 'sm_end_$meetId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
+
     try {
       await ApiService.confirmStrangersMeetEnded(meetId);
       if (mounted) {
@@ -12043,10 +12120,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 
   Future<void> _handleMarkStrangersMeetNotStarted(String meetId) async {
+    final actionKey = 'sm_not_started_$meetId';
+    if (_activeActionKeys.contains(actionKey)) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -12094,6 +12176,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (confirmed != true) return;
 
+    setState(() => _activeActionKeys.add(actionKey));
     try {
       await ApiService.reportStrangersMeetNotStarted(meetId);
       if (mounted) {
@@ -12122,6 +12205,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
   }
 }
