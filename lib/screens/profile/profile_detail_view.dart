@@ -61,7 +61,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   bool _isLiked = false;
   bool _isSuperLiked = false;
   bool _isLoadingSwipeStatus = false;
-  bool _isLiking = false;
   bool _isSuperLiking = false;
 
   @override
@@ -1161,19 +1160,10 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                     ),
                     child: IconButton(
                       disabledColor: Colors.white,
-                      icon: _isLiking
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Icon(
-                              isLiked ? Icons.favorite : Icons.favorite_border,
-                              color: Colors.white,
-                            ),
+                      icon: Icon(
+                        isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: Colors.white,
+                      ),
                       onPressed: () async {
                         final currentlyLiked = _isLiked;
                         if (!currentlyLiked) {
@@ -1256,8 +1246,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 250),
                     child: Text(
-                      _isLiking ? 'Liking...' : (isLiked ? 'LIKED ✓' : 'Like'),
-                      key: ValueKey('${isLiked}_$_isLiking'),
+                      isLiked ? 'LIKED ✓' : 'Like',
+                      key: ValueKey(isLiked),
                       style: TextStyle(
                         fontSize: 11,
                         color: isLiked
