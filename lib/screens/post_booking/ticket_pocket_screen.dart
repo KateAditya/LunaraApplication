@@ -1355,11 +1355,15 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         ? 'You have no cancelled tickets. All your confirmed bookings are active or completed.'
         : 'Book tables, host party plans, join group parties, or meet new people.';
 
-    return Center(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
+    return RefreshIndicator(
+      color: _lunaraPurple,
+      onRefresh: () => _loadBookings(forceRefresh: true),
+      child: Center(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
@@ -1435,8 +1439,9 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildTicketCard(
     Map<String, dynamic> booking, {

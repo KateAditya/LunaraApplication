@@ -1244,25 +1244,26 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
             );
         }
 
-        // Find the latest legitimate upcoming or active subscription to determine start date
-        const lastUpcoming = await UserSubscriptionModel.findOne({
-            where: {
-                userId,
-                status: SubscriptionStatusEnum.UPCOMING,
-                endDate: { [Op.lt]: new Date(2050, 0, 1) }
-            },
-            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
-            order: [['endDate', 'DESC']]
-        });
-        
-        const activeSubForDate = await UserSubscriptionModel.findOne({
-            where: {
-                userId,
-                status: SubscriptionStatusEnum.ACTIVE,
-                endDate: { [Op.gt]: new Date(), [Op.lt]: new Date(2050, 0, 1) }
-            },
-            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
-        });
+        // Find the latest legitimate upcoming or active subscription to determine start date (parallel — was sequential)
+        const [lastUpcoming, activeSubForDate] = await Promise.all([
+            UserSubscriptionModel.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatusEnum.UPCOMING,
+                    endDate: { [Op.lt]: new Date(2050, 0, 1) }
+                },
+                include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
+                order: [['endDate', 'DESC']]
+            }),
+            UserSubscriptionModel.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatusEnum.ACTIVE,
+                    endDate: { [Op.gt]: new Date(), [Op.lt]: new Date(2050, 0, 1) }
+                },
+                include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
+            }),
+        ]);
 
         const startDate = new Date();
         if (lastUpcoming && lastUpcoming.endDate > startDate) {

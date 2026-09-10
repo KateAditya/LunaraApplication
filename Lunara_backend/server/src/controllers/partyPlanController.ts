@@ -355,16 +355,18 @@ async function invalidateCompetingRequests(
         transaction
     });
 
-    for (const req of otherRequests) {
-        await req.update({
-            status: PartyPlanRequestStatus.CANCELLED,
-            previousStatus: req.status,
-            cancelledAt: new Date(),
-            cancelledBy: plan.userId,
-            cancellationReason: 'partner_already_selected',
-            paymentTimeoutAt: null,
-        }, { transaction });
-    }
+    await Promise.all(
+        otherRequests.map(req =>
+            req.update({
+                status: PartyPlanRequestStatus.CANCELLED,
+                previousStatus: req.status,
+                cancelledAt: new Date(),
+                cancelledBy: plan.userId,
+                cancellationReason: 'partner_already_selected',
+                paymentTimeoutAt: null,
+            }, { transaction })
+        )
+    );
 
     logger.info(`[invalidateCompetingRequests] Cancelled ${otherRequests.length} competing requests on plan ${plan.id} for partner request ${winningRequestId}`);
 
@@ -389,82 +391,89 @@ async function invalidateCompetingRequests(
                 io.emit('party_plan_deleted', { planId: plan.id });
             }
 
-            for (const req of otherRequests) {
-                try {
-                    await NotificationService.dispatch({
-                        recipientUserId: req.requesterId,
-                        actorUserId: plan.userId,
-                        eventType: 'plan_unavailable',
-                        category: 'requests',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: 'Party Plan Unavailable',
-                        body: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
-                        metadata: {
-                            partyPlanId: plan.id,
-                            planId: plan.id,
-                            requestId: req.id,
-                            hostId: plan.userId,
-                            hostName,
-                            status: 'NO_LONGER_AVAILABLE',
-                            reason: 'partner_already_selected',
-                        },
-                        idempotencyKey: `plan_unavailable_${plan.id}_${req.requesterId}`,
-                    });
+            await Promise.all(
+                otherRequests.map(async (req) => {
+                    try {
+                        await NotificationService.dispatch({
+                            recipientUserId: req.requesterId,
+                            actorUserId: plan.userId,
+                            eventType: 'plan_unavailable',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: 'Party Plan Unavailable',
+                            body: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                            metadata: {
+                                partyPlanId: plan.id,
+                                planId: plan.id,
+                                requestId: req.id,
+                                hostId: plan.userId,
+                                hostName,
+                                status: 'NO_LONGER_AVAILABLE',
+                                reason: 'partner_already_selected',
+                            },
+                            idempotencyKey: `plan_unavailable_${plan.id}_${req.requesterId}`,
+                        });
 
-                    if (io) {
-                        io.to(`user_${req.requesterId}`).emit('party_plan_partner_selected', {
-                            partyPlanId: plan.id,
-                            planId: plan.id,
-                            hostId: plan.userId,
-                            partnerId: winningRequesterId,
-                            status: 'PARTNER_SELECTED',
-                            message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
-                        });
-                        io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
-                            partyPlanId: plan.id,
-                            planId: plan.id,
-                            requestId: req.id,
-                            hostName,
-                            message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
-                        });
-                        io.to(`user_${req.requesterId}`).emit('party_plan_request_updated', {
-                            planId: plan.id,
-                            requestId: req.id,
-                            status: 'cancelled',
-                        });
-                        io.to(`user_${req.requesterId}`).emit('live_feed_update', {
-                            type: 'party_plan_partner_selected',
-                            partyPlanId: plan.id,
-                        });
+                        if (io) {
+                            io.to(`user_${req.requesterId}`).emit('party_plan_partner_selected', {
+                                partyPlanId: plan.id,
+                                planId: plan.id,
+                                hostId: plan.userId,
+                                partnerId: winningRequesterId,
+                                status: 'PARTNER_SELECTED',
+                                message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                            });
+                            io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                                partyPlanId: plan.id,
+                                planId: plan.id,
+                                requestId: req.id,
+                                hostName,
+                                message: `This Party Plan is no longer available. ${hostName} has joined with another partner. Find another Party Plan or create your own.`,
+                            });
+                            io.to(`user_${req.requesterId}`).emit('party_plan_request_updated', {
+                                planId: plan.id,
+                                requestId: req.id,
+                                status: 'cancelled',
+                            });
+                            io.to(`user_${req.requesterId}`).emit('live_feed_update', {
+                                type: 'party_plan_partner_selected',
+                                partyPlanId: plan.id,
+                            });
+                        }
+                    } catch (notifErr: any) {
+                        logger.warn(`Failed to dispatch plan_unavailable to user ${req.requesterId}:`, notifErr.message);
                     }
-                } catch (notifErr: any) {
-                    logger.warn(`Failed to dispatch plan_unavailable to user ${req.requesterId}:`, notifErr.message);
-                }
-            }
+                })
+            );
         } catch (err: any) {
-            logger.error('invalidateCompetingRequests post-commit notification error:', err);
+            logger.error('Error in invalidateCompetingRequests post-commit hook:', err);
         }
     };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// rejectAndNotifyConfirmedWinners — called on MATCH_CONFIRMED: REJECT all
-// remaining WAITING requests and notify them the plan is taken.
+// rejectAndNotifyStaleRequests — internal helper
+// When a Party Plan is confirmed with one partner, all OTHER pending/waiting
+// requests must be immediately marked as REJECTED and their submitters notified.
 // ─────────────────────────────────────────────────────────────────────────────
-async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: string, transaction?: Transaction) {
+async function rejectAndNotifyStaleRequests(
+    plan: PartyPlan,
+    winningRequestId: string,
+    transaction: any
+): Promise<void> {
     try {
         const otherRequests = await PartyPlanRequest.findAll({
             where: {
                 planId: plan.id,
-                id: { [Op.ne]: acceptedRequestId },
+                id: { [Op.ne]: winningRequestId },
                 status: {
                     [Op.in]: [
                         PartyPlanRequestStatus.PENDING,
                         PartyPlanRequestStatus.WAITING,
                         PartyPlanRequestStatus.PAYMENT_PENDING,
                     ]
-                },
+                }
             },
             transaction
         });
@@ -475,34 +484,36 @@ async function rejectAndNotifyStaleRequests(plan: PartyPlan, acceptedRequestId: 
             if (venue && venue.name) venueName = venue.name;
         }
 
-        for (const req of otherRequests) {
-            await req.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
+        await Promise.all(
+            otherRequests.map(async (req) => {
+                await req.update({ status: PartyPlanRequestStatus.REJECTED }, { transaction });
 
-            // Single authoritative notification — NotificationService handles DB + socket + FCM
-            setImmediate(async () => {
-                try {
-                    await NotificationService.dispatch({
-                        recipientUserId: req.requesterId,
-                        actorUserId: plan.userId,
-                        eventType: 'plan_unavailable',
-                        category: 'requests',
-                        entityType: 'party_plan',
-                        entityId: plan.id,
-                        title: '🔒 Plan Unavailable',
-                        body: `The Party Plan at ${venueName} has been confirmed with another partner.`,
-                        metadata: { partyPlanId: plan.id, requestId: req.id },
-                        idempotencyKey: `plan_unavailable_${req.id}`,
-                    });
+                // Single authoritative notification — NotificationService handles DB + socket + FCM
+                setImmediate(async () => {
+                    try {
+                        await NotificationService.dispatch({
+                            recipientUserId: req.requesterId,
+                            actorUserId: plan.userId,
+                            eventType: 'plan_unavailable',
+                            category: 'requests',
+                            entityType: 'party_plan',
+                            entityId: plan.id,
+                            title: '🔒 Plan Unavailable',
+                            body: `The Party Plan at ${venueName} has been confirmed with another partner.`,
+                            metadata: { partyPlanId: plan.id, requestId: req.id },
+                            idempotencyKey: `plan_unavailable_${req.id}`,
+                        });
 
-                    const { io } = require('../server');
-                    io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
-                        planId: plan.id, requestId: req.id,
-                    });
-                } catch (err: any) {
-                    logger.warn(`Failed to notify stale request ${req.id}:`, err.message);
-                }
-            });
-        }
+                        const { io } = require('../server');
+                        io.to(`user_${req.requesterId}`).emit('plan_unavailable', {
+                            planId: plan.id, requestId: req.id,
+                        });
+                    } catch (err: any) {
+                        logger.warn(`Failed to notify stale request ${req.id}:`, err.message);
+                    }
+                });
+            })
+        );
     } catch (err: any) {
         logger.error('Error in rejectAndNotifyStaleRequests:', err);
     }

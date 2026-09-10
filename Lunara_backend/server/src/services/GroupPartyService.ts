@@ -489,14 +489,17 @@ export class GroupPartyService {
             }
         });
 
-        let count = 0;
-        for (const party of expiredGroupParties) {
-            await party.update({
-                status: GroupPartyStatus.CANCELLED,
-                paymentStatus: GroupPartyPaymentStatus.FAILED
-            });
-            logger.info(`[GroupPartyService] Expired abandoned Small GroupParty ${party.id}`);
-            count++;
+        const count = expiredGroupParties.length;
+        if (count > 0) {
+            await Promise.all(
+                expiredGroupParties.map(party => {
+                    logger.info(`[GroupPartyService] Expired abandoned Small GroupParty ${party.id}`);
+                    return party.update({
+                        status: GroupPartyStatus.CANCELLED,
+                        paymentStatus: GroupPartyPaymentStatus.FAILED
+                    });
+                })
+            );
         }
 
         return count;

@@ -2490,7 +2490,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: () => _handleNotificationAction(item, 'DECLINE'),
+                  onPressed: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? null
+                      : () => _handleNotificationAction(item, 'DECLINE'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                     shape: RoundedRectangleBorder(
@@ -2498,11 +2500,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
-                  child: const Icon(
-                    Icons.close,
-                    color: Color(0xFF94A3B8),
-                    size: 18,
-                  ),
+                  child: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.close,
+                          color: Color(0xFF94A3B8),
+                          size: 18,
+                        ),
                 ),
               ],
             ),
@@ -3507,7 +3518,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: () => _handleNotificationAction(item, 'DECLINE'),
+                  onPressed: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? null
+                      : () => _handleNotificationAction(item, 'DECLINE'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFE2E8F0)),
                     backgroundColor: const Color(0xFFF8FAFC),
@@ -3517,21 +3530,30 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     minimumSize: const Size(0, 38),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
-                      SizedBox(width: 4),
-                      Text(
-                        'DECLINE',
-                        style: TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                  child: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF64748B),
+                          ),
+                        )
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                            SizedBox(width: 4),
+                            Text(
+                              'DECLINE',
+                              style: TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ),

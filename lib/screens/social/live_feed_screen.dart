@@ -2940,7 +2940,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   /// Cancels the CURRENT USER's own pending join request (joiner cancels their own request).
   Future<void> _handleCancelMyRequest(String reqId) async {
-    if (!OptimisticActionGuard.start('FEED_CANCEL_REQ:$reqId')) return;
+    final actionKey = 'FEED_CANCEL_REQ:$reqId';
+    if (!OptimisticActionGuard.start(actionKey)) return;
+    if (mounted) setState(() => _activeActionKeys.add(actionKey));
 
     final prevFeedItems = List<Map<String, dynamic>>.from(_feedItems);
     _optimisticallyUpdatePartyPlanRequest(reqId, 'cancelled');
@@ -2987,7 +2989,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       }
     } finally {
-      OptimisticActionGuard.end('FEED_CANCEL_REQ:$reqId');
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      OptimisticActionGuard.end(actionKey);
     }
   }
 
@@ -11155,8 +11158,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     )
                   : RefreshIndicator(
                       onRefresh: () async {
-                        await _loadFeed();
-                        await _loadGroupPartyBookings();
+                        await _loadFeed(forceRefresh: true);
                       },
                       color: LunaraTheme.electricViolet,
                       child: filteredItems.isEmpty

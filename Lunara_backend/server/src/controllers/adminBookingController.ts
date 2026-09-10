@@ -619,67 +619,72 @@ export const getBookings = async (req: Request, res: Response) => {
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        // 1. Fetch primary Booking records
-        let mainBookings = await Booking.findAll({
-            where,
-            include: [
-                {
-                    model: User,
-                    as: 'customer',
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl']
-                },
-                {
-                    model: Venue,
-                    as: 'venue',
-                    attributes: ['id', 'name', 'city', 'category']
-                }
-            ],
-            order: [[sortBy as string, sortOrder as string]],
-        });
+        const shouldFetchPartyPlans = !goingMode || goingMode === 'plan';
+        const shouldFetchGroupParties = !goingMode || isGroupRequested || goingMode === 'party_request';
 
-        let mappedList: any[] = mainBookings.map(b => b.toJSON());
-
-        // 2. Aggregate PartyPlan records if 'plan' tab or general view
-        if (!goingMode || goingMode === 'plan') {
-            try {
-                const partyPlans = await PartyPlan.findAll({
+        const [mainBookings, partyPlans, groupParties] = await Promise.all([
+            Booking.findAll({
+                where,
+                include: [
+                    {
+                        model: User,
+                        as: 'customer',
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl']
+                    },
+                    {
+                        model: Venue,
+                        as: 'venue',
+                        attributes: ['id', 'name', 'city', 'category']
+                    }
+                ],
+                order: [[sortBy as string, sortOrder as string]],
+            }),
+            shouldFetchPartyPlans
+                ? PartyPlan.findAll({
                     include: [
                         { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] },
                         { model: Venue, as: 'venue', attributes: ['id', 'name', 'city', 'category'] }
                     ],
                     order: [['createdAt', 'DESC']],
-                });
-                const mappedPlans = partyPlans.map(mapPartyPlanToBooking);
-                const existingIds = new Set(mappedList.map(b => b.id));
-                for (const p of mappedPlans) {
-                    if (!existingIds.has(p.id)) {
-                        mappedList.push(p);
-                    }
-                }
-            } catch (pErr) {
-                logger.warn('Failed to fetch PartyPlans in getBookings:', pErr);
-            }
-        }
-
-        // 3. Aggregate GroupParty records if 'group' tab, 'party_request' tab, or general view
-        if (!goingMode || isGroupRequested || goingMode === 'party_request') {
-            try {
-                const groupParties = await GroupParty.findAll({
+                }).catch(pErr => {
+                    logger.warn('Failed to fetch PartyPlans in getBookings:', pErr);
+                    return [];
+                })
+                : Promise.resolve([]),
+            shouldFetchGroupParties
+                ? GroupParty.findAll({
                     include: [
                         { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'] },
                         { model: Venue, as: 'venue', attributes: ['id', 'name', 'city', 'category'] }
                     ],
                     order: [['createdAt', 'DESC']],
-                });
-                const mappedGroups = groupParties.map(mapGroupPartyToBooking);
-                const existingIds = new Set(mappedList.map(b => b.id));
-                for (const g of mappedGroups) {
-                    if (!existingIds.has(g.id)) {
-                        mappedList.push(g);
-                    }
+                }).catch(gErr => {
+                    logger.warn('Failed to fetch GroupParties in getBookings:', gErr);
+                    return [];
+                })
+                : Promise.resolve([]),
+        ]);
+
+        let mappedList: any[] = mainBookings.map(b => b.toJSON());
+        const existingIds = new Set(mappedList.map(b => b.id));
+
+        if (partyPlans.length > 0) {
+            const mappedPlans = partyPlans.map(mapPartyPlanToBooking);
+            for (const p of mappedPlans) {
+                if (!existingIds.has(p.id)) {
+                    mappedList.push(p);
+                    existingIds.add(p.id);
                 }
-            } catch (gErr) {
-                logger.warn('Failed to fetch GroupParties in getBookings:', gErr);
+            }
+        }
+
+        if (groupParties.length > 0) {
+            const mappedGroups = groupParties.map(mapGroupPartyToBooking);
+            for (const g of mappedGroups) {
+                if (!existingIds.has(g.id)) {
+                    mappedList.push(g);
+                    existingIds.add(g.id);
+                }
             }
         }
 
@@ -765,35 +770,35 @@ export const getBookingStats = async (req: Request, res: Response) => {
             ]
         };
 
-        const totalBookings = await Booking.count({ where: baseValidWhere });
-        const pendingBookings = await Booking.count({
-            where: { ...where, isLargePartyRequest: true, status: 'pending' }
-        });
-        const confirmedBookings = await Booking.count({
-            where: { ...where, status: 'confirmed' }
-        });
-
-        // Calculate total revenue from totalAmount where status is confirmed/completed and paid
-        const totalRevenueResult = await Booking.sum('totalAmount', {
-            where: {
-                ...where,
-                status: { [Op.in]: ['confirmed', 'completed'] },
-                paymentStatus: 'paid'
-            }
-        });
-
-        // Calculate total refunds for cancelled / refunded bookings
-        const totalRefundsResult = await Booking.sum('refundAmount', {
-            where: {
-                ...where,
-                [Op.or]: [
-                    { status: 'cancelled' },
-                    { paymentStatus: 'refunded' },
-                    { refundStatus: 'COMPLETED' },
-                    { refundAmount: { [Op.gt]: 0 } }
-                ]
-            }
-        }) || 0;
+        const [
+            totalBookings,
+            pendingBookings,
+            confirmedBookings,
+            totalRevenueResult,
+            totalRefundsResult
+        ] = await Promise.all([
+            Booking.count({ where: baseValidWhere }),
+            Booking.count({ where: { ...where, isLargePartyRequest: true, status: 'pending' } }),
+            Booking.count({ where: { ...where, status: 'confirmed' } }),
+            Booking.sum('totalAmount', {
+                where: {
+                    ...where,
+                    status: { [Op.in]: ['confirmed', 'completed'] },
+                    paymentStatus: 'paid'
+                }
+            }),
+            Booking.sum('refundAmount', {
+                where: {
+                    ...where,
+                    [Op.or]: [
+                        { status: 'cancelled' },
+                        { paymentStatus: 'refunded' },
+                        { refundStatus: 'COMPLETED' },
+                        { refundAmount: { [Op.gt]: 0 } }
+                    ]
+                }
+            }).then(res => res || 0),
+        ]);
 
         const netRevenue = Math.max(0, (totalRevenueResult || 0) - Number(totalRefundsResult));
 

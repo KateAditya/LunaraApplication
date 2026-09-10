@@ -1,4 +1,4 @@
-import { Transaction, Op } from 'sequelize';
+import { Transaction, Op, fn, col } from 'sequelize';
 import sequelize from '../config/database';
 import NightInterest, { NightInterestStatus } from '../models/NightInterest';
 import NightPartnerRequest, { NightPartnerRequestStatus } from '../models/NightPartnerRequest';
@@ -1055,64 +1055,86 @@ export class NightPartnerService {
         return request;
     }
 
+    private static _acceptSlotQueues: Map<string, Promise<any>> = new Map();
+
+    private static async _withSlotLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+        const currentPromise = NightPartnerService._acceptSlotQueues.get(key) || Promise.resolve();
+        let release: () => void = () => {};
+        const nextPromise = new Promise<void>((resolve) => { release = resolve; });
+        NightPartnerService._acceptSlotQueues.set(key, currentPromise.then(() => nextPromise));
+
+        try {
+            await currentPromise;
+            return await fn();
+        } finally {
+            release();
+            if (NightPartnerService._acceptSlotQueues.get(key) === nextPromise) {
+                NightPartnerService._acceptSlotQueues.delete(key);
+            }
+        }
+    }
+
     /**
-     * Respond to a Partner Request (Accept / Decline) with Transactional Concurrency Lock
+     * Respond to a Night Partner Request (Accept / Decline) with strict ACID transaction
      */
     public static async respondToRequest(
         requestId: string,
         partnerId: string,
         action: 'accept' | 'decline'
     ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch; booking?: Booking; conversation?: Conversation }> {
-        return await sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
-            const request = await NightPartnerRequest.findByPk(requestId, {
-                lock: t.LOCK.UPDATE,
-                transaction: t,
-            });
-
-            if (!request) {
-                throw new Error('REQUEST_NOT_FOUND');
-            }
-
-            if (request.partnerId !== partnerId) {
-                throw new Error('UNAUTHORIZED_REQUEST_ACTION');
-            }
-
-            if (request.status !== NightPartnerRequestStatus.PENDING) {
-                throw new Error('REQUEST_ALREADY_PROCESSED');
-            }
-
-            if (new Date() > new Date(request.expiresAt)) {
-                await request.update({ status: NightPartnerRequestStatus.EXPIRED }, { transaction: t });
-                throw new Error('REQUEST_EXPIRED');
-            }
-
-            if (action === 'decline') {
-                await request.update({ status: NightPartnerRequestStatus.DECLINED }, { transaction: t });
-                this.emitNotification(request.hostId, {
-                    type: 'PARTNER_REQUEST_DECLINED',
-                    title: 'Partner Request Update',
-                    body: 'Your partner request was not accepted.',
-                    entityId: request.id,
+        const initialReq = await NightPartnerRequest.findByPk(requestId);
+        const lockKey = initialReq ? `slot_${initialReq.hostId}_${initialReq.venueId}_${initialReq.eventDate}` : `req_slot_${requestId}`;
+        return await this._withSlotLock(lockKey, async () => {
+            return await sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
+                const request = await NightPartnerRequest.findByPk(requestId, {
+                    lock: t.LOCK.UPDATE,
+                    transaction: t,
                 });
-                return { request };
-            }
 
-            // ACTION: ACCEPT -> Atomic Capacity, Time-Lock & Match Creation Check
-            const existingHostMatch = await NightPartnerMatch.findOne({
-                where: {
-                    hostId: request.hostId,
-                    venueId: request.venueId,
-                    eventDate: request.eventDate,
-                    status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-                },
-                lock: t.LOCK.UPDATE,
-                transaction: t,
-            });
+                if (!request) {
+                    throw new Error('REQUEST_NOT_FOUND');
+                }
 
-            if (existingHostMatch) {
-                await request.update({ status: NightPartnerRequestStatus.DECLINED }, { transaction: t });
-                throw new Error('MATCH_SLOT_FILLED');
-            }
+                if (request.partnerId !== partnerId) {
+                    throw new Error('UNAUTHORIZED_REQUEST_ACTION');
+                }
+
+                if (request.status !== NightPartnerRequestStatus.PENDING) {
+                    throw new Error('REQUEST_ALREADY_PROCESSED');
+                }
+
+                if (new Date() > new Date(request.expiresAt)) {
+                    await request.update({ status: NightPartnerRequestStatus.EXPIRED }, { transaction: t });
+                    throw new Error('REQUEST_EXPIRED');
+                }
+
+                if (action === 'decline') {
+                    await request.update({ status: NightPartnerRequestStatus.DECLINED }, { transaction: t });
+                    this.emitNotification(request.hostId, {
+                        type: 'PARTNER_REQUEST_DECLINED',
+                        title: 'Partner Request Update',
+                        body: 'Your partner request was not accepted.',
+                        entityId: request.id,
+                    });
+                    return { request };
+                }
+
+                // ACTION: ACCEPT -> Atomic Capacity, Time-Lock & Match Creation Check
+                const existingHostMatch = await NightPartnerMatch.findOne({
+                    where: {
+                        hostId: request.hostId,
+                        venueId: request.venueId,
+                        eventDate: request.eventDate,
+                        status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+                    },
+                    lock: t.LOCK.UPDATE,
+                    transaction: t,
+                });
+
+                if (existingHostMatch) {
+                    await request.update({ status: NightPartnerRequestStatus.DECLINED }, { transaction: t });
+                    throw new Error('MATCH_SLOT_FILLED');
+                }
 
             const eventDateTime = parseBookingDateTime(request.eventDate, request.eventTime);
             const partnerTimeLock = await EventTimeLockService.validateFourHourGap(partnerId, eventDateTime, 'party_plan', undefined, { transaction: t });
@@ -1343,6 +1365,7 @@ export class NightPartnerService {
             }
 
             return { request, match };
+            });
         });
     }
 
@@ -1962,40 +1985,62 @@ export class NightPartnerService {
         const eventPosts: any[] = [];
         const seenVenueIds = new Set<string>();
 
+        const adVenues = activeAds.map((ad: any) => ad.venue).filter(Boolean);
+        const adVenueIds = Array.from(new Set(adVenues.map((v: any) => v.id)));
+
+        // Batch pre-fetch interest counts and user-specific match/interest state
+        const countMap = new Map<string, number>();
+        let userInterestVenueSet = new Set<string>();
+        let userMatchVenueSet = new Set<string>();
+
+        if (adVenueIds.length > 0) {
+            const interestCounts = await NightInterest.findAll({
+                where: {
+                    venueId: { [Op.in]: adVenueIds },
+                    status: NightInterestStatus.INTERESTED,
+                },
+                attributes: ['venueId', [fn('COUNT', col('id')), 'count']],
+                group: ['venueId'],
+                raw: true,
+            });
+            for (const row of interestCounts as any[]) {
+                countMap.set(row.venueId, parseInt(row.count, 10) || 0);
+            }
+
+            if (callerUserId) {
+                const [userInterests, userMatches] = await Promise.all([
+                    NightInterest.findAll({
+                        where: {
+                            userId: callerUserId,
+                            venueId: { [Op.in]: adVenueIds },
+                            status: NightInterestStatus.INTERESTED,
+                        },
+                        attributes: ['venueId'],
+                        raw: true,
+                    }),
+                    NightPartnerMatch.findAll({
+                        where: {
+                            [Op.or]: [{ hostId: callerUserId }, { partnerId: callerUserId }],
+                            venueId: { [Op.in]: adVenueIds },
+                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+                        },
+                        attributes: ['venueId'],
+                        raw: true,
+                    }),
+                ]);
+                userInterestVenueSet = new Set((userInterests as any[]).map(i => i.venueId));
+                userMatchVenueSet = new Set((userMatches as any[]).map(m => m.venueId));
+            }
+        }
+
         for (const ad of activeAds) {
             const v = (ad as any).venue;
             if (!v) continue;
             seenVenueIds.add(v.id);
 
-            const interestedCount = await NightInterest.count({
-                where: {
-                    venueId: v.id,
-                    status: NightInterestStatus.INTERESTED,
-                },
-            });
-
-            let isInterested = false;
-            let hasActiveMatch = false;
-
-            if (callerUserId) {
-                const interest = await NightInterest.findOne({
-                    where: {
-                        userId: callerUserId,
-                        venueId: v.id,
-                        status: NightInterestStatus.INTERESTED,
-                    },
-                });
-                isInterested = !!interest;
-
-                const match = await NightPartnerMatch.findOne({
-                    where: {
-                        [Op.or]: [{ hostId: callerUserId }, { partnerId: callerUserId }],
-                        venueId: v.id,
-                        status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-                    },
-                });
-                hasActiveMatch = !!match;
-            }
+            const interestedCount = countMap.get(v.id) || 0;
+            const isInterested = userInterestVenueSet.has(v.id);
+            const hasActiveMatch = userMatchVenueSet.has(v.id);
 
             let adImage = ad.imagePath || '';
             if (adImage && !adImage.startsWith('http') && !adImage.startsWith('/')) {
@@ -2043,55 +2088,73 @@ export class NightPartnerService {
                 limit: 30 - eventPosts.length,
             });
 
-            for (const v of venues) {
-                const interestedCount = await NightInterest.count({
+            if (venues.length > 0) {
+                const fallbackVenueIds = venues.map(v => v.id);
+                const fallbackInterestCounts = await NightInterest.findAll({
                     where: {
-                        venueId: v.id,
+                        venueId: { [Op.in]: fallbackVenueIds },
                         status: NightInterestStatus.INTERESTED,
                     },
+                    attributes: ['venueId', [fn('COUNT', col('id')), 'count']],
+                    group: ['venueId'],
+                    raw: true,
                 });
-
-                let isInterested = false;
-                let hasActiveMatch = false;
-
-                if (callerUserId) {
-                    const interest = await NightInterest.findOne({
-                        where: {
-                            userId: callerUserId,
-                            venueId: v.id,
-                            status: NightInterestStatus.INTERESTED,
-                        },
-                    });
-                    isInterested = !!interest;
-
-                    const match = await NightPartnerMatch.findOne({
-                        where: {
-                            [Op.or]: [{ hostId: callerUserId }, { partnerId: callerUserId }],
-                            venueId: v.id,
-                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-                        },
-                    });
-                    hasActiveMatch = !!match;
+                const fallbackCountMap = new Map<string, number>();
+                for (const row of fallbackInterestCounts as any[]) {
+                    fallbackCountMap.set(row.venueId, parseInt(row.count, 10) || 0);
                 }
 
-                eventPosts.push({
-                    id: `event_post_${v.id}`,
-                    venueId: v.id,
-                    title: `${v.name} Weekend Night`,
-                    venue: v.name,
-                    venueName: v.name,
-                    image: (v as any).coverImage || (v as any).primaryPhoto || '',
-                    date: 'Tonight / Weekend',
-                    rawDate: todayStr,
-                    time: normalize12h(v.openingTime || '9:00 PM'),
-                    location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
-                    aboutEvent: `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
-                    interestedCount,
-                    price: v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
-                    isInterested,
-                    hasActiveMatch,
-                    venueMap: v.toJSON(),
-                });
+                let fallbackUserInterests = new Set<string>();
+                let fallbackUserMatches = new Set<string>();
+                if (callerUserId) {
+                    const [fInterests, fMatches] = await Promise.all([
+                        NightInterest.findAll({
+                            where: {
+                                userId: callerUserId,
+                                venueId: { [Op.in]: fallbackVenueIds },
+                                status: NightInterestStatus.INTERESTED,
+                            },
+                            attributes: ['venueId'],
+                            raw: true,
+                        }),
+                        NightPartnerMatch.findAll({
+                            where: {
+                                [Op.or]: [{ hostId: callerUserId }, { partnerId: callerUserId }],
+                                venueId: { [Op.in]: fallbackVenueIds },
+                                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+                            },
+                            attributes: ['venueId'],
+                            raw: true,
+                        }),
+                    ]);
+                    fallbackUserInterests = new Set((fInterests as any[]).map(i => i.venueId));
+                    fallbackUserMatches = new Set((fMatches as any[]).map(m => m.venueId));
+                }
+
+                for (const v of venues) {
+                    const interestedCount = fallbackCountMap.get(v.id) || 0;
+                    const isInterested = fallbackUserInterests.has(v.id);
+                    const hasActiveMatch = fallbackUserMatches.has(v.id);
+
+                    eventPosts.push({
+                        id: `event_post_${v.id}`,
+                        venueId: v.id,
+                        title: `${v.name} Weekend Night`,
+                        venue: v.name,
+                        venueName: v.name,
+                        image: (v as any).coverImage || (v as any).primaryPhoto || '',
+                        date: 'Tonight / Weekend',
+                        rawDate: todayStr,
+                        time: normalize12h(v.openingTime || '9:00 PM'),
+                        location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
+                        aboutEvent: `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
+                        interestedCount,
+                        price: v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
+                        isInterested,
+                        hasActiveMatch,
+                        venueMap: v.toJSON(),
+                    });
+                }
             }
         }
 

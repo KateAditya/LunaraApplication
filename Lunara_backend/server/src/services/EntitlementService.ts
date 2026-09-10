@@ -150,15 +150,17 @@ export class EntitlementService {
                 },
             ];
 
-            for (const item of defaults) {
-                const [pkg, created] = await SubscriptionAddonPackage.findOrCreate({
-                    where: { name: item.name },
-                    defaults: item,
-                });
-                if (!created && (!pkg.isActive || pkg.featureKey !== item.featureKey)) {
-                    await pkg.update({ isActive: true, featureKey: item.featureKey });
-                }
-            }
+            await Promise.all(
+                defaults.map(async (item) => {
+                    const [pkg, created] = await SubscriptionAddonPackage.findOrCreate({
+                        where: { name: item.name },
+                        defaults: item,
+                    });
+                    if (!created && (!pkg.isActive || pkg.featureKey !== item.featureKey)) {
+                        await pkg.update({ isActive: true, featureKey: item.featureKey });
+                    }
+                })
+            );
             this.addonsSeeded = true;
             logger.info('[EntitlementService] Seeded/activated default subscription addon packages');
         } catch (e) {
@@ -173,16 +175,40 @@ export class EntitlementService {
     public static async getEntitlementsSummary(userId: string): Promise<EntitlementsSummaryResponse> {
         await this.seedDefaultAddons();
 
-        // 1. Fetch active subscription & plan package
-        const activeSub = await UserSubscription.findOne({
-            where: {
-                userId,
-                status: SubscriptionStatus.ACTIVE,
-                endDate: { [Op.gt]: new Date() },
-            },
-            include: [{ model: SubscriptionPackage, as: 'package' }],
-            order: [['createdAt', 'DESC']],
-        });
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const PlanModel = (await import('../models/Plan')).default;
+
+        // 1. Parallel fetch of active subscription, usage counters, party plans count, and user add-ons
+        const [activeSub, usageRecords, partyPlansCreatedThisMonth, userAddons] = await Promise.all([
+            UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: now },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                order: [['createdAt', 'DESC']],
+            }),
+            SubscriptionUsage.findAll({
+                where: { userId },
+            }),
+            PlanModel.count({
+                where: {
+                    userId,
+                    createdAt: { [Op.gte]: startOfMonth },
+                },
+            }),
+            UserAddon.findAll({
+                where: {
+                    userId,
+                    status: UserAddonStatus.ACTIVE,
+                    remainingQuantity: { [Op.gt]: 0 },
+                },
+                include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
+                order: [['createdAt', 'ASC']],
+            }),
+        ]);
 
         // 2. Fallback / expired subscription
         let lastExpiredSub: any = null;
@@ -206,32 +232,17 @@ export class EntitlementService {
         let remainingDays = 0;
         let remainingHours = 0;
         if (activeSub) {
-            const now = new Date();
             const end = new Date(activeSub.endDate);
             const diffMs = end.getTime() - now.getTime();
             remainingHours = Math.max(0, Math.round(diffMs / (1000 * 60 * 60)));
             remainingDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
         }
 
-        // 3. Fetch daily & monthly usage counters
-        const usageRecords = await SubscriptionUsage.findAll({
-            where: { userId },
-        });
+        // 3. Populate daily & monthly usage counters
         const usageMap: Record<string, number> = {};
         for (const u of usageRecords) {
             usageMap[`${u.featureKey}_${u.period}`] = u.used;
         }
-
-        // 4. Fetch party plans created in the current calendar month/cycle
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const PlanModel = (await import('../models/Plan')).default;
-        const partyPlansCreatedThisMonth = await PlanModel.count({
-            where: {
-                userId,
-                createdAt: { [Op.gte]: startOfMonth },
-            },
-        });
 
         // 5. Construct Limited Features (Plan Benefits)
         const isSuperlikesUnlimited = tier === PackageTier.ELITE || (pkg?.superlikesPerCycle || 0) >= 9999 || (pkg?.superlikesPerCycle || 0) === -1;
@@ -396,16 +407,7 @@ export class EntitlementService {
             },
         ];
 
-        // 7. Fetch Active Add-ons (Separated tracking!)
-        const userAddons = await UserAddon.findAll({
-            where: {
-                userId,
-                status: UserAddonStatus.ACTIVE,
-                remainingQuantity: { [Op.gt]: 0 },
-            },
-            include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
-            order: [['createdAt', 'ASC']],
-        });
+        // 7. Process Active Add-ons (Separated tracking!)
 
         // Group active addons by featureKey
         const addonAggregates: Record<string, { name: string; purchased: number; used: number; remaining: number }> = {};

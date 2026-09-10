@@ -415,29 +415,31 @@ export class StrangersMeetService {
                     const adminTitle = title.includes('🚨') ? title : `🚨 Strangers Meet Alert: ${title}`;
                     const adminBody = body;
 
-                    for (const admin of admins) {
-                        await Notification.create({
-                            recipientUserId: admin.id,
-                            eventType: eventType || 'strangers_meet_admin_alert',
-                            category: 'bookings' as any,
-                            entityType: 'strangers_meet',
-                            entityId,
-                            title: adminTitle,
-                            body: adminBody,
-                            priority: 'HIGH' as any,
-                            isRead: false,
-                            metadata: metadata || { entityId }
-                        }).catch(() => {});
-
-                        if (admin.fcmToken) {
-                            const { sendPushNotification } = require('./fcmService');
-                            sendPushNotification(admin.fcmToken, {
+                    await Promise.all(
+                        admins.map(async (admin) => {
+                            await Notification.create({
+                                recipientUserId: admin.id,
+                                eventType: eventType || 'strangers_meet_admin_alert',
+                                category: 'bookings' as any,
+                                entityType: 'strangers_meet',
+                                entityId,
                                 title: adminTitle,
                                 body: adminBody,
-                                data: { type: eventType, entityId }
+                                priority: 'HIGH' as any,
+                                isRead: false,
+                                metadata: metadata || { entityId }
                             }).catch(() => {});
-                        }
-                    }
+
+                            if (admin.fcmToken) {
+                                const { sendPushNotification } = require('./fcmService');
+                                sendPushNotification(admin.fcmToken, {
+                                    title: adminTitle,
+                                    body: adminBody,
+                                    data: { type: eventType, entityId }
+                                }).catch(() => {});
+                            }
+                        })
+                    );
 
                     const { io } = require('../server');
                     if (io) {
@@ -1989,31 +1991,33 @@ export class StrangersMeetService {
         }
 
         // Dispatch Member Notifications (Phase 12)
-        for (const mr of memberRefundResults) {
-            try {
-                const refundRef = `SM-REF-${mr.joinerId.substring(0, 8).toUpperCase()}`;
-                const refundText = mr.refundAmount > 0
-                    ? `₹${mr.refundAmount.toFixed(0)} has been refunded to your Lunara Wallet. Refund Reference: ${refundRef}.`
-                    : `No refund applicable (${refundPercentage}% policy).`;
+        await Promise.all(
+            memberRefundResults.map(async (mr) => {
+                try {
+                    const refundRef = `SM-REF-${mr.joinerId.substring(0, 8).toUpperCase()}`;
+                    const refundText = mr.refundAmount > 0
+                        ? `₹${mr.refundAmount.toFixed(0)} has been refunded to your Lunara Wallet. Refund Reference: ${refundRef}.`
+                        : `No refund applicable (${refundPercentage}% policy).`;
 
-                await this.emitNotification({
-                    recipientUserId: mr.userId,
-                    eventType: 'strangers_meet_cancelled',
-                    title: '❌ Strangers Meet Cancelled',
-                    body: `The Strangers Meet "${request.subject}" was cancelled by the host. ${refundText}`,
-                    entityId: request.id,
-                    metadata: {
-                        meetId: request.id,
-                        refundAmount: mr.refundAmount,
-                        refundReference: refundRef,
-                        refundPercentage,
-                        refundMethod,
-                    },
-                });
-            } catch (notifErr: any) {
-                logger.warn(`[StrangersMeetService] Failed to notify member ${mr.userId} of cancellation: ${notifErr.message}`);
-            }
-        }
+                    await this.emitNotification({
+                        recipientUserId: mr.userId,
+                        eventType: 'strangers_meet_cancelled',
+                        title: '❌ Strangers Meet Cancelled',
+                        body: `The Strangers Meet "${request.subject}" was cancelled by the host. ${refundText}`,
+                        entityId: request.id,
+                        metadata: {
+                            meetId: request.id,
+                            refundAmount: mr.refundAmount,
+                            refundReference: refundRef,
+                            refundPercentage,
+                            refundMethod,
+                        },
+                    });
+                } catch (notifErr: any) {
+                    logger.warn(`[StrangersMeetService] Failed to notify member ${mr.userId} of cancellation: ${notifErr.message}`);
+                }
+            })
+        );
 
         // Realtime Socket updates (Phase 21)
         try {

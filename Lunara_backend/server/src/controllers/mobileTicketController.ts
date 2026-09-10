@@ -877,18 +877,18 @@ export class MobileTicketController {
                 }
 
                 // Look up authoritative Booking and Ticket for this Party Plan
-                let authBooking = await Booking.findOne({
-                    where: {
-                        goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
-                        venueId: plan.venueId,
-                        specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
-                    },
-                    order: [['createdAt', 'DESC']],
-                });
-                if (!authBooking) {
-                    const dateObj = new Date(plan.planDateTime);
-                    const bDate = dateObj.toISOString().split('T')[0];
-                    authBooking = await Booking.findOne({
+                const dateObj = new Date(plan.planDateTime);
+                const bDate = dateObj.toISOString().split('T')[0];
+                const [bookingBySpecialReq, bookingByDate] = await Promise.all([
+                    Booking.findOne({
+                        where: {
+                            goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                            venueId: plan.venueId,
+                            specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
+                        },
+                        order: [['createdAt', 'DESC']],
+                    }),
+                    Booking.findOne({
                         where: {
                             goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
                             userId: plan.userId,
@@ -896,8 +896,9 @@ export class MobileTicketController {
                             bookingDate: bDate as any,
                         },
                         order: [['createdAt', 'DESC']],
-                    });
-                }
+                    }),
+                ]);
+                const authBooking = bookingBySpecialReq || bookingByDate;
 
                 let authTicket: Ticket | null = null;
                 if (authBooking) {
@@ -1027,18 +1028,18 @@ export class MobileTicketController {
                 }
 
                 // Look up authoritative Booking and Ticket for this Party Plan
-                let authBooking = await Booking.findOne({
-                    where: {
-                        goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
-                        venueId: plan.venueId,
-                        specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
-                    },
-                    order: [['createdAt', 'DESC']],
-                });
-                if (!authBooking) {
-                    const dateObj = new Date(plan.planDateTime);
-                    const bDate = dateObj.toISOString().split('T')[0];
-                    authBooking = await Booking.findOne({
+                const dateObj = new Date(plan.planDateTime);
+                const bDate = dateObj.toISOString().split('T')[0];
+                const [bookingBySpecialReq, bookingByDate] = await Promise.all([
+                    Booking.findOne({
+                        where: {
+                            goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
+                            venueId: plan.venueId,
+                            specialRequests: { [Op.like]: `%"planId":"${plan.id}"%` },
+                        },
+                        order: [['createdAt', 'DESC']],
+                    }),
+                    Booking.findOne({
                         where: {
                             goingMode: { [Op.in]: [GoingMode.PLAN, GoingMode.PARTY_REQUEST] },
                             userId: plan.userId,
@@ -1046,8 +1047,9 @@ export class MobileTicketController {
                             bookingDate: bDate as any,
                         },
                         order: [['createdAt', 'DESC']],
-                    });
-                }
+                    }),
+                ]);
+                const authBooking = bookingBySpecialReq || bookingByDate;
 
                 let authTicket: Ticket | null = null;
                 if (authBooking) {
@@ -1089,30 +1091,11 @@ export class MobileTicketController {
                 let matchedRequestObj: any = null;
                 let joinerUserObj: any = null;
                 const mReqId = plan.matchedRequestId || planAny.matchedRequestId;
-                if (mReqId) {
-                    const mReq = await PartyPlanRequest.findByPk(mReqId, {
+                const mReq = mReqId
+                    ? await PartyPlanRequest.findByPk(mReqId, {
                         include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
-                    });
-                    if (mReq) {
-                        matchedRequestObj = mReq;
-                        const reqUser = (mReq as any).requester;
-                        if (reqUser) {
-                            joinerUserObj = {
-                                id: reqUser.id,
-                                fullName: `${reqUser.firstName || ''} ${reqUser.lastName || ''}`.trim() || 'Guest',
-                                firstName: reqUser.firstName,
-                                lastName: reqUser.lastName,
-                                email: reqUser.email,
-                                phone: reqUser.phone,
-                                mobileNumber: reqUser.phone,
-                                profilePhotoUrl: reqUser.profileImageUrl || null,
-                                profileImageUrl: reqUser.profileImageUrl || null,
-                            };
-                        }
-                    }
-                }
-                if (!joinerUserObj) {
-                    const mReq = await PartyPlanRequest.findOne({
+                    })
+                    : await PartyPlanRequest.findOne({
                         where: {
                             planId: plan.id,
                             [Op.or]: [
@@ -1122,22 +1105,22 @@ export class MobileTicketController {
                         },
                         include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],
                     });
-                    if (mReq) {
-                        matchedRequestObj = mReq;
-                        const reqUser = (mReq as any).requester;
-                        if (reqUser) {
-                            joinerUserObj = {
-                                id: reqUser.id,
-                                fullName: `${reqUser.firstName || ''} ${reqUser.lastName || ''}`.trim() || 'Guest',
-                                firstName: reqUser.firstName,
-                                lastName: reqUser.lastName,
-                                email: reqUser.email,
-                                phone: reqUser.phone,
-                                mobileNumber: reqUser.phone,
-                                profilePhotoUrl: reqUser.profileImageUrl || null,
-                                profileImageUrl: reqUser.profileImageUrl || null,
-                            };
-                        }
+
+                if (mReq) {
+                    matchedRequestObj = mReq;
+                    const reqUser = (mReq as any).requester;
+                    if (reqUser) {
+                        joinerUserObj = {
+                            id: reqUser.id,
+                            fullName: `${reqUser.firstName || ''} ${reqUser.lastName || ''}`.trim() || 'Guest',
+                            firstName: reqUser.firstName,
+                            lastName: reqUser.lastName,
+                            email: reqUser.email,
+                            phone: reqUser.phone,
+                            mobileNumber: reqUser.phone,
+                            profilePhotoUrl: reqUser.profileImageUrl || null,
+                            profileImageUrl: reqUser.profileImageUrl || null,
+                        };
                     }
                 }
 

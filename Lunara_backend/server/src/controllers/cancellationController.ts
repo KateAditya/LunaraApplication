@@ -438,7 +438,10 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
 
             // Notify Requester
             try {
-                const recipientUser = await User.findByPk(userId);
+                const [recipientUser, requester] = await Promise.all([
+                    User.findByPk(userId),
+                    User.findByPk(cancellationRequest.requestedById)
+                ]);
                 const recipientName = recipientUser ? `${recipientUser.firstName}` : 'The other participant';
 
                 await NotificationService.dispatch({
@@ -454,7 +457,6 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     idempotencyKey: `cancellation_declined_${cancellationRequest.id}`,
                 });
 
-                const requester = await User.findByPk(cancellationRequest.requestedById);
                 if (requester?.fcmToken) {
                     await sendMulticastPushNotification([requester.fcmToken], {
                         title: 'Cancellation Request Declined 🛡️',
@@ -564,13 +566,15 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     transaction: t,
                 });
 
-                for (const payment of payments) {
-                    await payment.update({
-                        status: PaymentStatus.REFUNDED,
-                        refundAmount: payment.amount,
-                        refundedAt: new Date(),
-                    }, { transaction: t });
-                }
+                await Promise.all(
+                    payments.map(payment =>
+                        payment.update({
+                            status: PaymentStatus.REFUNDED,
+                            refundAmount: payment.amount,
+                            refundedAt: new Date(),
+                        }, { transaction: t })
+                    )
+                );
             }
 
             // 2. Update PartyPlan — status, lifecycleStatus, isLive (all must be updated atomically)
@@ -596,13 +600,15 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     where: { bookingId: booking.id },
                     transaction: t,
                 });
-                for (const ticket of tickets) {
-                    await ticket.update({
-                        ticketStatus: TicketStatus.CANCELLED,
-                        cancelledAt: new Date(),
-                        qrToken: `VOID_${ticket.qrToken}`,
-                    }, { transaction: t });
-                }
+                await Promise.all(
+                    tickets.map(ticket =>
+                        ticket.update({
+                            ticketStatus: TicketStatus.CANCELLED,
+                            cancelledAt: new Date(),
+                            qrToken: `VOID_${ticket.qrToken}`,
+                        }, { transaction: t })
+                    )
+                );
             }
 
             // 5. Release PlanEligibilityService time lock (so the date slot becomes available again)
@@ -730,37 +736,40 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             // ─────────────────────────────────────────────────────────────────
             setImmediate(async () => {
                 try {
-                    const hostUser = await User.findByPk(lockedPlan.userId);
-                    const joinerUser = await User.findByPk(joinerId);
+                    const [hostUser, joinerUser] = await Promise.all([
+                        User.findByPk(lockedPlan.userId),
+                        User.findByPk(joinerId)
+                    ]);
 
                     const hostBody = `Party Plan cancelled by mutual agreement. Your ₹${hostDeposit} Commitment Deposit has been credited to your Lunara Wallet.`;
                     const joinerBody = `Party Plan cancelled by mutual agreement. Your ₹${joinerDeposit} Commitment Deposit has been credited to your Lunara Wallet.`;
 
-                    await NotificationService.dispatch({
-                        recipientUserId: lockedPlan.userId,
-                        actorUserId: userId,
-                        eventType: 'party_plan_cancelled',
-                        category: 'bookings',
-                        entityType: 'party_plan',
-                        entityId: lockedPlan.id,
-                        title: 'Party Plan Cancelled',
-                        body: hostBody,
-                        metadata: { planId: lockedPlan.id, walletCredited: hostDeposit, cancellationId: cancellationRequest.id },
-                        idempotencyKey: `party_plan_cancelled_host_${lockedPlan.id}`,
-                    });
-
-                    await NotificationService.dispatch({
-                        recipientUserId: joinerId,
-                        actorUserId: userId,
-                        eventType: 'party_plan_cancelled',
-                        category: 'bookings',
-                        entityType: 'party_plan',
-                        entityId: lockedPlan.id,
-                        title: 'Party Plan Cancelled',
-                        body: joinerBody,
-                        metadata: { planId: lockedPlan.id, walletCredited: joinerDeposit, cancellationId: cancellationRequest.id },
-                        idempotencyKey: `party_plan_cancelled_joiner_${lockedPlan.id}_${joinerId}`,
-                    });
+                    await Promise.all([
+                        NotificationService.dispatch({
+                            recipientUserId: lockedPlan.userId,
+                            actorUserId: userId,
+                            eventType: 'party_plan_cancelled',
+                            category: 'bookings',
+                            entityType: 'party_plan',
+                            entityId: lockedPlan.id,
+                            title: 'Party Plan Cancelled',
+                            body: hostBody,
+                            metadata: { planId: lockedPlan.id, walletCredited: hostDeposit, cancellationId: cancellationRequest.id },
+                            idempotencyKey: `party_plan_cancelled_host_${lockedPlan.id}`,
+                        }),
+                        NotificationService.dispatch({
+                            recipientUserId: joinerId,
+                            actorUserId: userId,
+                            eventType: 'party_plan_cancelled',
+                            category: 'bookings',
+                            entityType: 'party_plan',
+                            entityId: lockedPlan.id,
+                            title: 'Party Plan Cancelled',
+                            body: joinerBody,
+                            metadata: { planId: lockedPlan.id, walletCredited: joinerDeposit, cancellationId: cancellationRequest.id },
+                            idempotencyKey: `party_plan_cancelled_joiner_${lockedPlan.id}_${joinerId}`,
+                        })
+                    ]);
 
                     // FCM push to both
                     const tokens = [hostUser?.fcmToken, joinerUser?.fcmToken].filter(t => t && t.trim() !== '') as string[];

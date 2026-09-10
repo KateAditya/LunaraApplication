@@ -732,50 +732,61 @@ export const getAllRequests = async (req: Request, res: Response): Promise<void>
         const limitNum = Math.min(100, Math.max(1, parseInt(limit as string)));
         const offset = (pageNum - 1) * limitNum;
 
-        const count = await StrangersMeetRequest.count({ where });
-        const rows = await StrangersMeetRequest.findAll({
-            where,
-            include: buildIncludes(),
-            order: [['createdAt', 'DESC']],
-            limit: limitNum,
-            offset,
-        });
-
-        // Counts by status for badge display
-        const pendingCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.PENDING } });
-        const approvedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.APPROVED } });
-        const inProgressCount = await StrangersMeetRequest.count({
-            where: {
-                status: {
-                    [Op.in]: [
-                        StrangersMeetStatus.START_CONFIRMATION_PENDING,
-                        StrangersMeetStatus.IN_PROGRESS,
-                        StrangersMeetStatus.END_CONFIRMATION_PENDING,
-                    ],
+        // Run main page query + all status badge counts in a single parallel batch
+        const [
+            count,
+            rows,
+            pendingCount,
+            approvedCount,
+            inProgressCount,
+            completedCount,
+            needsContactCount,
+            payoutsCount,
+            rejectedCount,
+        ] = await Promise.all([
+            StrangersMeetRequest.count({ where }),
+            StrangersMeetRequest.findAll({
+                where,
+                include: buildIncludes(),
+                order: [['createdAt', 'DESC']],
+                limit: limitNum,
+                offset,
+            }),
+            StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.PENDING } }),
+            StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.APPROVED } }),
+            StrangersMeetRequest.count({
+                where: {
+                    status: {
+                        [Op.in]: [
+                            StrangersMeetStatus.START_CONFIRMATION_PENDING,
+                            StrangersMeetStatus.IN_PROGRESS,
+                            StrangersMeetStatus.END_CONFIRMATION_PENDING,
+                        ],
+                    },
                 },
-            },
-        });
-        const completedCount = await StrangersMeetRequest.count({
-            where: {
-                status: {
-                    [Op.in]: [
-                        StrangersMeetStatus.HOST_CONFIRMED_ENDED,
-                        StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
-                        StrangersMeetStatus.COMPLETED,
-                        StrangersMeetStatus.SETTLED,
-                    ],
+            }),
+            StrangersMeetRequest.count({
+                where: {
+                    status: {
+                        [Op.in]: [
+                            StrangersMeetStatus.HOST_CONFIRMED_ENDED,
+                            StrangersMeetStatus.ADMIN_CONFIRMED_ENDED,
+                            StrangersMeetStatus.COMPLETED,
+                            StrangersMeetStatus.SETTLED,
+                        ],
+                    },
                 },
-            },
-        });
-        const needsContactCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.NEEDS_HOST_CONTACT } });
-        const payoutsCount = await StrangersMeetRequest.count({
-            where: {
-                settlementStatus: {
-                    [Op.in]: ['settlement_pending', 'requested', 'approved', 'settled', 'paid'],
+            }),
+            StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.NEEDS_HOST_CONTACT } }),
+            StrangersMeetRequest.count({
+                where: {
+                    settlementStatus: {
+                        [Op.in]: ['settlement_pending', 'requested', 'approved', 'settled', 'paid'],
+                    },
                 },
-            },
-        });
-        const rejectedCount = await StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.REJECTED } });
+            }),
+            StrangersMeetRequest.count({ where: { status: StrangersMeetStatus.REJECTED } }),
+        ]);
 
         res.json({
             success: true,
@@ -827,14 +838,17 @@ export const getFeedRequests = async (req: Request, res: Response): Promise<void
             eventDateTime: { [Op.gte]: sixHoursAgo },
         };
 
-        let count = await StrangersMeetRequest.count({ where: feedWhere });
-        let rows = await StrangersMeetRequest.findAll({
-            where: feedWhere,
-            include: buildIncludes(),
-            order: [['eventDateTime', 'ASC'], ['createdAt', 'DESC']],
-            limit: limitNum,
-            offset,
-        });
+        // Run count + data fetch in parallel (was sequential)
+        let [count, rows] = await Promise.all([
+            StrangersMeetRequest.count({ where: feedWhere }),
+            StrangersMeetRequest.findAll({
+                where: feedWhere,
+                include: buildIncludes(),
+                order: [['eventDateTime', 'ASC'], ['createdAt', 'DESC']],
+                limit: limitNum,
+                offset,
+            }),
+        ]);
 
         // Fallback for Live Feed: If no future events exist, display approved and paid events so Live Feed tab is available
         if (count === 0) {

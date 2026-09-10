@@ -290,9 +290,11 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
             )
         ]);
 
-        // Fetch updated profile
-        const updatedProfile = await UserProfile.findOne({ where: { userId } });
-        const updatedPreferences = await UserPreference.findOne({ where: { userId } });
+        // Fetch updated profile (parallel — was sequential)
+        const [updatedProfile, updatedPreferences] = await Promise.all([
+            UserProfile.findOne({ where: { userId } }),
+            UserPreference.findOne({ where: { userId } }),
+        ]);
 
         RealtimeEventBroker.emitToUser(userId, 'profile_updated', 'user', userId, {
             userId,
@@ -1764,8 +1766,10 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 
                 // Emit live new_match events
                 try {
-                    const currentUser = await User.findByPk(userId);
-                    const targetUser = await User.findByPk(targetUserId);
+                    const [currentUser, targetUser] = await Promise.all([
+                        User.findByPk(userId),
+                        User.findByPk(targetUserId),
+                    ]);
                     if (currentUser && targetUser) {
                         const { io } = require('../server');
                         io.to(`user_${userId}`).emit('new_match', {
@@ -1867,8 +1871,10 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 
         // Send push notification & socket event for Like or Super Like
         try {
-            const currentUser = await User.findByPk(userId);
-            const targetUser = await User.findByPk(targetUserId);
+            const [currentUser, targetUser] = await Promise.all([
+                User.findByPk(userId),
+                User.findByPk(targetUserId),
+            ]);
             if (currentUser && targetUser) {
                 const { SubscriptionService } = require('../services/subscriptionService');
                 const canSeeWhoLikedTarget = await SubscriptionService.hasAccess(targetUserId, 'who_liked_me');
@@ -2184,22 +2190,23 @@ export const getWhoLikedSummary = async (req: Request, res: Response): Promise<R
 
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-        // Count incoming likes from user_likes table within 7 days where receiver is this user
-        const count = await UserLike.count({
-            where: {
-                targetUserId: userId,
-                actionType: { [Op.in]: ['like', 'superlike'] },
-                createdAt: { [Op.gte]: sevenDaysAgo },
-            },
-        });
-
-        const superlikesCount = await UserLike.count({
-            where: {
-                targetUserId: userId,
-                actionType: 'superlike',
-                createdAt: { [Op.gte]: sevenDaysAgo },
-            },
-        });
+        // Count incoming likes from user_likes table within 7 days where receiver is this user concurrently
+        const [count, superlikesCount] = await Promise.all([
+            UserLike.count({
+                where: {
+                    targetUserId: userId,
+                    actionType: { [Op.in]: ['like', 'superlike'] },
+                    createdAt: { [Op.gte]: sevenDaysAgo },
+                },
+            }),
+            UserLike.count({
+                where: {
+                    targetUserId: userId,
+                    actionType: 'superlike',
+                    createdAt: { [Op.gte]: sevenDaysAgo },
+                },
+            }),
+        ]);
 
         return res.status(200).json({
             success: true,
@@ -2343,42 +2350,44 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         let todayLikeCount = 0;
         let superlikesRemaining = 0;
         let superlikesPerCycle = 0;
+        let dailyBacktracksLimit = 3;
+        let dailyBacktracksRemaining = 3;
 
-        try {
-            const { SubscriptionService } = require('../services/subscriptionService');
-            const limit = await SubscriptionService.getLimit(userId, 'daily_likes');
-            const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_likes');
+        // Fetch subscription limits and entitlement summary in parallel (was 3 sequential awaits + duplicate summary call)
+        const { SubscriptionService: SwipeSS } = require('../services/subscriptionService');
+        const [swipeLimitResult, swipeRemainingResult, entitlementSummary] = await Promise.allSettled([
+            SwipeSS.getLimit(userId, 'daily_likes'),
+            SwipeSS.getRemainingUsage(userId, 'daily_likes'),
+            EntitlementService.getEntitlementsSummary(userId),
+        ]);
+
+        if (swipeLimitResult.status === 'fulfilled' && swipeRemainingResult.status === 'fulfilled') {
+            const limit = swipeLimitResult.value;
+            const remaining = swipeRemainingResult.value;
             dailyLikesLimit = limit === 'unlimited' ? 999999 : limit;
             const remainingNum = remaining === 'unlimited' ? dailyLikesLimit : remaining;
             todayLikeCount = Math.max(0, dailyLikesLimit - remainingNum);
-        } catch (limitErr) {
-            logger.warn('[swipeStatus] Could not fetch daily like limits:', limitErr);
+        } else {
+            logger.warn('[swipeStatus] Could not fetch daily like limits');
         }
 
-        try {
-            const summary = await EntitlementService.getEntitlementsSummary(userId);
+        if (entitlementSummary.status === 'fulfilled') {
+            const summary = entitlementSummary.value;
+            // Superlikes
             const rawSuper = summary.totals.superlikesAvailable as any;
             superlikesRemaining = rawSuper === 'unlimited' ? 999999 : (Number(rawSuper) || 0);
-            const superlikeItem = summary.planBenefits.find(b => b.featureKey === 'superlike');
+            const superlikeItem = summary.planBenefits.find((b: any) => b.featureKey === 'superlike');
             const addonSuperCount = (summary.activeAddons || [])
-                .filter(a => a.featureKey === 'superlike' || a.featureKey === 'super_likes' || a.featureKey === 'super_like')
-                .reduce((sum, a) => sum + (Number(a.remainingQuantity) || 0), 0);
+                .filter((a: any) => a.featureKey === 'superlike' || a.featureKey === 'super_likes' || a.featureKey === 'super_like')
+                .reduce((sum: number, a: any) => sum + (Number(a.remainingQuantity) || 0), 0);
             superlikesPerCycle = (superlikeItem?.includedQuantity || 0) + addonSuperCount;
-        } catch (subErr) {
-            logger.warn('[swipeStatus] Could not fetch entitlement summary:', subErr);
-        }
-
-        // Get backtrack usage and limits
-        let dailyBacktracksLimit = 3;
-        let dailyBacktracksRemaining = 3;
-        try {
-            const summary = await EntitlementService.getEntitlementsSummary(userId);
+            // Backtracks (reuse same summary — no second DB round-trip)
             const rawBacktracks = summary.totals.backtracksAvailable as any;
             dailyBacktracksRemaining = rawBacktracks === 'unlimited' ? 999999 : (Number(rawBacktracks) || 0);
-            const backtrackItem = summary.planBenefits.find(b => b.featureKey === 'backtrack');
+            const backtrackItem = summary.planBenefits.find((b: any) => b.featureKey === 'backtrack');
             dailyBacktracksLimit = backtrackItem?.includedQuantity === -1 ? 999999 : (backtrackItem?.includedQuantity || 3);
-        } catch (backtrackErr) {
-            logger.warn('[swipeStatus] Could not fetch backtrack limits:', backtrackErr);
+        } else {
+            logger.warn('[swipeStatus] Could not fetch entitlement summary');
         }
 
         return res.status(200).json({

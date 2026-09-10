@@ -147,23 +147,21 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
     try {
         const userId = (req as any).user.id;
 
-        const subscription = await UserSubscription.findOne({
-            where: {
-                userId,
-                status: SubscriptionStatus.ACTIVE,
-                endDate: { [Op.gt]: new Date() },
-            },
-            include: [{ model: SubscriptionPackage, as: 'package' }],
-            order: [['createdAt', 'DESC']],
-        });
-
-        // Get feature summary
-        const featureSummary = await SubscriptionService.getUserFeatureSummary(userId);
-
-        // Get usage stats
-        const usageRecords = await SubscriptionUsage.findAll({
-            where: { userId, period: 'daily' },
-        });
+        const [subscription, featureSummary, usageRecords] = await Promise.all([
+            UserSubscription.findOne({
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                    endDate: { [Op.gt]: new Date() },
+                },
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                order: [['createdAt', 'DESC']],
+            }),
+            SubscriptionService.getUserFeatureSummary(userId),
+            SubscriptionUsage.findAll({
+                where: { userId, period: 'daily' },
+            }),
+        ]);
         const usageMap: Record<string, number> = {};
         for (const u of usageRecords) {
             usageMap[u.featureKey] = u.used;
@@ -456,16 +454,17 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
         }
 
         // Do NOT expire active subscriptions to support future stacking.
-        // Find the latest upcoming or active subscription to determine start date.
-        const lastUpcoming = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.UPCOMING },
-            order: [['endDate', 'DESC']]
-        });
-        
-        const activeSubForDate = await UserSubscription.findOne({
-            where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
-            include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
-        });
+        // Find the latest upcoming or active subscription to determine start date (parallel — was sequential).
+        const [lastUpcoming, activeSubForDate] = await Promise.all([
+            UserSubscription.findOne({
+                where: { userId, status: SubscriptionStatus.UPCOMING },
+                order: [['endDate', 'DESC']],
+            }),
+            UserSubscription.findOne({
+                where: { userId, status: SubscriptionStatus.ACTIVE, endDate: { [Op.gt]: new Date() } },
+                include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
+            }),
+        ]);
 
         const startDate = new Date();
         if (lastUpcoming) {

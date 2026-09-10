@@ -822,10 +822,12 @@ export const payMySplit = async (req: Request, res: Response) => {
 
         if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
 
-        const booking = await Booking.findByPk(id);
+        // Fetch booking and member in parallel — both IDs are known from the request
+        const [booking, member] = await Promise.all([
+            Booking.findByPk(id),
+            BookingMember.findByPk(memberId),
+        ]);
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-
-        const member = await BookingMember.findByPk(memberId);
         if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
         if (member.paymentStatus === MemberPaymentStatus.PAID) {
             return res.status(400).json({ success: false, message: 'This member has already paid' });
@@ -908,21 +910,11 @@ export const secureReservation = async (req: Request, res: Response) => {
         }
 
         const ticketCode = (booking as any).ticketCode || uuidv4();
-        await (booking as any).update({
-            status: BookingStatus.CONFIRMED,
-            ticketCode,
-        });
-
-        // Generate digital ticket in background
-        setImmediate(async () => {
-            try {
-                await generateTicketForBookingHelper(booking.id);
-            } catch (ticketErr) {
-                logger.error(`Background ticket generation failed for booking ${booking.id}:`, ticketErr);
-            }
-        });
-
-        const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
+        // Run booking update and venue fetch in parallel (venue ID is known immediately)
+        const [, venue] = await Promise.all([
+            (booking as any).update({ status: BookingStatus.CONFIRMED, ticketCode }),
+            Venue.findByPk(booking.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }),
+        ]);
         return res.json({
             success: true,
             message: 'Reservation secured! Your digital ticket is ready.',

@@ -1031,10 +1031,12 @@ export const deleteMessage = async (req: Request, res: Response) => {
         const { userId, deleteForEveryone = true } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
 
-        const message = await Message.findOne({ where: { id: msgId, conversationId: id } });
+        // Fetch message and conversation in parallel (was sequential)
+        const [message, conv] = await Promise.all([
+            Message.findOne({ where: { id: msgId, conversationId: id } }),
+            Conversation.findByPk(id),
+        ]);
         if (!message) return res.status(404).json({ success: false, message: 'Message not found' });
-
-        const conv = await Conversation.findByPk(id);
         if (!conv) return res.status(404).json({ success: false, message: 'Conversation not found' });
 
         const uId = userId.toLowerCase();
@@ -1084,13 +1086,11 @@ export const deleteMessage = async (req: Request, res: Response) => {
             const newLastMsgAt = latestMsg ? latestMsg.createdAt : null;
             const newLastMsgId = latestMsg ? latestMsg.id : null;
 
-            for (const c of allConvs) {
-                await (c as any).update({
-                    lastMessageId: newLastMsgId,
-                    lastMessagePreview: newPreview,
-                    lastMessageAt: newLastMsgAt,
-                });
-            }
+            await Promise.all(allConvs.map((c: any) => c.update({
+                lastMessageId: newLastMsgId,
+                lastMessagePreview: newPreview,
+                lastMessageAt: newLastMsgAt,
+            })));
 
             // Real-time socket broadcast to both participants
             try {
@@ -1284,13 +1284,11 @@ export const batchDeleteMessages = async (req: Request, res: Response) => {
             const newLastMsgAt = latestMsg ? latestMsg.createdAt : null;
             const newLastMsgId = latestMsg ? latestMsg.id : null;
 
-            for (const c of allConvs) {
-                await (c as any).update({
-                    lastMessageId: newLastMsgId,
-                    lastMessagePreview: newPreview,
-                    lastMessageAt: newLastMsgAt,
-                });
-            }
+            await Promise.all(allConvs.map((c: any) => c.update({
+                lastMessageId: newLastMsgId,
+                lastMessagePreview: newPreview,
+                lastMessageAt: newLastMsgAt,
+            })));
 
             // Real-time socket broadcast to both participants
             try {
@@ -1413,28 +1411,16 @@ export const clearChat = async (req: Request, res: Response) => {
         const allConvIds = allConvs.map(c => c.id);
 
         const now = new Date();
-        for (const c of allConvs) {
+        await Promise.all(allConvs.map((c: any) => {
             const isP1 = (c.participantOne || '').toLowerCase() === uId;
             if (clearForEveryone === true) {
-                await (c as any).update({
-                    clearedAtOne: now,
-                    clearedAtTwo: now,
-                    lastMessagePreview: '',
-                    unreadOne: 0,
-                    unreadTwo: 0,
-                });
+                return c.update({ clearedAtOne: now, clearedAtTwo: now, lastMessagePreview: '', unreadOne: 0, unreadTwo: 0 });
             } else if (isP1) {
-                await (c as any).update({
-                    clearedAtOne: now,
-                    unreadOne: 0,
-                });
+                return c.update({ clearedAtOne: now, unreadOne: 0 });
             } else {
-                await (c as any).update({
-                    clearedAtTwo: now,
-                    unreadTwo: 0,
-                });
+                return c.update({ clearedAtTwo: now, unreadTwo: 0 });
             }
-        }
+        }));
 
         if (clearForEveryone === true) {
             await Message.update(
@@ -1536,32 +1522,16 @@ export const deleteConversation = async (req: Request, res: Response) => {
         const allConvIds = allConvs.map(c => c.id);
 
         const now = new Date();
-        for (const c of allConvs) {
+        await Promise.all(allConvs.map((c: any) => {
             const isP1 = (c.participantOne || '').toLowerCase() === uId;
             if (deleteForEveryone === true) {
-                await (c as any).update({
-                    deletedByOne: true,
-                    deletedByTwo: true,
-                    clearedAtOne: now,
-                    clearedAtTwo: now,
-                    unreadOne: 0,
-                    unreadTwo: 0,
-                    lastMessagePreview: '',
-                });
+                return c.update({ deletedByOne: true, deletedByTwo: true, clearedAtOne: now, clearedAtTwo: now, unreadOne: 0, unreadTwo: 0, lastMessagePreview: '' });
             } else if (isP1) {
-                await (c as any).update({
-                    deletedByOne: true,
-                    clearedAtOne: now,
-                    unreadOne: 0,
-                });
+                return c.update({ deletedByOne: true, clearedAtOne: now, unreadOne: 0 });
             } else {
-                await (c as any).update({
-                    deletedByTwo: true,
-                    clearedAtTwo: now,
-                    unreadTwo: 0,
-                });
+                return c.update({ deletedByTwo: true, clearedAtTwo: now, unreadTwo: 0 });
             }
-        }
+        }));
 
         if (deleteForEveryone === true) {
             await Message.update(

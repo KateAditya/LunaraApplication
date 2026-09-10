@@ -537,22 +537,23 @@ export const updateVenue = async (req: Request, res: Response) => {
                     keepUrls.map(url => getNormalizedPath(url)).filter(Boolean)
                 );
 
-                for (const img of existingImages) {
-                    const normalizedFilePath = getNormalizedPath(img.filePath);
-                    if (!normalizedKeepPaths.has(normalizedFilePath)) {
-                        await img.destroy();
-                        console.log(`[updateVenue] Deleted image not in keep list: ${img.filePath}`);
-                    }
-                }
+                await Promise.all(
+                    existingImages
+                        .filter(img => !normalizedKeepPaths.has(getNormalizedPath(img.filePath)))
+                        .map(img => {
+                            console.log(`[updateVenue] Deleted image not in keep list: ${img.filePath}`);
+                            return img.destroy();
+                        })
+                );
 
                 // Re-index remaining images to ensure sequential display orders
                 const remainingImages = await VenueImage.findAll({
                     where: { venueId: venue.id, imageType },
                     order: [['displayOrder', 'ASC'], ['uploadedAt', 'DESC']]
                 });
-                for (let idx = 0; idx < remainingImages.length; idx++) {
-                    await remainingImages[idx].update({ displayOrder: idx + 1 });
-                }
+                await Promise.all(
+                    remainingImages.map((img, idx) => img.update({ displayOrder: idx + 1 }))
+                );
             } catch (err: any) {
                 console.error(`Error cleaning up images for type ${imageType}:`, err.message || err);
             }
@@ -819,9 +820,7 @@ export const deleteVenue = async (req: Request, res: Response) => {
         // Destroy all VenueImage records — the model's beforeDestroy hook
         // automatically calls image.deleteFile() for each one.
         const images = await VenueImage.findAll({ where: { venueId: id } });
-        for (const image of images) {
-            await image.destroy();
-        }
+        await Promise.all(images.map(image => image.destroy()));
 
         // Remove the now-empty venue upload directory (best-effort)
         const venueDir = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads', 'venues', id);
