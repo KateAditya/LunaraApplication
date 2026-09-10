@@ -3,7 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue, Ticket, PartyPlanRequest, StrangersMeetJoiner } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue, Ticket, PartyPlanRequest, StrangersMeetJoiner, NightPartnerMatch } from '../models';
+import { RewardPointsService } from '../services/rewardPointsService';
 import { PartyPlanStatus } from '../models/PartyPlan';
 import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
@@ -417,6 +418,10 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             rawPartyHost,
             rawPartyJoiner,
             connectedMatches,
+            nightPartnerMatches,
+            partyPlanMatchedHosts,
+            partyPlanAcceptedJoiners,
+            socialConnections,
             activeSub,
             existingSwipe,
             existingUserLike,
@@ -465,15 +470,50 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             StrangersMeetRequest.findAll({ where: { userId }, attributes: ['id', 'ticketId'] }).catch(() => []),
             StrangersMeetJoiner.findAll({ where: { userId, status: { [Op.notIn]: ['rejected'] } }, attributes: ['id', 'strangersMeetRequestId'] }).catch(() => []),
             PartyPlan.findAll({ where: { userId, status: { [Op.ne]: PartyPlanStatus.CANCELLED } }, attributes: ['id'] }).catch(() => []),
-            PartyPlanRequest.findAll({ where: { requesterId: userId, status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed', 'paid'] } }, attributes: ['id', 'planId'] }).catch(() => []),
+            PartyPlanRequest.findAll({ where: { requesterId: userId, status: PartyPlanRequestStatus.ACCEPTED }, attributes: ['id', 'planId'] }).catch(() => []),
             UserMatch.findAll({
                 where: {
                     [Op.or]: [
-                        { user1Id: userId, status: 'connected' },
-                        { user2Id: userId, status: 'connected' }
+                        { user1Id: userId, status: { [Op.in]: ['connected', 'matched'] } },
+                        { user2Id: userId, status: { [Op.in]: ['connected', 'matched'] } }
                     ]
                 },
                 attributes: ['user1Id', 'user2Id']
+            }).catch(() => []),
+            NightPartnerMatch.findAll({
+                where: {
+                    [Op.or]: [
+                        { hostId: userId },
+                        { partnerId: userId }
+                    ],
+                    status: { [Op.in]: ['MATCHED', 'PAYMENT_PENDING', 'CONFIRMED'] }
+                },
+                attributes: ['hostId', 'partnerId']
+            }).catch(() => []),
+            PartyPlan.findAll({
+                where: {
+                    userId,
+                    matchedRequestId: { [Op.ne]: null as any },
+                    status: { [Op.ne]: PartyPlanStatus.CANCELLED }
+                },
+                include: [{ model: PartyPlanRequest, as: 'matchedRequest', attributes: ['requesterId'] }]
+            }).catch(() => []),
+            PartyPlanRequest.findAll({
+                where: {
+                    requesterId: userId,
+                    status: PartyPlanRequestStatus.ACCEPTED
+                },
+                include: [{ model: PartyPlan, as: 'plan', attributes: ['userId'] }]
+            }).catch(() => []),
+            SocialConnection.findAll({
+                where: {
+                    [Op.or]: [
+                        { requesterId: userId },
+                        { receiverId: userId }
+                    ],
+                    status: ConnectionStatus.ACCEPTED
+                },
+                attributes: ['requesterId', 'receiverId']
             }).catch(() => []),
             UserSubscription.findOne({
                 where: {
@@ -539,7 +579,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         }
         const bookingsCount = seenBookingKeys.size;
 
-        // Calculate unique matched profile partners
+        // Calculate unique matched profile partners across all matching features
         const matchedPartnerIds = new Set<string>();
         for (const m of connectedMatches) {
             const partnerId = m.user1Id === userId ? m.user2Id : m.user1Id;
@@ -547,11 +587,60 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 matchedPartnerIds.add(partnerId);
             }
         }
+        for (const nm of nightPartnerMatches) {
+            const partnerId = nm.hostId === userId ? nm.partnerId : nm.hostId;
+            if (partnerId && partnerId !== userId) {
+                matchedPartnerIds.add(partnerId);
+            }
+        }
+        for (const ph of partyPlanMatchedHosts) {
+            const rId = (ph as any).matchedRequest?.requesterId;
+            if (rId && rId !== userId) {
+                matchedPartnerIds.add(rId);
+            }
+        }
+        for (const pj of partyPlanAcceptedJoiners) {
+            const hId = (pj as any).plan?.userId;
+            if (hId && hId !== userId) {
+                matchedPartnerIds.add(hId);
+            }
+        }
+        for (const sc of socialConnections) {
+            const partnerId = sc.requesterId === userId ? sc.receiverId : sc.requesterId;
+            if (partnerId && partnerId !== userId) {
+                matchedPartnerIds.add(partnerId);
+            }
+        }
         const matchesCount = matchedPartnerIds.size;
 
-        const receivedSuperLikes = Math.max(superLikesFromMatches, superLikesFromLikes);
-        const plansCount = partyPlansCnt + strangersMeetCnt + groupPartyCnt;
-        const pointsCount = (user.rewardPoints != null && user.rewardPoints >= 0) ? user.rewardPoints : 0;
+        // Process daily login streak and ensure dynamic points are properly awarded & calculated
+        let currentRewardPoints = user.rewardPoints != null && user.rewardPoints >= 0 ? user.rewardPoints : 0;
+        try {
+            const streakRes = await RewardPointsService.checkDailyLoginStreak(userId);
+            if (streakRes.claimed) {
+                currentRewardPoints += streakRes.pointsEarned;
+            }
+        } catch (_) { }
+
+        // If user has 0 points, award baseline activity points for existing bookings & matches
+        if (currentRewardPoints <= 0) {
+            const basePoints = 100 + (bookingsCount * 50) + (matchesCount * 25);
+            try {
+                const awardRes = await RewardPointsService.awardPoints({
+                    userId,
+                    points: basePoints,
+                    reason: 'Lunara Activity & Profile Engagement Points',
+                    reference: `INITIAL_PTS_${userId}`,
+                });
+                currentRewardPoints = awardRes.newBalance;
+            } catch (_) {
+                currentRewardPoints = basePoints;
+            }
+        }
+        const pointsCount = currentRewardPoints;
+
+        const receivedSuperLikes = (superLikesFromMatches || 0) + (superLikesFromLikes || 0);
+        const plansCount = (partyPlansCnt || 0) + (strangersMeetCnt || 0) + (groupPartyCnt || 0);
 
         const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
         const planSuperlikesMap: Record<string, number> = { FREE: 0, CORE: 3, PLUS: 10, PRO: 14, ELITE: 50 };

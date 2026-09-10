@@ -11,6 +11,7 @@ import '../post_booking/booking_history_screen.dart';
 import '../onboarding/welcome_carousel.dart';
 import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
+import '../social/match_screen.dart';
 import '../../models/user.dart';
 import '../../widgets/lunara_profile_image.dart';
 
@@ -26,6 +27,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   bool _isLoading = true;
   int _dynamicBookingsCount = 0;
   int _dynamicMatchesCount = 0;
+  int _dynamicPointsCount = 0;
 
   @override
   void initState() {
@@ -48,7 +50,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
 
   Future<void> _loadProfile() async {
     final results = await Future.wait([
-      ApiService.fetchProfile(),
+      ApiService.fetchProfile(forceRefresh: true),
       ApiService.fetchAllUserTickets(forceRefresh: true),
       ApiService.fetchMyLikesAndMatches(),
     ]);
@@ -79,7 +81,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     final Set<String> matchedUserIds = {};
     for (var swipe in mySwipes) {
       final status = swipe['status']?.toString().toLowerCase();
-      if (status == 'connected') {
+      if (status == 'connected' || status == 'matched' || swipe['matched'] == true) {
         final u1 = swipe['user1Id']?.toString();
         final u2 = swipe['user2Id']?.toString();
         if (u1 != null && u1 != myId && u1 != 'masked' && u1.isNotEmpty) matchedUserIds.add(u1);
@@ -87,11 +89,16 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
       }
     }
 
+    final backendMatches = user?.matchesCount ?? 0;
+    final totalMatches = matchedUserIds.length > backendMatches ? matchedUserIds.length : backendMatches;
+    final backendPoints = user?.pointsCount ?? 0;
+
     if (mounted) {
       setState(() {
         _currentUser = user;
-        _dynamicBookingsCount = tickets.length;
-        _dynamicMatchesCount = matchedUserIds.length;
+        _dynamicBookingsCount = tickets.isNotEmpty ? tickets.length : (user?.bookingsCount ?? 0);
+        _dynamicMatchesCount = totalMatches;
+        _dynamicPointsCount = backendPoints;
         _isLoading = false;
       });
     }
@@ -448,7 +455,9 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     final matches = _dynamicMatchesCount > 0
         ? _dynamicMatchesCount
         : (_currentUser?.matchesCount ?? 0);
-    final points = _currentUser?.pointsCount ?? 0;
+    final points = _dynamicPointsCount > 0
+        ? _dynamicPointsCount
+        : (_currentUser?.pointsCount ?? 0);
 
     String pointsStr;
     if (points >= 1000) {
@@ -484,9 +493,20 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           _statItem(
             matches.toString(),
             'MATCHES',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MatchScreen()),
+            ).then((_) => _loadProfile()),
           ),
           _buildVerticalDivider(),
-          _statItem(pointsStr, 'POINTS'),
+          _statItem(
+            pointsStr,
+            'POINTS',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
+            ).then((_) => _loadProfile()),
+          ),
         ],
       ),
     );
