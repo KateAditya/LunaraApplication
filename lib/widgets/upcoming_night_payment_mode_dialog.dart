@@ -5,7 +5,8 @@ import '../widgets/lunara_profile_image.dart';
 import '../utils/lunara_date_formatter.dart';
 
 class UpcomingNightPaymentModeDialog extends StatelessWidget {
-  final Map<String, dynamic> partner;
+  final Map<String, dynamic>? partner;
+  final List<Map<String, dynamic>>? partners;
   final String venueName;
   final String date;
   final String? time;
@@ -15,7 +16,8 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
 
   const UpcomingNightPaymentModeDialog({
     super.key,
-    required this.partner,
+    this.partner,
+    this.partners,
     required this.venueName,
     required this.date,
     this.time,
@@ -26,7 +28,8 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
 
   static Future<String?> show(
     BuildContext context, {
-    required Map<String, dynamic> partner,
+    Map<String, dynamic>? partner,
+    List<Map<String, dynamic>>? partners,
     required String venueName,
     required String date,
     String? time,
@@ -35,9 +38,11 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
   }) {
     return showDialog<String>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: true,
       builder: (ctx) => UpcomingNightPaymentModeDialog(
         partner: partner,
+        partners: partners,
         venueName: venueName,
         date: date,
         time: time,
@@ -51,8 +56,19 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final partnerName = partner['firstName'] ?? 'Partner';
-    final partnerPhoto = partner['primaryPhoto'] ?? partner['profilePhotoUrl'] ?? partner['photoUrl'];
+
+    final resolvedPartners = partners ?? (partner != null ? [partner!] : []);
+    final partnerCount = resolvedPartners.length;
+    final primaryPartner = resolvedPartners.isNotEmpty ? resolvedPartners.first : <String, dynamic>{};
+
+    String partnerDisplayName;
+    if (partnerCount <= 1) {
+      partnerDisplayName = primaryPartner['firstName'] ?? 'Partner';
+    } else {
+      partnerDisplayName = '${primaryPartner['firstName'] ?? 'Partner'} + ${partnerCount - 1} other${partnerCount > 2 ? 's' : ''}';
+    }
+
+    final partnerPhoto = primaryPartner['primaryPhoto'] ?? primaryPartner['profilePhotoUrl'] ?? primaryPartner['photoUrl'];
     final displayEvent = eventTitle ?? venueName;
     final formattedTime = LunaraDateFormatter.normalizeTimeTo12Hour(time ?? '20:00');
     
@@ -150,17 +166,47 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    LunaraProfileImage(
-                      userData: {'profilePhotoUrl': partnerPhoto},
-                      radius: 23,
-                    ),
-                    const SizedBox(width: 12),
+                    if (partnerCount > 1)
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          LunaraProfileImage(
+                            userData: {'profilePhotoUrl': partnerPhoto},
+                            radius: 21,
+                          ),
+                          Positioned(
+                            right: -6,
+                            bottom: -4,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: LunaraTheme.electricViolet,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '+$partnerCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      LunaraProfileImage(
+                        userData: {'profilePhotoUrl': partnerPhoto},
+                        radius: 23,
+                      ),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Inviting $partnerName',
+                            'Inviting $partnerDisplayName',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -307,7 +353,7 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Price Breakdown
+            // Price Breakdown (Overflow-Safe layout!)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -317,19 +363,29 @@ class UpcomingNightPaymentModeDialog extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'You pay: ₹${hostAmount.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                  Flexible(
+                    child: Text(
+                      'You pay: ₹${hostAmount.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Text(
-                    'Partner pays: ₹${partnerAmount.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: partnerAmount == 0 ? const Color(0xFF10B981) : LunaraTheme.electricViolet,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Partner pays: ₹${partnerAmount.toStringAsFixed(0)}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: partnerAmount == 0 ? const Color(0xFF10B981) : LunaraTheme.electricViolet,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],

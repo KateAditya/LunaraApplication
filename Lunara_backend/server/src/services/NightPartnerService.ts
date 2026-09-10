@@ -502,11 +502,12 @@ export class NightPartnerService {
     }
 
     /**
-     * Verify payment and create & send NightPartnerRequest atomically
+     * Verify payment and create & send NightPartnerRequest atomically (supports multiple invitees)
      */
     public static async verifyInvitePaymentAndSend(params: {
         hostId: string;
-        partnerId: string;
+        partnerId?: string;
+        partnerIds?: string[];
         venueId: string;
         eventDate: string;
         eventTime?: string;
@@ -519,6 +520,7 @@ export class NightPartnerService {
         const {
             hostId,
             partnerId,
+            partnerIds,
             venueId,
             eventDate,
             eventTime,
@@ -529,7 +531,12 @@ export class NightPartnerService {
             paymentMethod = 'razorpay',
         } = params;
 
-        if (hostId === partnerId) {
+        const rawList = partnerIds && partnerIds.length > 0
+            ? partnerIds
+            : (partnerId ? [partnerId] : []);
+        const targetPartnerIds = Array.from(new Set(rawList)).filter(id => id && id !== hostId);
+
+        if (targetPartnerIds.length === 0) {
             throw new Error('CANNOT_REQUEST_SELF');
         }
 
@@ -550,7 +557,7 @@ export class NightPartnerService {
             throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
         }
 
-        // Time-lock checks
+        // Time-lock checks for host
         const eventDateTime = parseBookingDateTime(eventDate, eventTime);
         const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: venue.id });
         if (!hostTimeLock.allowed) {
@@ -560,22 +567,32 @@ export class NightPartnerService {
             throw err;
         }
 
-        const partnerTimeLock = await EventTimeLockService.validateFourHourGap(partnerId, eventDateTime, 'party_plan');
-        if (!partnerTimeLock.allowed) {
-            const partnerUser = await User.findByPk(partnerId, { attributes: ['firstName', 'lastName'] });
-            const partnerName = partnerUser?.firstName || 'The selected partner';
-            const err: any = new Error(`${partnerName} already has another plan scheduled around this time. Please choose another event or partner.`);
-            err.code = 'USER_ALREADY_HAS_PLAN';
-            err.timeLock = partnerTimeLock;
-            throw err;
+        // Validate time locks for selected partners
+        const eligiblePartnerIds: string[] = [];
+        for (const pId of targetPartnerIds) {
+            const partnerTimeLock = await EventTimeLockService.validateFourHourGap(pId, eventDateTime, 'party_plan');
+            if (!partnerTimeLock.allowed) {
+                if (targetPartnerIds.length === 1) {
+                    const partnerUser = await User.findByPk(pId, { attributes: ['firstName', 'lastName'] });
+                    const partnerName = partnerUser?.firstName || 'The selected partner';
+                    const err: any = new Error(`${partnerName} already has another plan scheduled around this time. Please choose another event or partner.`);
+                    err.code = 'USER_ALREADY_HAS_PLAN';
+                    err.timeLock = partnerTimeLock;
+                    throw err;
+                }
+            } else {
+                eligiblePartnerIds.push(pId);
+            }
         }
 
-        // Calculate amount to verify
+        const finalPartnerIds = eligiblePartnerIds.length > 0 ? eligiblePartnerIds : targetPartnerIds;
+
+        // Calculate authoritative amount to verify (2 tickets total per invitation slot)
         const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
         const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
         const requiredAmount = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
 
-        // Payment verification
+        // Payment verification (executed once for host transaction)
         if (paymentMethod === 'wallet') {
             const SmartWallet = (await import('../models/SmartWallet')).default;
             const WalletTransaction = (await import('../models/WalletTransaction')).default;
@@ -617,40 +634,47 @@ export class NightPartnerService {
         }
 
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 Hours expiry
+        const createdRequests: NightPartnerRequest[] = [];
 
-        const [request, created] = await NightPartnerRequest.findOrCreate({
-            where: {
-                hostId,
-                partnerId,
-                venueId: venue.id,
-                eventDate: new Date(eventDate),
-            },
-            defaults: {
-                hostId,
-                partnerId,
-                venueId: venue.id,
-                eventDate: new Date(eventDate),
-                eventTime: eventTime || '20:00',
-                paymentMode,
-                hostPaid: true,
-                hostAmount: requiredAmount,
-                razorpayOrderId,
-                status: NightPartnerRequestStatus.PENDING,
-                expiresAt,
-            },
+        await sequelize.transaction(async (t) => {
+            for (const pId of finalPartnerIds) {
+                const [request, created] = await NightPartnerRequest.findOrCreate({
+                    where: {
+                        hostId,
+                        partnerId: pId,
+                        venueId: venue.id,
+                        eventDate: new Date(eventDate),
+                    },
+                    defaults: {
+                        hostId,
+                        partnerId: pId,
+                        venueId: venue.id,
+                        eventDate: new Date(eventDate),
+                        eventTime: eventTime || '20:00',
+                        paymentMode,
+                        hostPaid: true,
+                        hostAmount: requiredAmount,
+                        razorpayOrderId,
+                        status: NightPartnerRequestStatus.PENDING,
+                        expiresAt,
+                    },
+                    transaction: t,
+                });
+
+                if (!created) {
+                    await request.update({
+                        status: NightPartnerRequestStatus.PENDING,
+                        hostPaid: true,
+                        hostAmount: requiredAmount,
+                        razorpayOrderId,
+                        expiresAt,
+                        eventTime: eventTime || request.eventTime || '20:00',
+                        paymentMode,
+                    }, { transaction: t });
+                }
+                createdRequests.push(request);
+            }
         });
-
-        if (!created) {
-            await request.update({
-                status: NightPartnerRequestStatus.PENDING,
-                hostPaid: true,
-                hostAmount: requiredAmount,
-                razorpayOrderId,
-                expiresAt,
-                eventTime: eventTime || request.eventTime || '20:00',
-                paymentMode,
-            });
-        }
 
         // Fetch Host Profile info for notification delivery
         const hostUser = await User.findByPk(hostId, {
@@ -665,58 +689,61 @@ export class NightPartnerService {
         const hostPhotos = (hostUser as any)?.photos || [];
         const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
 
-        // Send Push & Real-time Socket Notification to Partner
-        await this.emitNotification(partnerId, {
-            type: 'PARTNER_REQUEST_SENT',
-            actorUserId: hostId,
-            title: 'Invite for Party Event 🌙',
-            body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
-            entityId: request.id,
-            data: {
-                requestId: request.id,
-                nightId: request.id,
-                venueId: venue.id,
-                venueName: venue.name,
-                eventName: venue.name,
-                eventDate,
-                eventTime: normalize12h(eventTime || request.eventTime || '20:00'),
-                hostId,
-                hostName,
-                partnerId,
-                recipientUserId: partnerId,
+        // Send Push & Real-time Socket Notification to each invited Partner
+        for (const req of createdRequests) {
+            const pId = req.partnerId;
+            await this.emitNotification(pId, {
+                type: 'PARTNER_REQUEST_SENT',
                 actorUserId: hostId,
-                isHost: false,
-                userRole: 'PARTNER',
-                paymentMode,
-                status: 'PENDING',
-                stage: 'INVITE_SENT',
-                actor: {
-                    id: hostId,
-                    firstName: hostUser?.firstName || 'Host',
-                    lastName: hostUser?.lastName || '',
-                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                    isVerified: !!hostUser?.isVerified,
-                },
-                sender: {
-                    id: hostId,
-                    firstName: hostUser?.firstName || 'Host',
-                    lastName: hostUser?.lastName || '',
-                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                    isVerified: !!hostUser?.isVerified,
-                },
-                event: {
+                title: 'Invite for Party Event 🌙',
+                body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
+                entityId: req.id,
+                data: {
+                    requestId: req.id,
+                    nightId: req.id,
+                    venueId: venue.id,
                     venueName: venue.name,
-                    name: venue.name,
-                    date: eventDate,
-                    time: eventTime || request.eventTime || '20:00',
-                    coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                    eventName: venue.name,
+                    eventDate,
+                    eventTime: normalize12h(eventTime || req.eventTime || '20:00'),
+                    hostId,
+                    hostName,
+                    partnerId: pId,
+                    recipientUserId: pId,
+                    actorUserId: hostId,
+                    isHost: false,
+                    userRole: 'PARTNER',
+                    paymentMode,
+                    status: 'PENDING',
+                    stage: 'INVITE_SENT',
+                    actor: {
+                        id: hostId,
+                        firstName: hostUser?.firstName || 'Host',
+                        lastName: hostUser?.lastName || '',
+                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                        isVerified: !!hostUser?.isVerified,
+                    },
+                    sender: {
+                        id: hostId,
+                        firstName: hostUser?.firstName || 'Host',
+                        lastName: hostUser?.lastName || '',
+                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                        isVerified: !!hostUser?.isVerified,
+                    },
+                    event: {
+                        venueName: venue.name,
+                        name: venue.name,
+                        date: eventDate,
+                        time: eventTime || req.eventTime || '20:00',
+                        coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                    },
+                    actions: ['ACCEPT', 'DECLINE'],
                 },
-                actions: ['ACCEPT', 'DECLINE'],
-            },
-        });
+            });
+        }
 
         this.invalidateUpcomingNightCaches();
-        return request;
+        return createdRequests[0];
     }
 
     /**
@@ -2121,6 +2148,28 @@ export class NightPartnerService {
                 title = `Invite for Party Event 🌙 - ${venueName}`;
                 body = `${otherUserName} invited you to join for Upcoming Night at ${venueName}!`;
                 statusText = 'Invite Received';
+            } else if (isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
+                title = `Upcoming Night Invite Sent ⏳`;
+                try {
+                    const allHostReqs = await NightPartnerRequest.findAll({
+                        where: {
+                            hostId: recipientUserId,
+                            venueId: requestRecord.venueId,
+                            eventDate: requestRecord.eventDate,
+                            status: NightPartnerRequestStatus.PENDING,
+                        },
+                        include: [{ model: User, as: 'partner', attributes: ['firstName'] }],
+                    });
+                    if (allHostReqs.length > 1) {
+                        const partnerNames = allHostReqs.map((r: any) => r.partner?.firstName || 'Partner');
+                        body = `Invited ${partnerNames[0]} + ${partnerNames.length - 1} others to join Upcoming Night at ${venueName}. Waiting for response.`;
+                    } else {
+                        body = `Invited ${otherUserName} to join Upcoming Night at ${venueName}. Waiting for response.`;
+                    }
+                } catch (_) {
+                    body = `Invited ${otherUserName} to join Upcoming Night at ${venueName}. Waiting for response.`;
+                }
+                statusText = 'Invite Sent';
             } else if (isCancelled) {
                 title = `Upcoming Night Cancelled ❌`;
                 body = `The event at ${venueName} was cancelled and refund processed if applicable.`;
@@ -2194,8 +2243,15 @@ export class NightPartnerService {
                 ? (match!.updatedAt ? match!.updatedAt.toISOString() : new Date().toISOString())
                 : (requestRecord!.updatedAt ? requestRecord!.updatedAt.toISOString() : new Date().toISOString());
 
+            const resolvedVenueId = isMatch ? match!.venueId : requestRecord!.venueId;
+            const eventDateStr = eventDate ? new Date(eventDate).toISOString().split('T')[0] : '';
+            const resolvedEventId = `event_${resolvedVenueId}_${eventDateStr}`;
+
             return {
                 id: `upcoming_night_timeline_${nightId}`,
+                venueId: resolvedVenueId,
+                eventDate,
+                eventId: resolvedEventId,
                 title,
                 body,
                 createdAt: updatedIso,
@@ -2223,6 +2279,8 @@ export class NightPartnerService {
                 data: {
                     type: 'upcoming_night_timeline',
                     nightId,
+                    venueId: resolvedVenueId,
+                    eventId: resolvedEventId,
                     requestId: isMatch ? undefined : requestRecord!.id,
                     matchId: isMatch ? match!.id : undefined,
                     venueName,

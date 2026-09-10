@@ -4664,6 +4664,7 @@ class ApiService {
     required String venueId,
     required String date,
     required String paymentMode,
+    List<String>? partnerIds,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -4675,13 +4676,18 @@ class ApiService {
           'venueId': venueId,
           'eventDate': date,
           'paymentMode': paymentMode,
+          if (partnerIds != null && partnerIds.isNotEmpty) 'partnerIds': partnerIds,
         },
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        if (data['data'] != null && data['data'] is Map) {
           return Map<String, dynamic>.from(data['data']);
         }
+        return Map<String, dynamic>.from(data);
+      }
+      if (data is Map<String, dynamic>) {
+        return data;
       }
     } catch (e) {
       debugPrint('initiateNightInvitePayment error: $e');
@@ -4690,7 +4696,8 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> verifyNightInvitePayment({
-    required String partnerId,
+    String? partnerId,
+    List<String>? partnerIds,
     required String venueId,
     required String date,
     String? time,
@@ -4703,11 +4710,14 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
+      final resolvedPartnerIds = partnerIds ?? (partnerId != null ? [partnerId] : <String>[]);
+      final primaryPartnerId = partnerId ?? (resolvedPartnerIds.isNotEmpty ? resolvedPartnerIds.first : '');
       final response = await post(
         '/api/mobile/nights/invite-payment/verify',
         body: {
           'hostId': userId,
-          'partnerId': partnerId,
+          'partnerId': primaryPartnerId,
+          if (resolvedPartnerIds.isNotEmpty) 'partnerIds': resolvedPartnerIds,
           'venueId': venueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
@@ -4719,7 +4729,7 @@ class ApiService {
         },
       );
       final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || (data is Map && data['success'] == true)) {
+      if (response.statusCode == 200 || response.statusCode == 201 || (data is Map && data['success'] == true)) {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerLiveFeedSync();

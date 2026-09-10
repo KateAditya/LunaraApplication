@@ -4,6 +4,8 @@ import '../services/api_service.dart';
 import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
 import '../widgets/lunara_profile_image.dart';
+import '../widgets/lunara_alert.dart';
+import '../widgets/smart_checkout_sheet.dart';
 import 'upcoming_night_post_partner_sheet.dart';
 import 'upcoming_night_payment_mode_dialog.dart';
 import 'dialogs/time_lock_blocked_dialog.dart';
@@ -63,9 +65,10 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _invitees = [];
   bool _isLoading = true;
+  bool _isProcessing = false;
   final bool _showPostPartnerBanner = false;
   final Set<String> _sentInviteUserIds = {};
-  final Set<String> _loadingUserIds = {};
+  final Set<String> _selectedUserIds = {};
 
   @override
   void initState() {
@@ -87,8 +90,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       search: query,
     );
 
-    // If results are empty (e.g. initial seed or no venue-matched records yet),
-    // gracefully fall back to active profiles so user never sees an empty screen
+    // If results are empty, gracefully fall back to active profiles so user never sees an empty screen
     if (results.isEmpty) {
       try {
         final customers = await ApiService.fetchCustomers();
@@ -143,10 +145,76 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     return 1000.0;
   }
 
-  Future<void> _promptAndSendInvite(Map<String, dynamic> partner) async {
+  void _togglePartnerSelection(String partnerId) {
+    if (_sentInviteUserIds.contains(partnerId)) return; // Already invited
+    setState(() {
+      if (_selectedUserIds.contains(partnerId)) {
+        _selectedUserIds.remove(partnerId);
+      } else {
+        _selectedUserIds.add(partnerId);
+      }
+    });
+  }
+
+  Future<void> _onInviteSelected() async {
+    if (_selectedUserIds.isEmpty) {
+      LunaraAlert.showWarningToast(
+        'Select at least one partner to continue.',
+        context: context,
+      );
+      return;
+    }
+
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+
+    // STEP 5: Click "Invite Selected" -> Backend Validation first
+    final validateRes = await ApiService.initiateNightInvitePayment(
+      venueId: widget.venueId,
+      date: widget.date,
+      paymentMode: 'SELF_PAY',
+      partnerIds: _selectedUserIds.toList(),
+    );
+
+    if (!mounted) return;
+
+    if (validateRes != null && validateRes['success'] == false) {
+      setState(() => _isProcessing = false);
+      final msg = validateRes['message']?.toString() ?? 'Could not proceed with invitation.';
+      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+          validateRes['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+          validateRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+          validateRes['code'] == 'USER_ALREADY_HAS_PLAN';
+
+      if (isTimeLock) {
+        TimeLockBlockedDialog.show(
+          context,
+          errorData: validateRes,
+        );
+      } else {
+        final friendlyMsg = msg == 'HOST_ALREADY_HAS_ACTIVE_MATCH'
+            ? 'You already have an active match for this night. Please complete or cancel your existing event before inviting new partners.'
+            : msg;
+        LunaraAlert.showErrorModal(
+          context: context,
+          title: 'Cannot Send Invitation',
+          message: friendlyMsg,
+        );
+      }
+      return;
+    }
+
+    setState(() => _isProcessing = false);
+
+    // STEP 6: Open Self Pay / Split Popup
+    final selectedPartners = _invitees
+        .where((i) => _selectedUserIds.contains(i['userId']?.toString()))
+        .toList();
+
     final selectedMode = await UpcomingNightPaymentModeDialog.show(
       context,
-      partner: partner,
+      partners: selectedPartners,
+      partner: selectedPartners.isNotEmpty ? selectedPartners.first : null,
       venueName: widget.venueName,
       date: widget.date,
       time: widget.time,
@@ -154,80 +222,97 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       ticketPrice: _resolveTicketPrice(),
     );
 
-    if (selectedMode != null) {
-      _sendInvite(partner, selectedMode);
-    }
-  }
+    if (selectedMode == null || !mounted) return; // User closed mode selection
 
-  Future<void> _sendInvite(Map<String, dynamic> partner, [String paymentMode = 'SELF_PAY']) async {
-    final partnerId = partner['userId']?.toString();
-    if (partnerId == null || partnerId.isEmpty) return;
+    // STEPS 7 & 8: Calculate server-authoritative amount & Open Payment Gateway
+    setState(() => _isProcessing = true);
 
-    if (_sentInviteUserIds.contains(partnerId)) return;
-
-    setState(() {
-      _loadingUserIds.add(partnerId);
-    });
-
-    final res = await ApiService.sendNightPartnerRequest(
-      partnerId: partnerId,
+    final orderRes = await ApiService.initiateNightInvitePayment(
       venueId: widget.venueId,
       date: widget.date,
-      time: LunaraDateFormatter.normalizeTimeTo12Hour(widget.time),
-      paymentMode: paymentMode,
+      paymentMode: selectedMode,
+      partnerIds: _selectedUserIds.toList(),
+    );
+
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+
+    if (orderRes == null || orderRes['success'] != true) {
+      final err = orderRes?['message']?.toString() ?? 'Unable to prepare payment order. Please try again.';
+      LunaraAlert.showErrorModal(
+        context: context,
+        title: 'Payment Error',
+        message: err,
+      );
+      return;
+    }
+
+    final double amountToPay = (orderRes['amountToPay'] as num?)?.toDouble() ??
+        (orderRes['amount'] != null
+            ? (orderRes['amount'] as num).toDouble() / 100
+            : (selectedMode == 'SELF_PAY' ? _resolveTicketPrice() * 2 : _resolveTicketPrice()));
+    final String razorpayOrderId = orderRes['razorpayOrderId']?.toString() ??
+        'order_mock_${DateTime.now().millisecondsSinceEpoch}';
+
+    // STEPS 9 & 10: Payment Gateway with Server Verification
+    final bool? paymentVerified = await SmartCheckoutSheet.show(
+      context: context,
+      title: 'Upcoming Night Confirmation',
+      subtitle: '${selectedMode == 'SELF_PAY' ? 'Self Pay (Full Booking)' : 'Split (Host Ticket)'} for ${widget.venueName}',
+      itemPrice: amountToPay,
+      onWalletPayment: () async {
+        final verifyRes = await ApiService.verifyNightInvitePayment(
+          partnerIds: _selectedUserIds.toList(),
+          venueId: widget.venueId,
+          date: widget.date,
+          time: widget.time,
+          paymentMode: selectedMode,
+          paymentMethod: 'wallet',
+        );
+        return verifyRes != null && verifyRes['success'] == true;
+      },
+      onDirectPayment: () async {
+        final verifyRes = await ApiService.verifyNightInvitePayment(
+          partnerIds: _selectedUserIds.toList(),
+          venueId: widget.venueId,
+          date: widget.date,
+          time: widget.time,
+          paymentMode: selectedMode,
+          razorpayOrderId: razorpayOrderId,
+          razorpayPaymentId: 'pay_${DateTime.now().millisecondsSinceEpoch}',
+          razorpaySignature: 'mock_signature',
+          paymentMethod: 'razorpay',
+        );
+        return verifyRes != null && verifyRes['success'] == true;
+      },
+      onHybridPayment: (shortfall) async {
+        return false;
+      },
     );
 
     if (!mounted) return;
 
-    setState(() {
-      _loadingUserIds.remove(partnerId);
-      if (res != null && res['success'] == true) {
-        _sentInviteUserIds.add(partnerId);
-      }
-    });
+    if (paymentVerified == true) {
+      final count = _selectedUserIds.length;
+      setState(() {
+        _sentInviteUserIds.addAll(_selectedUserIds);
+        _selectedUserIds.clear();
+      });
 
-    if (res != null && res['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Invite sent to ${partner['firstName'] ?? 'partner'}! 🎉',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-        ),
+      LunaraAlert.showSuccessToast(
+        count > 1 ? '$count invitations sent successfully! 🎉' : 'Invitation sent successfully! 🎉',
+        context: context,
       );
-    } else {
-      final msg = res?['message']?.toString() ?? 'Could not send invite. Please try again.';
-      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
-          res?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
-          res?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
-          res?['code'] == 'USER_ALREADY_HAS_PLAN' ||
-          res?['code'] == 'PLAN_TIME_LOCKED';
 
-      if (isTimeLock) {
-        TimeLockBlockedDialog.show(
-          context,
-          errorData: res is Map<String, dynamic> ? res : {'message': msg},
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      // Dismiss after short delay
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (mounted) Navigator.pop(context);
+      });
+    } else {
+      LunaraAlert.showWarningToast(
+        'Payment was not completed. No invitations were sent.',
+        context: context,
+      );
     }
   }
 
@@ -332,7 +417,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
           ),
           const SizedBox(height: 14),
 
-          // Post to Find Partner Banner (Disabled for now as requested; logic preserved)
+          // Post to Find Partner Banner (Preserved)
           if (_showPostPartnerBanner) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -505,7 +590,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                         children: [
                           if (interestedList.isNotEmpty) ...[
                             _buildSectionHeader(
-                              'INTERESTED IN THIS NIGHT (${interestedList.length})',
+                              'HOT INTERESTED IN THIS NIGHT (${interestedList.length})',
                               isHighlight: true,
                             ),
                             const SizedBox(height: 6),
@@ -521,10 +606,133 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                             ),
                             const SizedBox(height: 6),
                             ...otherList.map((partner) => _buildPartnerRow(partner, isDark)),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 80), // Extra space for sticky action bar
                           ],
                         ],
                       ),
+          ),
+
+          // STICKY BOTTOM ACTION AREA
+          _buildStickyBottomActionArea(isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStickyBottomActionArea(bool isDark) {
+    final selectedCount = _selectedUserIds.length;
+    final isEnabled = selectedCount > 0 && !_isProcessing;
+
+    return Container(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 14,
+        bottom: MediaQuery.of(context).padding.bottom + 14,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A28) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+        border: Border(
+          top: BorderSide(
+            color: isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.06),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Selected: $selectedCount',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    if (selectedCount > 0) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => setState(() => _selectedUserIds.clear()),
+                        child: const Text(
+                          'Clear',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  selectedCount == 0
+                      ? 'Select partner(s) to invite'
+                      : '$selectedCount candidate${selectedCount > 1 ? 's' : ''} ready',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: isDark ? Colors.white54 : Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          ElevatedButton(
+            onPressed: isEnabled ? _onInviteSelected : () {
+              if (selectedCount == 0) {
+                LunaraAlert.showWarningToast(
+                  'Select at least one partner to continue.',
+                  context: context,
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isEnabled
+                  ? LunaraTheme.electricViolet
+                  : (isDark ? Colors.white12 : Colors.grey[300]),
+              foregroundColor: isEnabled
+                  ? Colors.white
+                  : (isDark ? Colors.white38 : Colors.grey[600]),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: _isProcessing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    selectedCount > 0 ? 'Invite Selected ($selectedCount)' : 'Invite Selected',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13.5,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
           ),
         ],
       ),
@@ -571,7 +779,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   Widget _buildPartnerRow(Map<String, dynamic> partner, bool isDark) {
     final partnerId = partner['userId']?.toString() ?? '';
     final isSent = _sentInviteUserIds.contains(partnerId);
-    final isInviting = _loadingUserIds.contains(partnerId);
+    final isSelected = _selectedUserIds.contains(partnerId);
     final name = partner['firstName'] ?? 'User';
     final age = partner['age'];
     final city = partner['city'] ?? '';
@@ -582,54 +790,59 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: isInterested
-              ? (isDark ? const Color(0xFF1E1E30) : const Color(0xFFFFF7ED))
-              : (isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFFAFAFC)),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isInterested
-                ? const Color(0xFFFFB74D).withValues(alpha: 0.4)
-                : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
-            width: isInterested ? 1.2 : 1.0,
+      child: InkWell(
+        onTap: isSent ? null : () => _togglePartnerSelection(partnerId),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.16 : 0.08)
+                : (isInterested
+                    ? (isDark ? const Color(0xFF1E1E30) : const Color(0xFFFFF7ED))
+                    : (isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFFAFAFC))),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? LunaraTheme.electricViolet
+                  : (isInterested
+                      ? const Color(0xFFFFB74D).withValues(alpha: 0.4)
+                      : (isDark ? Colors.white10 : const Color(0xFFF1F5F9))),
+              width: isSelected ? 1.8 : (isInterested ? 1.2 : 1.0),
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: () => _openUserProfile(partner),
-              child: Stack(
-                children: [
-                  LunaraProfileImage(
-                    userData: {'profilePhotoUrl': photo},
-                    radius: 24,
-                  ),
-                  if (isVerified)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.verified,
-                          color: LunaraTheme.cyberCyan,
-                          size: 13,
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => _openUserProfile(partner),
+                child: Stack(
+                  children: [
+                    LunaraProfileImage(
+                      userData: {'profilePhotoUrl': photo},
+                      radius: 24,
+                    ),
+                    if (isVerified)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.verified,
+                            color: LunaraTheme.cyberCyan,
+                            size: 13,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _openUserProfile(partner),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -698,49 +911,51 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                   ],
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            SizedBox(
-              height: 36,
-              child: ElevatedButton(
-                onPressed: (isSent || isInviting)
-                    ? null
-                    : () => _promptAndSendInvite(partner),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isSent
-                      ? Colors.green.withValues(alpha: 0.15)
-                      : LunaraTheme.electricViolet,
-                  foregroundColor: isSent ? Colors.green : Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  shape: RoundedRectangleBorder(
+              const SizedBox(width: 10),
+
+              // Selection / Status Indicator
+              if (isSent)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    side: isSent
-                        ? const BorderSide(color: Colors.green, width: 1.2)
-                        : BorderSide.none,
+                    border: Border.all(color: Colors.green, width: 1.2),
                   ),
-                ),
-                child: isInviting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                  child: const Text(
+                    'INVITED ✓',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                      letterSpacing: 0.6,
+                      color: Colors.green,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isSelected ? LunaraTheme.electricViolet : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : (isDark ? Colors.white30 : Colors.grey[400]!),
+                      width: 2.0,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(
+                          Icons.check_rounded,
                           color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        isSent ? 'INVITED ✓' : 'INVITE',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11.5,
-                          letterSpacing: 0.8,
-                          color: isSent ? Colors.green : Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-          ],
+                          size: 20,
+                        )
+                      : null,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -798,11 +1013,11 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                   ),
                 ),
                 Container(
-                  width: 70,
+                  width: 32,
                   height: 32,
                   decoration: BoxDecoration(
                     color: isDark ? Colors.white10 : Colors.grey[200],
-                    borderRadius: BorderRadius.circular(12),
+                    shape: BoxShape.circle,
                   ),
                 ),
               ],

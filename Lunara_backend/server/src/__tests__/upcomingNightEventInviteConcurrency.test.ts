@@ -75,9 +75,50 @@ describe('Event Invite, Payment Gating, Concurrency, Cancellation & Refund Maste
             expect(createdReq.hostPaid).toBe(true);
             expect(createdReq.status).toBe(NightPartnerRequestStatus.PENDING);
         });
+
+        it('should dispatch invitations to multiple selected partners after verified payment', async () => {
+            jest.spyOn(Venue, 'findByPk').mockResolvedValue({ id: venueId, name: 'Club Cyber' } as any);
+            jest.spyOn(NightPartnerMatch, 'findOne').mockResolvedValue(null);
+            jest.spyOn(User, 'findByPk').mockResolvedValue({ id: hostId, firstName: 'HostUser', isVerified: true } as any);
+
+            const createdRequests: any[] = [];
+            jest.spyOn(NightPartnerRequest, 'findOrCreate').mockImplementation(((opts: any) => {
+                const req = {
+                    id: `req_${opts.where.partnerId}`,
+                    hostId,
+                    partnerId: opts.where.partnerId,
+                    venueId,
+                    eventDate: new Date(eventDate),
+                    paymentMode: 'SELF_PAY',
+                    hostPaid: true,
+                    hostAmount: 1000,
+                    status: NightPartnerRequestStatus.PENDING,
+                    expiresAt: new Date(Date.now() + 86400000),
+                    update: jest.fn().mockResolvedValue(true),
+                };
+                createdRequests.push(req);
+                return Promise.resolve([req, true]);
+            }) as any);
+
+            const partnerIds = [partnerAId, partnerBId];
+            const primaryReq = await NightPartnerService.verifyInvitePaymentAndSend({
+                hostId,
+                partnerIds,
+                venueId,
+                eventDate,
+                paymentMode: 'SELF_PAY',
+                razorpayOrderId: 'order_mock_multi',
+                razorpayPaymentId: 'pay_mock_multi',
+                razorpaySignature: 'mock_signature',
+            });
+
+            expect(primaryReq).toBeDefined();
+            expect(createdRequests.length).toBe(2);
+            expect(createdRequests.map(r => r.partnerId)).toEqual([partnerAId, partnerBId]);
+        });
     });
 
-    describe('2. Critical Concurrency Test: 4 Invitations, 2 Simultaneous Accepts', () => {
+    describe('2. Critical Concurrency Test: 4 Invitations, Concurrent Accepts', () => {
         it('should deterministically allow only ONE partner to claim the slot and fail the other with MATCH_SLOT_FILLED', async () => {
             let confirmedPartner: string | null = null;
             let matchCount = 0;
@@ -158,6 +199,82 @@ describe('Event Invite, Payment Gating, Concurrency, Cancellation & Refund Maste
 
             const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
             expect(rejectionReason.message).toBe('MATCH_SLOT_FILLED');
+        });
+
+        it('should deterministically allow strictly ONE partner when 4 recipients accept concurrently, verified across 100 repeated trials', async () => {
+            const partnerIds = [
+                '00000000-0000-0000-0000-000000000002',
+                '00000000-0000-0000-0000-000000000003',
+                '00000000-0000-0000-0000-000000000004',
+                '00000000-0000-0000-0000-000000000005',
+            ];
+
+            for (let trial = 0; trial < 100; trial++) {
+                let activeMatch: any = null;
+                let matchCount = 0;
+
+                const requests: Record<string, any> = {};
+                for (let i = 0; i < 4; i++) {
+                    const pId = partnerIds[i];
+                    const rId = `req_${i}_${trial}`;
+                    requests[rId] = {
+                        id: rId,
+                        hostId,
+                        partnerId: pId,
+                        venueId,
+                        eventDate: new Date(eventDate),
+                        paymentMode: 'SELF_PAY',
+                        hostPaid: true,
+                        hostAmount: 1000,
+                        status: NightPartnerRequestStatus.PENDING,
+                        expiresAt: new Date(Date.now() + 86400000),
+                        update: jest.fn().mockImplementation((updates: any) => {
+                            requests[rId].status = updates.status;
+                            return Promise.resolve(requests[rId]);
+                        }),
+                    };
+                }
+
+                jest.spyOn(NightPartnerRequest, 'findByPk').mockImplementation((id: any) => {
+                    return Promise.resolve(requests[id] || null);
+                });
+
+                jest.spyOn(NightPartnerMatch, 'findOne').mockImplementation(() => {
+                    return Promise.resolve(activeMatch);
+                });
+
+                jest.spyOn(NightPartnerMatch, 'create').mockImplementation((data: any) => {
+                    matchCount++;
+                    activeMatch = { id: `match_${trial}`, ...data, status: NightPartnerMatchStatus.CONFIRMED };
+                    return Promise.resolve(activeMatch);
+                });
+
+                jest.spyOn(Booking, 'create').mockResolvedValue({ id: `booking_${trial}`, status: BookingStatus.CONFIRMED } as any);
+                jest.spyOn(NightPartnerRequest, 'findAll').mockResolvedValue([]);
+                jest.spyOn(Venue, 'findByPk').mockResolvedValue({ id: venueId, name: 'Club Cyber' } as any);
+                const Conversation = (require('../models/Conversation')).default;
+                jest.spyOn(Conversation, 'findOne').mockResolvedValue(null);
+                jest.spyOn(Conversation, 'create').mockResolvedValue({ id: `conv_${trial}` } as any);
+
+                // Concurrently trigger accept from all 4 recipients
+                const acceptPromises = partnerIds.map((pId, idx) => 
+                    NightPartnerService.respondToRequest(`req_${idx}_${trial}`, pId, 'accept')
+                );
+
+                const results = await Promise.allSettled(acceptPromises);
+                const fulfilled = results.filter(r => r.status === 'fulfilled');
+                const rejected = results.filter(r => r.status === 'rejected');
+
+                expect(fulfilled.length).toBe(1);
+                expect(rejected.length).toBe(3);
+                expect(matchCount).toBe(1);
+                expect(activeMatch).toBeDefined();
+
+                // Check that rejected promises have MATCH_SLOT_FILLED
+                for (const rej of rejected) {
+                    expect((rej as PromiseRejectedResult).reason.message).toBe('MATCH_SLOT_FILLED');
+                }
+            }
         });
     });
 

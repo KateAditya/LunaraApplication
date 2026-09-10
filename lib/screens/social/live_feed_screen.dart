@@ -3780,6 +3780,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractUpcomingNightId(Map<String, dynamic> item) {
+    // 1. Authoritative Event Key (ONE EVENT = ONE CARD)
+    final eventId = item['eventId'] ??
+        item['data']?['eventId'] ??
+        item['metadata']?['eventId'];
+    if (eventId != null && eventId.toString().trim().isNotEmpty) {
+      return eventId.toString().trim();
+    }
+
+    final venueId = item['venueId'] ??
+        item['venue']?['id'] ??
+        item['data']?['venueId'] ??
+        item['metadata']?['venueId'];
+    final eventDate = item['eventDate'] ??
+        item['date'] ??
+        item['bookingDate'] ??
+        item['data']?['eventDate'] ??
+        item['metadata']?['eventDate'];
+    if (venueId != null && eventDate != null) {
+      final vStr = venueId.toString().trim();
+      final dStr = eventDate.toString().split('T')[0].split(' ')[0].trim();
+      if (vStr.isNotEmpty && dStr.isNotEmpty) {
+        return 'event_${vStr}_$dStr';
+      }
+    }
+
     if (item['data'] is Map && item['data']['nightId'] != null) {
       final id = item['data']['nightId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -6092,12 +6117,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     List<Map<String, dynamic>> entries,
     String currentUserId,
   ) {
-    if (entries.isEmpty) return null;
+    int getProgressScore(Map<String, dynamic> e) {
+      final s = (e['stage'] ??
+              e['status'] ??
+              e['data']?['stage'] ??
+              e['data']?['status'] ??
+              e['metadata']?['stage'] ??
+              e['metadata']?['status'] ??
+              '')
+          .toString()
+          .toUpperCase();
+      if (s == 'FULLY_BOOKED' || s == 'CONFIRMED') return 5;
+      if (s == 'WAITING_FOR_PAYMENT' || s == 'PAYMENT_PENDING') return 4;
+      if (s == 'MATCHED' || s == 'ACCEPTED') return 3;
+      if (s == 'INVITE_SENT' || s == 'PENDING' || s == 'INVITE_RECEIVED') return 2;
+      return 1;
+    }
+
+    final sortedEntries = List<Map<String, dynamic>>.from(entries)
+      ..sort((a, b) => getProgressScore(b).compareTo(getProgressScore(a)));
 
     Map<String, dynamic> metadata = {};
-    Map<String, dynamic> rawItem = entries.first;
+    Map<String, dynamic> rawItem = sortedEntries.first;
 
-    for (final e in entries) {
+    for (final e in sortedEntries) {
       if (e['metadata'] is Map && (e['metadata'] as Map).isNotEmpty) {
         metadata.addAll(Map<String, dynamic>.from(e['metadata']));
       }
@@ -6704,8 +6747,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFF8B5CF6);
         badgeText = 'INVITE SENT';
         cardTitle = 'Invite Sent ⏳';
-        cardBody =
-            'Invited $partnerName to join $displayTitle. Waiting for response.';
+
+        final List<String> invitedNames = [];
+        for (final e in entries) {
+          final p = e['partner'] ?? e['data']?['partner'] ?? e['metadata']?['partner'];
+          final name = p is Map ? (p['firstName'] ?? p['name']) : (e['otherUserName'] ?? e['senderName']);
+          if (name != null && name.toString().trim().isNotEmpty) {
+            final clean = name.toString().trim();
+            if (!invitedNames.contains(clean)) invitedNames.add(clean);
+          }
+        }
+        if (invitedNames.length > 1) {
+          cardBody =
+              'Invited ${invitedNames[0]} + ${invitedNames.length - 1} others to join $displayTitle. Waiting for response.';
+        } else {
+          cardBody =
+              'Invited $partnerName to join $displayTitle. Waiting for response.';
+        }
 
         actionsList.add(
           NotificationAction(
@@ -6714,13 +6772,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             color: Colors.red[400],
             onTap: () async {
-              final res = await ApiService.cancelUpcomingNight(
-                targetId: targetRequestId,
-                reason: 'Host cancelled invite',
-              );
-              if (res != null && res['success'] == true) {
-                _loadFeed(showLoader: false, forceRefresh: true);
+              for (final e in entries) {
+                final reqId = e['requestId'] ??
+                    e['data']?['requestId'] ??
+                    e['metadata']?['requestId'] ??
+                    (e['id']?.toString().startsWith('upcoming_night_timeline_') == false ? e['id'] : null);
+                if (reqId != null) {
+                  await ApiService.cancelUpcomingNight(
+                    targetId: reqId.toString(),
+                    reason: 'Host cancelled invite',
+                  );
+                }
               }
+              if (targetRequestId.isNotEmpty) {
+                await ApiService.cancelUpcomingNight(
+                  targetId: targetRequestId,
+                  reason: 'Host cancelled invite',
+                );
+              }
+              _loadFeed(showLoader: false, forceRefresh: true);
             },
           ),
         );

@@ -145,6 +145,7 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
     try {
         const {
             partnerId,
+            partnerIds,
             venueId,
             eventDate,
             eventTime,
@@ -156,8 +157,12 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
         } = req.body;
         const hostId = req.user!.id;
 
-        if (!partnerId || !venueId || !eventDate) {
-            res.status(400).json({ success: false, message: 'partnerId, venueId, and eventDate are required' });
+        const resolvedPartnerIds = Array.isArray(partnerIds) && partnerIds.length > 0
+            ? partnerIds
+            : (partnerId ? [partnerId] : []);
+
+        if (resolvedPartnerIds.length === 0 || !venueId || !eventDate) {
+            res.status(400).json({ success: false, message: 'partnerId (or partnerIds), venueId, and eventDate are required' });
             return;
         }
 
@@ -169,7 +174,8 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
 
         const partnerRequest = await NightPartnerService.verifyInvitePaymentAndSend({
             hostId,
-            partnerId,
+            partnerId: resolvedPartnerIds[0],
+            partnerIds: resolvedPartnerIds,
             venueId,
             eventDate,
             eventTime,

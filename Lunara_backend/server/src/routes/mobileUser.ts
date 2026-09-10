@@ -761,29 +761,52 @@ async function getUserNotifications(
 
         const [hostRequests, partnerRequests, hostMatches, partnerMatches] = await Promise.all([
             NightPartnerRequest.findAll({
-                where: { hostId: uId },
-                attributes: ['id']
+                where: { hostId: uId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
+                attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
+                order: [['updatedAt', 'DESC']]
             }),
             NightPartnerRequest.findAll({
-                where: { partnerId: uId },
-                attributes: ['id']
+                where: { partnerId: uId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
+                attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
+                order: [['updatedAt', 'DESC']]
             }),
             NightPartnerMatch.findAll({
-                where: { hostId: uId },
-                attributes: ['id']
+                where: { hostId: uId, status: { [Op.notIn]: ['CANCELLED'] } },
+                attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
+                order: [['updatedAt', 'DESC']]
             }),
             NightPartnerMatch.findAll({
-                where: { partnerId: uId },
-                attributes: ['id']
+                where: { partnerId: uId, status: { [Op.notIn]: ['CANCELLED'] } },
+                attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
+                order: [['updatedAt', 'DESC']]
             })
         ]);
 
-        const nightIds = Array.from(new Set([
-            ...hostRequests.map(r => r.id),
-            ...partnerRequests.map(r => r.id),
-            ...hostMatches.map(m => m.id),
-            ...partnerMatches.map(m => m.id)
-        ]));
+        // Group by event (venueId + eventDate) so ONE EVENT = ONE CARD
+        const eventMap = new Map<string, string>();
+        for (const m of [...hostMatches, ...partnerMatches]) {
+            const dateStr = m.eventDate ? new Date(m.eventDate).toISOString().split('T')[0] : '';
+            const key = `${m.venueId}_${dateStr}`;
+            if (!eventMap.has(key)) {
+                eventMap.set(key, m.id);
+            }
+        }
+        for (const pr of partnerRequests) {
+            const dateStr = pr.eventDate ? new Date(pr.eventDate).toISOString().split('T')[0] : '';
+            const key = `${pr.venueId}_${dateStr}`;
+            if (!eventMap.has(key)) {
+                eventMap.set(key, pr.id);
+            }
+        }
+        for (const hr of hostRequests) {
+            const dateStr = hr.eventDate ? new Date(hr.eventDate).toISOString().split('T')[0] : '';
+            const key = `${hr.venueId}_${dateStr}`;
+            if (!eventMap.has(key)) {
+                eventMap.set(key, hr.id);
+            }
+        }
+
+        const nightIds = Array.from(eventMap.values());
 
         const nightCards = await Promise.all(
             nightIds.map(async (nId) => {
