@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/push_notification_service.dart';
 import '../../models/user.dart';
+import '../profile/vip_membership_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
@@ -1566,6 +1567,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         bodyLower.contains('super liked') ||
         bodyLower.contains('super like')) {
       return _buildSuperLikeCard(item);
+    } else if (eventType.contains('LIKE') ||
+        eventType == 'LIKE' ||
+        item['category'] == 'likes' ||
+        type == 'like' ||
+        data['action'] == 'like' ||
+        titleLower.contains('liked your profile') ||
+        titleLower.contains('likes your profile') ||
+        bodyLower.contains('liked your profile') ||
+        bodyLower.contains('likes your profile') ||
+        bodyLower.contains('someone liked your profile') ||
+        bodyLower.contains('someone likes your profile') ||
+        item['actionType'] == 'open_vip_upgrade' ||
+        item['deepLink'] == '/vip-membership') {
+      return _buildLikeCard(item);
     } else if (eventType.contains('PARTNER_REQUEST') ||
         type.contains('partner_request') ||
         type.contains('upcoming_night') ||
@@ -1618,7 +1633,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         userMap['_id']?.toString() ??
         userMap['actorUserId']?.toString() ??
         '';
-    if (uid.isEmpty) return;
+    if (uid.isEmpty || uid == 'masked') return;
 
     final userObj = User.fromJson({
       'id': uid,
@@ -1670,6 +1685,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       payload['senderName'] = payload['actorName'];
       payload['senderImage'] = actor['profilePhotoUrl'] ?? actor['photoUrl'] ?? actor['image'];
     }
+
+    final bool isMasked = payload['isMasked'] == true ||
+        payload['isMasked'] == 'true' ||
+        item['isMasked'] == true ||
+        item['actionType'] == 'open_vip_upgrade' ||
+        item['deepLink'] == '/vip-membership';
+    if (isMasked) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+      );
+      return;
+    }
+
     PushNotificationService.navigateFromPayload(payload);
   }
 
@@ -4723,6 +4752,218 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Like Card Component (VIP Unmasked vs Free Masked) ───────────────────────
+  Widget _buildLikeCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map
+            ? item['data'] as Map<String, dynamic>
+            : <String, dynamic>{});
+
+    final bool isMasked = data['isMasked'] == true ||
+        data['isMasked'] == 'true' ||
+        item['isMasked'] == true ||
+        item['actionType'] == 'open_vip_upgrade' ||
+        item['deepLink'] == '/vip-membership';
+
+    final actor = item['sender'] ?? item['actor'] ?? item['actorUser'];
+    final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
+    final String actorId = (actorMap['id'] ?? data['senderId'] ?? '').toString();
+    final bool isActorMasked = isMasked || actorId == 'masked' || actorId.isEmpty;
+
+    final String title = isActorMasked
+        ? 'Someone likes your profile ❤️'
+        : (item['title'] ?? '💖 New Connection!').toString();
+    final String body = isActorMasked
+        ? 'Upgrade to VIP to see who likes you'
+        : (item['body'] ?? 'Liked your profile ❤️').toString();
+    final String timeStr = _formatTimeAgo(item['createdAt']);
+
+    final String senderName = (actorMap['firstName'] ?? data['senderName'] ?? 'Someone').toString();
+    final String? senderPhoto = (actorMap['profileImageUrl'] ?? actorMap['profilePhotoUrl'] ?? data['senderImage'])?.toString();
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () {
+        _markAsRead(item);
+        if (isActorMasked) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+          );
+        } else if (actorId.isNotEmpty) {
+          _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  gradient: isActorMasked
+                      ? const LinearGradient(
+                          colors: [Color(0xFF2A1B38), Color(0xFF581C87)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFFEC4899), Color(0xFFF43F5E)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isActorMasked
+                          ? const Color(0xFF581C87).withValues(alpha: 0.3)
+                          : const Color(0xFFEC4899).withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: isActorMasked
+                      ? const Center(
+                          child: Icon(Icons.lock_rounded, color: Color(0xFFE9D5FF), size: 20),
+                        )
+                      : (senderPhoto != null && senderPhoto.isNotEmpty
+                          ? Image.network(
+                              ApiService.formatImageUrl(senderPhoto) ?? '',
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => const Center(
+                                child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
+                              ),
+                            )
+                          : const Center(
+                              child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
+                            )),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isActorMasked
+                                ? const Color(0xFFF3E8FF)
+                                : const Color(0xFFFCE7F3),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isActorMasked ? 'VIP FEATURE' : 'NEW LIKE',
+                            style: TextStyle(
+                              color: isActorMasked ? LunaraTheme.electricViolet : LunaraTheme.hotPink,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: const Color(0xFF0F172A),
+                        fontWeight: isUnread ? FontWeight.w900 : FontWeight.bold,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) ...[
+                const SizedBox(width: 8),
+                _buildUnreadDot(),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: isActorMasked
+                ? ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.workspace_premium_rounded, size: 16, color: Colors.white),
+                    label: const Text(
+                      'Upgrade to VIP',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  )
+                : OutlinedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      if (actorId.isNotEmpty) {
+                        _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+                      }
+                    },
+                    icon: const Icon(Icons.person_rounded, size: 14, color: LunaraTheme.hotPink),
+                    label: const Text(
+                      'View Profile',
+                      style: TextStyle(
+                        color: LunaraTheme.hotPink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: LunaraTheme.hotPink),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
           ),
         ],
       ),

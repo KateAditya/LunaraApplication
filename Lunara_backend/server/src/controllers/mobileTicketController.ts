@@ -1560,8 +1560,13 @@ export class MobileTicketController {
                 resultTickets = formattedTickets.filter(t => t.status === 'cancelled' || t.status === 'rejected');
             }
 
-            // Sort newest first
+            // Sort recently generated tickets first (newest issuedAt / createdAt first, fallback to eventStartAt)
             resultTickets.sort((a, b) => {
+                const issuedA = a.issuedAt ? new Date(a.issuedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : (a.eventStartAt ? new Date(a.eventStartAt).getTime() : 0));
+                const issuedB = b.issuedAt ? new Date(b.issuedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : (b.eventStartAt ? new Date(b.eventStartAt).getTime() : 0));
+                if (issuedB !== issuedA) {
+                    return issuedB - issuedA;
+                }
                 const timeA = a.eventStartAt ? new Date(a.eventStartAt).getTime() : 0;
                 const timeB = b.eventStartAt ? new Date(b.eventStartAt).getTime() : 0;
                 return timeB - timeA;

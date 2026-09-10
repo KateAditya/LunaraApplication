@@ -14,6 +14,8 @@ import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/live_feed_screen.dart';
 import '../screens/profile/lunara_wallet_screen.dart';
 import '../screens/profile/vip_membership_screen.dart';
+import '../screens/profile/profile_screen.dart';
+import '../models/user.dart';
 import '../screens/post_booking/ticket_pocket_screen.dart';
 import '../widgets/ad_announcement_dialog.dart';
 import '../dialogs/party_plan_cancellation_dialog.dart';
@@ -598,7 +600,11 @@ class PushNotificationService {
         rawType.contains('upgrade') ||
         rawType.contains('vip') ||
         rawType.contains('tier') ||
-        rawType.contains('membership');
+        rawType.contains('membership') ||
+        data['isMasked'] == true ||
+        data['isMasked'] == 'true' ||
+        data['actionType'] == 'open_vip_upgrade' ||
+        data['deepLink'] == '/vip-membership';
 
     if (isVipSubscriptionType) {
       navigator.push(
@@ -620,7 +626,36 @@ class PushNotificationService {
       return;
     }
 
-    // ── 2. Messages & Chat Notifications ────────────────────────────────────
+    // ── 2. Likes & Super Likes ──────────────────────────────────────────────
+    final isLikeType = rawType == 'like' ||
+        rawType == 'likes' ||
+        rawType == 'super_like' ||
+        rawType == 'superlike' ||
+        rawType.contains('super_like') ||
+        rawType.contains('superlike') ||
+        (rawType.contains('like') && !rawType.contains('live'));
+
+    if (isLikeType) {
+      final isMasked = data['isMasked'] == true ||
+          data['isMasked'] == 'true' ||
+          data['actionType'] == 'open_vip_upgrade' ||
+          data['deepLink'] == '/vip-membership';
+      final actorId = (data['senderId'] ??
+              data['actorUserId'] ??
+              data['actorId'] ??
+              data['userId'])
+          ?.toString();
+      if (isMasked || actorId == null || actorId == 'masked' || actorId.isEmpty) {
+        navigator.push(
+          MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+        );
+        return;
+      }
+      _navigateToUserProfile(navigator, data);
+      return;
+    }
+
+    // ── 3. Messages & Chat Notifications ────────────────────────────────────
     final senderId = (data['senderId'] ??
             data['actorUserId'] ??
             data['actorId'] ??
@@ -831,6 +866,46 @@ class PushNotificationService {
 
     navigator.push(
       MaterialPageRoute(builder: (_) => ChatScreen(user: userMap)),
+    );
+  }
+
+  static void _navigateToUserProfile(
+    NavigatorState navigator,
+    Map<String, dynamic> data,
+  ) {
+    final senderId = (data['senderId'] ??
+            data['actorUserId'] ??
+            data['actorId'] ??
+            data['userId'])
+        ?.toString();
+    final senderName = (data['senderName'] ??
+            data['actorName'] ??
+            data['name'] ??
+            'User')
+        .toString();
+    final senderImage = (data['senderImage'] ??
+            data['actorProfilePhotoUrl'] ??
+            data['profileImageUrl'] ??
+            data['imageUrl'])
+        ?.toString();
+
+    if (senderId == null || senderId.isEmpty || senderId == 'masked') return;
+
+    final userObj = User.fromJson({
+      'id': senderId,
+      'firstName': senderName.split(' ').first,
+      'lastName': senderName.split(' ').length > 1
+          ? senderName.split(' ').sublist(1).join(' ')
+          : '',
+      'photos': senderImage != null && senderImage.isNotEmpty
+          ? [{'url': senderImage}]
+          : [],
+      'profile': {},
+      'bio': '',
+    });
+
+    navigator.push(
+      MaterialPageRoute(builder: (_) => ProfileScreen(user: userObj)),
     );
   }
 }

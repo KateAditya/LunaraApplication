@@ -52,7 +52,6 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     final results = await Future.wait([
       ApiService.fetchProfile(forceRefresh: true),
       ApiService.fetchAllUserTickets(forceRefresh: true),
-      ApiService.fetchMyLikesAndMatches(),
     ]);
 
     User? user = results[0] as User?;
@@ -75,29 +74,19 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
     }
 
     final tickets = (results[1] as List<Map<String, dynamic>>?) ?? [];
-    final mySwipes = (results[2] as List<Map<String, dynamic>>?) ?? [];
 
-    final myId = user?.id ?? ApiService.currentUserId;
-    final Set<String> matchedUserIds = {};
-    for (var swipe in mySwipes) {
-      final status = swipe['status']?.toString().toLowerCase();
-      if (status == 'connected' || status == 'matched' || swipe['matched'] == true) {
-        final u1 = swipe['user1Id']?.toString();
-        final u2 = swipe['user2Id']?.toString();
-        if (u1 != null && u1 != myId && u1 != 'masked' && u1.isNotEmpty) matchedUserIds.add(u1);
-        if (u2 != null && u2 != myId && u2 != 'masked' && u2.isNotEmpty) matchedUserIds.add(u2);
-      }
-    }
-
-    final backendMatches = user?.matchesCount ?? 0;
-    final totalMatches = matchedUserIds.length > backendMatches ? matchedUserIds.length : backendMatches;
+    // matchesCount from the backend (getMyProfile) is the authoritative source — it already
+    // aggregates UserMatch (swipes), NightPartnerMatch (party plans), PartyPlanRequest
+    // (accepted joiners/hosts), and SocialConnections (strangers meet). Never override it
+    // with a local swipe-only count, which would miss all non-swipe match types.
+    final backendMatchesCount = user?.matchesCount ?? 0;
     final backendPoints = user?.pointsCount ?? 0;
 
     if (mounted) {
       setState(() {
         _currentUser = user;
         _dynamicBookingsCount = tickets.isNotEmpty ? tickets.length : (user?.bookingsCount ?? 0);
-        _dynamicMatchesCount = totalMatches;
+        _dynamicMatchesCount = backendMatchesCount;
         _dynamicPointsCount = backendPoints;
         _isLoading = false;
       });

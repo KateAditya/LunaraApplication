@@ -238,22 +238,22 @@ async function getUserNotifications(
                 nightPartnerIds.add(npId);
             }
 
-            const isLikeCategory = sn.category === 'likes' || sn.category === 'super_like' || sn.eventType === 'like' || sn.eventType === 'super_like';
+            const isSuper = sn.category === 'super_like' || sn.eventType === 'super_like' || metadata?.action === 'superlike';
+            const isNormalLike = (sn.category === 'likes' || sn.eventType === 'like' || metadata?.action === 'like') && !isSuper;
             let title = sn.title;
             let body = sn.body;
             let deepLink = sn.deepLink;
             let actionType = sn.actionType;
 
-            if (isLikeCategory && !canSeeWhoLiked) {
-                const isSuper = sn.category === 'super_like' || sn.eventType === 'super_like';
-                title = isSuper ? '⭐ Someone Super Liked You' : '❤️ Someone liked your profile';
-                body = isSuper ? 'Someone sent you a Super Like! Upgrade to VIP to see who!' : 'Someone liked your profile! Upgrade to VIP to see who!';
+            if (isNormalLike && !canSeeWhoLiked) {
+                title = '❤️ Someone liked your profile';
+                body = 'Someone liked your profile! Upgrade to VIP to see who!';
                 deepLink = '/vip-membership';
                 actionType = 'open_vip_upgrade';
                 metadata = {
-                    matchId: metadata.matchId,
+                    ...metadata,
                     isMasked: true,
-                    action: isSuper ? 'superlike' : 'like',
+                    action: 'like',
                 };
             }
 
@@ -395,12 +395,16 @@ async function getUserNotifications(
         // 1. Fetch Likes & Super Likes
         (async () => {
             try {
-                const matches = await UserMatch.findAll({
-                    where: { user2Id: uId },
-                    include: [{ model: User, as: 'user1', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
-                    order: [['createdAt', 'DESC']],
-                    limit: 20
-                });
+                const { SubscriptionService } = await import('../services/subscriptionService');
+                const [matches, canSeeWhoLiked] = await Promise.all([
+                    UserMatch.findAll({
+                        where: { user2Id: uId },
+                        include: [{ model: User, as: 'user1', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
+                        order: [['createdAt', 'DESC']],
+                        limit: 20
+                    }),
+                    SubscriptionService.hasAccess(uId, 'who_liked_me')
+                ]);
 
                 const superlikeSenderIds = matches
                     .filter((m: any) => (m.matchReason === 'superlike' || m.isSuperLike) && m.user1?.id)
@@ -452,30 +456,88 @@ async function getUserNotifications(
                     const senderName = `${firstUser?.firstName || 'Someone'} ${firstUser?.lastName || ''}`.trim();
                     const postedPlans = firstUser?.id ? (plansBySender.get(firstUser.id) || []) : [];
 
-                    return {
-                        id: notificationId,
-                        title: isSuper ? '⭐ Super Like!' : '💖 New Connection!',
-                        body: isSuper ? `${senderName} sent you a Super Like! 💜` : `${senderName} liked your profile ❤️`,
-                        category: isSuper ? 'super_like' : 'likes',
-                        type: isSuper ? 'super_like' : 'like',
-                        createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
-                        read: isRead,
-                        isRead: isRead,
-                        sender: firstUser ? {
-                            id: firstUser.id,
-                            firstName: firstUser.firstName,
-                            lastName: firstUser.lastName,
-                            profileImageUrl: firstUser.profileImageUrl,
-                        } : null,
-                        data: {
-                            matchId: match.id,
-                            senderId: firstUser?.id,
-                            senderName,
-                            senderImage: firstUser?.profileImageUrl || '',
-                            postedPlans,
-                            action: isSuper ? 'superlike' : 'like',
-                        }
-                    };
+                    if (isSuper) {
+                        return {
+                            id: notificationId,
+                            title: '⭐ Super Like!',
+                            body: `${senderName} sent you a Super Like! 💜`,
+                            category: 'super_like',
+                            type: 'super_like',
+                            actionType: 'view_profile',
+                            deepLink: firstUser ? `/profile/${firstUser.id}` : undefined,
+                            createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                            read: isRead,
+                            isRead: isRead,
+                            sender: firstUser ? {
+                                id: firstUser.id,
+                                firstName: firstUser.firstName,
+                                lastName: firstUser.lastName,
+                                profileImageUrl: firstUser.profileImageUrl,
+                            } : null,
+                            data: {
+                                matchId: match.id,
+                                senderId: firstUser?.id,
+                                senderName,
+                                senderImage: firstUser?.profileImageUrl || '',
+                                postedPlans,
+                                action: 'superlike',
+                            }
+                        };
+                    }
+
+                    // Normal Like: receiver-driven entitlement
+                    if (canSeeWhoLiked) {
+                        return {
+                            id: notificationId,
+                            title: `💖 ${senderName} liked your profile!`,
+                            body: `${senderName} liked your profile ❤️`,
+                            category: 'likes',
+                            type: 'like',
+                            actionType: 'view_profile',
+                            deepLink: firstUser ? `/profile/${firstUser.id}` : undefined,
+                            createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                            read: isRead,
+                            isRead: isRead,
+                            sender: firstUser ? {
+                                id: firstUser.id,
+                                firstName: firstUser.firstName,
+                                lastName: firstUser.lastName,
+                                profileImageUrl: firstUser.profileImageUrl,
+                            } : null,
+                            data: {
+                                matchId: match.id,
+                                senderId: firstUser?.id,
+                                senderName,
+                                senderImage: firstUser?.profileImageUrl || '',
+                                postedPlans,
+                                action: 'like',
+                            }
+                        };
+                    } else {
+                        return {
+                            id: notificationId,
+                            title: '❤️ Someone liked your profile',
+                            body: 'Someone liked your profile! Upgrade to VIP to see who!',
+                            category: 'likes',
+                            type: 'like',
+                            actionType: 'open_vip_upgrade',
+                            deepLink: '/vip-membership',
+                            createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
+                            read: isRead,
+                            isRead: isRead,
+                            sender: {
+                                id: 'masked',
+                                firstName: 'Someone',
+                                lastName: '',
+                                profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                            },
+                            data: {
+                                matchId: match.id,
+                                isMasked: true,
+                                action: 'like',
+                            }
+                        };
+                    }
                 });
             } catch (err) {
                 console.error('Error fetching match notifications:', err);

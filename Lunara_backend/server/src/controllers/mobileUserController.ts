@@ -428,6 +428,8 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             existingSwipe,
             existingUserLike,
             existingUserSuperLike,
+            smEventsJoined,       // SM events this user joined (to collect host IDs)
+            smJoinersOfMyEvents,  // Accepted joiners of SM events hosted by this user
         ] = await Promise.all([
             UserMatch.count({
                 where: {
@@ -552,6 +554,23 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     }
                 }).catch(() => null)
                 : Promise.resolve(null),
+            // Strangers Meet: events this user joined → need host IDs from the parent SM request
+            StrangersMeetJoiner.findAll({
+                where: { userId, status: { [Op.notIn]: ['rejected'] } },
+                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', attributes: ['userId'] }],
+                attributes: ['id', 'strangersMeetRequestId']
+            }).catch(() => []),
+            // Strangers Meet: accepted joiners of SM events this user hosted
+            StrangersMeetJoiner.findAll({
+                where: { status: { [Op.notIn]: ['rejected'] } },
+                include: [{
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    where: { userId },
+                    attributes: ['id']
+                }],
+                attributes: ['userId']
+            }).catch(() => []),
         ]);
 
         // Calculate dynamic total bookings matching Ticket Pocket
@@ -611,6 +630,20 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             const partnerId = sc.requesterId === userId ? sc.receiverId : sc.requesterId;
             if (partnerId && partnerId !== userId) {
                 matchedPartnerIds.add(partnerId);
+            }
+        }
+        // Strangers Meet: add host of each SM event the user joined
+        for (const smj of smEventsJoined) {
+            const hostId = (smj as any).strangersMeetRequest?.userId;
+            if (hostId && hostId !== userId) {
+                matchedPartnerIds.add(hostId);
+            }
+        }
+        // Strangers Meet: add each accepted joiner of SM events the user hosted
+        for (const smJoiner of smJoinersOfMyEvents) {
+            const joinerId = (smJoiner as any).userId;
+            if (joinerId && joinerId !== userId) {
+                matchedPartnerIds.add(joinerId);
             }
         }
         const matchesCount = matchedPartnerIds.size;
@@ -1882,16 +1915,17 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
                 const isSuper = action === 'superlike';
                 
+                // Superlike is strictly excluded from masking: always visible to receiver regardless of tier
                 const title = isSuper
-                    ? (canSeeWhoLikedTarget ? `⭐ ${senderName} Super Liked You!` : '⭐ Someone Super Liked You')
+                    ? `⭐ ${senderName} Super Liked You!`
                     : (canSeeWhoLikedTarget ? `💖 ${senderName} liked your profile!` : '❤️ Someone liked your profile');
                     
                 const body = isSuper 
-                    ? (canSeeWhoLikedTarget ? `${senderName} sent you a Super Like! 💜` : 'Someone sent you a Super Like! Upgrade to VIP to see who!')
+                    ? `${senderName} sent you a Super Like! 💜`
                     : (canSeeWhoLikedTarget ? `${senderName} liked your profile ❤️` : 'Someone liked your profile! Upgrade to VIP to see who!');
 
                 let postedPlans: any[] = [];
-                if (isSuper && canSeeWhoLikedTarget) {
+                if (isSuper || canSeeWhoLikedTarget) {
                     try {
                         const activePlans = await PartyPlan.findAll({
                             where: {
@@ -1919,6 +1953,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 }
 
                 const dedupeKey = isSuper ? `SUPERLIKE:${match.id}` : `LIKE:${match.id}`;
+                const isRecipientVipOrSuper = isSuper || canSeeWhoLikedTarget;
 
                 try {
                     await Notification.findOrCreate({
@@ -1934,14 +1969,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             body,
                             category: isSuper ? 'super_like' : 'likes',
                             eventType: isSuper ? 'super_like' : 'like',
-                            actionType: canSeeWhoLikedTarget ? 'view_profile' : 'open_vip_upgrade',
+                            actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
                             entityType: 'user_match',
                             entityId: match.id,
                             isRead: false,
                             priority: (isSuper ? 'HIGH' : 'NORMAL') as any,
-                            deepLink: canSeeWhoLikedTarget ? `/profile/${currentUser.id}` : '/vip-membership',
+                            deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
                             idempotencyKey: dedupeKey,
-                            metadata: canSeeWhoLikedTarget ? {
+                            metadata: isRecipientVipOrSuper ? {
                                 matchId: match.id,
                                 senderId: currentUser.id,
                                 senderName,
@@ -1951,7 +1986,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             } : {
                                 matchId: match.id,
                                 isMasked: true,
-                                action: isSuper ? 'superlike' : 'like',
+                                action: 'like',
                             },
                         }
                     });
@@ -1969,7 +2004,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                         type: isSuper ? 'super_like' : 'like',
                         createdAt: new Date().toISOString(),
                         read: false,
-                        sender: canSeeWhoLikedTarget ? {
+                        sender: isRecipientVipOrSuper ? {
                             id: currentUser.id,
                             firstName: currentUser.firstName,
                             lastName: currentUser.lastName,
@@ -1980,7 +2015,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             lastName: '',
                             profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
                         },
-                        data: canSeeWhoLikedTarget ? {
+                        data: isRecipientVipOrSuper ? {
                             matchId: match.id,
                             senderId: currentUser.id,
                             senderName,
@@ -1990,14 +2025,14 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                         } : {
                             matchId: match.id,
                             isMasked: true,
-                            action: isSuper ? 'superlike' : 'like',
+                            action: 'like',
                         }
                     });
 
                     // Emit real-time like_received event for live UI synchronization
                     io.to(`user_${targetUserId}`).emit('like_received', {
                         matchId: match.id,
-                        likerId: canSeeWhoLikedTarget ? currentUser.id : 'masked',
+                        likerId: isRecipientVipOrSuper ? currentUser.id : 'masked',
                         isSuper,
                         timestamp: new Date().toISOString(),
                     });
@@ -2008,13 +2043,13 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     await sendPushNotification(targetUser.fcmToken, {
                         title,
                         body,
-                        data: canSeeWhoLikedTarget ? {
+                        data: isRecipientVipOrSuper ? {
                             type: isSuper ? 'superlike' : 'like',
                             senderId: currentUser.id,
                             senderName,
                             senderImage: currentUser.profileImageUrl || '',
                         } : {
-                            type: isSuper ? 'superlike' : 'like',
+                            type: 'like',
                             isMasked: 'true',
                         }
                     });
@@ -2143,12 +2178,13 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
             order: [['createdAt', 'DESC']],
         });
 
-        // Strictly protect Free users from receiving sender identity
+        // Strictly protect Free users from receiving sender identity for normal Likes (Superlikes are excluded)
         const processed = matches.map((m: any) => {
             const json = m.toJSON();
             const isIncomingPendingLike = json.user2Id === userId && json.status === 'pending';
+            const isSuper = json.matchReason === 'superlike' || json.isSuperLike;
 
-            if (isIncomingPendingLike && !canSeeWhoLiked) {
+            if (isIncomingPendingLike && !canSeeWhoLiked && !isSuper) {
                 return {
                     ...json,
                     user1Id: 'masked',

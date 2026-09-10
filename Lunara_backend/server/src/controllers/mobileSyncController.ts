@@ -139,6 +139,44 @@ export const getDeltaSync = async (req: Request, res: Response): Promise<Respons
             }),
         ]);
 
+        const { SubscriptionService } = await import('../services/subscriptionService');
+        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+
+        // Dynamically sanitize or unmask Like notifications
+        const processedNotifications = recentNotifications.map((n: any) => {
+            const nJson = n.toJSON ? n.toJSON() : n;
+            const isSuper = nJson.eventType === 'super_like' || nJson.category === 'super_like' || nJson.metadata?.action === 'superlike';
+            const isLike = nJson.eventType === 'like' || nJson.category === 'likes' || nJson.metadata?.action === 'like';
+
+            if (isLike && !isSuper) {
+                if (!canSeeWhoLiked) {
+                    return {
+                        ...nJson,
+                        title: '❤️ Someone liked your profile',
+                        body: 'Someone liked your profile! Upgrade to VIP to see who!',
+                        actionType: 'open_vip_upgrade',
+                        deepLink: '/vip-membership',
+                        actorUserId: undefined,
+                        actor: {
+                            id: 'masked',
+                            firstName: 'Someone',
+                            lastName: '',
+                            profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                        },
+                        metadata: {
+                            ...(nJson.metadata || {}),
+                            isMasked: true,
+                            action: 'like',
+                            senderId: undefined,
+                            senderName: undefined,
+                            senderImage: undefined,
+                        }
+                    };
+                }
+            }
+            return nJson;
+        });
+
         const rawBalance = userRecord?.walletBalance ? Number(userRecord.walletBalance) : (wallet?.balance ? Number(wallet.balance) : 0);
 
         return res.status(200).json({
@@ -146,7 +184,7 @@ export const getDeltaSync = async (req: Request, res: Response): Promise<Respons
             serverTimestamp: new Date().toISOString(),
             data: {
                 unreadNotificationCount: unreadNotifCount,
-                notifications: recentNotifications,
+                notifications: processedNotifications,
                 partyPlans: updatedHostPlans,
                 partyPlanRequests: updatedUserRequests,
                 strangerMeets: updatedHostMeets,

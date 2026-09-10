@@ -64,20 +64,44 @@ export class NightPartnerService {
         }
     }
 
+    public static normalizeDateString(date?: string | Date): string {
+        if (!date) return new Date().toISOString().split('T')[0];
+        if (typeof date === 'string') {
+            return date.split('T')[0];
+        }
+        return date.toISOString().split('T')[0];
+    }
+
     private static async resolveVenue(venueId: string): Promise<Venue | null> {
+        if (!venueId) return null;
+        const cleanId = String(venueId).replace(/^ad_event_/, '').trim();
+        if (!cleanId) return null;
+
         try {
-            const venue = await Venue.findByPk(venueId);
+            const venue = await Venue.findByPk(cleanId);
             if (venue) return venue;
         } catch (_) { }
 
-        const found = await Venue.findOne({
-            where: {
-                name: { [Op.iLike]: `%${venueId}%` },
-            },
-        });
-        if (found) return found;
+        // Check if cleanId is an Ad id
+        try {
+            const Ad = (await import('../models/Ad')).default;
+            const ad = await Ad.findByPk(cleanId);
+            if (ad && ad.venueId) {
+                const venue = await Venue.findByPk(ad.venueId);
+                if (venue) return venue;
+            }
+        } catch (_) { }
 
-        return (await Venue.findOne({ where: { status: 'live' } })) || (await Venue.findOne());
+        try {
+            const found = await Venue.findOne({
+                where: {
+                    name: { [Op.iLike]: `%${cleanId}%` },
+                },
+            });
+            if (found) return found;
+        } catch (_) { }
+
+        return null;
     }
 
     /**
@@ -168,12 +192,13 @@ export class NightPartnerService {
     ): Promise<boolean> {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
+        const formattedDate = this.normalizeDateString(eventDate);
 
         const interest = await NightInterest.findOne({
             where: {
                 userId,
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
             },
         });
@@ -195,17 +220,18 @@ export class NightPartnerService {
         }
 
         const resolvedVenueId = venue.id;
+        const formattedDate = this.normalizeDateString(eventDate);
 
         const [interest, created] = await NightInterest.findOrCreate({
             where: {
                 userId,
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate as any,
             },
             defaults: {
                 userId,
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate as any,
                 eventTime: eventTime || '20:00',
                 status: NightInterestStatus.INTERESTED,
             },
@@ -222,7 +248,7 @@ export class NightPartnerService {
         try {
             const { io } = require('../server');
             if (io) {
-                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate, timestamp: new Date().toISOString() });
+                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate: formattedDate, timestamp: new Date().toISOString() });
             }
         } catch (_) { }
 
@@ -239,12 +265,13 @@ export class NightPartnerService {
     ): Promise<boolean> {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
+        const formattedDate = this.normalizeDateString(eventDate);
 
         const interest = await NightInterest.findOne({
             where: {
                 userId,
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
             },
         });
 
@@ -257,7 +284,7 @@ export class NightPartnerService {
             where: {
                 [Op.or]: [{ hostId: userId }, { partnerId: userId }],
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
             },
         });
@@ -271,7 +298,7 @@ export class NightPartnerService {
         try {
             const { io } = require('../server');
             if (io) {
-                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate, timestamp: new Date().toISOString() });
+                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate: formattedDate, timestamp: new Date().toISOString() });
             }
         } catch (_) { }
         return true;
@@ -285,10 +312,14 @@ export class NightPartnerService {
         venueId: string,
         eventDate: string
     ): Promise<SafePartnerProfile[]> {
+        const venue = await this.resolveVenue(venueId);
+        const resolvedVenueId = venue ? venue.id : venueId;
+        const formattedDate = this.normalizeDateString(eventDate);
+
         const interests = await NightInterest.findAll({
             where: {
-                venueId,
-                eventDate: new Date(eventDate),
+                venueId: resolvedVenueId,
+                eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
                 userId: { [Op.ne]: hostId },
             },
@@ -353,6 +384,10 @@ export class NightPartnerService {
         eventDate: string,
         search?: string
     ): Promise<SafePartnerProfile[]> {
+        const venue = await this.resolveVenue(venueId);
+        const resolvedVenueId = venue ? venue.id : venueId;
+        const formattedDate = this.normalizeDateString(eventDate);
+
         const userWhere: any = {
             id: { [Op.ne]: hostId },
             [Op.or]: [{ isDeleted: false }, { isDeleted: null }],
@@ -366,14 +401,11 @@ export class NightPartnerService {
             ];
         }
 
-        const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
-
         // 1. Fetch interested users in 1 query
         const interestedRecords = await NightInterest.findAll({
             where: {
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
                 userId: { [Op.ne]: hostId },
             },
@@ -381,14 +413,16 @@ export class NightPartnerService {
         });
 
         const interestedMap = new Map<string, string>();
+        const interestedUserIds = new Set<string>();
         for (const item of interestedRecords) {
             interestedMap.set(item.userId, item.id);
+            interestedUserIds.add(item.userId);
         }
 
         // 2. Fetch existing active matches on this date in 1 query
         const existingMatches = await NightPartnerMatch.findAll({
             where: {
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
             },
             attributes: ['hostId', 'partnerId'],
@@ -404,25 +438,54 @@ export class NightPartnerService {
             where: {
                 hostId,
                 venueId: resolvedVenueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
             },
             attributes: ['partnerId'],
         });
         const pendingInvitePartnerIds = new Set<string>(existingRequests.map(r => r.partnerId));
 
-        // 4. Fetch candidate users
-        const candidates = await User.findAll({
-            where: userWhere,
-            attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
-            include: [
-                { model: UserProfile, as: 'profile' },
-                { model: UserPhoto, as: 'photos' },
-                { model: UserPreference, as: 'preferences', attributes: ['showMeInMatching'], required: false },
-            ],
-            limit: 60,
-            order: [['createdAt', 'DESC']],
-        });
+        // 4. Fetch candidate users (Ensuring ALL interested users are ALWAYS loaded)
+        const interestedUserList = Array.from(interestedUserIds);
+        const [interestedUsers, candidateUsers] = await Promise.all([
+            interestedUserList.length > 0
+                ? User.findAll({
+                    where: {
+                        id: { [Op.in]: interestedUserList, [Op.ne]: hostId },
+                        isDeleted: { [Op.ne]: true },
+                    },
+                    attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
+                    include: [
+                        { model: UserProfile, as: 'profile' },
+                        { model: UserPhoto, as: 'photos' },
+                        { model: UserPreference, as: 'preferences', attributes: ['showMeInMatching'], required: false },
+                    ],
+                })
+                : Promise.resolve([]),
+            User.findAll({
+                where: userWhere,
+                attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
+                include: [
+                    { model: UserProfile, as: 'profile' },
+                    { model: UserPhoto, as: 'photos' },
+                    { model: UserPreference, as: 'preferences', attributes: ['showMeInMatching'], required: false },
+                ],
+                limit: 60,
+                order: [['createdAt', 'DESC']],
+            }),
+        ]);
+
+        // Deduplicate users
+        const candidateMap = new Map<string, any>();
+        for (const u of interestedUsers) {
+            candidateMap.set(u.id, u);
+        }
+        for (const u of candidateUsers) {
+            if (!candidateMap.has(u.id)) {
+                candidateMap.set(u.id, u);
+            }
+        }
+        const candidates = Array.from(candidateMap.values());
 
         const available: SafePartnerProfile[] = [];
 
