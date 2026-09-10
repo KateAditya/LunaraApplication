@@ -739,7 +739,10 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                             final title = widget.party['title'] ?? widget.party['name'] ?? venueName;
                             NightPartnerSelectorSheet.show(
                               context,
-                              party: widget.party,
+                              party: {
+                                ...widget.party,
+                                if (currentVenue != null) 'venueMap': currentVenue,
+                              },
                               venueId: widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '',
                               venueName: venueName,
                               date: _getEffectiveEventDate(),

@@ -118,18 +118,20 @@ export const getPartnerProfilePreview = async (req: Request, res: Response): Pro
 
 export const initiateInviteOrder = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, eventDate, paymentMode } = req.body;
+        const { venueId, eventDate, paymentMode, ticketPrice } = req.body;
         const hostId = req.user!.id;
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
+        const parsedTicketPrice = ticketPrice ? Number(ticketPrice) : undefined;
         const orderData = await NightPartnerService.initiateInviteOrder(
             hostId,
             String(venueId),
             String(eventDate),
-            paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
+            paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY',
+            parsedTicketPrice
         );
         res.json({
             success: true,
@@ -153,6 +155,9 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
             razorpay_order_id,
             razorpay_payment_id,
             razorpay_signature,
+            razorpayOrderId,
+            razorpayPaymentId,
+            razorpaySignature,
             paymentMethod,
         } = req.body;
         const hostId = req.user!.id;
@@ -166,8 +171,12 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
             return;
         }
 
+        const effectiveOrderId = razorpayOrderId || razorpay_order_id;
+        const effectivePaymentId = razorpayPaymentId || razorpay_payment_id;
+        const effectiveSignature = razorpaySignature || razorpay_signature;
+
         const isWallet = paymentMethod?.toString().toLowerCase().includes('wallet');
-        if (!isWallet && (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
+        if (!isWallet && (!effectiveOrderId || !effectivePaymentId || !effectiveSignature)) {
             res.status(400).json({ success: false, message: 'Payment verification parameters are required' });
             return;
         }
@@ -180,9 +189,9 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
             eventDate,
             eventTime,
             paymentMode: paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY',
-            razorpayOrderId: razorpay_order_id || 'wallet_payment',
-            razorpayPaymentId: razorpay_payment_id || 'wallet_payment',
-            razorpaySignature: razorpay_signature || 'mock_signature',
+            razorpayOrderId: effectiveOrderId || 'wallet_payment',
+            razorpayPaymentId: effectivePaymentId || 'wallet_payment',
+            razorpaySignature: effectiveSignature || 'mock_signature',
             paymentMethod: isWallet ? 'wallet' : 'razorpay',
         });
 

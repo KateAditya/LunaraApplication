@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
@@ -70,14 +72,35 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   final Set<String> _sentInviteUserIds = {};
   final Set<String> _selectedUserIds = {};
 
+  late Razorpay _razorpay;
+  String? _pendingOrderId;
+  String? _pendingSelectedMode;
+
   @override
   void initState() {
     super.initState();
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
+        _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
+        _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+      } catch (e) {
+        debugPrint('Razorpay init error in NightPartnerSelectorSheet: $e');
+      }
+    }
     _loadInvitees();
   }
 
   @override
   void dispose() {
+    if (!kIsWeb) {
+      try {
+        _razorpay.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     _searchController.dispose();
     super.dispose();
   }
@@ -136,10 +159,26 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   double _resolveTicketPrice() {
     final party = widget.party;
     if (party != null) {
-      final rawPrice = party['ticketPrice'] ?? party['price'] ?? party['coupleEntryFee'] ?? party['coverCharges'] ?? party['entryFee'];
+      final rawPrice = party['entryPrice'] ??
+          party['ticketPrice'] ??
+          party['price'] ??
+          party['coupleEntryFee'] ??
+          party['coverCharges'] ??
+          party['entryFee'] ??
+          party['tableBookingCharges'] ??
+          party['coverChargeMale'] ??
+          party['coverChargeFemale'];
       if (rawPrice != null) {
         final parsed = double.tryParse(rawPrice.toString().replaceAll(RegExp(r'[^0-9.]'), ''));
         if (parsed != null && parsed > 0) return parsed;
+      }
+      if (party['venueMap'] is Map) {
+        final vm = party['venueMap'] as Map;
+        final rawVm = vm['coupleEntryFee'] ?? vm['entryPrice'] ?? vm['tableBookingCharges'] ?? vm['coverChargeMale'] ?? vm['coverCharges'];
+        if (rawVm != null) {
+          final parsed = double.tryParse(rawVm.toString().replaceAll(RegExp(r'[^0-9.]'), ''));
+          if (parsed != null && parsed > 0) return parsed;
+        }
       }
     }
     return 1000.0;
@@ -154,6 +193,85 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
         _selectedUserIds.add(partnerId);
       }
     });
+  }
+
+  void _onInvitationPaymentSuccess() {
+    if (!mounted) return;
+    final count = _selectedUserIds.length;
+    setState(() {
+      _sentInviteUserIds.addAll(_selectedUserIds);
+      _selectedUserIds.clear();
+      _isProcessing = false;
+    });
+
+    LunaraAlert.showSuccessToast(
+      count > 1 ? '$count invitations sent successfully! 🎉' : 'Invitation sent successfully! 🎉',
+      context: context,
+    );
+
+    // Dismiss after short delay
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) Navigator.pop(context);
+    });
+  }
+
+  void _handleRazorpaySuccess(PaymentSuccessResponse response) async {
+    setState(() => _isProcessing = true);
+    try {
+      final verifyRes = await ApiService.verifyNightInvitePayment(
+        partnerIds: _selectedUserIds.toList(),
+        venueId: widget.venueId,
+        date: widget.date,
+        time: widget.time,
+        paymentMode: _pendingSelectedMode ?? 'SELF_PAY',
+        razorpayOrderId: response.orderId ?? _pendingOrderId ?? '',
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpaySignature: response.signature ?? '',
+        paymentMethod: 'razorpay',
+      );
+
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+
+      if (verifyRes != null && verifyRes['success'] == true) {
+        _onInvitationPaymentSuccess();
+      } else {
+        LunaraAlert.showErrorModal(
+          context: context,
+          title: 'Payment Verification Failed',
+          message: verifyRes?['message']?.toString() ?? 'Unable to verify payment with server.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        LunaraAlert.showErrorModal(
+          context: context,
+          title: 'Payment Error',
+          message: 'Error verifying payment: $e',
+        );
+      }
+    }
+  }
+
+  void _handleRazorpayError(PaymentFailureResponse response) {
+    if (mounted) {
+      setState(() => _isProcessing = false);
+      LunaraAlert.showWarningToast(
+        'Payment Failed: ${response.message ?? "Transaction Cancelled"}',
+        context: context,
+      );
+    }
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (mounted) {
+      LunaraAlert.showToast(
+        message: 'External Wallet selected: ${response.walletName}',
+        context: context,
+        severity: LunaraAlertSeverity.info,
+      );
+    }
   }
 
   Future<void> _onInviteSelected() async {
@@ -174,6 +292,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       date: widget.date,
       paymentMode: 'SELF_PAY',
       partnerIds: _selectedUserIds.toList(),
+      ticketPrice: _resolveTicketPrice(),
     );
 
     if (!mounted) return;
@@ -232,6 +351,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
       date: widget.date,
       paymentMode: selectedMode,
       partnerIds: _selectedUserIds.toList(),
+      ticketPrice: _resolveTicketPrice(),
     );
 
     if (!mounted) return;
@@ -253,6 +373,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
             : (selectedMode == 'SELF_PAY' ? _resolveTicketPrice() * 2 : _resolveTicketPrice()));
     final String razorpayOrderId = orderRes['razorpayOrderId']?.toString() ??
         'order_mock_${DateTime.now().millisecondsSinceEpoch}';
+    final String razorpayKeyId = orderRes['razorpayKeyId']?.toString() ?? 'rzp_test_123';
 
     // STEPS 9 & 10: Payment Gateway with Server Verification
     final bool? paymentVerified = await SmartCheckoutSheet.show(
@@ -272,18 +393,54 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
         return verifyRes != null && verifyRes['success'] == true;
       },
       onDirectPayment: () async {
-        final verifyRes = await ApiService.verifyNightInvitePayment(
-          partnerIds: _selectedUserIds.toList(),
-          venueId: widget.venueId,
-          date: widget.date,
-          time: widget.time,
-          paymentMode: selectedMode,
-          razorpayOrderId: razorpayOrderId,
-          razorpayPaymentId: 'pay_${DateTime.now().millisecondsSinceEpoch}',
-          razorpaySignature: 'mock_signature',
-          paymentMethod: 'razorpay',
-        );
-        return verifyRes != null && verifyRes['success'] == true;
+        final isMock = kIsWeb || razorpayOrderId.startsWith('order_mock_') || razorpayKeyId == 'rzp_test_123';
+
+        if (isMock) {
+          final verifyRes = await ApiService.verifyNightInvitePayment(
+            partnerIds: _selectedUserIds.toList(),
+            venueId: widget.venueId,
+            date: widget.date,
+            time: widget.time,
+            paymentMode: selectedMode,
+            razorpayOrderId: razorpayOrderId,
+            razorpayPaymentId: 'pay_${DateTime.now().millisecondsSinceEpoch}',
+            razorpaySignature: 'mock_signature',
+            paymentMethod: 'razorpay',
+          );
+          return verifyRes != null && verifyRes['success'] == true;
+        }
+
+        _pendingOrderId = razorpayOrderId;
+        _pendingSelectedMode = selectedMode;
+
+        final options = {
+          'key': razorpayKeyId,
+          'amount': (amountToPay * 100).toInt(),
+          'name': 'Lunara',
+          'description': 'Invite Partner - ${widget.venueName}',
+          'order_id': razorpayOrderId,
+          'timeout': 300,
+          'theme': {'color': '#7c3aed'},
+        };
+
+        try {
+          _razorpay.open(options);
+          return 'gateway_launched';
+        } catch (e) {
+          debugPrint('Razorpay open failed: $e');
+          final verifyRes = await ApiService.verifyNightInvitePayment(
+            partnerIds: _selectedUserIds.toList(),
+            venueId: widget.venueId,
+            date: widget.date,
+            time: widget.time,
+            paymentMode: selectedMode,
+            razorpayOrderId: razorpayOrderId,
+            razorpayPaymentId: 'pay_${DateTime.now().millisecondsSinceEpoch}',
+            razorpaySignature: 'mock_signature',
+            paymentMethod: 'razorpay',
+          );
+          return verifyRes != null && verifyRes['success'] == true;
+        }
       },
       onHybridPayment: (shortfall) async {
         return false;
@@ -293,21 +450,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     if (!mounted) return;
 
     if (paymentVerified == true) {
-      final count = _selectedUserIds.length;
-      setState(() {
-        _sentInviteUserIds.addAll(_selectedUserIds);
-        _selectedUserIds.clear();
-      });
-
-      LunaraAlert.showSuccessToast(
-        count > 1 ? '$count invitations sent successfully! 🎉' : 'Invitation sent successfully! 🎉',
-        context: context,
-      );
-
-      // Dismiss after short delay
-      Future.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) Navigator.pop(context);
-      });
+      _onInvitationPaymentSuccess();
     } else {
       LunaraAlert.showWarningToast(
         'Payment was not completed. No invitations were sent.',

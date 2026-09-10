@@ -120,7 +120,8 @@ router.post(
     '/invite-payment/verify',
     [
         authenticate,
-        body('partnerId').notEmpty().withMessage('partnerId is required'),
+        body('partnerId').optional(),
+        body('partnerIds').optional(),
         body('venueId').notEmpty().withMessage('venueId is required'),
         body('eventDate').notEmpty().withMessage('eventDate is required'),
         body('paymentMode').isIn(['SELF_PAY', 'SPLIT']).withMessage('paymentMode must be SELF_PAY or SPLIT'),

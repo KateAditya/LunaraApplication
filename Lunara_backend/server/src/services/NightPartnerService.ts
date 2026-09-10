@@ -80,6 +80,84 @@ export class NightPartnerService {
     }
 
     /**
+     * Authoritatively resolve event / couple ticket price for an upcoming night
+     */
+    public static async resolveNightAuthoritativePrice(
+        venueId: string,
+        eventDate?: string | Date,
+        customPrice?: number
+    ): Promise<number> {
+        if (customPrice && !isNaN(customPrice) && customPrice > 0) {
+            return customPrice;
+        }
+
+        const venue = await this.resolveVenue(venueId);
+        if (!venue) return 500;
+
+        // 1. Check active Party/Event Ad for this venue
+        try {
+            const Ad = (await import('../models/Ad')).default;
+            const ads = await Ad.findAll({
+                where: {
+                    type: 'Party',
+                    venueId: venue.id,
+                    isActive: true,
+                },
+                order: [['createdAt', 'DESC']],
+            });
+
+            if (ads && ads.length > 0) {
+                let matchedAd = ads[0];
+                if (eventDate) {
+                    const formatted = typeof eventDate === 'string'
+                        ? eventDate.split('T')[0]
+                        : new Date(eventDate).toISOString().split('T')[0];
+                    const found = ads.find((a: any) => {
+                        if (a.eventDate && new Date(a.eventDate).toISOString().split('T')[0] === formatted) return true;
+                        if (a.fromDate && a.toDate) {
+                            const from = new Date(a.fromDate).toISOString().split('T')[0];
+                            const to = new Date(a.toDate).toISOString().split('T')[0];
+                            return formatted >= from && formatted <= to;
+                        }
+                        return false;
+                    });
+                    if (found) matchedAd = found;
+                }
+
+                if (matchedAd && Number(matchedAd.entryPrice) > 0) {
+                    // For a pair/couple (2 tickets total), total is entryPrice * 2
+                    return Number(matchedAd.entryPrice) * 2;
+                }
+            }
+        } catch (e) {
+            logger.warn(`[NightPartnerService] Ad price resolution warning: ${e}`);
+        }
+
+        // 2. Check Venue coupleEntryFee or cover charges
+        if (venue.coupleEntryFee && Number(venue.coupleEntryFee) > 0) {
+            return Number(venue.coupleEntryFee);
+        }
+
+        if (venue.coverChargeMale && Number(venue.coverChargeMale) > 0) {
+            const male = Number(venue.coverChargeMale);
+            const female = Number(venue.coverChargeFemale || male);
+            return male + female;
+        }
+
+        if (venue.tableBookingCharges && Number(venue.tableBookingCharges) > 0) {
+            return Number(venue.tableBookingCharges) * 2;
+        }
+
+        // 3. Fallback to VenueBookingService calculation
+        try {
+            const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
+            if (pricing.totalAmount > 0) return pricing.totalAmount;
+        } catch (_) {}
+
+        return 500;
+    }
+
+    /**
      * Check if a user has marked interest in an upcoming night
      */
     public static async checkUserInterest(
@@ -453,15 +531,15 @@ export class NightPartnerService {
     public static async initiateInviteOrder(
         _hostId: string,
         venueId: string,
-        _eventDate: string,
-        paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY'
+        eventDate: string,
+        paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY',
+        ticketPrice?: number
     ): Promise<{ razorpayOrderId: string; razorpayKeyId: string; amount: number; amountToPay: number; currency: string }> {
         const venue = await this.resolveVenue(venueId);
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
-        // Calculate authoritative price from venue configuration (2 tickets total)
-        const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
-        const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+        // Calculate authoritative price from event / venue configuration (2 tickets total)
+        const totalAmount = await this.resolveNightAuthoritativePrice(venue.id, eventDate, ticketPrice ? ticketPrice * 2 : undefined);
         const amountToPay = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
 
         let razorpayOrder: any;
@@ -588,8 +666,7 @@ export class NightPartnerService {
         const finalPartnerIds = eligiblePartnerIds.length > 0 ? eligiblePartnerIds : targetPartnerIds;
 
         // Calculate authoritative amount to verify (2 tickets total per invitation slot)
-        const pricing = await VenueBookingService.calculateAuthoritativePrice(venue.id, 'Confirmation Charges', 2);
-        const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+        const totalAmount = await this.resolveNightAuthoritativePrice(venue.id, eventDate);
         const requiredAmount = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
 
         // Payment verification (executed once for host transaction)
@@ -1009,8 +1086,7 @@ export class NightPartnerService {
             }
 
             // Calculate amounts
-            const pricing = await VenueBookingService.calculateAuthoritativePrice(request.venueId, 'Confirmation Charges', 2);
-            const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500;
+            const totalAmount = await this.resolveNightAuthoritativePrice(request.venueId, request.eventDate);
             const isSplit = request.paymentMode === 'SPLIT';
             const hostAmount = isSplit ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
             const partnerAmount = isSplit ? Math.round((totalAmount / 2) * 100) / 100 : 0;
@@ -1253,9 +1329,8 @@ export class NightPartnerService {
             throw new Error('BOOKING_ALREADY_CONFIRMED');
         }
 
-        // Calculate authoritative price from venue configuration
-        const pricing = await VenueBookingService.calculateAuthoritativePrice(match.venueId, 'Confirmation Charges', 2);
-        const totalAmount = pricing.totalAmount > 0 ? pricing.totalAmount : 500; // Default nominal confirmation charge if free
+        // Calculate authoritative price from event / venue configuration
+        const totalAmount = await this.resolveNightAuthoritativePrice(match.venueId, match.eventDate);
 
         const hostAmount = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : totalAmount;
         const partnerAmount = paymentMode === 'SPLIT' ? Math.round((totalAmount / 2) * 100) / 100 : 0;

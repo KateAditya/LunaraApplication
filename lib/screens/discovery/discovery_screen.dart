@@ -2191,6 +2191,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                         onTap: () {
                           NightPartnerSelectorSheet.show(
                             context,
+                            party: night,
                             venueId: night['venueId']?.toString() ?? '',
                             venueName: night['venue']?.toString() ?? 'Venue',
                             date: night['rawDate']?.toString() ?? '2026-09-06',

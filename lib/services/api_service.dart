@@ -4661,6 +4661,7 @@ class ApiService {
     required String date,
     required String paymentMode,
     List<String>? partnerIds,
+    double? ticketPrice,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -4673,6 +4674,7 @@ class ApiService {
           'eventDate': date,
           'paymentMode': paymentMode,
           if (partnerIds != null && partnerIds.isNotEmpty) 'partnerIds': partnerIds,
+          if (ticketPrice != null && ticketPrice > 0) 'ticketPrice': ticketPrice,
         },
       );
       final data = jsonDecode(response.body);
