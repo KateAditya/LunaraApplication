@@ -118,12 +118,16 @@ export const getPartnerProfilePreview = async (req: Request, res: Response): Pro
 
 export const initiateInviteOrder = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, eventDate, paymentMode, ticketPrice } = req.body;
+        const { venueId, eventDate, eventTime, paymentMode, ticketPrice, partnerId, partnerIds } = req.body;
         const hostId = req.user!.id;
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
+
+        const resolvedPartnerIds = Array.isArray(partnerIds) && partnerIds.length > 0
+            ? partnerIds
+            : (partnerId ? [partnerId] : []);
 
         const parsedTicketPrice = ticketPrice ? Number(ticketPrice) : undefined;
         const orderData = await NightPartnerService.initiateInviteOrder(
@@ -131,7 +135,9 @@ export const initiateInviteOrder = async (req: Request, res: Response): Promise<
             String(venueId),
             String(eventDate),
             paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY',
-            parsedTicketPrice
+            parsedTicketPrice,
+            resolvedPartnerIds,
+            eventTime ? String(eventTime) : undefined
         );
         res.json({
             success: true,
@@ -139,7 +145,14 @@ export const initiateInviteOrder = async (req: Request, res: Response): Promise<
         });
     } catch (err: any) {
         logger.error('initiateInviteOrder error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to initiate invite payment' });
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to initiate invite payment',
+            ...(err.timeLock || {}),
+        });
     }
 };
 

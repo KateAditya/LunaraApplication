@@ -19,7 +19,7 @@ import {
 } from '../models';
 import { TicketStatus } from '../models/Ticket';
 import { GoingMode } from '../models/Booking';
-import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
+import { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
 import { logger } from '../config/logger';
@@ -1116,8 +1116,8 @@ export class MobileTicketController {
                         where: {
                             planId: plan.id,
                             [Op.or]: [
-                                { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, 'confirmed' as any, 'paid' as any, 'chat_enabled' as any, 'match_confirmed' as any] } },
-                                { joinerPaymentStatus: 'paid' as any },
+                                { status: PartyPlanRequestStatus.ACCEPTED },
+                                { joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID },
                             ],
                         },
                         include: [{ model: User, as: 'requester', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'phone', 'email'] }],

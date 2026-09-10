@@ -6297,6 +6297,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 '')
             .toString();
 
+    // If request is cancelled, expired, or declined and not an active confirmed match, remove from live feed
+    if (matchId.isEmpty) {
+      if (status == 'EXPIRED' ||
+          status == 'DECLINED' ||
+          status == 'REJECTED' ||
+          status == 'CANCELLED' ||
+          stage == 'EXPIRED' ||
+          stage == 'CANCELLED' ||
+          stage == 'DECLINED') {
+        return null;
+      }
+      final rawExpiresAt = metadata['expiresAt'] ?? rawItem['expiresAt'] ?? rawItem['data']?['expiresAt'];
+      if (rawExpiresAt != null) {
+        final exp = DateTime.tryParse(rawExpiresAt.toString());
+        if (exp != null && exp.isBefore(DateTime.now())) {
+          return null;
+        }
+      }
+    }
+
     final String hostId =
         (metadata['hostId'] ??
                 rawItem['hostId'] ??

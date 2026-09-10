@@ -4659,6 +4659,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> initiateNightInvitePayment({
     required String venueId,
     required String date,
+    String? time,
     required String paymentMode,
     List<String>? partnerIds,
     double? ticketPrice,
@@ -4672,6 +4673,7 @@ class ApiService {
           'hostId': userId,
           'venueId': venueId,
           'eventDate': date,
+          'eventTime': time ?? '20:00',
           'paymentMode': paymentMode,
           if (partnerIds != null && partnerIds.isNotEmpty) 'partnerIds': partnerIds,
           if (ticketPrice != null && ticketPrice > 0) 'ticketPrice': ticketPrice,

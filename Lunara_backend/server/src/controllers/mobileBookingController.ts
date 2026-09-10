@@ -1139,7 +1139,7 @@ export const listMyBookings = async (req: Request, res: Response) => {
                     userId,
                     status: { [Op.ne]: 'rejected' },
                 },
-                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude, userInclude] }, userInclude],
+                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', include: [venueInclude, userInclude] }],
                 order: [['createdAt', 'DESC']],
             }).catch(err => {
                 logger.error('listMyBookings StrangersMeetJoiner query error:', err);

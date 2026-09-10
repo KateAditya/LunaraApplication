@@ -290,6 +290,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     final validateRes = await ApiService.initiateNightInvitePayment(
       venueId: widget.venueId,
       date: widget.date,
+      time: widget.time,
       paymentMode: 'SELF_PAY',
       partnerIds: _selectedUserIds.toList(),
       ticketPrice: _resolveTicketPrice(),
@@ -349,6 +350,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     final orderRes = await ApiService.initiateNightInvitePayment(
       venueId: widget.venueId,
       date: widget.date,
+      time: widget.time,
       paymentMode: selectedMode,
       partnerIds: _selectedUserIds.toList(),
       ticketPrice: _resolveTicketPrice(),
@@ -797,17 +799,22 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Selected: $selectedCount',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                        color: isDark ? Colors.white : Colors.black87,
+                    Flexible(
+                      child: Text(
+                        'Selected: $selectedCount',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (selectedCount > 0) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       GestureDetector(
                         onTap: () => setState(() => _selectedUserIds.clear()),
                         child: const Text(
@@ -828,15 +835,17 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                       ? 'Select partner(s) to invite'
                       : '$selectedCount candidate${selectedCount > 1 ? 's' : ''} ready',
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 11,
                     color: isDark ? Colors.white54 : Colors.grey[600],
                     fontWeight: FontWeight.w500,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           ElevatedButton(
             onPressed: isEnabled ? _onInviteSelected : () {
               if (selectedCount == 0) {
@@ -854,7 +863,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                   ? Colors.white
                   : (isDark ? Colors.white38 : Colors.grey[600]),
               elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -872,8 +881,8 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
                     selectedCount > 0 ? 'Invite Selected ($selectedCount)' : 'Invite Selected',
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
-                      fontSize: 13.5,
-                      letterSpacing: 0.6,
+                      fontSize: 13,
+                      letterSpacing: 0.5,
                     ),
                   ),
           ),

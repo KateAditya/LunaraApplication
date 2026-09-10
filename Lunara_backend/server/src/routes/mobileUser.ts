@@ -363,12 +363,19 @@ async function getUserNotifications(
         }
     }
 
-    // Filter out raw party plan notifications (they are now unified in timelineCards)
+    // Filter out raw party plan and upcoming night notifications (they are now unified in timelineCards & nightCardsResult)
     const otherNotifs = notifications.filter(n => {
         const metadata = n.data || {};
         const pId = metadata.planId || metadata.partyPlanId || (n.entityType === 'party_plan' ? n.entityId : null);
         const isUnifiedPartyPlan = !!pId && timelineCards.some(tc => tc.id === `party_plan_timeline_${pId}`);
-        return !isUnifiedPartyPlan;
+        const isNightPartnerRaw = n.entityType === 'night_partner' ||
+            n.entityType === 'NightPartnerRequest' ||
+            n.entityType === 'NightPartnerMatch' ||
+            n.type === 'PARTNER_REQUEST_RECEIVED' ||
+            n.eventType === 'PARTNER_REQUEST_RECEIVED' ||
+            n.eventType === 'UPCOMING_NIGHT_TIMELINE' ||
+            (n.category === 'requests' && (n.title || '').toLowerCase().includes('invite for party event'));
+        return !isUnifiedPartyPlan && !isNightPartnerRaw;
     });
 
     // Merge other notifications and unified timeline cards
@@ -716,12 +723,26 @@ async function getUserNotifications(
 
                 const [hostRequests, partnerRequests, hostMatches, partnerMatches] = await Promise.all([
                     NightPartnerRequest.findAll({
-                        where: { hostId: uId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
+                        where: {
+                            hostId: uId,
+                            status: { [Op.in]: ['PENDING', 'ACCEPTED'] },
+                            [Op.or]: [
+                                { expiresAt: null as any },
+                                { expiresAt: { [Op.gt]: new Date() } }
+                            ]
+                        },
                         attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
                         order: [['updatedAt', 'DESC']]
                     }),
                     NightPartnerRequest.findAll({
-                        where: { partnerId: uId, status: { [Op.in]: ['PENDING', 'ACCEPTED'] } },
+                        where: {
+                            partnerId: uId,
+                            status: { [Op.in]: ['PENDING', 'ACCEPTED'] },
+                            [Op.or]: [
+                                { expiresAt: null as any },
+                                { expiresAt: { [Op.gt]: new Date() } }
+                            ]
+                        },
                         attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
                         order: [['updatedAt', 'DESC']]
                     }),

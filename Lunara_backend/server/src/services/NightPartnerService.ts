@@ -529,14 +529,68 @@ export class NightPartnerService {
      * Host initiates payment order for sending an invitation (Self Pay vs Split)
      */
     public static async initiateInviteOrder(
-        _hostId: string,
+        hostId: string,
         venueId: string,
         eventDate: string,
         paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY',
-        ticketPrice?: number
+        ticketPrice?: number,
+        partnerIds?: string[],
+        eventTime?: string
     ): Promise<{ razorpayOrderId: string; razorpayKeyId: string; amount: number; amountToPay: number; currency: string }> {
         const venue = await this.resolveVenue(venueId);
         if (!venue) throw new Error('VENUE_NOT_FOUND');
+
+        // Check if host already has an active match for this night
+        const existingMatches = await NightPartnerMatch.findAll({
+            where: {
+                [Op.or]: [{ hostId }, { partnerId: hostId }],
+                venueId: venue.id,
+                eventDate: new Date(eventDate),
+                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+            },
+        });
+
+        const activeMatch = existingMatches.find((m) => {
+            if (m.status === NightPartnerMatchStatus.PAYMENT_PENDING && m.paymentExpiresAt) {
+                return new Date() < new Date(m.paymentExpiresAt);
+            }
+            return m.status === NightPartnerMatchStatus.MATCHED || m.status === NightPartnerMatchStatus.CONFIRMED;
+        });
+
+        if (activeMatch) {
+            const err: any = new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
+            err.code = 'HOST_ALREADY_HAS_ACTIVE_MATCH';
+            throw err;
+        }
+
+        // Time-lock checks for host
+        const eventDateTime = parseBookingDateTime(eventDate, eventTime);
+        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: venue.id });
+        if (!hostTimeLock.allowed) {
+            const err: any = new Error(hostTimeLock.message);
+            err.code = 'FOUR_HOUR_TIME_LOCK';
+            err.timeLock = hostTimeLock;
+            throw err;
+        }
+
+        // Validate time locks for selected partners if provided
+        const rawList = partnerIds && partnerIds.length > 0 ? partnerIds : [];
+        const targetPartnerIds = Array.from(new Set(rawList)).filter(id => id && id !== hostId);
+        if (targetPartnerIds.length > 0) {
+            for (const pId of targetPartnerIds) {
+                const partnerTimeLock = await EventTimeLockService.validateFourHourGap(pId, eventDateTime, 'party_plan');
+                if (!partnerTimeLock.allowed) {
+                    if (targetPartnerIds.length === 1) {
+                        const partnerUser = await User.findByPk(pId, { attributes: ['firstName', 'lastName'] });
+                        const partnerName = partnerUser?.firstName || 'The selected partner';
+                        const err: any = new Error(`${partnerName} already has another plan scheduled around this time. Please choose another event or partner.`);
+                        err.code = 'USER_ALREADY_HAS_PLAN';
+                        err.timeLock = partnerTimeLock;
+                        throw err;
+                    }
+                }
+            }
+        }
 
         // Calculate authoritative price from event / venue configuration (2 tickets total)
         const totalAmount = await this.resolveNightAuthoritativePrice(venue.id, eventDate, ticketPrice ? ticketPrice * 2 : undefined);
@@ -622,17 +676,26 @@ export class NightPartnerService {
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
         // Check if host already has an active match for this night
-        const existingMatch = await NightPartnerMatch.findOne({
+        const existingMatches = await NightPartnerMatch.findAll({
             where: {
-                hostId,
+                [Op.or]: [{ hostId }, { partnerId: hostId }],
                 venueId: venue.id,
                 eventDate: new Date(eventDate),
                 status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
             },
         });
 
-        if (existingMatch) {
-            throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
+        const activeMatch = existingMatches.find((m) => {
+            if (m.status === NightPartnerMatchStatus.PAYMENT_PENDING && m.paymentExpiresAt) {
+                return new Date() < new Date(m.paymentExpiresAt);
+            }
+            return m.status === NightPartnerMatchStatus.MATCHED || m.status === NightPartnerMatchStatus.CONFIRMED;
+        });
+
+        if (activeMatch) {
+            const err: any = new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
+            err.code = 'HOST_ALREADY_HAS_ACTIVE_MATCH';
+            throw err;
         }
 
         // Time-lock checks for host
@@ -2130,6 +2193,63 @@ export class NightPartnerService {
                 } catch (_) { }
                 if (!requestRecord) {
                     return null;
+                }
+
+                // If request is not pending, or is expired/cancelled/declined, exclude from live feed & notification cards
+                if (requestRecord.status === NightPartnerRequestStatus.CANCELLED ||
+                    requestRecord.status === NightPartnerRequestStatus.DECLINED ||
+                    requestRecord.status === NightPartnerRequestStatus.EXPIRED) {
+                    return null;
+                }
+
+                // Check for time expiry
+                if (requestRecord.expiresAt && new Date() > new Date(requestRecord.expiresAt)) {
+                    try {
+                        await requestRecord.update({ status: NightPartnerRequestStatus.EXPIRED });
+                    } catch (_) { }
+                    return null;
+                }
+
+                // Check if host already formed a match with another partner for this venue and date
+                try {
+                    const conflictingMatch = await NightPartnerMatch.findOne({
+                        where: {
+                            hostId: requestRecord.hostId,
+                            venueId: requestRecord.venueId,
+                            eventDate: requestRecord.eventDate,
+                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] }
+                        }
+                    });
+                    if (conflictingMatch) {
+                        try {
+                            await requestRecord.update({ status: NightPartnerRequestStatus.CANCELLED });
+                        } catch (_) { }
+                        return null;
+                    }
+
+                    // Check if partner already has an active confirmed match on this date
+                    const partnerMatch = await NightPartnerMatch.findOne({
+                        where: {
+                            [Op.or]: [{ hostId: requestRecord.partnerId }, { partnerId: requestRecord.partnerId }],
+                            venueId: requestRecord.venueId,
+                            eventDate: requestRecord.eventDate,
+                            status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] }
+                        }
+                    });
+                    if (partnerMatch) {
+                        try {
+                            await requestRecord.update({ status: NightPartnerRequestStatus.DECLINED });
+                        } catch (_) { }
+                        return null;
+                    }
+                } catch (_) { }
+
+                // Check if event date has already passed
+                if (requestRecord.eventDate) {
+                    const eventTime = new Date(requestRecord.eventDate).getTime();
+                    if (!isNaN(eventTime) && eventTime < Date.now() - 24 * 60 * 60 * 1000) {
+                        return null;
+                    }
                 }
             }
 
