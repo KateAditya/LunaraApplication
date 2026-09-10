@@ -76,6 +76,9 @@ class ApiService {
   static List<dynamic>? _cachedSubscriptionPackages;
   static DateTime? _subscriptionPackagesCacheTime;
 
+  static Map<String, dynamic>? get cachedLiveFeedData => _cachedLiveFeedData;
+  static List<Map<String, dynamic>>? get cachedNotifications => _cachedNotifications;
+
   // Uses your machine's local IP (192.168.0.150) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {

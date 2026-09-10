@@ -779,6 +779,93 @@ export class EntitlementService {
                 }
             }
 
+            // Elite / Unlimited Plan Backtracks
+            const isUnlimitedBacktracks = isElite || (activePkg && (activePkg.backtrackLimit === -1 || activePkg.backtrackLimit >= 9999));
+            if (normalizedKey === 'backtrack' && isUnlimitedBacktracks) {
+                if (activeSub) {
+                    await EntitlementAuditLog.create({
+                        userId,
+                        subscriptionId: activeSub.id,
+                        feature: 'backtrack',
+                        action: 'ELITE_UNLIMITED_CONSUMED',
+                        source: 'PLAN',
+                        quantity: -amount,
+                        oldValue: { unlimited: true },
+                        newValue: { unlimited: true },
+                        requestId: options.requestId,
+                        metadata: options.metadata,
+                    }, { transaction: t });
+                }
+
+                await t.commit();
+                RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                    featureKey: 'backtrack',
+                    source: 'PLAN',
+                    remaining: 9999,
+                    isUnlimited: true,
+                });
+
+                return {
+                    success: true,
+                    source: 'PLAN',
+                    consumed: amount,
+                    planRemaining: 9999,
+                    totalRemaining: 9999,
+                };
+            }
+
+            // Regular Plan Daily Backtrack Quota (only if user has active paid subscription with quota)
+            if (normalizedKey === 'backtrack' && activeSub && activePkg && Number(activePkg.backtrackLimit) > 0) {
+                const { SubscriptionService } = await import('./subscriptionService');
+                const dailyLimit = await SubscriptionService.getLimit(userId, 'daily_backtracks');
+                const isLimitUnlimited = dailyLimit === 'unlimited' || dailyLimit === -1 || dailyLimit >= 9999;
+
+                if (isLimitUnlimited) {
+                    await t.commit();
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: 9999,
+                        totalRemaining: 9999,
+                    };
+                }
+
+                const remainingPlanBacktracks = await SubscriptionService.getRemainingUsage(userId, 'daily_backtracks');
+                if (typeof remainingPlanBacktracks === 'number' && remainingPlanBacktracks >= amount) {
+                    await SubscriptionService.consumeUsage(userId, 'daily_backtracks', amount);
+                    const newPlanRemaining = Math.max(0, remainingPlanBacktracks - amount);
+
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: normalizedKey,
+                            status: UserAddonStatus.ACTIVE,
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const totalRemaining = newPlanRemaining + addonRemaining;
+
+                    await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'backtrack',
+                        source: 'PLAN',
+                        remaining: totalRemaining,
+                    });
+
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: newPlanRemaining,
+                        addonRemaining,
+                        totalRemaining,
+                    };
+                }
+            }
+
             // ─── STEP 2: Check Active Add-on Balances (FIFO) ────────────────
             const availableAddon = await UserAddon.findOne({
                 where: {

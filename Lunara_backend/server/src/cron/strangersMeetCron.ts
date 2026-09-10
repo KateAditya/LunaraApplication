@@ -20,6 +20,7 @@ import AuditLog from '../models/AuditLog';
  * 3. END_CONFIRMATION_PENDING when expectedEndAt arrives.
  */
 let isStrangersMeetCronRunning = false;
+const escalatedCancellationMap = new Map<string, number>();
 
 export const startStrangersMeetCron = () => {
     // Run every minute with overlap protection
@@ -234,7 +235,15 @@ export const startStrangersMeetCron = () => {
                 limit: 100,
             });
 
+            const nowMs = now.getTime();
             for (const cancelReq of overdueCancellations) {
+                const lastAlerted = escalatedCancellationMap.get(cancelReq.id);
+                // Alert and write AuditLog at most once every 6 hours per cancellation request instead of every 60 seconds
+                if (lastAlerted && (nowMs - lastAlerted) < 6 * 60 * 60 * 1000) {
+                    continue;
+                }
+                escalatedCancellationMap.set(cancelReq.id, nowMs);
+
                 try {
                     const hostUser = (cancelReq as any).host;
                     const hostName = hostUser ? `${hostUser.firstName} ${hostUser.lastName}`.trim() : 'Host';

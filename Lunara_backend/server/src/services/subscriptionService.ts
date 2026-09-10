@@ -535,17 +535,32 @@ export class SubscriptionService {
             const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
             const plan = entry.plan;
 
+            // VIP plans (CORE, PLUS, PRO, ELITE) have unlimited daily likes
+            if (featureKey === 'daily_likes' && plan && (plan.dailyLikes === -1 || plan.dailyLikes >= 9999 || ((plan.tier as any) !== PackageTier.FREE && (plan.tier as any) !== 'FREE'))) {
+                return UNLIMITED;
+            }
+
             // Elite tier overrides for unlimited features
             if (plan && ((plan.tier as any) === PackageTier.ELITE || (plan.tier as any) === 'ELITE')) {
-                if (['super_likes', 'superlike', 'boosts', 'boost', 'profile_boost', 'daily_backtracks', 'backtrack', 'party_creation', 'party_plan'].includes(featureKey)) {
+                if (['super_likes', 'superlike', 'boosts', 'boost', 'profile_boost', 'daily_backtracks', 'backtrack', 'party_creation', 'party_plan', 'daily_likes'].includes(featureKey)) {
                     return UNLIMITED;
                 }
             }
 
             const featureValue = entry.features.get(featureKey);
-            if (!featureValue || !featureValue.enabled) return 0;
-            if (featureValue.value === 'unlimited' || featureValue.value === -1 || featureValue.value >= 9999) return UNLIMITED;
-            if (typeof featureValue.value === 'number') return featureValue.value;
+            if (!featureValue) return 0;
+            if (featureValue.enabled === false) return 0;
+
+            const val = featureValue.value !== undefined ? featureValue.value : featureValue.limit;
+            if (val === 'unlimited' || val === -1 || val >= 9999) return UNLIMITED;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') {
+                const parsed = Number(val);
+                if (!isNaN(parsed)) {
+                    if (parsed === -1 || parsed >= 9999) return UNLIMITED;
+                    return parsed;
+                }
+            }
             return featureValue.enabled ? UNLIMITED : 0;
         } catch (err) {
             logger.error(`SubscriptionService.getLimit error [${featureKey}]:`, err);

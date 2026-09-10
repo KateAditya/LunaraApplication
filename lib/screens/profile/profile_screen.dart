@@ -358,10 +358,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
-    final isAlreadyLiked = currentAction == 'like' || targetUser.isLiked;
+    final isCurrentlyLiked = currentAction == 'like' || targetUser.isLiked;
 
     // If already liked, clicking "like" again unlikes (toggle)
-    if (isAlreadyLiked) {
+    if (isCurrentlyLiked) {
       final ok = await ApiService.unlikeUser(targetUserId: targetId);
       if (!mounted) return false;
       if (ok) {
@@ -382,16 +382,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return false;
     }
 
-    // Daily like limit guard
+    // Daily like limit guard (skip if user has unlimited likes)
     final subProvider = SubscriptionProvider.instance;
-    final validation = subProvider.validateAction(VipAction.like);
-    if (!validation.allowed) {
-      showSubscriptionLimitDialog(
-        context,
-        feature: SubLimitFeature.dailyLikes,
-        customMessage: validation.message,
-      );
-      return false;
+    if (!subProvider.hasUnlimitedLikes) {
+      final validation = subProvider.validateAction(VipAction.like);
+      if (!validation.allowed) {
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.dailyLikes,
+          customMessage: validation.message,
+        );
+        return false;
+      }
     }
 
     subProvider.optimisticConsume(VipAction.like);
@@ -701,7 +703,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _undoLastSwipe() {
     if (_swipeHistory.isEmpty) return;
 
-    if (_dailyBacktracksRemaining <= 0 && _dailyBacktracksLimit != 999999) {
+    final subProvider = SubscriptionProvider.instance;
+    final canBacktrack = subProvider.canBacktrack || _dailyBacktracksRemaining > 0 || _dailyBacktracksLimit == 999999;
+    if (!canBacktrack) {
       _showBacktrackUpgradePrompt();
       return;
     }
@@ -730,6 +734,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           _outOfProfiles = false;
         });
+
+        unawaited(SubscriptionProvider.instance.refresh());
+        unawaited(SubscriptionProvider.instance.fetchEntitlementsSummary());
 
         final backtrackWidget = ProfileDetailView(
           key: ValueKey(prevUser.id),

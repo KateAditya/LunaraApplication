@@ -194,7 +194,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    _loadFeed();
+    // Instant frame-0 hydration from memory cache (zero loading latency)
+    if (ApiService.cachedLiveFeedData != null || ApiService.cachedNotifications != null) {
+      final cachedFeed = ApiService.cachedLiveFeedData;
+      if (cachedFeed != null) {
+        _feedItems = [
+          ...List<Map<String, dynamic>>.from(cachedFeed['feed'] ?? []),
+          ...List<Map<String, dynamic>>.from(cachedFeed['myRequests'] ?? []),
+          ...List<Map<String, dynamic>>.from(cachedFeed['incomingRequests'] ?? []),
+          ...List<Map<String, dynamic>>.from(cachedFeed['pendingPayments'] ?? []),
+        ];
+      }
+      if (ApiService.cachedNotifications != null) {
+        _notifications = ApiService.cachedNotifications!;
+      }
+      _cachedTimeline = _buildUnifiedTimeline();
+      _isLoading = false;
+    }
+
+    _loadFeed(showLoader: _cachedTimeline.isEmpty);
     _initSocketListeners();
 
     // Razorpay setup (native platforms only)

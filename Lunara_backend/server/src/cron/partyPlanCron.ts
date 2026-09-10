@@ -546,9 +546,9 @@ export const startPartyPlanCron = () => {
                 const reachWindowEnd = new Date(now.getTime() + 40 * 60 * 1000);
                 const upcoming30mReachPlans = await PartyPlan.findAll({
                     where: {
-                        status: { [Op.notIn]: ['cancelled', 'expired'] },
+                        status: PartyPlanStatus.ACTIVE,
                         reachConfirmation30mSent: false,
-                        hostPaymentStatus: { [Op.in]: ['paid', 'completed'] },
+                        hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                         planDateTime: { [Op.between]: [reachWindowStart, reachWindowEnd] },
                     },
                     include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'area'] }]

@@ -2279,11 +2279,11 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
         let dailyBacktracksLimit = 3;
         let dailyBacktracksRemaining = 3;
         try {
-            const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-            const limit = await SubscriptionService.getLimit(userId, 'daily_backtracks');
-            const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_backtracks');
-            dailyBacktracksLimit = limit === 'unlimited' ? 999999 : limit;
-            dailyBacktracksRemaining = remaining === 'unlimited' ? 999999 : remaining;
+            const summary = await EntitlementService.getEntitlementsSummary(userId);
+            const rawBacktracks = summary.totals.backtracksAvailable as any;
+            dailyBacktracksRemaining = rawBacktracks === 'unlimited' ? 999999 : (Number(rawBacktracks) || 0);
+            const backtrackItem = summary.planBenefits.find(b => b.featureKey === 'backtrack');
+            dailyBacktracksLimit = backtrackItem?.includedQuantity === -1 ? 999999 : (backtrackItem?.includedQuantity || 3);
         } catch (backtrackErr) {
             logger.warn('[swipeStatus] Could not fetch backtrack limits:', backtrackErr);
         }
@@ -2325,19 +2325,20 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
             return res.status(400).json({ success: false, message: 'userId and targetUserId are required' });
         }
 
-        const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-        const remaining = await SubscriptionService.getRemainingUsage(userId, 'daily_backtracks');
+        const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'backtrack', 1, {
+            requestId: `BACKTRACK_${userId}_${targetUserId}_${Date.now()}`,
+            metadata: { targetUserId },
+        });
 
-        if (remaining !== 'unlimited' && remaining <= 0) {
+        if (!consumption.success) {
             return res.status(403).json({
                 success: false,
-                code: 'LIMIT_REACHED',
-                message: 'You have reached your daily backtrack limit. Upgrade your plan to get more backtracks!'
+                code: consumption.code || 'LIMIT_REACHED',
+                limitReached: true,
+                message: consumption.message || 'You have reached your daily backtrack limit. Upgrade your plan or get a Backtrack add-on!',
+                availableAddons: consumption.availableAddons || [],
             });
         }
-
-        // Consume 1 backtrack usage
-        const consume = await SubscriptionService.consumeUsage(userId, 'daily_backtracks');
 
         // Destroy UserLike record on backtrack
         try {
@@ -2374,19 +2375,15 @@ export const backtrackSwipe = async (req: Request, res: Response): Promise<Respo
                     await oppositeSwipe.save();
                 }
             }
-            // FIX: Destroy the swipe record completely so that on the
-            // next _loadData() call the profile is NOT re-shown as superliked.
-            // Previously matchReason='superlike' survived in UserMatch even
-            // after UserLike was deleted, causing the UI to re-flag it.
             await mySwipe.destroy();
         }
 
         return res.status(200).json({
             success: true,
             data: {
-                remaining: consume.remaining,
-                limit: consume.limit,
-                used: consume.used
+                remaining: consumption.totalRemaining,
+                consumed: consumption.consumed,
+                source: consumption.source,
             },
             message: 'Swipe backtracked successfully'
         });
