@@ -839,6 +839,30 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_amount NUMERIC;`,
             `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_date TIMESTAMP WITH TIME ZONE;`,
             `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(255);`,
+            // Strangers Meet: escalation / lifecycle / preference columns added after initial migration
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS food_preference VARCHAR(100);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS drink_preference VARCHAR(100);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS escalation_reason TEXT;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_resolution VARCHAR(100);`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_resolution_notes TEXT;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_resolved_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS admin_resolved_by UUID;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS host_not_started_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE strangers_meet_requests ADD COLUMN IF NOT EXISTS host_not_started_reason TEXT;`,
+            // Party Plans: venue-reach confirmation + lifecycle timestamp columns added after initial migration
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS reach_confirmation_30m_sent BOOLEAN DEFAULT false;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_reach_status VARCHAR(30) DEFAULT 'PENDING';`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_reach_confirmed_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_reach_confirmation_source VARCHAR(50);`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS host_reach_notification_id VARCHAR(100);`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS payment_deadline_at TIMESTAMP WITH TIME ZONE;`,
+            `ALTER TABLE party_plans ADD COLUMN IF NOT EXISTS matched_request_id UUID;`,
+            // Night Partner Requests: payment columns added after initial migration
+            `ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS host_paid BOOLEAN DEFAULT false;`,
+            `ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS host_amount DECIMAL(10,2);`,
+            `ALTER TABLE night_partner_requests ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255);`,
         ];
 
         for (const q of safeQueries) {
@@ -1082,6 +1106,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
             StrangersMeetHostCancellationRequest,
             StrangersMeetMemberRefund,
             LargePartyCancellationRequest,
+            WalletCashbackRule,  // was missing — wallet_cashback_rules table was never created
         ];
         for (const m of modelsToSync) {
             try {
