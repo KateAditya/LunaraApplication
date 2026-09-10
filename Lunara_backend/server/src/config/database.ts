@@ -520,9 +520,13 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         partner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         venue_id UUID NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+                        package_id UUID,
                         event_date DATE NOT NULL,
                         event_time VARCHAR(20) DEFAULT '20:00',
                         payment_mode VARCHAR(20) NOT NULL DEFAULT 'SELF_PAY',
+                        host_paid BOOLEAN NOT NULL DEFAULT FALSE,
+                        host_amount DECIMAL(10,2),
+                        razorpay_order_id VARCHAR(255),
                         status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
                         expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
                         night_interest_id UUID,
@@ -563,6 +567,18 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
                     );
+
+                    -- night_partner_requests column additions
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='package_id') THEN ALTER TABLE night_partner_requests ADD COLUMN package_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='payment_mode') THEN ALTER TABLE night_partner_requests ADD COLUMN payment_mode VARCHAR(20) DEFAULT 'SELF_PAY'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='host_paid') THEN ALTER TABLE night_partner_requests ADD COLUMN host_paid BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='host_amount') THEN ALTER TABLE night_partner_requests ADD COLUMN host_amount DECIMAL(10,2); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='razorpay_order_id') THEN ALTER TABLE night_partner_requests ADD COLUMN razorpay_order_id VARCHAR(255); END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='event_time') THEN ALTER TABLE night_partner_requests ADD COLUMN event_time VARCHAR(20) DEFAULT '20:00'; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='night_interest_id') THEN ALTER TABLE night_partner_requests ADD COLUMN night_interest_id UUID; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_2h_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_2h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_1h_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_1h_sent BOOLEAN DEFAULT FALSE; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_requests' AND column_name='reminder_30m_sent') THEN ALTER TABLE night_partner_requests ADD COLUMN reminder_30m_sent BOOLEAN DEFAULT FALSE; END IF;
 
                     -- night_partner_matches column additions
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='night_partner_matches' AND column_name='payment_mode') THEN ALTER TABLE night_partner_matches ADD COLUMN payment_mode VARCHAR(20) DEFAULT 'SELF_PAY'; END IF;
@@ -665,7 +681,13 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
             `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancellation_status VARCHAR(30) DEFAULT 'NONE'`,
             `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancellation_reason TEXT`,
             `ALTER TABLE "night_partner_matches" ADD COLUMN IF NOT EXISTS cancelled_by UUID`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS package_id UUID`,
             `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20) DEFAULT 'SELF_PAY'`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS host_paid BOOLEAN DEFAULT FALSE`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS host_amount DECIMAL(10,2)`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255)`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS event_time VARCHAR(20) DEFAULT '20:00'`,
+            `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS night_interest_id UUID`,
             `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT FALSE`,
             `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_1h_sent BOOLEAN DEFAULT FALSE`,
             `ALTER TABLE "night_partner_requests" ADD COLUMN IF NOT EXISTS reminder_30m_sent BOOLEAN DEFAULT FALSE`,
