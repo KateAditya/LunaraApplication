@@ -1,6 +1,8 @@
 // lib/models/vip_entitlement_model.dart
 // VIP Entitlements, Usage Progress, Add-on Balances, and Add-on Marketplace Models
 
+import 'dart:math' as math;
+
 class PlanEntitlementItem {
   final String featureKey;
   final String name;
@@ -220,14 +222,30 @@ class EntitlementsSummaryModel {
 
   int get superlikesAvailable {
     final val = totals['superlikesAvailable'];
-    if (val is int) return val;
-    return int.tryParse(val?.toString() ?? '0') ?? 0;
+    int totalCount = 0;
+    if (val is int) {
+      totalCount = val;
+    } else if (val != null) {
+      totalCount = int.tryParse(val.toString()) ?? 0;
+    }
+    final addonCount = activeAddons
+        .where((a) => a.featureKey == 'superlike' || a.featureKey == 'super_likes' || a.featureKey == 'super_like')
+        .fold<int>(0, (sum, a) => sum + a.remainingQuantity);
+    return math.max(totalCount, addonCount);
   }
 
   int get boostsAvailable {
     final val = totals['boostsAvailable'];
-    if (val is int) return val;
-    return int.tryParse(val?.toString() ?? '0') ?? 0;
+    int totalCount = 0;
+    if (val is int) {
+      totalCount = val;
+    } else if (val != null) {
+      totalCount = int.tryParse(val.toString()) ?? 0;
+    }
+    final addonCount = activeAddons
+        .where((a) => a.featureKey == 'profile_boost' || a.featureKey == 'boost' || a.featureKey == 'boosts')
+        .fold<int>(0, (sum, a) => sum + a.remainingQuantity);
+    return math.max(totalCount, addonCount);
   }
 
   dynamic get partyPlansAvailable => totals['partyPlansAvailable'] ?? 0;
@@ -235,9 +253,17 @@ class EntitlementsSummaryModel {
 
   int get backtracksAvailable {
     final val = totals['backtracksAvailable'] ?? totals['undoAvailable'] ?? totals['daily_backtracks'];
-    if (val is int) return val;
     if (val == 'unlimited') return 9999;
-    return int.tryParse(val?.toString() ?? '0') ?? 0;
+    int totalCount = 0;
+    if (val is int) {
+      totalCount = val;
+    } else if (val != null) {
+      totalCount = int.tryParse(val.toString()) ?? 0;
+    }
+    final addonCount = activeAddons
+        .where((a) => a.featureKey == 'backtrack' || a.featureKey == 'undo' || a.featureKey == 'backtracks')
+        .fold<int>(0, (sum, a) => sum + a.remainingQuantity);
+    return math.max(totalCount, addonCount);
   }
 
   factory EntitlementsSummaryModel.fromJson(Map<String, dynamic> json) {

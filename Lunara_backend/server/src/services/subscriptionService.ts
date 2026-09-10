@@ -868,16 +868,16 @@ export class SubscriptionService {
                 const userAddons = await UserAddon.findAll({
                     where: {
                         userId,
-                        status: UserAddonStatus.ACTIVE,
+                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
                         remainingQuantity: { [Op.gt]: 0 },
                     },
                 });
                 for (const ua of userAddons) {
                     const r = Number(ua.remainingQuantity) || 0;
-                    if (ua.featureKey === 'superlike') addonSuperlikes += r;
-                    else if (ua.featureKey === 'profile_boost') addonBoosts += r;
-                    else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo') addonBacktracks += r;
-                    else if (ua.featureKey === 'party_creation') addonPartyPlans += r;
+                    if (ua.featureKey === 'superlike' || ua.featureKey === 'super_likes' || ua.featureKey === 'super_like') addonSuperlikes += r;
+                    else if (ua.featureKey === 'profile_boost' || ua.featureKey === 'boost' || ua.featureKey === 'boosts') addonBoosts += r;
+                    else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo' || ua.featureKey === 'backtracks') addonBacktracks += r;
+                    else if (ua.featureKey === 'party_creation' || ua.featureKey === 'party_plan' || ua.featureKey === 'party_plans') addonPartyPlans += r;
                 }
             } catch (err) {
                 logger.warn('[subscriptionService.getFullStatus] Could not fetch user addons:', err);

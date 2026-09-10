@@ -2271,7 +2271,10 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
             const rawSuper = summary.totals.superlikesAvailable as any;
             superlikesRemaining = rawSuper === 'unlimited' ? 999999 : (Number(rawSuper) || 0);
             const superlikeItem = summary.planBenefits.find(b => b.featureKey === 'superlike');
-            superlikesPerCycle = superlikeItem?.includedQuantity || 0;
+            const addonSuperCount = (summary.activeAddons || [])
+                .filter(a => a.featureKey === 'superlike' || a.featureKey === 'super_likes' || a.featureKey === 'super_like')
+                .reduce((sum, a) => sum + (Number(a.remainingQuantity) || 0), 0);
+            superlikesPerCycle = (superlikeItem?.includedQuantity || 0) + addonSuperCount;
         } catch (subErr) {
             logger.warn('[swipeStatus] Could not fetch entitlement summary:', subErr);
         }
@@ -2301,7 +2304,7 @@ export const getSwipeStatus = async (req: Request, res: Response): Promise<Respo
                 superlikesRemaining,
                 superlikesPerCycle,
                 limitReached: todayLikeCount >= dailyLikesLimit,
-                superLimitReached: superlikesRemaining <= 0 && superlikesPerCycle > 0,
+                superLimitReached: superlikesRemaining <= 0,
                 dailyBacktracksLimit,
                 dailyBacktracksRemaining,
                 dailyBacktracksUsed: Math.max(0, dailyBacktracksLimit - dailyBacktracksRemaining)

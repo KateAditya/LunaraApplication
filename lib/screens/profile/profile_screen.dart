@@ -77,38 +77,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Load subscription plan limits ────────────────────────────────────────────
   Future<void> _loadPlanLimits() async {
     try {
-      final sub = await ApiService.fetchUserSubscription();
-      if (!mounted) return;
-      // Parse dailyLikes from the nested features map
-      final features = sub['features'];
-      final dailyLikes = features?['daily_likes']?['limit'] ?? 7;
-      final dailyBacktracks = features?['daily_backtracks']?['limit'] ?? 3;
-      final usageMap = sub['usage'] as Map? ?? {};
-      final dailyLikesUsed = usageMap['daily_likes'] as int? ?? 0;
-      final dailyBacktracksUsed = usageMap['daily_backtracks'] as int? ?? 0;
-
-      // superlikesRemaining comes from the subscription object itself
-      final subscriptionData = sub['subscription'];
-      int superlikesRemaining = 999999;
-      int superlikesPerCycle = 0;
-      if (subscriptionData != null) {
-        superlikesRemaining = (subscriptionData as Map)['superlikesRemaining'] as int? ?? 0;
-        final innerPkg = subscriptionData['package'];
-        superlikesPerCycle = innerPkg != null ? (innerPkg as Map)['superlikesPerCycle'] as int? ?? 0 : 0;
-      }
-
       final subProvider = SubscriptionProvider.instance;
-      final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes || dailyLikes == -1 || dailyLikes == 'unlimited';
-      final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes || superlikesRemaining >= 9999;
+      unawaited(subProvider.refresh());
+      unawaited(subProvider.fetchEntitlementsSummary());
 
       setState(() {
-        _dailyLikesLimit = hasUnlimitedLikes ? 999999 : (dailyLikes as int? ?? 7);
-        _dailyLikesUsed = dailyLikesUsed;
-        _superlikesRemaining = isUnlimitedSuper ? 999999 : superlikesRemaining;
-        _superlikesPerCycle = superlikesPerCycle;
-        _dailyBacktracksLimit = dailyBacktracks == -1 ? 999999 : (dailyBacktracks as int? ?? 3);
-        _dailyBacktracksUsed = dailyBacktracksUsed;
-        _dailyBacktracksRemaining = _dailyBacktracksLimit == 999999 ? 999999 : (_dailyBacktracksLimit - _dailyBacktracksUsed);
         _limitsLoaded = true;
       });
     } catch (e) {
@@ -495,8 +468,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // Superlikes remaining guard (always validate against SubscriptionProvider)
     final subProvider = SubscriptionProvider.instance;
-    final validation = subProvider.validateAction(VipAction.superlike);
-    if (!validation.allowed) {
+    final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes;
+    if (!isUnlimitedSuper && !subProvider.canSuperLike) {
+      final validation = subProvider.validateAction(VipAction.superlike);
       showSubscriptionLimitDialog(
         context,
         feature: SubLimitFeature.superLike,
@@ -507,27 +481,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     subProvider.optimisticConsume(VipAction.superlike);
 
-    final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
-    if (!mounted) return false;
-
-    if (res == null || res['limitReached'] == true) {
-      subProvider.rollbackConsume(VipAction.superlike);
-      showSubscriptionLimitDialog(
-        context,
-        feature: SubLimitFeature.superLike,
-        customMessage: res?['message'],
-      );
-      return false;
-    }
-
+    // Instant optimistic UI update (0ms delay)
     setState(() {
       _swipedActions[targetId] = 'superlike';
       _displayUser = _displayUser?.copyWith(isSuperLiked: true);
     });
-
-    unawaited(SubscriptionProvider.instance.refresh());
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
-    _checkUsageWarning(res);
+
+    // Asynchronously send to backend
+    ApiService.swipeUser(targetUserId: targetId, action: 'superlike').then((res) {
+      if (!mounted) return;
+      if (res == null || res['limitReached'] == true) {
+        subProvider.rollbackConsume(VipAction.superlike);
+        setState(() {
+          _swipedActions.remove(targetId);
+          _displayUser = _displayUser?.copyWith(isSuperLiked: false);
+        });
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.superLike,
+          customMessage: res?['message'],
+        );
+      } else {
+        _checkUsageWarning(res);
+        SubscriptionProvider.instance.refresh();
+      }
+    });
+
     return true;
   }
 
@@ -750,8 +730,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           user: prevUser,
           isMe: prevUser.id == ApiService.currentUserId,
           swipedAction: _swipedActions[prevUser.id],
-          isLikeDisabled: !SubscriptionProvider.instance.hasUnlimitedLikes && (_dailyLikesLimit != 999999 && _dailyLikesUsed >= _dailyLikesLimit),
-          isSuperLikeDisabled: !SubscriptionProvider.instance.isElite && !SubscriptionProvider.instance.status.isUnlimitedSuperlikes && (_superlikesPerCycle > 0 && _superlikesRemaining <= 0),
+          isLikeDisabled: !SubscriptionProvider.instance.canLike,
+          isSuperLikeDisabled: !SubscriptionProvider.instance.canSuperLike,
           onNope: () => _handleNope(),
           onLike: () => _handleLike(),
           onSuper: () => _handleSuperLike(),

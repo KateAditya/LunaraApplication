@@ -2846,18 +2846,6 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
             res.status(404).json({ success: false, message: 'Request not found' });
             return;
         }
-        if (request.requesterId !== callerUserId) {
-            await transaction.rollback();
-            res.status(403).json({ success: false, message: 'You can only cancel your own request' });
-            return;
-        }
-        // Idempotency: If already cancelled, return success immediately
-        if (request.status === PartyPlanRequestStatus.CANCELLED) {
-            await transaction.rollback();
-            res.json({ success: true, message: 'Request was already cancelled', data: request });
-            return;
-        }
-
         // Lock plan and request
         const plan = await PartyPlan.findByPk(request.planId, { transaction, lock: transaction.LOCK.UPDATE });
         if (!plan) {
@@ -2865,6 +2853,22 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
             res.status(404).json({ success: false, message: 'Party plan not found' });
             return;
         }
+
+        const isRequester = request.requesterId === callerUserId;
+        const isHost = plan.userId === callerUserId;
+        if (!isRequester && !isHost) {
+            await transaction.rollback();
+            res.status(403).json({ success: false, message: 'You can only cancel your own request or requests on your plan' });
+            return;
+        }
+
+        // Idempotency: If already cancelled, return success immediately
+        if (request.status === PartyPlanRequestStatus.CANCELLED) {
+            await transaction.rollback();
+            res.json({ success: true, message: 'Request was already cancelled', data: request });
+            return;
+        }
+
         await request.reload({ transaction, lock: transaction.LOCK.UPDATE, include: [] });
 
         if ((request.status as string) === PartyPlanRequestStatus.CANCELLED) {

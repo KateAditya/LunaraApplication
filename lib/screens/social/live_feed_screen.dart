@@ -2334,6 +2334,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   ) {
     final venueName =
         planMap['venueName'] ?? planMap['venue']?['name'] ?? 'Venue';
+    final currentUserId = ApiService.currentUserId;
+    final hostId = planMap['userId']?.toString() ??
+        planMap['hostId']?.toString() ??
+        planMap['creatorId']?.toString();
+    final bool isHost = currentUserId != null &&
+        (currentUserId == hostId ||
+            planMap['isHost'] == true ||
+            planMap['isMyPlan'] == true);
+
+    final bool isPrivatePlan = planMap['isPrivate'] == true ||
+        planMap['visibility'] == 'private' ||
+        planMap['planType'] == 'private' ||
+        planMap['isPrivatePlan'] == true ||
+        planMap['category'] == 'private' ||
+        (planMap['selectedUsers'] is List &&
+            (planMap['selectedUsers'] as List).isNotEmpty);
+
+    final bool isPrivateInviteModal = isHost &&
+        (isPrivatePlan ||
+            requests.every((r) =>
+                r['requestType'] == 'private_invite' || r['isInvite'] == true));
+
+    final titleText = isPrivateInviteModal
+        ? 'Privately Invited (${requests.length})'
+        : 'Join Requests (${requests.length})';
+    final subtitleText = isPrivateInviteModal
+        ? 'Private Party Plan at $venueName'
+        : 'Party Plan at $venueName';
+    final headerIcon = isPrivateInviteModal
+        ? Icons.mark_email_read_rounded
+        : Icons.people_alt_rounded;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2373,8 +2405,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         ),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
-                        Icons.people_alt_rounded,
+                      child: Icon(
+                        headerIcon,
                         color: Colors.white,
                         size: 20,
                       ),
@@ -2385,7 +2417,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Join Requests (${requests.length})',
+                            titleText,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -2394,7 +2426,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Party Plan at $venueName',
+                            subtitleText,
                             style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 12,
@@ -2444,6 +2476,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     final drinkPref =
                         req['drinkPreference']?.toString() ??
                         reqUser['drinkPreference']?.toString();
+
+                    final bool isInvite = req['requestType'] == 'private_invite' ||
+                        req['isInvite'] == true ||
+                        isPrivatePlan ||
+                        (planMap['selectedUsers'] is List &&
+                            (planMap['selectedUsers'] as List).contains(
+                                reqUser['id']?.toString() ??
+                                    req['requesterId']?.toString() ??
+                                    req['userId']?.toString()));
 
                     return Container(
                       padding: const EdgeInsets.all(16),
@@ -2508,70 +2549,109 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             ],
                           ),
                           const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
-                                    _handleAcceptPartyPlan(reqId);
-                                  },
-                                  icon: const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text(
-                                    'Approve',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF7C3AED),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
-                                    _handleRejectPartyPlan(reqId);
-                                  },
-                                  icon: const Icon(
-                                    Icons.cancel_rounded,
-                                    size: 16,
-                                    color: Colors.redAccent,
-                                  ),
-                                  label: const Text(
-                                    'Decline',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
+                          if (isHost && isInvite)
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _handleCancelMyRequest(reqId);
+                                    },
+                                    icon: const Icon(
+                                      Icons.cancel_outlined,
+                                      size: 16,
                                       color: Colors.redAccent,
                                     ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(
-                                      color: Color(0x40EF4444),
+                                    label: const Text(
+                                      'Cancel Private Request',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.redAccent,
+                                        fontSize: 13,
+                                      ),
                                     ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                        color: Color(0x60EF4444),
+                                      ),
+                                      backgroundColor: const Color(0x15EF4444),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            )
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _handleAcceptPartyPlan(reqId);
+                                    },
+                                    icon: const Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 16,
+                                    ),
+                                    label: const Text(
+                                      'Approve',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF7C3AED),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _handleRejectPartyPlan(reqId);
+                                    },
+                                    icon: const Icon(
+                                      Icons.cancel_rounded,
+                                      size: 16,
+                                      color: Colors.redAccent,
+                                    ),
+                                    label: const Text(
+                                      'Decline',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                        color: Color(0x40EF4444),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     );

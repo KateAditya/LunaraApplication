@@ -693,6 +693,8 @@ export class EntitlementService {
                     }, { transaction: t });
 
                     await t.commit();
+                    const { SubscriptionService } = await import('./subscriptionService');
+                    SubscriptionService.invalidateCache(userId);
                     RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                         featureKey: 'superlike',
                         source: 'PLAN',
@@ -761,6 +763,8 @@ export class EntitlementService {
                     }, { transaction: t });
 
                     await t.commit();
+                    const { SubscriptionService } = await import('./subscriptionService');
+                    SubscriptionService.invalidateCache(userId);
                     RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                         featureKey: 'profile_boost',
                         source: 'PLAN',
@@ -867,77 +871,111 @@ export class EntitlementService {
             }
 
             // ─── STEP 2: Check Active Add-on Balances (FIFO) ────────────────
-            const availableAddon = await UserAddon.findOne({
+            const addonKeys = normalizedKey === 'superlike'
+                ? ['superlike', 'super_likes', 'super_like']
+                : normalizedKey === 'profile_boost'
+                    ? ['profile_boost', 'boost', 'boosts']
+                    : normalizedKey === 'backtrack'
+                        ? ['backtrack', 'undo', 'backtracks']
+                        : normalizedKey === 'party_creation'
+                            ? ['party_creation', 'party_plan', 'party_plans']
+                            : [normalizedKey];
+
+            const availableAddons = await UserAddon.findAll({
                 where: {
                     userId,
-                    featureKey: normalizedKey,
-                    status: UserAddonStatus.ACTIVE,
-                    remainingQuantity: { [Op.gte]: amount },
+                    featureKey: { [Op.in]: addonKeys },
+                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                    remainingQuantity: { [Op.gt]: 0 },
                 },
                 order: [['createdAt', 'ASC']],
                 transaction: t,
                 lock: t.LOCK.UPDATE,
             });
 
-            if (availableAddon) {
-                const oldRemaining = Number(availableAddon.remainingQuantity);
-                const newRemaining = Math.max(0, oldRemaining - amount);
-                availableAddon.usedQuantity = Number(availableAddon.usedQuantity) + amount;
-                availableAddon.remainingQuantity = newRemaining;
-                if (newRemaining === 0) {
-                    availableAddon.status = UserAddonStatus.CONSUMED;
+            if (availableAddons.length > 0) {
+                let remainingToConsume = amount;
+                let consumedFromAddons = 0;
+                let primaryAddonId = availableAddons[0].id;
+
+                for (const addon of availableAddons) {
+                    if (remainingToConsume <= 0) break;
+                    const curRem = Number(addon.remainingQuantity) || 0;
+                    const toDeduct = Math.min(curRem, remainingToConsume);
+                    const newRem = Math.max(0, curRem - toDeduct);
+
+                    addon.usedQuantity = (Number(addon.usedQuantity) || 0) + toDeduct;
+                    addon.remainingQuantity = newRem;
+                    if (newRem === 0) {
+                        addon.status = UserAddonStatus.CONSUMED;
+                    }
+                    await addon.save({ transaction: t });
+
+                    consumedFromAddons += toDeduct;
+                    remainingToConsume -= toDeduct;
                 }
-                await availableAddon.save({ transaction: t });
 
-                // Find remaining across all active addons
-                const otherAddons = await UserAddon.findAll({
-                    where: {
+                if (consumedFromAddons > 0) {
+                    // Find remaining across all active addons
+                    const otherAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: { [Op.in]: addonKeys },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const totalAddonRemaining = otherAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const planRemaining = activeSub ? ((normalizedKey === 'superlike' ? activeSub.superlikesRemaining : activeSub.boostsRemaining) || 0) : 0;
+                    const totalRemaining = planRemaining + totalAddonRemaining;
+
+                    const allUserAddons = await UserAddon.findAll({
+                        where: { userId, featureKey: { [Op.in]: addonKeys } },
+                        transaction: t,
+                    });
+                    const totalAddonPurchased = allUserAddons.reduce((acc, a) => acc + (Number(a.purchasedQuantity) || 0), 0);
+                    const totalGranted = (activePkg?.superlikesPerCycle || 0) + totalAddonPurchased;
+
+                    await EntitlementAuditLog.create({
                         userId,
+                        addonId: primaryAddonId,
+                        feature: normalizedKey,
+                        action: 'ADDON_ENTITLEMENT_CONSUMED',
+                        source: 'ADDON',
+                        quantity: -consumedFromAddons,
+                        oldValue: { remainingQuantity: totalAddonRemaining + consumedFromAddons },
+                        newValue: { remainingQuantity: totalAddonRemaining },
+                        requestId: options.requestId,
+                        metadata: options.metadata,
+                    }, { transaction: t });
+
+                    await t.commit();
+                    const { SubscriptionService } = await import('./subscriptionService');
+                    SubscriptionService.invalidateCache(userId);
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                         featureKey: normalizedKey,
-                        status: UserAddonStatus.ACTIVE,
-                        remainingQuantity: { [Op.gt]: 0 },
-                    },
-                    transaction: t,
-                });
-                const totalAddonRemaining = otherAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
-                const planRemaining = activeSub ? ((normalizedKey === 'superlike' ? activeSub.superlikesRemaining : activeSub.boostsRemaining) || 0) : 0;
-                const totalRemaining = planRemaining + totalAddonRemaining;
+                        source: 'ADDON',
+                        remaining: totalRemaining,
+                    });
 
-                await EntitlementAuditLog.create({
-                    userId,
-                    addonId: availableAddon.id,
-                    feature: normalizedKey,
-                    action: 'ADDON_ENTITLEMENT_CONSUMED',
-                    source: 'ADDON',
-                    quantity: -amount,
-                    oldValue: { remainingQuantity: oldRemaining },
-                    newValue: { remainingQuantity: newRemaining },
-                    requestId: options.requestId,
-                    metadata: options.metadata,
-                }, { transaction: t });
-
-                await t.commit();
-                RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
-                    featureKey: normalizedKey,
-                    source: 'ADDON',
-                    remaining: totalRemaining,
-                });
-
-                return {
-                    success: true,
-                    source: 'ADDON',
-                    consumed: amount,
-                    addonRemaining: totalAddonRemaining,
-                    planRemaining,
-                    totalRemaining,
-                };
+                    return {
+                        success: true,
+                        source: 'ADDON',
+                        consumed: consumedFromAddons,
+                        addonRemaining: totalAddonRemaining,
+                        planRemaining,
+                        totalRemaining,
+                        totalGranted,
+                    };
+                }
             }
 
             await t.rollback();
 
             // ─── STEP 3: Entitlement Exhausted -> Fetch Addons & Return ADDON_REQUIRED ───
-            const availableAddons = await SubscriptionAddonPackage.findAll({
-                where: { featureKey: normalizedKey, isActive: true },
+            const availableAddonsList = await SubscriptionAddonPackage.findAll({
+                where: { featureKey: { [Op.in]: addonKeys }, isActive: true },
                 order: [['displayOrder', 'ASC'], ['price', 'ASC']],
             });
 
@@ -945,7 +983,7 @@ export class EntitlementService {
                 success: false,
                 code: 'ADDON_REQUIRED',
                 message: `You have no ${normalizedKey.replace(/_/g, ' ')} remaining. Purchase an Add-on or upgrade your plan to continue.`,
-                availableAddons: availableAddons.map(a => a.toJSON()),
+                availableAddons: availableAddonsList.map(a => a.toJSON()),
             };
         } catch (error: any) {
             await t.rollback();
@@ -1055,6 +1093,8 @@ export class EntitlementService {
             }, { transaction: t });
 
             await t.commit();
+            const { SubscriptionService } = await import('./subscriptionService');
+            SubscriptionService.invalidateCache(userId);
 
             RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                 featureKey: addonPkg.featureKey,
@@ -1237,6 +1277,8 @@ export class EntitlementService {
             }, { transaction: t });
 
             await t.commit();
+            const { SubscriptionService } = await import('./subscriptionService');
+            SubscriptionService.invalidateCache(userId);
 
             RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
                 featureKey: addonPkg.featureKey,

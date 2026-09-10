@@ -397,6 +397,57 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  Future<void> _handleCancelPrivateRequest(String reqId) async {
+    if (!OptimisticActionGuard.start('CANCEL_PARTY_REQ:$reqId')) return;
+
+    final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
+    setState(() {
+      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    });
+
+    try {
+      bool success = await ApiService.cancelPartyPlanRequest(reqId);
+      if (!success) {
+        success = await ApiService.rejectPartyPlanRequest(reqId);
+      }
+      if (success) {
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
+        ApiService.planPostedNotifier.value++;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Private invitation cancelled.'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          _refreshPlanDetails();
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _pendingRequests = prevPending;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to cancel invitation.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _pendingRequests = prevPending;
+        });
+        debugPrint('Error cancelling invitation: $e');
+      }
+    } finally {
+      OptimisticActionGuard.end('CANCEL_PARTY_REQ:$reqId');
+    }
+  }
+
   Future<void> _refreshPlanDetails() async {
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
     if (planId.isEmpty) return;
@@ -3498,6 +3549,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return const SizedBox.shrink();
     }
 
+    final isPrivatePlan = widget.plan['type'] == 'PRIVATE' ||
+        widget.plan['isPrivate'] == true ||
+        widget.plan['privacy'] == 'PRIVATE' ||
+        _pendingRequests.every((r) {
+          final rType = r['requestType']?.toString().toUpperCase();
+          final rIsInvite = r['isInvite'] == true;
+          return rType == 'PRIVATE_INVITE' || rIsInvite;
+        });
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -3519,12 +3579,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 18),
+                child: Icon(
+                  isPrivatePlan ? Icons.mark_email_read_rounded : Icons.people_alt_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'JOIN REQUESTS (${_pendingRequests.length})',
+                  isPrivatePlan
+                      ? 'PRIVATELY INVITED (${_pendingRequests.length})'
+                      : 'JOIN REQUESTS (${_pendingRequests.length})',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -3554,6 +3620,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               final drinkPref = req['drinkPreference']?.toString() ?? reqUser['drinkPreference']?.toString();
 
               final bool isInvite = req['isInvite'] == true ||
+                  req['requestType']?.toString().toUpperCase() == 'PRIVATE_INVITE' ||
+                  isPrivatePlan ||
                   (widget.plan['selectedUsers'] is List &&
                       (widget.plan['selectedUsers'] as List)
                           .contains(reqUser['id']?.toString() ?? req['requesterId']?.toString()));
@@ -3613,29 +3681,27 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                   const SizedBox(height: 10),
                   if (isInvite)
-                    Container(
+                    SizedBox(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.4)),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.mark_email_read_rounded, color: Color(0xFFA78BFA), size: 16),
-                          SizedBox(width: 8),
-                          Text(
-                            'INVITATION SENT • AWAITING RESPONSE',
-                            style: TextStyle(
-                              color: Color(0xFFA78BFA),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                              letterSpacing: 0.5,
-                            ),
+                      child: OutlinedButton.icon(
+                        onPressed: () => _handleCancelPrivateRequest(reqId),
+                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                        label: const Text(
+                          'Cancel Private Request',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Colors.redAccent,
                           ),
-                        ],
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0x55EF4444)),
+                          backgroundColor: Colors.redAccent.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
                       ),
                     )
                   else
@@ -3681,6 +3747,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       ),
     );
   }
+
 
   Widget _chip({
     required IconData icon,
