@@ -269,6 +269,7 @@ class ApiService {
     if (_authToken != null) {
       debugPrint('Loaded persisted auth token');
       initSocket();
+      unawaited(SubscriptionProvider.instance.refresh());
     }
   }
 
@@ -403,15 +404,7 @@ class ApiService {
       await prefs.setString('auth_token', token.trim());
       await loadLocalReadIds();
       initSocket();
-      if (isNewSession) {
-        // SubscriptionProvider is a process-lifetime singleton — without
-        // this, a freshly registered/logged-in account would keep showing
-        // whichever tier the PREVIOUS session on this device last cached
-        // (e.g. a brand-new user appearing to already have VIP because the
-        // account that was logged out a moment ago was a paying member).
-        // Fire-and-forget: don't block the login/registration flow on it.
-        unawaited(SubscriptionProvider.instance.refresh());
-      }
+      unawaited(SubscriptionProvider.instance.refresh());
     } else {
       await prefs.remove('auth_token');
       disconnectSocket();

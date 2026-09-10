@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:lunara_app/core/theme.dart';
@@ -67,6 +68,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   void initState() {
     super.initState();
     ApiService.profileUpdateNotifier.addListener(_refreshProfile);
+    SubscriptionProvider.instance.addListener(_onSubUpdated);
     _currentUser = widget.user;
     _isLiked = widget.user.isLiked || widget.swipedAction == 'like';
     _isSuperLiked = widget.user.isSuperLiked || widget.swipedAction == 'superlike';
@@ -82,7 +84,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
   @override
   void dispose() {
     ApiService.profileUpdateNotifier.removeListener(_refreshProfile);
+    SubscriptionProvider.instance.removeListener(_onSubUpdated);
     super.dispose();
+  }
+
+  void _onSubUpdated() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -1165,10 +1172,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         color: Colors.white,
                       ),
                       onPressed: () async {
+                        final subProvider = SubscriptionProvider.instance;
                         final currentlyLiked = _isLiked;
                         if (!currentlyLiked) {
                           // Quota check / Grey button tap validation
-                          if (likeDisabled || (!hasUnlimitedLikes && !subProvider.canLike)) {
+                          if (!subProvider.hasUnlimitedLikes && !subProvider.canLike) {
                             final validation = subProvider.validateAction(VipAction.like);
                             showSubscriptionLimitDialog(
                               context,
@@ -1176,18 +1184,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               customMessage: validation.message,
                             );
                             return;
-                          }
-
-                          if (!hasUnlimitedLikes) {
-                            final validation = subProvider.validateAction(VipAction.like);
-                            if (!validation.allowed) {
-                              showSubscriptionLimitDialog(
-                                context,
-                                feature: SubLimitFeature.dailyLikes,
-                                customMessage: validation.message,
-                              );
-                              return;
-                            }
                           }
                         }
 
@@ -1199,14 +1195,13 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         });
 
                         if (widget.onLike != null) {
-                          widget.onLike!.call().then((success) {
-                            if (mounted && success != nextState) {
-                              setState(() {
-                                _isLiked = success == true;
-                                _currentUser = _currentUser.copyWith(isLiked: success == true);
-                              });
-                            }
-                          });
+                          final success = await widget.onLike!.call();
+                          if (mounted) {
+                            setState(() {
+                              _isLiked = success;
+                              _currentUser = _currentUser.copyWith(isLiked: success);
+                            });
+                          }
                         } else {
                           if (currentlyLiked) {
                             ApiService.unlikeUser(targetUserId: _currentUser.id).then((ok) {
@@ -1337,20 +1332,12 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                 return;
                               }
 
-                              // Quota check / Grey button tap validation
-                              if (superLikeDisabled || (!isUnlimitedSuper && !subProvider.canSuperLike)) {
-                                final validation = subProvider.validateAction(VipAction.superlike);
-                                showSubscriptionLimitDialog(
-                                  context,
-                                  feature: SubLimitFeature.superLike,
-                                  customMessage: validation.message,
-                                );
-                                return;
-                              }
+                              final subProvider = SubscriptionProvider.instance;
+                              final bool isUnlimitedSuper = subProvider.isElite || subProvider.status.isUnlimitedSuperlikes;
 
-                              // In-memory quota check
-                              final validation = subProvider.validateAction(VipAction.superlike);
-                              if (!validation.allowed) {
+                              // Quota check
+                              if (!isUnlimitedSuper && !subProvider.canSuperLike) {
+                                final validation = subProvider.validateAction(VipAction.superlike);
                                 showSubscriptionLimitDialog(
                                   context,
                                   feature: SubLimitFeature.superLike,
@@ -1371,9 +1358,11 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                   final res = await widget.onSuper!.call();
                                   success = res == true;
                                 } else {
+                                  subProvider.optimisticConsume(VipAction.superlike);
                                   final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'superlike');
                                   if (!mounted) return;
                                   if (res == null || res['limitReached'] == true) {
+                                    subProvider.rollbackConsume(VipAction.superlike);
                                     showSubscriptionLimitDialog(
                                       context,
                                       feature: SubLimitFeature.superLike,
@@ -1382,7 +1371,6 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                                     success = false;
                                   } else {
                                     success = true;
-                                    subProvider.optimisticConsume(VipAction.superlike);
                                     if (res['matched'] == true) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
@@ -1419,8 +1407,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               } finally {
                                 if (mounted) setState(() => _isSuperLiking = false);
                                 OptimisticActionGuard.end('SWIPE_SUPER:${_currentUser.id}');
-                                // Background-sync quota counts with backend
-                                subProvider.refresh();
+                                unawaited(subProvider.refresh());
                               }
                             },
                     ),

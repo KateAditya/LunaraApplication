@@ -54,6 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     ApiService.profileUpdateNotifier.addListener(_onProfileUpdated);
+    SubscriptionProvider.instance.addListener(_onSubUpdated);
     _initUser();
     _loadAllProfiles();
   }
@@ -61,7 +62,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdated);
+    SubscriptionProvider.instance.removeListener(_onSubUpdated);
     super.dispose();
+  }
+
+  void _onSubUpdated() {
+    if (mounted) setState(() {});
   }
 
   void _onProfileUpdated() {
@@ -327,15 +333,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Returns a Future so callers (e.g. ProfileDetailView's own button) can
   // await the real server-confirmed outcome instead of guessing/optimistically
   // ── LIKE handler — stay on same page, change button colour instantly ────────
-  Future<bool> _handleLike() async {
+  Future<bool> _handleLike({bool? desiredState}) async {
     if (_displayUser == null) return false;
     final targetUser = _displayUser!;
     final targetId = targetUser.id;
     final currentAction = _swipedActions[targetId];
     final isCurrentlyLiked = currentAction == 'like' || targetUser.isLiked;
+    final bool shouldBeLiked = desiredState ?? !isCurrentlyLiked;
 
-    // If already liked, clicking "like" again unlikes (instant toggle)
-    if (isCurrentlyLiked) {
+    // If currently liked and should not be liked -> unlike
+    if (!shouldBeLiked) {
       setState(() {
         _swipedActions.remove(targetId);
         _displayUser = _displayUser?.copyWith(isLiked: false);
@@ -358,16 +365,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // Daily like limit guard (skip if user has unlimited likes)
     final subProvider = SubscriptionProvider.instance;
-    if (!subProvider.hasUnlimitedLikes) {
+    if (!subProvider.hasUnlimitedLikes && !subProvider.canLike) {
       final validation = subProvider.validateAction(VipAction.like);
-      if (!validation.allowed) {
-        showSubscriptionLimitDialog(
-          context,
-          feature: SubLimitFeature.dailyLikes,
-          customMessage: validation.message,
-        );
-        return false;
-      }
+      showSubscriptionLimitDialog(
+        context,
+        feature: SubLimitFeature.dailyLikes,
+        customMessage: validation.message,
+      );
+      return false;
     }
 
     subProvider.optimisticConsume(VipAction.like);
@@ -381,8 +386,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
 
     // Asynchronously verify with backend
-    ApiService.swipeUser(targetUserId: targetId, action: 'like').then((res) {
-      if (!mounted) return;
+    try {
+      final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
+      if (!mounted) return true;
       if (res == null || res['limitReached'] == true) {
         subProvider.rollbackConsume(VipAction.like);
         setState(() {
@@ -395,13 +401,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           feature: SubLimitFeature.dailyLikes,
           customMessage: res?['message'],
         );
+        return false;
       } else {
         _checkUsageWarning(res);
-        SubscriptionProvider.instance.refresh();
+        unawaited(SubscriptionProvider.instance.refresh());
+        return true;
       }
-    });
-
-    return true;
+    } catch (_) {
+      return true;
+    }
   }
 
   void _checkUsageWarning(Map<String, dynamic>? res) {
@@ -489,8 +497,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _showLikeNotification(targetUser.firstName, isSuperLike: true);
 
     // Asynchronously send to backend
-    ApiService.swipeUser(targetUserId: targetId, action: 'superlike').then((res) {
-      if (!mounted) return;
+    try {
+      final res = await ApiService.swipeUser(targetUserId: targetId, action: 'superlike');
+      if (!mounted) return true;
       if (res == null || res['limitReached'] == true) {
         subProvider.rollbackConsume(VipAction.superlike);
         setState(() {
@@ -502,13 +511,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           feature: SubLimitFeature.superLike,
           customMessage: res?['message'],
         );
+        return false;
       } else {
         _checkUsageWarning(res);
-        SubscriptionProvider.instance.refresh();
+        unawaited(SubscriptionProvider.instance.refresh());
+        return true;
       }
-    });
-
-    return true;
+    } catch (_) {
+      return true;
+    }
   }
 
   // ── NOPE handler — go to next profile ────────────────────────────────────────

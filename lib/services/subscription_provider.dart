@@ -63,6 +63,7 @@ class SubscriptionProvider extends ChangeNotifier {
   static SubscriptionProvider get instance => _instance;
   SubscriptionProvider._() {
     RealtimeSyncManager.instance.vipStatusNotifier.addListener(_onVipRealtimeEvent);
+    refresh();
   }
 
   void _onVipRealtimeEvent() {
