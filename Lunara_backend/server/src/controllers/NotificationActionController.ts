@@ -38,7 +38,7 @@ export class NotificationActionController {
 
             // Handle domain entity specific actions
             const upperAction = action.toUpperCase();
-            if (['ACCEPT', 'DECLINE', 'REJECT', 'ACCEPT_CANCELLATION', 'REJECT_CANCELLATION'].includes(upperAction)) {
+            if (['ACCEPT', 'DECLINE', 'REJECT', 'ACCEPT_REQUEST', 'DECLINE_REQUEST', 'ACCEPT_CANCELLATION', 'REJECT_CANCELLATION'].includes(upperAction)) {
                 const isPartyPlanEntity = notification.entityType === 'PartyPlanRequest' || 
                                           notification.entityType === 'party_plan_request' || 
                                           notification.entityType === 'party_plan';
@@ -53,7 +53,7 @@ export class NotificationActionController {
                         const planId = notification.entityId || notification.metadata?.planId;
                         const cancellationReqId = notification.metadata?.requestId || notification.metadata?.cancellationId;
 
-                        if (planId && cancellationReqId) {
+                        if (planId) {
                             const { respondToCancellationRequest } = await import('./cancellationController');
                             const mockReq: any = {
                                 params: { id: planId },
@@ -132,11 +132,12 @@ export class NotificationActionController {
                         await handleJoinRequest(mockReq, mockRes);
                         actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
-                } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch') && notification.entityId) {
+                } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch' || notification.eventType === 'PARTNER_REQUEST_SENT' || notification.eventType === 'PARTNER_REQUEST_RECEIVED' || (notification as any).type === 'PARTNER_REQUEST_SENT' || (notification as any).type === 'PARTNER_REQUEST_RECEIVED') && (notification.entityId || notification.metadata?.requestId)) {
+                    const cleanEntityId = (notification.metadata?.requestId || notification.entityId || '').replace(/^upcoming_night_timeline_/, '').replace(/^night_partner_/, '').replace(/^request_/, '').trim();
                     if (upperAction === 'ACCEPT_CANCELLATION' || upperAction === 'REJECT_CANCELLATION') {
                         try {
                             const result = await NightPartnerService.cancelUpcomingNight(
-                                notification.entityId,
+                                cleanEntityId,
                                 currentUserId,
                                 upperAction === 'ACCEPT_CANCELLATION' ? 'Cancellation confirmed by partner' : 'Cancellation declined by partner',
                                 upperAction === 'ACCEPT_CANCELLATION' ? 'approve' : 'reject'
@@ -147,13 +148,18 @@ export class NotificationActionController {
                             actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
                         }
                     } else {
-                        const act = upperAction === 'ACCEPT' ? 'accept' : 'decline';
+                        const act = (upperAction === 'ACCEPT' || upperAction === 'ACCEPT_REQUEST') ? 'accept' : 'decline';
                         try {
-                            const result = await NightPartnerService.respondToRequest(notification.entityId, currentUserId, act);
+                            const result = await NightPartnerService.respondToRequest(cleanEntityId, currentUserId, act);
                             actionResult = { status: 'ACTIONED', actionExecuted: action, result };
                         } catch (partnerErr: any) {
                             logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
-                            actionResult = { status: 'ACTIONED', actionExecuted: action, note: partnerErr.message };
+                            const friendlyMsg = partnerErr.message === 'MATCH_SLOT_FILLED'
+                                ? 'This invitation is no longer available as the host is already matched with another guest.'
+                                : (partnerErr.message === 'REQUEST_EXPIRED'
+                                    ? 'This invitation has expired.'
+                                    : partnerErr.message);
+                            actionResult = { status: 'ACTIONED', actionExecuted: action, note: friendlyMsg };
                         }
                     }
                 }

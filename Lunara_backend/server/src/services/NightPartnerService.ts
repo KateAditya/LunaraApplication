@@ -10,6 +10,7 @@ import UserPreference from '../models/UserPreference';
 import Venue from '../models/Venue';
 import Booking, { BookingStatus, PaymentStatus, GoingMode, BookingPaymentMode } from '../models/Booking';
 import Conversation, { ConversationStatus } from '../models/Conversation';
+import Notification from '../models/Notification';
 import { VenueBookingService } from './VenueBookingService';
 import { generateTicketForBookingHelper } from './ticketService';
 import { NotificationService } from './NotificationService';
@@ -1144,9 +1145,38 @@ export class NightPartnerService {
                 transaction: t,
             });
 
+            const otherReqIds = otherPendingRequests.map(r => r.id);
             for (const otherReq of otherPendingRequests) {
                 await otherReq.update({ status: NightPartnerRequestStatus.CANCELLED }, { transaction: t });
             }
+
+            if (otherReqIds.length > 0) {
+                await Notification.destroy({
+                    where: {
+                        entityId: { [Op.in]: otherReqIds },
+                    },
+                    transaction: t,
+                }).catch(() => {});
+            }
+
+            // Realtime socket notifications to inform other invited users that the slot is filled
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    for (const otherReq of otherPendingRequests) {
+                        io.to(`user_${otherReq.partnerId}`).emit('notification_updated', {
+                            id: `upcoming_night_timeline_${otherReq.id}`,
+                            action: 'cancelled',
+                            status: 'CANCELLED',
+                        });
+                        io.to(`user_${otherReq.partnerId}`).emit('night_partner_request_cancelled', {
+                            requestId: otherReq.id,
+                            hostId: request.hostId,
+                            venueId: request.venueId,
+                        });
+                    }
+                }
+            } catch (_) {}
 
             // Calculate amounts
             const totalAmount = await this.resolveNightAuthoritativePrice(request.venueId, request.eventDate);
@@ -2338,6 +2368,30 @@ export class NightPartnerService {
             let title = `Upcoming Night at ${venueName} 🌟`;
             let body = `Your Upcoming Night partner invite at ${venueName}.`;
             let statusText = 'Request Sent';
+
+            // Check if partner request is obsolete (host already matched with someone else or expired/cancelled)
+            if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
+                const activeHostMatch = await NightPartnerMatch.findOne({
+                    where: {
+                        hostId: requestRecord.hostId,
+                        venueId: requestRecord.venueId,
+                        eventDate: requestRecord.eventDate,
+                        status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] }
+                    }
+                });
+                if (activeHostMatch) {
+                    await requestRecord.update({ status: NightPartnerRequestStatus.CANCELLED });
+                    return null;
+                }
+                if (requestRecord.expiresAt && new Date() > new Date(requestRecord.expiresAt)) {
+                    await requestRecord.update({ status: NightPartnerRequestStatus.EXPIRED });
+                    return null;
+                }
+            }
+
+            if (requestRecord && (requestRecord.status === NightPartnerRequestStatus.CANCELLED || requestRecord.status === NightPartnerRequestStatus.DECLINED || requestRecord.status === NightPartnerRequestStatus.EXPIRED)) {
+                return null;
+            }
 
             if (!isHost && requestRecord && requestRecord.status === NightPartnerRequestStatus.PENDING) {
                 title = `Invite for Party Event 🌙 - ${venueName}`;

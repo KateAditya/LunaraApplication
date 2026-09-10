@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
-import '../../services/optimistic_action_guard.dart';
 import '../../services/push_notification_service.dart';
 import '../../models/user.dart';
 import '../profile/profile_screen.dart';
@@ -38,6 +37,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   bool _isLoading = true;
   List<dynamic> _notifications = [];
+  final Set<String> _loadingActionKeys = {};
 
   @override
   void initState() {
@@ -254,6 +254,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (notifId == null || notifId.isEmpty || currentUid.isEmpty) return;
 
+    final actionKey = '$notifId:$action';
+    if (_loadingActionKeys.contains(actionKey)) return;
+
+    setState(() {
+      _loadingActionKeys.add(actionKey);
+    });
+
     // Optimistic UI update
     setState(() {
       item['read'] = true;
@@ -341,6 +348,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       }
     } catch (e) {
       debugPrint('Error processing action: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingActionKeys.remove(actionKey);
+        });
+      }
     }
   }
 
@@ -2622,139 +2635,213 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ),
               ),
             )
-          else if (isRecipient && requestId.isNotEmpty && planId.isNotEmpty)
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      if (!OptimisticActionGuard.start('NOTIF_CANCEL_KEEP:$planId:$requestId')) return;
-                      final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
-                      setState(() {
-                        item['read'] = true;
-                        item['isRead'] = true;
-                        item['metadata'] = {
-                          ...(prevMetadata ?? {}),
-                          'status': 'ACTIONED',
-                          'actionExecuted': 'reject',
-                        };
-                      });
-                      _markAsRead(item);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Cancellation request declined. Party Plan remains active.'),
-                          backgroundColor: Colors.grey.shade800,
+          else if (isRecipient && (requestId.isNotEmpty || planId.isNotEmpty))
+            Builder(
+              builder: (context) {
+                final keepKey = 'CANCEL_KEEP:$planId:$requestId';
+                final approveKey = 'CANCEL_APPROVE:$planId:$requestId';
+                final isKeeping = _loadingActionKeys.contains(keepKey);
+                final isApproving = _loadingActionKeys.contains(approveKey);
+                final isBusy = isKeeping || isApproving;
+
+                return Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () async {
+                                final messenger = ScaffoldMessenger.of(context);
+                                setState(() => _loadingActionKeys.add(keepKey));
+                                final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
+                                setState(() {
+                                  item['read'] = true;
+                                  item['isRead'] = true;
+                                  item['metadata'] = {
+                                    ...(prevMetadata ?? {}),
+                                    'status': 'ACTIONED',
+                                    'actionExecuted': 'reject',
+                                  };
+                                });
+                                _markAsRead(item);
+                                try {
+                                  final res = await ApiService.respondToPartyPlanCancellationRequest(
+                                    planId: planId,
+                                    requestId: requestId,
+                                    action: 'reject',
+                                  );
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          res['message'] ?? 'Cancellation request declined. Party Plan remains active.',
+                                        ),
+                                        backgroundColor: Colors.grey.shade800,
+                                      ),
+                                    );
+                                  }
+                                  _fetchNotifications();
+                                } catch (e) {
+                                  if (mounted) {
+                                    setState(() {
+                                      if (prevMetadata != null) {
+                                        item['metadata'] = prevMetadata;
+                                      } else {
+                                        item['metadata']?.remove('status');
+                                      }
+                                    });
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _loadingActionKeys.remove(keepKey));
+                                  }
+                                }
+                              },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      );
-                      try {
-                        await ApiService.respondToPartyPlanCancellationRequest(
-                          planId: planId,
-                          requestId: requestId,
-                          action: 'reject',
-                        );
-                        _fetchNotifications();
-                      } catch (e) {
-                        if (mounted) {
-                          setState(() {
-                            if (prevMetadata != null) {
-                              item['metadata'] = prevMetadata;
-                            } else {
-                              item['metadata']?.remove('status');
-                            }
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      } finally {
-                        OptimisticActionGuard.end('NOTIF_CANCEL_KEEP:$planId:$requestId');
-                      }
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        child: isKeeping
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 13,
+                                    height: 13,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF475569),
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'KEEPING...',
+                                    style: TextStyle(
+                                      color: Color(0xFF475569),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Text(
+                                'KEEP PLAN',
+                                style: TextStyle(
+                                  color: Color(0xFF475569),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
-                    child: const Text(
-                      'KEEP PLAN',
-                      style: TextStyle(
-                        color: Color(0xFF475569),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      if (!OptimisticActionGuard.start('NOTIF_CANCEL_APPROVE:$planId:$requestId')) return;
-                      final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
-                      setState(() {
-                        item['read'] = true;
-                        item['isRead'] = true;
-                        item['metadata'] = {
-                          ...(prevMetadata ?? {}),
-                          'status': 'ACTIONED',
-                          'actionExecuted': 'approve',
-                        };
-                      });
-                      _markAsRead(item);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Party Plan cancelled. Commitment deposits credited to wallets!'),
-                          backgroundColor: Colors.green,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () async {
+                                final messenger = ScaffoldMessenger.of(context);
+                                setState(() => _loadingActionKeys.add(approveKey));
+                                final prevMetadata = item['metadata'] is Map ? Map<String, dynamic>.from(item['metadata']) : null;
+                                setState(() {
+                                  item['read'] = true;
+                                  item['isRead'] = true;
+                                  item['metadata'] = {
+                                    ...(prevMetadata ?? {}),
+                                    'status': 'ACTIONED',
+                                    'actionExecuted': 'approve',
+                                  };
+                                });
+                                _markAsRead(item);
+                                try {
+                                  final res = await ApiService.respondToPartyPlanCancellationRequest(
+                                    planId: planId,
+                                    requestId: requestId,
+                                    action: 'approve',
+                                  );
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          res['message'] ?? 'Party Plan cancelled. Commitment deposits credited to wallets!',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                  _fetchNotifications();
+                                } catch (e) {
+                                  if (mounted) {
+                                    setState(() {
+                                      if (prevMetadata != null) {
+                                        item['metadata'] = prevMetadata;
+                                      } else {
+                                        item['metadata']?.remove('status');
+                                      }
+                                    });
+                                    messenger.showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _loadingActionKeys.remove(approveKey));
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      );
-                      try {
-                        await ApiService.respondToPartyPlanCancellationRequest(
-                          planId: planId,
-                          requestId: requestId,
-                          action: 'approve',
-                        );
-                        _fetchNotifications();
-                      } catch (e) {
-                        if (mounted) {
-                          setState(() {
-                            if (prevMetadata != null) {
-                              item['metadata'] = prevMetadata;
-                            } else {
-                              item['metadata']?.remove('status');
-                            }
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      } finally {
-                        OptimisticActionGuard.end('NOTIF_CANCEL_APPROVE:$planId:$requestId');
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        child: isApproving
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 13,
+                                    height: 13,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'CANCELLING...',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Text(
+                                'ACCEPT CANCELLATION',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
-                    child: const Text(
-                      'CONFIRM CANCELLATION',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             )
           else
             const Text(
@@ -3665,7 +3752,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _handleNotificationAction(item, 'ACCEPT_CANCELLATION'),
+                    onPressed: _loadingActionKeys.contains('${item['id']}:ACCEPT_CANCELLATION') || _loadingActionKeys.contains('${item['id']}:REJECT_CANCELLATION')
+                        ? null
+                        : () => _handleNotificationAction(item, 'ACCEPT_CANCELLATION'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFE11D48),
                       foregroundColor: Colors.white,
@@ -3675,27 +3764,53 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       ),
                       minimumSize: const Size(0, 38),
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.check_rounded, size: 15, color: Colors.white),
-                        SizedBox(width: 5),
-                        Text(
-                          'CONFIRM & REFUND',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
+                    child: _loadingActionKeys.contains('${item['id']}:ACCEPT_CANCELLATION')
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'CONFIRMING...',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_rounded, size: 15, color: Colors.white),
+                              SizedBox(width: 5),
+                              Text(
+                                'CONFIRM & REFUND',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: () => _handleNotificationAction(item, 'REJECT_CANCELLATION'),
+                  onPressed: _loadingActionKeys.contains('${item['id']}:ACCEPT_CANCELLATION') || _loadingActionKeys.contains('${item['id']}:REJECT_CANCELLATION')
+                      ? null
+                      : () => _handleNotificationAction(item, 'REJECT_CANCELLATION'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFE2E8F0)),
                     backgroundColor: const Color(0xFFF8FAFC),
@@ -3705,21 +3820,44 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     minimumSize: const Size(0, 38),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
-                      SizedBox(width: 4),
-                      Text(
-                        'KEEP ACTIVE',
-                        style: TextStyle(
-                          color: Color(0xFF64748B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
+                  child: _loadingActionKeys.contains('${item['id']}:REJECT_CANCELLATION')
+                      ? const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'KEEPING...',
+                              style: TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                            SizedBox(width: 4),
+                            Text(
+                              'KEEP ACTIVE',
+                              style: TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ),

@@ -355,28 +355,54 @@ export const getCancellationRequest = async (req: Request, res: Response): Promi
  */
 export const respondToCancellationRequest = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const planId = req.params.id;
+        const rawPlanId = req.params.id;
+        const planId = (rawPlanId || '').toString().replace(/^(pp_|party_plan_|party_plan_timeline_)/i, '');
         const userId = req.body.userId || (req as any).user?.id;
-        const { requestId, action } = req.body;
+        const rawRequestId = req.body.requestId;
+        const action = req.body.action;
 
-        if (!requestId || !action || !['approve', 'reject'].includes(action)) {
-            return res.status(400).json({ success: false, message: 'requestId and valid action (approve/reject) are required' });
+        if (!action || !['approve', 'reject'].includes(action)) {
+            return res.status(400).json({ success: false, message: 'Valid action (approve/reject) is required' });
         }
 
-        const cancellationRequest = await PartyPlanCancellationRequest.findOne({
-            where: { id: requestId, planId },
-        });
+        let cancellationRequest: any = null;
+        if (rawRequestId && rawRequestId !== 'undefined' && rawRequestId !== 'null' && rawRequestId.toString().trim().length > 0) {
+            cancellationRequest = await PartyPlanCancellationRequest.findOne({
+                where: { id: rawRequestId.toString().trim(), planId },
+            });
+            if (!cancellationRequest) {
+                cancellationRequest = await PartyPlanCancellationRequest.findByPk(rawRequestId.toString().trim());
+            }
+        }
 
         if (!cancellationRequest) {
+            cancellationRequest = await PartyPlanCancellationRequest.findOne({
+                where: { planId, status: CancellationRequestStatus.PENDING },
+                order: [['createdAt', 'DESC']],
+            });
+        }
+
+        if (!cancellationRequest) {
+            const existingReq = await PartyPlanCancellationRequest.findOne({
+                where: { planId },
+                order: [['createdAt', 'DESC']],
+            });
+            if (existingReq) {
+                return res.status(200).json({
+                    success: true,
+                    alreadyProcessed: true,
+                    message: `Cancellation request was already ${existingReq.status.toLowerCase()}.`,
+                });
+            }
             return res.status(404).json({ success: false, message: 'Cancellation request not found' });
         }
 
         if (cancellationRequest.status !== CancellationRequestStatus.PENDING) {
-            return res.status(400).json({ success: false, message: `Cancellation request is already ${cancellationRequest.status}` });
-        }
-
-        if (cancellationRequest.recipientUserId !== userId) {
-            return res.status(403).json({ success: false, message: 'Only the recipient of the cancellation request can approve or reject it.' });
+            return res.status(200).json({
+                success: true,
+                alreadyProcessed: true,
+                message: `Cancellation request is already ${cancellationRequest.status.toLowerCase()}`,
+            });
         }
 
         const plan: any = await PartyPlan.findByPk(planId, {
@@ -388,6 +414,14 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
 
         if (!plan) {
             return res.status(404).json({ success: false, message: 'Party Plan not found' });
+        }
+
+        const isAuthorized =
+            cancellationRequest.recipientUserId === userId ||
+            (cancellationRequest.requestedById !== userId && (plan.userId === userId || plan.matchedUserId === userId));
+
+        if (!isAuthorized && userId) {
+            return res.status(403).json({ success: false, message: 'Only the recipient of the cancellation request can approve or reject it.' });
         }
 
         // =========================================================================

@@ -7636,15 +7636,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAcceptingCancel || isKeepingPlan)
                 ? () {}
                 : () async {
-                    if (cancelReqId.isEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(plan: planMap),
-                        ),
-                      ).then((_) => _loadFeed(showLoader: false));
-                      return;
-                    }
                     setState(() => _activeActionKeys.add(acceptCancelKey));
                     try {
                       final res =
@@ -7653,21 +7644,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             requestId: cancelReqId,
                             action: 'approve',
                           );
-                      _optimisticallyUpdatePartyPlanRequest(
-                        planId,
-                        'cancelled',
-                      );
+                      if (res['success'] == true) {
+                        _optimisticallyUpdatePartyPlanRequest(
+                          planId,
+                          'cancelled',
+                        );
+                      }
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
                               res['message'] ??
-                                  'Party Plan cancelled. Commitment deposit credited to wallet!',
+                                  (res['success'] == true
+                                      ? 'Party Plan cancelled. Commitment deposit credited to wallet!'
+                                      : 'Failed to cancel Party Plan.'),
                             ),
-                            backgroundColor: Colors.green,
+                            backgroundColor: res['success'] == true
+                                ? Colors.green
+                                : Colors.red,
                           ),
                         );
                         _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
                     } finally {
                       if (mounted) {
@@ -7687,15 +7693,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAcceptingCancel || isKeepingPlan)
                 ? () {}
                 : () async {
-                    if (cancelReqId.isEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PartyPlanDetailScreen(plan: planMap),
-                        ),
-                      ).then((_) => _loadFeed(showLoader: false));
-                      return;
-                    }
                     setState(() => _activeActionKeys.add(keepPlanKey));
                     try {
                       final res =
@@ -7704,18 +7701,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             requestId: cancelReqId,
                             action: 'reject',
                           );
-                      _optimisticallyUpdatePartyPlanRequest(planId, 'active');
+                      if (res['success'] == true) {
+                        _optimisticallyUpdatePartyPlanRequest(planId, 'active');
+                      }
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
                               res['message'] ??
-                                  'Cancellation declined. Party Plan remains active.',
+                                  (res['success'] == true
+                                      ? 'Cancellation declined. Party Plan remains active.'
+                                      : 'Failed to decline cancellation.'),
                             ),
-                            backgroundColor: Colors.grey.shade800,
+                            backgroundColor: res['success'] == true
+                                ? Colors.grey.shade800
+                                : Colors.red,
                           ),
                         );
                         _loadFeed(showLoader: false, forceRefresh: true);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
                     } finally {
                       if (mounted) {
@@ -10769,7 +10781,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   int _countForPill(String pillId, List<UnifiedNotificationItem> allItems) {
     if (pillId == 'ALL') {
-      return allItems.where((i) => !i.isRead && !i.isExpired).length;
+      return allItems.where((i) {
+        if (i.isRead || i.isExpired) return false;
+        final category = i.category.toLowerCase();
+        final title = i.title.toLowerCase();
+        final badge = i.badgeText?.toUpperCase() ?? '';
+        final isSystem = category == 'system' ||
+            category == 'promotion' ||
+            category == 'promo' ||
+            badge.contains('SYSTEM') ||
+            badge.contains('PROMO') ||
+            title.contains('vip plan') ||
+            title.contains('super likes usage');
+        return !isSystem;
+      }).length;
     }
     if (pillId == 'EXPIRED') {
       return allItems.where((i) => i.isExpired && !i.isRead).length;
@@ -10779,6 +10804,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
+      final isSystem = category == 'system' ||
+          category == 'promotion' ||
+          category == 'promo' ||
+          badge.contains('SYSTEM') ||
+          badge.contains('PROMO') ||
+          title.contains('vip plan') ||
+          title.contains('super likes usage');
+
       final rawStatus =
           (item.rawData['status'] ??
                   item.rawData['paymentStatus'] ??
@@ -10791,7 +10824,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           .toLowerCase();
       bool matches = false;
       if (pillId == 'REQUESTS') {
-        matches =
+        matches = !isSystem && (
             title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
@@ -10799,9 +10832,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('INVITE') ||
             category.contains('request') ||
             category.contains('upcoming_night') ||
-            category.contains('night_partner');
+            category.contains('night_partner'));
       } else if (pillId == 'PENDING') {
-        matches =
+        matches = !isSystem && (
             rawStatus.contains('pending') ||
             rawStatus.contains('invite_sent') ||
             rawStatus.contains('waiting_for_payment') ||
@@ -10810,7 +10843,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('ACTION REQUIRED') ||
             badge.contains('PENDING') ||
             badge.contains('INVITE') ||
-            badge.contains('WAITING');
+            badge.contains('WAITING'));
       } else if (pillId == 'PAYMENT') {
         matches =
             category.contains('pay') ||
@@ -10829,11 +10862,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('CONFIRMED') ||
             title.contains('confirmed');
       } else if (pillId == 'SYSTEM') {
-        matches =
-            category.contains('system') ||
-            category.contains('promo') ||
-            badge.contains('SYSTEM') ||
-            badge.contains('PROMO');
+        matches = isSystem;
       }
       return matches && !item.isRead;
     }).length;
@@ -10992,11 +11021,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return false;
       }
 
-      if (_selectedStatusPill == 'ALL') return true;
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
+      final isSystemNotif = category.contains('system') ||
+          category.contains('promo') ||
+          category.contains('promotion') ||
+          badge.contains('SYSTEM') ||
+          badge.contains('PROMO') ||
+          title.contains('vip plan') ||
+          title.contains('super likes usage') ||
+          body.contains('subscription will expire') ||
+          body.contains('super likes');
+
+      if (_selectedStatusPill == 'ALL') {
+        // Exclude system notifications from ALL tab so they only appear in SYSTEM
+        return !isSystemNotif;
+      }
+
       final rawStatus =
           (item.rawData['status'] ??
                   item.rawData['paymentStatus'] ??
@@ -11009,7 +11052,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           .toLowerCase();
 
       if (_selectedStatusPill == 'REQUESTS') {
-        return title.contains('request') ||
+        return !isSystemNotif && (
+            title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
             body.contains('request') ||
@@ -11019,10 +11063,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('INVITE') ||
             category.contains('request') ||
             category.contains('upcoming_night') ||
-            category.contains('night_partner');
+            category.contains('night_partner')
+        );
       }
       if (_selectedStatusPill == 'PENDING') {
-        return rawStatus.contains('pending') ||
+        return !isSystemNotif && (
+            rawStatus.contains('pending') ||
             rawStatus.contains('invite_sent') ||
             rawStatus.contains('waiting_for_payment') ||
             rawStatus.contains('requested') ||
@@ -11030,7 +11076,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('ACTION REQUIRED') ||
             badge.contains('PENDING') ||
             badge.contains('INVITE') ||
-            badge.contains('WAITING');
+            badge.contains('WAITING')
+        );
       }
       if (_selectedStatusPill == 'PAYMENT') {
         final hasPayAction =
@@ -11063,10 +11110,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             title.contains('confirmed');
       }
       if (_selectedStatusPill == 'SYSTEM') {
-        return category.contains('system') ||
-            category.contains('promo') ||
-            badge.contains('SYSTEM') ||
-            badge.contains('PROMO');
+        return isSystemNotif;
       }
       return true;
     }).toList();

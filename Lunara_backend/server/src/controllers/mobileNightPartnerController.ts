@@ -259,24 +259,35 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
 
 export const respondToRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
-        const { action } = req.body;
+        let { id } = req.params;
+        if (id) {
+            id = id.replace(/^upcoming_night_timeline_/, '').replace(/^night_partner_/, '').replace(/^request_/, '').trim();
+        }
+        const action = (req.body.action || '').toString().toLowerCase();
         const partnerId = req.user!.id;
         if (!id || !['accept', 'decline'].includes(action)) {
             res.status(400).json({ success: false, message: 'requestId and valid action (accept/decline) are required' });
             return;
         }
 
-        const result = await NightPartnerService.respondToRequest(id, partnerId, action);
+        const result = await NightPartnerService.respondToRequest(id, partnerId, action as 'accept' | 'decline');
         res.json({ success: true, message: `Request ${action}ed successfully`, data: result });
     } catch (err: any) {
         logger.error('respondToRequest error:', err);
         const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        let userMessage = err.message || 'Failed to process request response';
+        if (err.message === 'MATCH_SLOT_FILLED') {
+            userMessage = 'This invitation is no longer available as the host is already matched with another guest.';
+        } else if (err.message === 'REQUEST_EXPIRED') {
+            userMessage = 'This invitation has expired.';
+        } else if (err.message === 'REQUEST_NOT_FOUND') {
+            userMessage = 'Invitation not found or has been cancelled.';
+        }
         res.status(400).json({
             success: false,
-            code,
-            reason: code,
-            message: err.message || 'Failed to process request response',
+            code: code || err.message,
+            reason: code || err.message,
+            message: userMessage,
             ...(err.timeLock || {}),
         });
     }

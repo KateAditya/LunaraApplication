@@ -155,9 +155,7 @@ router.patch(
     '/requests/:id',
     [
         authenticate,
-        param('id').isUUID().withMessage('id must be a UUID'),
-        body('partnerId').notEmpty().withMessage('partnerId is required'),
-        body('action').isIn(['accept', 'decline']).withMessage('action must be accept or decline'),
+        body('action').isIn(['accept', 'decline', 'ACCEPT', 'DECLINE']).withMessage('action must be accept or decline'),
         validate,
     ],
     ctrl.respondToRequest

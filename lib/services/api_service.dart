@@ -4760,11 +4760,16 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return {'success': false, 'message': 'User not logged in'};
     try {
+      final cleanId = requestId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('request_', '')
+          .trim();
       final response = await patch(
-        '/api/mobile/nights/requests/$requestId',
+        '/api/mobile/nights/requests/$cleanId',
         body: {
           'partnerId': userId,
-          'action': action,
+          'action': action.toLowerCase(),
         },
       );
       final data = jsonDecode(response.body);
@@ -4777,7 +4782,12 @@ class ApiService {
         }
         return {'success': true};
       }
-      return {'success': false, 'message': data is Map ? (data['message'] ?? 'Failed to respond') : 'Failed to respond'};
+      return {
+        'success': false,
+        'message': data is Map
+            ? (data['message'] ?? 'Failed to respond')
+            : 'Failed to respond'
+      };
     } catch (e) {
       debugPrint('respondToNightPartnerRequest error: $e');
       return {'success': false, 'message': e.toString()};
@@ -5977,9 +5987,13 @@ class ApiService {
     if (userId == null) {
       return {'success': false, 'message': 'Not authenticated'};
     }
+    final cleanPlanId = planId.replaceFirst(
+      RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+      '',
+    );
     try {
       final response = await _post(
-        '/api/mobile/plans/$planId/cancellation-request/respond',
+        '/api/mobile/plans/$cleanPlanId/cancellation-request/respond',
         {
           'userId': userId,
           'requestId': requestId,
