@@ -352,7 +352,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── LIKE handler — stay on same page, change button colour ───────────────────
   // Returns a Future so callers (e.g. ProfileDetailView's own button) can
   // await the real server-confirmed outcome instead of guessing/optimistically
-  // marking themselves as liked before this resolves.
+  // ── LIKE handler — stay on same page, change button colour instantly ────────
   Future<bool> _handleLike() async {
     if (_displayUser == null) return false;
     final targetUser = _displayUser!;
@@ -360,25 +360,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final currentAction = _swipedActions[targetId];
     final isCurrentlyLiked = currentAction == 'like' || targetUser.isLiked;
 
-    // If already liked, clicking "like" again unlikes (toggle)
+    // If already liked, clicking "like" again unlikes (instant toggle)
     if (isCurrentlyLiked) {
-      final ok = await ApiService.unlikeUser(targetUserId: targetId);
-      if (!mounted) return false;
-      if (ok) {
-        setState(() {
-          _swipedActions.remove(targetId);
-          _displayUser = _displayUser?.copyWith(isLiked: false);
-        });
-        unawaited(SubscriptionProvider.instance.refresh());
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Removed like for ${targetUser.firstName}'),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      setState(() {
+        _swipedActions.remove(targetId);
+        _displayUser = _displayUser?.copyWith(isLiked: false);
+      });
+      ApiService.unlikeUser(targetUserId: targetId).then((ok) {
+        if (ok && mounted) {
+          unawaited(SubscriptionProvider.instance.refresh());
+        }
+      });
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Removed like for ${targetUser.firstName}'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return false;
     }
 
@@ -398,29 +398,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     subProvider.optimisticConsume(VipAction.like);
 
-    // Fire API first — only apply optimistic UI once the server confirms
-    final res = await ApiService.swipeUser(targetUserId: targetId, action: 'like');
-    if (!mounted) return false;
-
-    if (res == null || res['limitReached'] == true) {
-      subProvider.rollbackConsume(VipAction.like);
-      showSubscriptionLimitDialog(
-        context,
-        feature: SubLimitFeature.dailyLikes,
-        customMessage: res?['message'],
-      );
-      return false;
-    }
-
+    // Instant optimistic UI update (0ms delay)
     setState(() {
       _swipedActions[targetId] = 'like';
       _dailyLikesUsed++;
       _displayUser = _displayUser?.copyWith(isLiked: true);
     });
-
-    unawaited(SubscriptionProvider.instance.refresh());
     _showLikeNotification(targetUser.firstName, isSuperLike: false);
-    _checkUsageWarning(res);
+
+    // Asynchronously verify with backend
+    ApiService.swipeUser(targetUserId: targetId, action: 'like').then((res) {
+      if (!mounted) return;
+      if (res == null || res['limitReached'] == true) {
+        subProvider.rollbackConsume(VipAction.like);
+        setState(() {
+          _swipedActions.remove(targetId);
+          _dailyLikesUsed = math.max(0, _dailyLikesUsed - 1);
+          _displayUser = _displayUser?.copyWith(isLiked: false);
+        });
+        showSubscriptionLimitDialog(
+          context,
+          feature: SubLimitFeature.dailyLikes,
+          customMessage: res?['message'],
+        );
+      } else {
+        _checkUsageWarning(res);
+        SubscriptionProvider.instance.refresh();
+      }
+    });
+
     return true;
   }
 

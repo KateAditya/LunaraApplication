@@ -90,29 +90,29 @@ class PlanStatus {
     return int.tryParse(dailyLikesLimit.toString()) ?? 7;
   }
 
-  bool get hasUnlimitedLikes => dailyLikesLimit == 'unlimited' || dailyLikesLimitInt >= 9999 || dailyLikesLimit == -1;
+  bool get hasUnlimitedLikes => isPaid || dailyLikesLimit == 'unlimited' || dailyLikesLimitInt >= 9999 || dailyLikesLimit == -1;
   int get dailyLikesRemaining =>
       hasUnlimitedLikes ? 9999 : (dailyLikesLimitInt - dailyLikesUsed).clamp(0, 9999);
 
   bool get canLike => hasUnlimitedLikes || dailyLikesRemaining > 0;
-  bool get isUnlimitedSuperlikes => isElite || superlikesRemaining >= 9999 || superlikesPerCycle >= 9999;
+  bool get isUnlimitedSuperlikes => isElite || superlikesRemaining >= 9999 || superlikesPerCycle >= 9999 || superlikesPerCycle == -1;
   bool get canSuperLike => isElite || isUnlimitedSuperlikes || superlikesRemaining > 0;
-  bool get isUnlimitedBoosts => isElite || boostsRemaining >= 9999 || boostsPerCycle >= 9999;
+  bool get isUnlimitedBoosts => isElite || boostsRemaining >= 9999 || boostsPerCycle >= 9999 || boostsPerCycle == -1;
   bool get canBoost => isElite || isUnlimitedBoosts || boostsRemaining > 0;
   bool get isUnlimitedPartyPlans => isElite;
 
   int get dailyBacktrackLimitInt {
-    if (isElite || dailyBacktrackLimit == 'unlimited') return 9999;
+    if (isElite || dailyBacktrackLimit == 'unlimited' || dailyBacktrackLimit == -1) return 9999;
     return int.tryParse(dailyBacktrackLimit.toString()) ?? (isElite ? 9999 : (isPro ? 15 : (isPlus ? 10 : (isCore ? 5 : 3))));
   }
 
-  bool get hasUnlimitedBacktracks => isElite || dailyBacktrackLimit == 'unlimited';
+  bool get hasUnlimitedBacktracks => isElite || dailyBacktrackLimit == 'unlimited' || dailyBacktrackLimit == -1 || dailyBacktrackLimitInt >= 9999;
   int get dailyBacktrackRemaining =>
       hasUnlimitedBacktracks ? 9999 : (dailyBacktrackLimitInt - dailyBacktrackUsed).clamp(0, 9999);
   bool get canBacktrack => hasUnlimitedBacktracks || dailyBacktrackRemaining > 0;
 
   int get dailyMatchRequestsLimitInt {
-    if (isPaid || dailyMatchRequestsLimit == 'unlimited') return 9999;
+    if (isPaid || dailyMatchRequestsLimit == 'unlimited' || dailyMatchRequestsLimit == -1) return 9999;
     return int.tryParse(dailyMatchRequestsLimit.toString()) ?? (isPaid ? 9999 : 3);
   }
 

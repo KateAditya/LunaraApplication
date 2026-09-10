@@ -1427,7 +1427,8 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
 
         if (action === 'like') {
             const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-            const isUnlimitedLikes = (await SubscriptionService.getLimit(userId, 'daily_likes')) === 'unlimited';
+            const limit = await SubscriptionService.getLimit(userId, 'daily_likes');
+            const isUnlimitedLikes = limit === 'unlimited' || limit === -1 || (typeof limit === 'number' && limit >= 9999);
             if (isUnlimitedLikes) {
                 // Unlimited VIP like: background tracking, zero limits, zero warnings
                 SubscriptionService.incrementUsage(userId, 'daily_likes', 'daily', 1).catch(() => {});

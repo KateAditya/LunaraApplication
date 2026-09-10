@@ -1007,8 +1007,8 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
       builder: (_, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
 
-        final isSuperLiked = _isSuperLiked || widget.swipedAction == 'superlike' || widget.user.isSuperLiked || _currentUser.isSuperLiked;
-        final isLiked = _isLiked || widget.swipedAction == 'like' || widget.user.isLiked || _currentUser.isLiked;
+        final isSuperLiked = _isSuperLiked;
+        final isLiked = _isLiked;
 
         final subProvider = SubscriptionProvider.instance;
         final bool hasUnlimitedLikes = subProvider.hasUnlimitedLikes;
@@ -1174,109 +1174,82 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                               isLiked ? Icons.favorite : Icons.favorite_border,
                               color: Colors.white,
                             ),
-                      iconSize: isLiked ? 32 : 30,
-                      onPressed: (OptimisticActionGuard.isLocked('SWIPE_LIKE:${_currentUser.id}') || _isLiking)
-                          ? null
-                          : () async {
-                              final currentlyLiked = isLiked;
-                              if (!currentlyLiked) {
-                                // Quota check / Grey button tap validation
-                                if (likeDisabled || (!hasUnlimitedLikes && !subProvider.canLike)) {
-                                  final validation = subProvider.validateAction(VipAction.like);
-                                  showSubscriptionLimitDialog(
-                                    context,
-                                    feature: SubLimitFeature.dailyLikes,
-                                    customMessage: validation.message,
-                                  );
-                                  return;
-                                }
+                      onPressed: () async {
+                        final currentlyLiked = _isLiked;
+                        if (!currentlyLiked) {
+                          // Quota check / Grey button tap validation
+                          if (likeDisabled || (!hasUnlimitedLikes && !subProvider.canLike)) {
+                            final validation = subProvider.validateAction(VipAction.like);
+                            showSubscriptionLimitDialog(
+                              context,
+                              feature: SubLimitFeature.dailyLikes,
+                              customMessage: validation.message,
+                            );
+                            return;
+                          }
 
-                                if (!hasUnlimitedLikes) {
-                                  final validation = subProvider.validateAction(VipAction.like);
-                                  if (!validation.allowed) {
-                                    showSubscriptionLimitDialog(
-                                      context,
-                                      feature: SubLimitFeature.dailyLikes,
-                                      customMessage: validation.message,
-                                    );
-                                    return;
-                                  }
-                                }
+                          if (!hasUnlimitedLikes) {
+                            final validation = subProvider.validateAction(VipAction.like);
+                            if (!validation.allowed) {
+                              showSubscriptionLimitDialog(
+                                context,
+                                feature: SubLimitFeature.dailyLikes,
+                                customMessage: validation.message,
+                              );
+                              return;
+                            }
+                          }
+                        }
+
+                        // Instant 0ms optimistic UI toggle
+                        final nextState = !currentlyLiked;
+                        setState(() {
+                          _isLiked = nextState;
+                          _currentUser = _currentUser.copyWith(isLiked: nextState);
+                        });
+
+                        if (widget.onLike != null) {
+                          widget.onLike!.call().then((success) {
+                            if (mounted && success != nextState) {
+                              setState(() {
+                                _isLiked = success == true;
+                                _currentUser = _currentUser.copyWith(isLiked: success == true);
+                              });
+                            }
+                          });
+                        } else {
+                          if (currentlyLiked) {
+                            ApiService.unlikeUser(targetUserId: _currentUser.id).then((ok) {
+                              if (!ok && mounted) {
+                                setState(() {
+                                  _isLiked = true;
+                                  _currentUser = _currentUser.copyWith(isLiked: true);
+                                });
                               }
-
-                              if (!OptimisticActionGuard.start('SWIPE_LIKE:${_currentUser.id}')) return;
-                              setState(() => _isLiking = true);
-
-                              try {
-                                bool newLikedState = false;
-                                if (widget.onLike != null) {
-                                  final res = await widget.onLike!.call();
-                                  newLikedState = res == true;
-                                } else {
-                                  if (currentlyLiked) {
-                                    final ok = await ApiService.unlikeUser(targetUserId: _currentUser.id);
-                                    newLikedState = !ok;
-                                    if (ok && mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Removed like for ${_currentUser.firstName}'),
-                                          duration: const Duration(seconds: 2),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                    }
-                                  } else {
-                                    final res = await ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like');
-                                    if (res == null || res['limitReached'] == true) {
-                                      if (mounted) {
-                                        showSubscriptionLimitDialog(
-                                          context,
-                                          feature: SubLimitFeature.dailyLikes,
-                                          customMessage: res?['message'],
-                                        );
-                                      }
-                                      newLikedState = false;
-                                    } else {
-                                      newLikedState = true;
-                                      subProvider.optimisticConsume(VipAction.like);
-                                      if (mounted) {
-                                        if (res['matched'] == true) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('🎉 It\'s a Match with ${_currentUser.firstName}!'),
-                                              backgroundColor: const Color(0xFF10B981),
-                                            ),
-                                          );
-                                        } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('You liked ${_currentUser.firstName}! ❤️'),
-                                              backgroundColor: LunaraTheme.electricViolet,
-                                              behavior: SnackBarBehavior.floating,
-                                              duration: const Duration(seconds: 2),
-                                            ),
-                                          );
-                                        }
-                                        _checkUsageWarning(res);
-                                      }
-                                    }
-                                  }
-                                }
-
-                                if (mounted) {
-                                  setState(() {
-                                    _isLiked = newLikedState;
-                                    _currentUser = _currentUser.copyWith(isLiked: newLikedState);
-                                  });
-                                }
-                              } catch (e) {
-                                debugPrint('Like button error: $e');
-                              } finally {
-                                if (mounted) setState(() => _isLiking = false);
-                                OptimisticActionGuard.end('SWIPE_LIKE:${_currentUser.id}');
+                            });
+                          } else {
+                            subProvider.optimisticConsume(VipAction.like);
+                            ApiService.swipeUser(targetUserId: _currentUser.id, action: 'like').then((res) {
+                              if (!mounted) return;
+                              if (res == null || res['limitReached'] == true) {
+                                subProvider.rollbackConsume(VipAction.like);
+                                setState(() {
+                                  _isLiked = false;
+                                  _currentUser = _currentUser.copyWith(isLiked: false);
+                                });
+                                showSubscriptionLimitDialog(
+                                  context,
+                                  feature: SubLimitFeature.dailyLikes,
+                                  customMessage: res?['message'],
+                                );
+                              } else {
+                                _checkUsageWarning(res);
                                 subProvider.refresh();
                               }
-                            },
+                            });
+                          }
+                        }
+                      },
                     ),
                   ),
                   const SizedBox(height: 6),
