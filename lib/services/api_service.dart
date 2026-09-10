@@ -79,7 +79,7 @@ class ApiService {
   static Map<String, dynamic>? get cachedLiveFeedData => _cachedLiveFeedData;
   static List<Map<String, dynamic>>? get cachedNotifications => _cachedNotifications;
 
-  // Uses your machine's local IP (192.168.0.150) for local dev on a real device
+  // Uses your machine's local IP (192.168.0.154) for local dev on a real device
   static String get baseUrl {
     if (!isLocal) {
       return 'https://lunara-api-v2-b2cnahe5bzcxfdds.centralindia-01.azurewebsites.net';
@@ -87,7 +87,7 @@ class ApiService {
     if (kIsWeb) {
       return 'http://localhost:9076';
     }
-    return 'http://192.168.0.150:9076';
+    return 'http://192.168.0.154:9076';
   }
 
   static String? _authToken;
