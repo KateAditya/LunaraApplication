@@ -3763,6 +3763,7 @@ class ApiService {
   static final Set<String> localReadRequestIds = {};
   static final Set<String> localReadNotificationIds = {};
   static bool _readIdsLoaded = false;
+  static bool get localReadIdsLoaded => _readIdsLoaded;
 
   static Future<void> loadLocalReadIds() async {
     _ensureLocalStateForCurrentUser();
@@ -4764,8 +4765,13 @@ class ApiService {
     try {
       final cleanId = requestId
           .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
           .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
           .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
           .trim();
       final response = await patch(
         '/api/mobile/nights/requests/$cleanId',
@@ -4783,6 +4789,9 @@ class ApiService {
           return data;
         }
         return {'success': true};
+      }
+      if (data is Map<String, dynamic>) {
+        return data;
       }
       return {
         'success': false,
@@ -4803,8 +4812,18 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
+      final cleanId = matchId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
+          .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
+          .trim();
       final response = await post(
-        '/api/mobile/nights/matches/$matchId/pay',
+        '/api/mobile/nights/matches/$cleanId/pay',
         body: {
           'hostId': userId,
           'paymentMode': paymentMode,
@@ -4830,8 +4849,18 @@ class ApiService {
     String paymentMethod = 'razorpay',
   }) async {
     try {
+      final cleanId = matchId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
+          .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
+          .trim();
       final response = await post(
-        '/api/mobile/nights/matches/$matchId/verify',
+        '/api/mobile/nights/matches/$cleanId/verify',
         body: {
           'razorpay_order_id': razorpayOrderId ?? 'wallet_payment',
           'razorpay_payment_id': razorpayPaymentId ?? 'wallet_payment',
@@ -4860,12 +4889,22 @@ class ApiService {
     String? action,
   }) async {
     try {
+      final cleanId = targetId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
+          .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
+          .trim();
       final Map<String, dynamic> requestBody = {'reason': reason};
       if (action != null) {
         requestBody['action'] = action;
       }
       final response = await post(
-        '/api/mobile/nights/cancel/$targetId',
+        '/api/mobile/nights/cancel/$cleanId',
         body: requestBody,
       );
       if (response.statusCode == 200) {

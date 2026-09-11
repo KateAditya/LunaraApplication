@@ -379,6 +379,23 @@ class PushNotificationService {
   static void _onSocketPartyPlanCancellationRequested(dynamic data) {
     if (data == null) return;
     final Map<String, dynamic> cancelMap = data is Map ? Map<String, dynamic>.from(data) : {};
+
+    // Guard: Do NOT show the cancellation review pop-up to the user who requested the cancellation
+    final currentUserId = ApiService.currentUserId ?? '';
+    final requestedById = (cancelMap['requestedById'] ?? cancelMap['actorUserId'] ?? cancelMap['userId'] ?? '').toString();
+    final recipientUserId = (cancelMap['recipientUserId'] ?? '').toString();
+
+    if (currentUserId.isNotEmpty) {
+      if (requestedById.isNotEmpty && currentUserId == requestedById) {
+        debugPrint('🔔 [PartyPlan] Ignoring cancellation request popup for self requester ($currentUserId)');
+        return;
+      }
+      if (recipientUserId.isNotEmpty && recipientUserId != currentUserId) {
+        debugPrint('🔔 [PartyPlan] Ignoring cancellation request popup because recipient ($recipientUserId) != current user ($currentUserId)');
+        return;
+      }
+    }
+
     final context = NotificationNavigator.navigatorKey.currentContext;
     if (context != null) {
       final planId = cancelMap['planId']?.toString() ?? '';

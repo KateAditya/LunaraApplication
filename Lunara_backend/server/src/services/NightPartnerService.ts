@@ -1143,15 +1143,55 @@ export class NightPartnerService {
      * Respond to a Night Partner Request (Accept / Decline) with strict ACID transaction
      */
     public static async respondToRequest(
-        requestId: string,
+        requestIdInput: string,
         partnerId: string,
         action: 'accept' | 'decline'
     ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch; booking?: Booking; conversation?: Conversation }> {
-        const initialReq = await NightPartnerRequest.findByPk(requestId);
-        const lockKey = initialReq ? `slot_${initialReq.hostId}_${initialReq.venueId}_${initialReq.eventDate}` : `req_slot_${requestId}`;
+        const cleanId = (requestIdInput || '')
+            .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+            .trim();
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!cleanId || !uuidRegex.test(cleanId)) {
+            throw new Error('REQUEST_NOT_FOUND');
+        }
+
+        let initialReq = await NightPartnerRequest.findByPk(cleanId);
+        let effectiveRequestId = cleanId;
+
+        if (!initialReq) {
+            // Check if cleanId was actually a NightPartnerMatch id
+            const matchRecord = await NightPartnerMatch.findByPk(cleanId);
+            if (matchRecord && matchRecord.requestId) {
+                initialReq = await NightPartnerRequest.findByPk(matchRecord.requestId);
+                if (initialReq) {
+                    effectiveRequestId = initialReq.id;
+                }
+            }
+        }
+
+        if (!initialReq) {
+            // Check if there is any pending request for this partner with venue/id
+            const altReq = await NightPartnerRequest.findOne({
+                where: {
+                    partnerId,
+                    [Op.or]: [{ id: cleanId }, { venueId: cleanId }]
+                }
+            });
+            if (altReq) {
+                initialReq = altReq;
+                effectiveRequestId = altReq.id;
+            }
+        }
+
+        if (!initialReq) {
+            throw new Error('REQUEST_NOT_FOUND');
+        }
+
+        const lockKey = `slot_${initialReq.hostId}_${initialReq.venueId}_${initialReq.eventDate}`;
         return await this._withSlotLock(lockKey, async () => {
             return await sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
-                const request = await NightPartnerRequest.findByPk(requestId, {
+                const request = await NightPartnerRequest.findByPk(effectiveRequestId, {
                     lock: t.LOCK.UPDATE,
                     transaction: t,
                 });
@@ -1438,7 +1478,13 @@ export class NightPartnerService {
      * Host cancels a pending request (direct cancellation with smart wallet refund if paid)
      */
     public static async cancelRequest(requestId: string, hostId: string): Promise<boolean> {
-        const request = await NightPartnerRequest.findByPk(requestId);
+        const cleanId = (requestId || '')
+            .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+            .trim();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!cleanId || !uuidRegex.test(cleanId)) throw new Error('REQUEST_NOT_FOUND');
+
+        const request = await NightPartnerRequest.findByPk(cleanId);
         if (!request) throw new Error('REQUEST_NOT_FOUND');
         if (request.hostId !== hostId) throw new Error('UNAUTHORIZED');
 
@@ -1502,7 +1548,13 @@ export class NightPartnerService {
         hostId: string,
         paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY'
     ): Promise<{ match: NightPartnerMatch; razorpayOrder: any; amountToPay: number }> {
-        const match = await NightPartnerMatch.findByPk(matchId);
+        const cleanId = (matchId || '')
+            .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+            .trim();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!cleanId || !uuidRegex.test(cleanId)) throw new Error('MATCH_NOT_FOUND');
+
+        const match = await NightPartnerMatch.findByPk(cleanId);
         if (!match) throw new Error('MATCH_NOT_FOUND');
         if (match.hostId !== hostId && match.partnerId !== hostId) throw new Error('UNAUTHORIZED');
 
@@ -1583,7 +1635,13 @@ export class NightPartnerService {
         callerUserId: string,
         paymentMethod: 'razorpay' | 'wallet' = 'razorpay'
     ): Promise<{ match: NightPartnerMatch; booking?: Booking; conversation?: Conversation; isFullyPaid: boolean }> {
-        const match = await NightPartnerMatch.findByPk(matchId);
+        const cleanId = (matchId || '')
+            .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+            .trim();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!cleanId || !uuidRegex.test(cleanId)) throw new Error('MATCH_NOT_FOUND');
+
+        const match = await NightPartnerMatch.findByPk(cleanId);
         if (!match) throw new Error('MATCH_NOT_FOUND');
         if (match.hostId !== callerUserId && match.partnerId !== callerUserId) {
             const err: any = new Error('UNAUTHORIZED');
@@ -1773,12 +1831,20 @@ export class NightPartnerService {
         reason: string = 'Change of plans',
         action?: 'request' | 'approve' | 'reject' | 'confirm' | 'decline' | 'accept'
     ): Promise<{ success: boolean; status?: string; message: string }> {
+        const cleanId = (targetId || '')
+            .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+            .trim();
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!cleanId || !uuidRegex.test(cleanId)) {
+            throw new Error('RECORD_NOT_FOUND');
+        }
+
         // Check if target is a Match or a Request
-        let match = await NightPartnerMatch.findByPk(targetId);
+        let match = await NightPartnerMatch.findByPk(cleanId);
         let request: NightPartnerRequest | null = null;
 
         if (!match) {
-            request = await NightPartnerRequest.findByPk(targetId);
+            request = await NightPartnerRequest.findByPk(cleanId);
         }
 
         if (!match && !request) {
@@ -2326,9 +2392,17 @@ export class NightPartnerService {
      */
     public static async enrichUpcomingNightNotificationCard(nightId: string, recipientUserId: string): Promise<any | null> {
         try {
+            const cleanId = (nightId || '')
+                .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+                .trim();
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!cleanId || !uuidRegex.test(cleanId)) {
+                return null;
+            }
+
             let match: NightPartnerMatch | null = null;
             try {
-                match = await NightPartnerMatch.findByPk(nightId, {
+                match = await NightPartnerMatch.findByPk(cleanId, {
                     include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                 });
             } catch (_) { }
@@ -2336,7 +2410,7 @@ export class NightPartnerService {
             if (!match) {
                 try {
                     match = await NightPartnerMatch.findOne({
-                        where: { [Op.or]: [{ bookingId: nightId }, { requestId: nightId }] },
+                        where: { [Op.or]: [{ bookingId: cleanId }, { requestId: cleanId }] },
                         include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                     });
                 } catch (_) { }
@@ -2345,7 +2419,7 @@ export class NightPartnerService {
             let requestRecord: NightPartnerRequest | null = null;
             if (!match) {
                 try {
-                    requestRecord = await NightPartnerRequest.findByPk(nightId, {
+                    requestRecord = await NightPartnerRequest.findByPk(cleanId, {
                         include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city', 'coverImage', 'primaryPhoto'] }]
                     });
                 } catch (_) { }

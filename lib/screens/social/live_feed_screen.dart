@@ -1143,6 +1143,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   bool _hasPendingForceRefresh = false;
+  Timer? _feedDebounceTimer;
 
   Future<void> _loadFeed({
     bool showLoader = true,
@@ -1156,11 +1157,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
     _isFetchingFeed = true;
 
-    if (showLoader && _feedItems.isEmpty && _notifications.isEmpty) {
+    // Only show full-screen spinner on cold start when screen is completely empty
+    if (showLoader && _feedItems.isEmpty && _notifications.isEmpty && _cachedTimeline.isEmpty) {
       setState(() => _isLoading = true);
     }
     try {
-      await ApiService.loadLocalReadIds();
+      if (!ApiService.localReadIdsLoaded) {
+        await ApiService.loadLocalReadIds();
+      }
       final responses = await Future.wait([
         ApiService.fetchLiveFeedData(forceRefresh: forceRefresh),
         ApiService.fetchNotifications(forceRefresh: forceRefresh),
@@ -1215,7 +1219,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final pendingForce = _hasPendingForceRefresh;
         _hasPendingRefetch = false;
         _hasPendingForceRefresh = false;
-        _loadFeed(showLoader: false, forceRefresh: pendingForce);
+        _feedDebounceTimer?.cancel();
+        _feedDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+          if (mounted) _loadFeed(showLoader: false, forceRefresh: pendingForce);
+        });
       }
     }
   }
@@ -1440,10 +1447,58 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     widget.onCountChanged?.call();
   }
 
+  void _optimisticallyRemoveNightPartnerRequest(String matchOrRequestId) {
+    final clean = matchOrRequestId
+        .replaceAll('upcoming_night_timeline_', '')
+        .replaceAll('party_plan_timeline_', '')
+        .replaceAll('night_partner_', '')
+        .replaceAll('party_plan_', '')
+        .replaceAll('match_', '')
+        .replaceAll('request_', '')
+        .replaceAll('req_', '')
+        .replaceAll('pp_', '')
+        .trim();
+    _feedItems.removeWhere((f) {
+      final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
+      final cleanFId = id
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
+          .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
+          .trim();
+      return id == matchOrRequestId || (clean.isNotEmpty && cleanFId == clean) || (clean.isNotEmpty && cleanFId.contains(clean));
+    });
+    _notifications.removeWhere((n) {
+      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? n['data']?['requestId'] ?? n['metadata']?['requestId'] ?? '').toString();
+      final cleanNId = id
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('party_plan_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('party_plan_', '')
+          .replaceAll('match_', '')
+          .replaceAll('request_', '')
+          .replaceAll('req_', '')
+          .replaceAll('pp_', '')
+          .trim();
+      return id == matchOrRequestId || (clean.isNotEmpty && cleanNId == clean) || (clean.isNotEmpty && cleanNId.contains(clean));
+    });
+    _cachedTimeline = _buildUnifiedTimeline();
+    if (mounted) setState(() {});
+    widget.onCountChanged?.call();
+  }
+
   void _optimisticallyUpdateNightPartnerRequest(
     String matchId,
     String newStatus,
   ) {
+    if (newStatus == 'rejected' || newStatus == 'declined' || newStatus == 'cancelled' || newStatus == 'expired') {
+      _optimisticallyRemoveNightPartnerRequest(matchId);
+      return;
+    }
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
       final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
@@ -3159,6 +3214,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
+    // Instant optimistic update
+    _optimisticallyUpdateStrangersMeetJoinRequest(
+      meetId,
+      joinerId,
+      action == 'accept' ? 'accepted' : 'rejected',
+    );
+
     try {
       final success = await ApiService.handleStrangersMeetJoinRequest(
         meetId,
@@ -3166,22 +3228,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         action,
       );
       if (success) {
-        _optimisticallyUpdateStrangersMeetJoinRequest(
-          meetId,
-          joinerId,
-          action == 'accept' ? 'accepted' : 'rejected',
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              action == 'accept'
-                  ? 'Join request accepted!'
-                  : 'Join request declined.',
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                action == 'accept'
+                    ? 'Join request accepted!'
+                    : 'Join request declined.',
+              ),
+              backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
             ),
-            backgroundColor: action == 'accept' ? Colors.green : Colors.grey,
-          ),
-        );
-        _loadFeed(showLoader: false, forceRefresh: true);
+          );
+          _loadFeed(showLoader: false);
+        }
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3190,7 +3249,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
       if (mounted) {
@@ -3200,7 +3259,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
@@ -6742,76 +6801,90 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       }
 
+      final cancelEventKey = 'cancel_event_$targetMatchId';
+      final isCancellingEvent = _activeActionKeys.contains(cancelEventKey);
       actionsList.add(
         NotificationAction(
-          label: 'Cancel Event',
+          label: isCancellingEvent ? 'Cancelling...' : 'Cancel Event',
           icon: Icons.cancel_outlined,
           isPrimary: false,
+          isLoading: isCancellingEvent,
           color: Colors.red[400],
-          onTap: () async {
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: const Color(0xFF1E1035),
-                title: const Text(
-                  'Cancel Upcoming Night?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                content: const Text(
-                  'Are you sure you want to cancel this Upcoming Night booking? Any refundable amount will be credited to your Lunara Wallet.',
-                  style: TextStyle(color: Colors.white70),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text(
-                      'Keep Booking',
-                      style: TextStyle(color: Colors.white54),
+          onTap: isCancellingEvent
+              ? () {}
+              : () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: const Color(0xFF1E1035),
+                      title: const Text(
+                        'Cancel Upcoming Night?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      content: const Text(
+                        'Are you sure you want to cancel this Upcoming Night booking? Any refundable amount will be credited to your Lunara Wallet.',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text(
+                            'Keep Booking',
+                            style: TextStyle(color: Colors.white54),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                          ),
+                          child: const Text(
+                            'Confirm Cancel',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                    ),
-                    child: const Text(
-                      'Confirm Cancel',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-            );
+                  );
 
-            if (confirm == true) {
-              final res = await ApiService.cancelUpcomingNight(
-                targetId: targetMatchId,
-                reason: 'User requested cancellation',
-              );
-              if (res != null && res['success'] == true) {
-                _loadFeed(showLoader: false, forceRefresh: true);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Cancellation request submitted.'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      res?['message'] ??
-                          'Could not cancel upcoming night. Please contact support.',
-                    ),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-              }
-            }
-          },
+                  if (confirm == true) {
+                    setState(() => _activeActionKeys.add(cancelEventKey));
+                    _optimisticallyMarkBookingCancelled(targetMatchId);
+                    try {
+                      final res = await ApiService.cancelUpcomingNight(
+                        targetId: targetMatchId,
+                        reason: 'User requested cancellation',
+                      );
+                      if (res != null && res['success'] == true) {
+                        _loadFeed(showLoader: false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Cancellation request submitted.'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              res?['message'] ??
+                                  'Could not cancel upcoming night. Please contact support.',
+                            ),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        _loadFeed(showLoader: false);
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(cancelEventKey));
+                      }
+                    }
+                  }
+                },
         ),
       );
     } else if (stage == 'WAITING_FOR_PAYMENT' ||
@@ -6849,21 +6922,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       }
 
+      final cancelWaitKey = 'cancel_wait_$targetMatchId';
+      final isCancellingWait = _activeActionKeys.contains(cancelWaitKey);
       actionsList.add(
         NotificationAction(
-          label: 'Cancel',
+          label: isCancellingWait ? 'Cancelling...' : 'Cancel',
           icon: Icons.cancel_outlined,
           isPrimary: false,
+          isLoading: isCancellingWait,
           color: Colors.red[400],
-          onTap: () async {
-            final res = await ApiService.cancelUpcomingNight(
-              targetId: targetMatchId,
-              reason: 'Cancelled before booking',
-            );
-            if (res != null && res['success'] == true) {
-              _loadFeed(showLoader: false, forceRefresh: true);
-            }
-          },
+          onTap: isCancellingWait
+              ? () {}
+              : () async {
+                  setState(() => _activeActionKeys.add(cancelWaitKey));
+                  try {
+                    _optimisticallyRemoveNightPartnerRequest(targetMatchId);
+                    final res = await ApiService.cancelUpcomingNight(
+                      targetId: targetMatchId,
+                      reason: 'Cancelled before booking',
+                    );
+                    _loadFeed(showLoader: false);
+                  } finally {
+                    if (mounted) {
+                      setState(() => _activeActionKeys.remove(cancelWaitKey));
+                    }
+                  }
+                },
         ),
       );
     } else {
@@ -6911,9 +6995,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         );
                         _loadFeed(showLoader: false, forceRefresh: true);
                       } else {
+                        final bool isUnavailable = res['notAvailable'] == true ||
+                            res['code'] == 'MATCH_SLOT_FILLED' ||
+                            res['code'] == 'REQUEST_EXPIRED' ||
+                            res['code'] == 'REQUEST_NOT_FOUND' ||
+                            res['code'] == 'REQUEST_ALREADY_PROCESSED';
+                        if (isUnavailable) {
+                          _optimisticallyRemoveNightPartnerRequest(targetRequestId);
+                        }
                         final errMsg =
                             res['message']?.toString() ??
-                            'Could not accept invite. Match slot may already be filled.';
+                            'This invitation is no longer available.';
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(errMsg),
@@ -6943,16 +7035,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 : () async {
                     setState(() => _activeActionKeys.add(declineKey));
                     try {
+                      _optimisticallyRemoveNightPartnerRequest(targetRequestId);
                       final res =
                           await ApiService.respondToNightPartnerRequestDetailed(
                             requestId: targetRequestId,
                             action: 'decline',
                           );
                       if (res['success'] == true) {
-                        _optimisticallyUpdateNightPartnerRequest(
-                          targetRequestId,
-                          'rejected',
-                        );
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Invite declined.'),
@@ -6963,11 +7052,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                       } else {
                         final errMsg =
                             res['message']?.toString() ??
-                            'Could not decline invite.';
+                            'Invite declined.';
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(errMsg),
-                            backgroundColor: Colors.redAccent,
+                            backgroundColor: Colors.grey,
                           ),
                         );
                         _loadFeed(showLoader: false, forceRefresh: true);
@@ -7002,33 +7091,53 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               'Invited $partnerName to join $displayTitle. Waiting for response.';
         }
 
+        final cancelInviteKey = 'cancel_invite_$targetRequestId';
+        final isCancellingInvite = _activeActionKeys.contains(cancelInviteKey);
         actionsList.add(
           NotificationAction(
-            label: 'Cancel Invite',
+            label: isCancellingInvite ? 'Cancelling...' : 'Cancel Invite',
             icon: Icons.cancel_outlined,
             isPrimary: false,
+            isLoading: isCancellingInvite,
             color: Colors.red[400],
-            onTap: () async {
-              for (final e in entries) {
-                final reqId = e['requestId'] ??
-                    e['data']?['requestId'] ??
-                    e['metadata']?['requestId'] ??
-                    (e['id']?.toString().startsWith('upcoming_night_timeline_') == false ? e['id'] : null);
-                if (reqId != null) {
-                  await ApiService.cancelUpcomingNight(
-                    targetId: reqId.toString(),
-                    reason: 'Host cancelled invite',
-                  );
-                }
-              }
-              if (targetRequestId.isNotEmpty) {
-                await ApiService.cancelUpcomingNight(
-                  targetId: targetRequestId,
-                  reason: 'Host cancelled invite',
-                );
-              }
-              _loadFeed(showLoader: false, forceRefresh: true);
-            },
+            onTap: isCancellingInvite
+                ? () {}
+                : () async {
+                    setState(() => _activeActionKeys.add(cancelInviteKey));
+                    try {
+                      _optimisticallyRemoveNightPartnerRequest(targetRequestId);
+                      for (final e in entries) {
+                        final reqId = e['requestId'] ??
+                            e['data']?['requestId'] ??
+                            e['metadata']?['requestId'] ??
+                            (e['id']?.toString().startsWith('upcoming_night_timeline_') == false ? e['id'] : null);
+                        if (reqId != null) {
+                          _optimisticallyRemoveNightPartnerRequest(reqId.toString());
+                          await ApiService.cancelUpcomingNight(
+                            targetId: reqId.toString(),
+                            reason: 'Host cancelled invite',
+                          );
+                        }
+                      }
+                      if (targetRequestId.isNotEmpty) {
+                        await ApiService.cancelUpcomingNight(
+                          targetId: targetRequestId,
+                          reason: 'Host cancelled invite',
+                        );
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Invite cancelled.'),
+                          backgroundColor: Colors.grey,
+                        ),
+                      );
+                      _loadFeed(showLoader: false);
+                    } finally {
+                      if (mounted) {
+                        setState(() => _activeActionKeys.remove(cancelInviteKey));
+                      }
+                    }
+                  },
           ),
         );
       }

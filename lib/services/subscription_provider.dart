@@ -122,9 +122,20 @@ class SubscriptionProvider extends ChangeNotifier {
   bool get hasUnlimitedLikes => _status.hasUnlimitedLikes;
   int get likesRemaining => dailyLikesRemaining;
 
-  int get dailyLikesRemaining => _status.hasUnlimitedLikes
-      ? 9999
-      : (_status.dailyLikesRemaining - _optimisticLikesOffset).clamp(0, 9999);
+  int get dailyLikesRemaining {
+    if (_status.hasUnlimitedLikes) return 9999;
+    final fromEntitlements = _entitlementsSummary?.likesAvailable;
+    int entVal = 0;
+    if (fromEntitlements == 'unlimited') return 9999;
+    if (fromEntitlements is int) {
+      entVal = fromEntitlements;
+    } else if (fromEntitlements != null) {
+      entVal = int.tryParse(fromEntitlements.toString()) ?? 0;
+    }
+    final fromStatus = _status.dailyLikesRemaining;
+    final base = math.max(entVal, fromStatus);
+    return (base - _optimisticLikesOffset).clamp(0, 9999);
+  }
 
   int get dailyBacktrackRemaining => backtracksRemaining;
 

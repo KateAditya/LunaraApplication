@@ -261,7 +261,7 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
     try {
         let { id } = req.params;
         if (id) {
-            id = id.replace(/^upcoming_night_timeline_/, '').replace(/^night_partner_/, '').replace(/^request_/, '').trim();
+            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
         }
         const action = (req.body.action || '').toString().toLowerCase();
         const partnerId = req.user!.id;
@@ -275,18 +275,22 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
     } catch (err: any) {
         logger.error('respondToRequest error:', err);
         const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        const isSlotFilled = err.message === 'MATCH_SLOT_FILLED';
+        const isExpired = err.message === 'REQUEST_EXPIRED';
+        const isNotFound = err.message === 'REQUEST_NOT_FOUND' || err.message === 'REQUEST_ALREADY_PROCESSED';
         let userMessage = err.message || 'Failed to process request response';
-        if (err.message === 'MATCH_SLOT_FILLED') {
+        if (isSlotFilled) {
             userMessage = 'This invitation is no longer available as the host is already matched with another guest.';
-        } else if (err.message === 'REQUEST_EXPIRED') {
+        } else if (isExpired) {
             userMessage = 'This invitation has expired.';
-        } else if (err.message === 'REQUEST_NOT_FOUND') {
-            userMessage = 'Invitation not found or has been cancelled.';
+        } else if (isNotFound) {
+            userMessage = 'This invitation is no longer available.';
         }
         res.status(400).json({
             success: false,
             code: code || err.message,
             reason: code || err.message,
+            notAvailable: isSlotFilled || isExpired || isNotFound,
             message: userMessage,
             ...(err.timeLock || {}),
         });
@@ -295,7 +299,10 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
 
 export const cancelRequest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id) {
+            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
+        }
         const hostId = req.user!.id;
         if (!id) {
             res.status(400).json({ success: false, message: 'requestId is required' });
@@ -312,7 +319,10 @@ export const cancelRequest = async (req: Request, res: Response): Promise<void> 
 
 export const initiateMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id) {
+            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
+        }
         const { paymentMode } = req.body;
         const hostId = req.user!.id;
         if (!id) {
@@ -342,7 +352,10 @@ export const initiateMatchPayment = async (req: Request, res: Response): Promise
 
 export const verifyMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id) {
+            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
+        }
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature, paymentMethod } = req.body;
         const isWallet = paymentMethod?.toString().toLowerCase().includes('wallet');
 
@@ -375,7 +388,10 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
 
 export const cancelUpcomingNight = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        let { id } = req.params;
+        if (id) {
+            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
+        }
         const { reason, action } = req.body;
         const userId = req.user!.id;
         if (!id) {

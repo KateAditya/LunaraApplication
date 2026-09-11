@@ -419,6 +419,7 @@ export class EntitlementService {
                     : key === 'profile_boost' ? 'Profile Boosts Add-ons'
                     : key === 'party_creation' ? 'Party Plan Add-ons'
                     : key === 'backtrack' ? 'Backtrack Add-ons'
+                    : (key === 'daily_likes' || key === 'likes' || key === 'like') ? 'Daily Likes Add-ons'
                     : `${(ua as any).addonPackage?.name || key} Add-on`;
                 addonAggregates[key] = {
                     name: humanLabel,
@@ -443,7 +444,8 @@ export class EntitlementService {
         // 8. Calculate Combined Totals
         const addonSuperlikes = addonAggregates['superlike']?.remaining || 0;
         const addonBoosts = addonAggregates['profile_boost']?.remaining || 0;
-        const addonPartyPlans = addonAggregates['party_creation']?.remaining || 0;
+        const addonPartyPlans = addonAggregates['party_creation']?.remaining || addonAggregates['party_plan']?.remaining || 0;
+        const addonLikes = addonAggregates['daily_likes']?.remaining || addonAggregates['likes']?.remaining || addonAggregates['like']?.remaining || 0;
         const addonBacktracks = addonAggregates['backtrack']?.remaining || addonAggregates['undo']?.remaining || 0;
 
         const totalSuperlikesAvailable = isSuperlikesUnlimited ? 9999 : (superlikesRemaining + addonSuperlikes);
@@ -451,7 +453,7 @@ export class EntitlementService {
         const totalPartyPlansAvailable = isPartyPlansUnlimited
             ? 'unlimited'
             : partyPlansRemaining + addonPartyPlans;
-        const totalLikesAvailable = isDailyLikesUnlimited ? 'unlimited' : dailyLikesRemaining;
+        const totalLikesAvailable = isDailyLikesUnlimited ? 'unlimited' : (dailyLikesRemaining + addonLikes);
         const totalBacktracksAvailable = isBacktracksUnlimited ? 9999 : (backtracksRemaining + addonBacktracks);
 
         // 9. Generate Smart Contextual Add-on Suggestions
@@ -493,7 +495,7 @@ export class EntitlementService {
 
         if (!isPartyPlansUnlimited && (typeof totalPartyPlansAvailable === 'number' && totalPartyPlansAvailable <= 0)) {
             const partyAddon = await SubscriptionAddonPackage.findOne({
-                where: { featureKey: 'party_creation', isActive: true },
+                where: { featureKey: { [Op.in]: ['party_creation', 'party_plan'] }, isActive: true },
                 order: [['displayOrder', 'ASC']],
             });
             smartSuggestions.push({
@@ -553,10 +555,11 @@ export class EntitlementService {
         message?: string;
         availableAddons?: any[];
     }> {
-        const normalizedKey = (featureKey === 'super_likes') ? 'superlike'
+        const normalizedKey = (featureKey === 'super_likes' || featureKey === 'super_like') ? 'superlike'
             : (featureKey === 'boost' || featureKey === 'boosts') ? 'profile_boost'
             : (featureKey === 'party_plan' || featureKey === 'party_plans') ? 'party_creation'
             : (featureKey === 'undo' || featureKey === 'backtracks') ? 'backtrack'
+            : (featureKey === 'likes' || featureKey === 'like') ? 'daily_likes'
             : featureKey;
 
         const t = await sequelize.transaction();
@@ -672,8 +675,8 @@ export class EntitlementService {
                     const userAddons = await UserAddon.findAll({
                         where: {
                             userId,
-                            featureKey: normalizedKey,
-                            status: UserAddonStatus.ACTIVE,
+                            featureKey: { [Op.in]: ['superlike', 'super_likes', 'super_like'] },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -742,8 +745,8 @@ export class EntitlementService {
                     const userAddons = await UserAddon.findAll({
                         where: {
                             userId,
-                            featureKey: normalizedKey,
-                            status: UserAddonStatus.ACTIVE,
+                            featureKey: { [Op.in]: ['profile_boost', 'boost', 'boosts'] },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -785,7 +788,66 @@ export class EntitlementService {
                 }
             }
 
-            // Elite / Unlimited Plan Backtracks
+            // Daily Likes Quota (VIP plans unlimited; Free tier daily quota then Addons)
+            if (normalizedKey === 'daily_likes') {
+                const { SubscriptionService } = await import('./subscriptionService');
+                const dailyLimit = await SubscriptionService.getLimit(userId, 'daily_likes');
+                const isLimitUnlimited = dailyLimit === 'unlimited' || dailyLimit === -1 || (typeof dailyLimit === 'number' && dailyLimit >= 9999);
+
+                if (isLimitUnlimited) {
+                    await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'daily_likes',
+                        source: 'PLAN',
+                        remaining: 9999,
+                        isUnlimited: true,
+                    });
+
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: 9999,
+                        totalRemaining: 9999,
+                    };
+                }
+
+                const remainingPlanLikes = await SubscriptionService.getRemainingUsage(userId, 'daily_likes');
+                if (typeof remainingPlanLikes === 'number' && remainingPlanLikes >= amount) {
+                    await SubscriptionService.consumeUsage(userId, 'daily_likes', amount);
+                    const newPlanRemaining = Math.max(0, remainingPlanLikes - amount);
+
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: { [Op.in]: ['daily_likes', 'likes', 'like'] },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const totalRemaining = newPlanRemaining + addonRemaining;
+
+                    await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'daily_likes',
+                        source: 'PLAN',
+                        remaining: totalRemaining,
+                    });
+
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: newPlanRemaining,
+                        addonRemaining,
+                        totalRemaining,
+                    };
+                }
+            }
+
+            // Backtracks Quota (Free tier gets 3/day, VIP plans get configured quota/unlimited, then Addons)
             const isUnlimitedBacktracks = isElite || (activePkg && (activePkg.backtrackLimit === -1 || activePkg.backtrackLimit >= 9999));
             if (normalizedKey === 'backtrack' && isUnlimitedBacktracks) {
                 if (activeSub) {
@@ -820,14 +882,19 @@ export class EntitlementService {
                 };
             }
 
-            // Regular Plan Daily Backtrack Quota (only if user has active paid subscription with quota)
-            if (normalizedKey === 'backtrack' && activeSub && activePkg && Number(activePkg.backtrackLimit) > 0) {
+            if (normalizedKey === 'backtrack') {
                 const { SubscriptionService } = await import('./subscriptionService');
                 const dailyLimit = await SubscriptionService.getLimit(userId, 'daily_backtracks');
-                const isLimitUnlimited = dailyLimit === 'unlimited' || dailyLimit === -1 || dailyLimit >= 9999;
+                const isLimitUnlimited = dailyLimit === 'unlimited' || dailyLimit === -1 || (typeof dailyLimit === 'number' && dailyLimit >= 9999);
 
                 if (isLimitUnlimited) {
                     await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'backtrack',
+                        source: 'PLAN',
+                        remaining: 9999,
+                        isUnlimited: true,
+                    });
                     return {
                         success: true,
                         source: 'PLAN',
@@ -845,8 +912,8 @@ export class EntitlementService {
                     const userAddons = await UserAddon.findAll({
                         where: {
                             userId,
-                            featureKey: normalizedKey,
-                            status: UserAddonStatus.ACTIVE,
+                            featureKey: { [Op.in]: ['backtrack', 'undo', 'backtracks'] },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -872,16 +939,73 @@ export class EntitlementService {
                 }
             }
 
+            // Party Plan Creation Quota
+            if (normalizedKey === 'party_creation') {
+                const { SubscriptionService } = await import('./subscriptionService');
+                const planCheck = await SubscriptionService.checkPartyPlanLimit(userId, undefined, { transaction: t });
+
+                if (planCheck.tier === 'ELITE' || planCheck.limit === 'unlimited' || planCheck.limit === -1 || (typeof planCheck.limit === 'number' && planCheck.limit >= 9999)) {
+                    await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'party_creation',
+                        source: 'PLAN',
+                        remaining: 9999,
+                        isUnlimited: true,
+                    });
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: 9999,
+                        totalRemaining: 9999,
+                    };
+                }
+
+                if (planCheck.allowed && !String(planCheck.tier).includes('Add-on Active') && (typeof planCheck.remaining === 'number' && planCheck.remaining >= amount)) {
+                    const newPlanRemaining = Math.max(0, (planCheck.remaining as number) - amount);
+
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId,
+                            featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                        transaction: t,
+                    });
+                    const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    const totalRemaining = newPlanRemaining + addonRemaining;
+
+                    await t.commit();
+                    RealtimeEventBroker.emitToUser(userId, 'vip_entitlements_updated', 'vip', userId, {
+                        featureKey: 'party_creation',
+                        source: 'PLAN',
+                        remaining: totalRemaining,
+                    });
+
+                    return {
+                        success: true,
+                        source: 'PLAN',
+                        consumed: amount,
+                        planRemaining: newPlanRemaining,
+                        addonRemaining,
+                        totalRemaining,
+                    };
+                }
+            }
+
             // ─── STEP 2: Check Active Add-on Balances (FIFO) ────────────────
-            const addonKeys = normalizedKey === 'superlike'
+            const addonKeys = (normalizedKey === 'superlike')
                 ? ['superlike', 'super_likes', 'super_like']
-                : normalizedKey === 'profile_boost'
+                : (normalizedKey === 'profile_boost')
                     ? ['profile_boost', 'boost', 'boosts']
-                    : normalizedKey === 'backtrack'
+                    : (normalizedKey === 'backtrack')
                         ? ['backtrack', 'undo', 'backtracks']
-                        : normalizedKey === 'party_creation'
+                        : (normalizedKey === 'party_creation')
                             ? ['party_creation', 'party_plan', 'party_plans']
-                            : [normalizedKey];
+                            : (normalizedKey === 'daily_likes')
+                                ? ['daily_likes', 'likes', 'like']
+                                : [normalizedKey];
 
             const availableAddons = await UserAddon.findAll({
                 where: {
@@ -929,7 +1053,11 @@ export class EntitlementService {
                         transaction: t,
                     });
                     const totalAddonRemaining = otherAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
-                    const planRemaining = activeSub ? ((normalizedKey === 'superlike' ? activeSub.superlikesRemaining : activeSub.boostsRemaining) || 0) : 0;
+                    const planRemaining = (normalizedKey === 'superlike')
+                        ? (activeSub?.superlikesRemaining || 0)
+                        : (normalizedKey === 'profile_boost')
+                            ? (activeSub?.boostsRemaining || 0)
+                            : 0;
                     const totalRemaining = planRemaining + totalAddonRemaining;
 
                     const allUserAddons = await UserAddon.findAll({
@@ -937,7 +1065,16 @@ export class EntitlementService {
                         transaction: t,
                     });
                     const totalAddonPurchased = allUserAddons.reduce((acc, a) => acc + (Number(a.purchasedQuantity) || 0), 0);
-                    const totalGranted = (activePkg?.superlikesPerCycle || 0) + totalAddonPurchased;
+                    const baseGranted = (normalizedKey === 'superlike')
+                        ? (activePkg?.superlikesPerCycle || 0)
+                        : (normalizedKey === 'profile_boost')
+                            ? (activePkg?.boostsPerCycle || 0)
+                            : (normalizedKey === 'daily_likes')
+                                ? (activePkg?.dailyLikes || 50)
+                                : (normalizedKey === 'backtrack')
+                                    ? (activePkg?.backtrackLimit || 3)
+                                    : 0;
+                    const totalGranted = baseGranted + totalAddonPurchased;
 
                     await EntitlementAuditLog.create({
                         userId,

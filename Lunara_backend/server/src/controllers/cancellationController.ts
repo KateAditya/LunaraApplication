@@ -288,8 +288,8 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                     status: CancellationRequestStatus.PENDING,
                     lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED,
                 };
+                // Only emit the cancellation request review prompt to the recipient, NOT the requester
                 io.to(`user_${recipientUserId}`).emit('party_plan_cancellation_requested', cancelPayload);
-                io.to(`user_${userId}`).emit('party_plan_cancellation_requested', cancelPayload);
                 io.to(`user_${recipientUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
                 io.to(`user_${userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
                 // Private cancellation request — only the two involved parties need this update

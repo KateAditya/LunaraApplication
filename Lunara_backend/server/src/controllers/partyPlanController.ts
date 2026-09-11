@@ -30,6 +30,7 @@ import { WalletService } from '../services/walletService';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
 import { EventTimeLockService } from '../services/EventTimeLockService';
 import { formatTime12Hour, formatDateFull, extractDateParts, DEFAULT_TIMEZONE } from '../utils/dateTimeUtils';
+import { EntitlementService } from '../services/EntitlementService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
@@ -925,6 +926,23 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan');
         if (!timeLockCheck.allowed) {
             res.status(400).json({ success: false, ...timeLockCheck });
+            return;
+        }
+
+        // ── Check & Consume Party Plan Entitlement (Plan quota or Add-on) ───────
+        const entitlementConsumption = await EntitlementService.consumeFeatureEntitlement(userId, 'party_creation', 1, {
+            requestId: `PARTY_CREATE_${userId}_${Date.now()}`,
+            metadata: { venueId, planDateTime },
+        });
+
+        if (!entitlementConsumption.success) {
+            res.status(403).json({
+                success: false,
+                code: entitlementConsumption.code || 'PARTY_PLAN_LIMIT_REACHED',
+                limitReached: true,
+                message: entitlementConsumption.message || 'You have reached your party plan creation limit. Upgrade your VIP tier or purchase a Party Plan Add-on!',
+                availableAddons: entitlementConsumption.availableAddons || [],
+            });
             return;
         }
 

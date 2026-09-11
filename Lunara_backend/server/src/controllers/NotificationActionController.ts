@@ -133,7 +133,9 @@ export class NotificationActionController {
                         actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
                     }
                 } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch' || notification.eventType === 'PARTNER_REQUEST_SENT' || notification.eventType === 'PARTNER_REQUEST_RECEIVED' || (notification as any).type === 'PARTNER_REQUEST_SENT' || (notification as any).type === 'PARTNER_REQUEST_RECEIVED') && (notification.entityId || notification.metadata?.requestId)) {
-                    const cleanEntityId = (notification.metadata?.requestId || notification.entityId || '').replace(/^upcoming_night_timeline_/, '').replace(/^night_partner_/, '').replace(/^request_/, '').trim();
+                    const cleanEntityId = (notification.metadata?.requestId || notification.entityId || '')
+                        .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
+                        .trim();
                     if (upperAction === 'ACCEPT_CANCELLATION' || upperAction === 'REJECT_CANCELLATION') {
                         try {
                             const result = await NightPartnerService.cancelUpcomingNight(
@@ -154,12 +156,22 @@ export class NotificationActionController {
                             actionResult = { status: 'ACTIONED', actionExecuted: action, result };
                         } catch (partnerErr: any) {
                             logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
-                            const friendlyMsg = partnerErr.message === 'MATCH_SLOT_FILLED'
+                            const isSlotFilled = partnerErr.message === 'MATCH_SLOT_FILLED';
+                            const isExpired = partnerErr.message === 'REQUEST_EXPIRED';
+                            const isNotFound = partnerErr.message === 'REQUEST_NOT_FOUND' || partnerErr.message === 'REQUEST_ALREADY_PROCESSED';
+                            const friendlyMsg = isSlotFilled
                                 ? 'This invitation is no longer available as the host is already matched with another guest.'
-                                : (partnerErr.message === 'REQUEST_EXPIRED'
+                                : (isExpired
                                     ? 'This invitation has expired.'
-                                    : partnerErr.message);
-                            actionResult = { status: 'ACTIONED', actionExecuted: action, note: friendlyMsg };
+                                    : (isNotFound
+                                        ? 'This invitation is no longer available.'
+                                        : (partnerErr.message || 'Failed to process invitation.')));
+                            actionResult = {
+                                status: 'ACTIONED',
+                                actionExecuted: action,
+                                notAvailable: isSlotFilled || isExpired || isNotFound,
+                                note: friendlyMsg,
+                            };
                         }
                     }
                 }

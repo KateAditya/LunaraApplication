@@ -1439,30 +1439,29 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
         } | null = null;
 
         if (action === 'like') {
-            const SubscriptionService = require('../services/subscriptionService').default || require('../services/subscriptionService').SubscriptionService;
-            const limit = await SubscriptionService.getLimit(userId, 'daily_likes');
-            const isUnlimitedLikes = limit === 'unlimited' || limit === -1 || (typeof limit === 'number' && limit >= 9999);
-            if (isUnlimitedLikes) {
-                // Unlimited VIP like: background tracking, zero limits, zero warnings
-                SubscriptionService.incrementUsage(userId, 'daily_likes', 'daily', 1).catch(() => {});
-            } else {
-                const consume = await SubscriptionService.consumeUsage(userId, 'daily_likes');
-                if (!consume.success) {
-                    return res.status(403).json({
-                        success: false,
-                        code: 'LIMIT_REACHED',
-                        limitReached: true,
-                        message: consume.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!'
-                    });
-                }
+            const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'daily_likes', 1, {
+                requestId: `LIKE_${userId}_${targetUserId}_${Date.now()}`,
+                metadata: { targetUserId },
+            });
 
-                if (typeof consume.limit === 'number' && consume.limit > 0 && consume.limit < 9999) {
-                    const used = consume.used;
-                    const limit = consume.limit;
-                    const remaining = typeof consume.remaining === 'number' ? consume.remaining : limit - used;
+            if (!consumption.success) {
+                return res.status(403).json({
+                    success: false,
+                    code: consumption.code || 'LIMIT_REACHED',
+                    limitReached: true,
+                    message: consumption.message || 'You have reached your daily likes limit. Upgrade to Lunara VIP for unlimited likes!',
+                    availableAddons: consumption.availableAddons || [],
+                });
+            }
+
+            if (consumption.source === 'PLAN' && typeof consumption.planRemaining === 'number' && consumption.planRemaining >= 0 && consumption.planRemaining < 9999) {
+                const limit = await SubscriptionService.getLimit(userId, 'daily_likes');
+                if (typeof limit === 'number' && limit > 0 && limit < 9999) {
+                    const remaining = consumption.planRemaining;
+                    const used = Math.max(0, limit - remaining);
                     const percentage = Math.round((used / limit) * 100);
 
-                    // If user has used >= 70% of daily likes (e.g. 5 of 7 is 71.4%):
+                    // If user has used >= 70% of daily likes:
                     if (percentage >= 70 && remaining > 0) {
                         usageWarning = {
                             triggered: true,

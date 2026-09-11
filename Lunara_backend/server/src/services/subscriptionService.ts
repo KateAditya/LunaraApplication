@@ -323,23 +323,24 @@ export class SubscriptionService {
                     // Check if user has active party_creation add-on credits
                     try {
                         const UserAddonModel = (await import('../models/UserAddon')).default;
-                        const activeAddon = await UserAddonModel.findOne({
+                        const activeAddons = await UserAddonModel.findAll({
                             where: {
                                 userId,
-                                featureKey: 'party_creation',
-                                status: 'ACTIVE',
+                                featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
+                                status: { [Op.in]: ['ACTIVE', 'active', 'Active'] },
                                 remainingQuantity: { [Op.gt]: 0 },
                             },
                             transaction: options?.transaction,
                         });
 
-                        if (activeAddon && activeAddon.remainingQuantity > 0) {
+                        const totalAddonRemaining = activeAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                        if (totalAddonRemaining > 0) {
                             return {
                                 allowed: true,
                                 tier: 'FREE (Add-on Active)',
-                                limit: freeLimit + activeAddon.remainingQuantity,
+                                limit: freeLimit + totalAddonRemaining,
                                 used: usedCount,
-                                remaining: activeAddon.remainingQuantity,
+                                remaining: totalAddonRemaining,
                                 resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                             };
                         }
@@ -421,23 +422,24 @@ export class SubscriptionService {
                 // Check if user has active party_creation add-on credits
                 try {
                     const UserAddonModel = (await import('../models/UserAddon')).default;
-                    const activeAddon = await UserAddonModel.findOne({
+                    const activeAddons = await UserAddonModel.findAll({
                         where: {
                             userId,
-                            featureKey: 'party_creation',
-                            status: 'ACTIVE',
+                            featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
+                            status: { [Op.in]: ['ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: options?.transaction,
                     });
 
-                    if (activeAddon && activeAddon.remainingQuantity > 0) {
+                    const totalAddonRemaining = activeAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
+                    if (totalAddonRemaining > 0) {
                         return {
                             allowed: true,
                             tier: `${tier} (Add-on Active)`,
-                            limit: numericVipLimit + activeAddon.remainingQuantity,
+                            limit: numericVipLimit + totalAddonRemaining,
                             used: vipUsed,
-                            remaining: activeAddon.remainingQuantity,
+                            remaining: totalAddonRemaining,
                             resetAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                         };
                     }
@@ -864,6 +866,7 @@ export class SubscriptionService {
             let addonBoosts = 0;
             let addonBacktracks = 0;
             let addonPartyPlans = 0;
+            let addonLikes = 0;
             try {
                 const userAddons = await UserAddon.findAll({
                     where: {
@@ -878,6 +881,7 @@ export class SubscriptionService {
                     else if (ua.featureKey === 'profile_boost' || ua.featureKey === 'boost' || ua.featureKey === 'boosts') addonBoosts += r;
                     else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo' || ua.featureKey === 'backtracks') addonBacktracks += r;
                     else if (ua.featureKey === 'party_creation' || ua.featureKey === 'party_plan' || ua.featureKey === 'party_plans') addonPartyPlans += r;
+                    else if (ua.featureKey === 'daily_likes' || ua.featureKey === 'likes' || ua.featureKey === 'like') addonLikes += r;
                 }
             } catch (err) {
                 logger.warn('[subscriptionService.getFullStatus] Could not fetch user addons:', err);
@@ -887,6 +891,11 @@ export class SubscriptionService {
             const planSuperlikesPerCycle = (tier === 'ELITE') ? 9999 : (plan?.superlikesPerCycle ?? 0);
             const planBoosts = (tier === 'ELITE') ? 9999 : (subscription?.boostsRemaining ?? 0);
             const planBoostsPerCycle = (tier === 'ELITE') ? 9999 : (plan?.boostsPerCycle ?? 0);
+
+            const baseLikesLimit = featuresOut['daily_likes']?.limit ?? (plan ? ((plan.dailyLikes === -1 || plan.dailyLikes >= 9999) ? 'unlimited' : plan.dailyLikes) : 50);
+            const calculatedDailyLikesLimit = (baseLikesLimit === 'unlimited' || baseLikesLimit === -1 || (typeof baseLikesLimit === 'number' && baseLikesLimit >= 9999))
+                ? 'unlimited'
+                : (Number(baseLikesLimit) + addonLikes);
 
             return {
                 isActive: !!subscription,
@@ -909,7 +918,7 @@ export class SubscriptionService {
                 hasEliteBadge: plan?.hasEliteBadge ?? (tier === 'ELITE'),
                 canSeeWhoLiked: plan?.canSeeWhoLiked ?? (['CORE', 'PLUS', 'PRO', 'ELITE'].includes(tier)),
                 hasHideProfile: plan?.hasHideProfile ?? (['PLUS', 'PRO', 'ELITE'].includes(tier)),
-                dailyLikesLimit: featuresOut['daily_likes']?.limit ?? (plan ? ((plan.dailyLikes === -1 || plan.dailyLikes >= 9999) ? 'unlimited' : plan.dailyLikes) : 7),
+                dailyLikesLimit: calculatedDailyLikesLimit,
                 dailyLikesUsed: usageMap['daily_likes'] ?? 0,
                 dailyMatchRequestsLimit: featuresOut['daily_match_requests']?.limit ?? (plan ? ((plan.dailyMatchRequests === -1 || plan.dailyMatchRequests >= 9999) ? 'unlimited' : plan.dailyMatchRequests) : 3),
                 dailyMatchRequestsUsed: usageMap['daily_match_requests'] ?? 0,
