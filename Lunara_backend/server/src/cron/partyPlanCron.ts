@@ -156,31 +156,16 @@ async function expireUnpaidLargePartyRequests(now: Date): Promise<void> {
 
 // Run every 5 minutes with overlap protection
 let isPartyPlanCronRunning = false;
-let isStrangersMeetLifecycleRunning = false;
 export const startPartyPlanCron = () => {
-    // Check Strangers Meet lifecycle every 1 minute
-    cron.schedule('* * * * *', async () => {
-        if (isStrangersMeetLifecycleRunning) {
-            return;
-        }
-        isStrangersMeetLifecycleRunning = true;
-        try {
-            await checkAndTriggerStrangersMeetLifecycle();
-        } catch (err) {
-            logger.error('[Cron] Error running Strangers Meet lifecycle tick:', err);
-        } finally {
-            isStrangersMeetLifecycleRunning = false;
-        }
-    });
-
-    cron.schedule('*/5 * * * *', async () => {
-        if (isPartyPlanCronRunning) {
-            logger.warn('[Cron] Party Plan Cron already running, skipping overlapping tick.');
-            return;
-        }
-        isPartyPlanCronRunning = true;
-        try {
-            logger.info('Running Party Plan Cron Jobs...');
+    cron.schedule('*/5 * * * *', () => {
+        setTimeout(async () => {
+            if (isPartyPlanCronRunning) {
+                logger.warn('[Cron] Party Plan Cron already running, skipping overlapping tick.');
+                return;
+            }
+            isPartyPlanCronRunning = true;
+            try {
+                logger.info('Running Party Plan Cron Jobs...');
             
             const now = new Date();
 
@@ -1960,6 +1945,7 @@ export const startPartyPlanCron = () => {
         } finally {
             isPartyPlanCronRunning = false;
         }
+        }, 500);
     });
 };
 
@@ -2058,12 +2044,13 @@ import PlanTimeLock from '../models/PlanTimeLock';
 
 let isNotificationJobCronRunning = false;
 export const startNotificationJobCron = () => {
-    cron.schedule('* * * * *', async () => {
-        if (isNotificationJobCronRunning) {
-            return;
-        }
-        isNotificationJobCronRunning = true;
-        try {
+    cron.schedule('* * * * *', () => {
+        setTimeout(async () => {
+            if (isNotificationJobCronRunning) {
+                return;
+            }
+            isNotificationJobCronRunning = true;
+            try {
             const now = new Date();
             const NotificationJob = require('../models/NotificationJob').default;
 
@@ -2103,18 +2090,20 @@ export const startNotificationJobCron = () => {
         } finally {
             isNotificationJobCronRunning = false;
         }
+        }, 200);
     });
 };
 
 let isExpiringPlanAlertCronRunning = false;
 export const startExpiringPlanAlertCron = () => {
     // Run every 3 minutes
-    cron.schedule('*/3 * * * *', async () => {
-        if (isExpiringPlanAlertCronRunning) {
-            return;
-        }
-        isExpiringPlanAlertCronRunning = true;
-        try {
+    cron.schedule('*/3 * * * *', () => {
+        setTimeout(async () => {
+            if (isExpiringPlanAlertCronRunning) {
+                return;
+            }
+            isExpiringPlanAlertCronRunning = true;
+            try {
             const now = new Date();
             const in15Mins = new Date(now.getTime() + 15 * 60 * 1000);
             const in45Mins = new Date(now.getTime() + 45 * 60 * 1000);
@@ -2284,6 +2273,7 @@ export const startExpiringPlanAlertCron = () => {
         } finally {
             isExpiringPlanAlertCronRunning = false;
         }
+        }, 350);
     });
 };
 

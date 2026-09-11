@@ -105,12 +105,13 @@ async function sendExpiryNotificationAndEvents(params: {
 
 export const startSubscriptionCron = () => {
     // Run every minute to accurately schedule notifications, expire subscriptions, and queue activations
-    cron.schedule('* * * * *', async () => {
-        if (isSubscriptionCronRunning) {
-            return;
-        }
-        isSubscriptionCronRunning = true;
-        try {
+    cron.schedule('* * * * *', () => {
+        setTimeout(async () => {
+            if (isSubscriptionCronRunning) {
+                return;
+            }
+            isSubscriptionCronRunning = true;
+            try {
             const now = new Date();
 
             // ─────────────────────────────────────────────────────────────────
@@ -332,5 +333,6 @@ export const startSubscriptionCron = () => {
         } finally {
             isSubscriptionCronRunning = false;
         }
+        }, 100);
     });
 };

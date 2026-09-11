@@ -14,7 +14,7 @@ const sequelize = new Sequelize({
     pool: {
         min: parseInt(process.env.DB_POOL_MIN || '10'),
         max: parseInt(process.env.DB_POOL_MAX || '60'),
-        acquire: 30000,
+        acquire: 60000,
         idle: 10000,
         evict: 5000,
     },

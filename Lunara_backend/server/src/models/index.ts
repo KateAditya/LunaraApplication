@@ -1146,6 +1146,7 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_plan_status ON party_plan_requests (plan_id, status);`,
                 `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_requester_status ON party_plan_requests (requester_id, status);`,
                 `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_plan_user ON party_plan_requests (plan_id, requester_id);`,
+                `CREATE INDEX IF NOT EXISTS idx_party_plan_reqs_status_timeout ON party_plan_requests (status, payment_timeout_at);`,
 
                 // Bookings
                 `CREATE INDEX IF NOT EXISTS idx_bookings_user_status ON bookings (user_id, status);`,
@@ -1156,10 +1157,16 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 // Tickets
                 `CREATE INDEX IF NOT EXISTS idx_tickets_user_status ON tickets (user_id, ticket_status);`,
                 `CREATE INDEX IF NOT EXISTS idx_tickets_user_created ON tickets (user_id, created_at DESC);`,
+                `CREATE INDEX IF NOT EXISTS idx_tickets_cleanup_status_del ON tickets (storage_cleanup_status, storage_deletion_at);`,
 
-                // Notifications
+                // Notifications & Notification Jobs
                 `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON notifications (recipient_user_id, is_read);`,
                 `CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created ON notifications (recipient_user_id, created_at DESC);`,
+                `CREATE INDEX IF NOT EXISTS idx_notification_jobs_status_send_at ON notification_jobs (status, send_at);`,
+
+                // User Subscriptions & Boosts
+                `CREATE INDEX IF NOT EXISTS idx_user_subscriptions_status_end_date ON "UserSubscriptions" (status, end_date);`,
+                `CREATE INDEX IF NOT EXISTS idx_profile_boosts_status_expires_at ON profile_boosts (status, expires_at);`,
 
                 // Venues
                 `CREATE INDEX IF NOT EXISTS idx_venues_city_active_status ON venues (city, is_active, status);`,
@@ -1169,10 +1176,14 @@ export const syncModels = async (options?: { force?: boolean; alter?: boolean })
                 `CREATE INDEX IF NOT EXISTS idx_ads_active_dates ON ads (is_active, from_date, to_date);`,
                 `CREATE INDEX IF NOT EXISTS idx_ads_city_active ON ads (city, is_active);`,
 
-                // Strangers Meet Requests
+                // Strangers Meet Requests & Host Cancellations
                 `CREATE INDEX IF NOT EXISTS idx_strangers_meet_user_status ON strangers_meet_requests (user_id, status);`,
                 `CREATE INDEX IF NOT EXISTS idx_strangers_meet_venue_status ON strangers_meet_requests (venue_id, status);`,
                 `CREATE INDEX IF NOT EXISTS idx_strangers_meet_event_dt ON strangers_meet_requests (event_date_time DESC);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_status_pay_event ON strangers_meet_requests (status, payment_status, event_date_time);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_status_expected_end ON strangers_meet_requests (status, expected_end_at);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_meet_status_started ON strangers_meet_requests (status, started_at);`,
+                `CREATE INDEX IF NOT EXISTS idx_strangers_cancellations_status_created ON strangers_meet_host_cancellation_requests (status, created_at);`,
 
                 // Smart Wallets & Transactions
                 `CREATE INDEX IF NOT EXISTS idx_smart_wallets_user_id ON smart_wallets (user_id);`,

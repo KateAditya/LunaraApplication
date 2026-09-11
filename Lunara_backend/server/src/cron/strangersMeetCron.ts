@@ -11,6 +11,7 @@ import User from '../models/User';
 import { StrangersMeetService } from '../services/StrangersMeetService';
 import { logger } from '../config/logger';
 import AuditLog from '../models/AuditLog';
+import { checkAndTriggerStrangersMeetLifecycle } from './partyPlanCron';
 
 /**
  * Strangers Meet Lifecycle & 24h Escalation Background Cron
@@ -24,12 +25,16 @@ const escalatedCancellationMap = new Map<string, number>();
 
 export const startStrangersMeetCron = () => {
     // Run every minute with overlap protection
-    cron.schedule('* * * * *', async () => {
-        if (isStrangersMeetCronRunning) {
-            return;
-        }
-        isStrangersMeetCronRunning = true;
-        try {
+    cron.schedule('* * * * *', () => {
+        setTimeout(async () => {
+            if (isStrangersMeetCronRunning) {
+                return;
+            }
+            isStrangersMeetCronRunning = true;
+            try {
+                await checkAndTriggerStrangersMeetLifecycle().catch((lErr) => {
+                    logger.error('[StrangersMeetCron] Lifecycle prompt check error:', lErr);
+                });
             const now = new Date();
             const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -270,6 +275,7 @@ export const startStrangersMeetCron = () => {
         } finally {
             isStrangersMeetCronRunning = false;
         }
+        }, 150);
     });
 
     logger.info('[StrangersMeetCron] Strangers Meet lifecycle & escalation background worker registered.');
