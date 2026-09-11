@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
+import '../services/image_cache_service.dart';
 
 class LunaraNetworkImage extends StatelessWidget {
   final String? imageUrl;
@@ -49,11 +50,19 @@ class LunaraNetworkImage extends StatelessWidget {
       return image;
     }
 
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+
     Widget image = CachedNetworkImage(
       imageUrl: formattedUrl,
+      cacheManager: LunaraImageCache.manager,
+      cacheKey: formattedUrl,
       width: width,
       height: height,
       fit: fit,
+      // Decode to the slot size rather than the source size.
+      memCacheWidth: LunaraImageCache.decodeTarget(width, dpr),
+      memCacheHeight: LunaraImageCache.decodeTarget(height, dpr),
+      maxWidthDiskCache: LunaraImageCache.maxDiskWidth,
       fadeInDuration: const Duration(milliseconds: 150),
       fadeOutDuration: const Duration(milliseconds: 150),
       placeholder: (context, url) => placeholder ?? _buildPlaceholder(),

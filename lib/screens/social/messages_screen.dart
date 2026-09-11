@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 import 'chat_screen.dart';
 import 'plan_hub_screen.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -1098,7 +1099,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (avatar.isEmpty) return fallback;
 
     return ClipOval(
-      child: Image.network(
+      child: LunaraCachedImage(
         avatar,
         width: radius * 2,
         height: radius * 2,

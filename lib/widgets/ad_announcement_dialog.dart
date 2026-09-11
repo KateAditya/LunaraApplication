@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../core/theme.dart';
 import '../screens/discovery/venue_detail_screen.dart';
 import '../screens/social/plan_hub_screen.dart';
+import 'lunara_cached_image.dart';
 
 class AdAnnouncementDialog extends StatefulWidget {
   final List<Map<String, dynamic>> ads;
@@ -334,7 +335,7 @@ class _AdAnnouncementDialogState extends State<AdAnnouncementDialog> {
                   return Stack(
                     children: [
                       Positioned.fill(
-                        child: Image.network(
+                        child: LunaraCachedImage(
                           img,
                           fit: BoxFit.cover,
                           errorBuilder: (ctx, err, stack) => Container(

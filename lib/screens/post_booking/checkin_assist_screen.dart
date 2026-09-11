@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class CheckInAssistScreen extends StatefulWidget {
   final String? venueName;
@@ -276,7 +277,7 @@ class _CheckInAssistScreenState extends State<CheckInAssistScreen>
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.grey[100]!),
               ),
-              child: Image.network(
+              child: LunaraCachedImage(
                 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=$qrData',
                 width: 200,
                 height: 200,

@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../widgets/top_notification_banner.dart';
 import '../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../utils/lunara_date_formatter.dart';
+import 'lunara_cached_image.dart';
 
 class UpcomingNightPostPartnerSheet extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -352,7 +353,7 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                         if (flyer != null && flyer.toString().isNotEmpty)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
+                            child: LunaraCachedImage(
                               flyer.toString().startsWith('http')
                                   ? flyer.toString()
                                   : '${ApiService.baseUrl}${flyer.toString().startsWith('/') ? '' : '/'}${flyer.toString()}',

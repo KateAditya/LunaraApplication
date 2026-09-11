@@ -34,10 +34,19 @@ export const logger = winston.createLogger({
         new winston.transports.File({
             filename: path.join('logs', 'error.log'),
             level: 'error',
+            // Without a cap these files grow without bound. On Azure App Service
+            // the log directory is a network share, so appending to a very large
+            // file adds latency to every request that writes one.
+            maxsize: 10 * 1024 * 1024, // 10 MB per file
+            maxFiles: 5,
+            tailable: true,
         }),
         // Combined log file
         new winston.transports.File({
             filename: path.join('logs', 'combined.log'),
+            maxsize: 10 * 1024 * 1024, // 10 MB per file
+            maxFiles: 5,
+            tailable: true,
         }),
     ],
 });

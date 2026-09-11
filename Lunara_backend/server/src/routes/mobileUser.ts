@@ -11,6 +11,8 @@ import { NotificationActionController } from '../controllers/NotificationActionC
 import * as reliabilityCtrl from '../controllers/reliabilityController';
 import { batchEnrichPartyPlanNotificationCards } from '../controllers/partyPlanController';
 import { setPrimaryPhoto, deletePhoto } from '../controllers/profileController';
+import { createHash } from 'crypto';
+import apiCache from '../utils/apiCache';
 
 const router = Router();
 
@@ -1069,6 +1071,23 @@ router.get('/notifications', authenticate, async (req, res) => {
         const filterStr = (filter as string) || 'all';
         const searchStr = (search as string) || '';
 
+        // This response is expensive to build (many enriched sub-loaders) and is
+        // re-requested on every live-feed refresh. Cache it per user, keyed by
+        // every input that can change the output, so repeated identical reads
+        // are served from memory. Writes to the notifications table invalidate
+        // this via model hooks, and the read-state routes below invalidate it
+        // explicitly, so a cached entry can never outlive a change.
+        const readIdsFingerprint = createHash('sha1')
+            .update(typeof readNotificationIds === 'string' ? readNotificationIds : '')
+            .digest('hex')
+            .slice(0, 16);
+        const cacheKey = `notif:${uId}:${filterStr}:${searchStr}:${readIdsFingerprint}`;
+
+        const cachedResponse = apiCache.get<{ success: boolean; data: any[] }>(cacheKey);
+        if (cachedResponse) {
+            return res.json(cachedResponse);
+        }
+
         const clientReadNotificationIds = new Set<string>(
             typeof readNotificationIds === 'string'
                 ? readNotificationIds.split(',').filter(Boolean)
@@ -1103,7 +1122,11 @@ router.get('/notifications', authenticate, async (req, res) => {
             }));
         }
 
-        return res.json({ success: true, data: notifications });
+        const payload = { success: true, data: notifications };
+        // Short TTL: long enough to collapse the burst of refreshes a single
+        // socket event causes, short enough that nothing feels stale.
+        apiCache.set(cacheKey, payload, 15);
+        return res.json(payload);
     } catch (error: any) {
         console.error('Error fetching notifications endpoint:', error);
         return res.status(200).json({ success: true, data: [] });
@@ -1121,6 +1144,8 @@ router.patch('/notifications/:id/read', authenticate, async (req, res) => {
         return res.status(403).json({ success: false, message: 'You cannot modify another user\'s notifications.' });
     }
     getReadNotificationIds(userId).add(id);
+    // The read set lives in memory, so no model hook fires for it.
+    apiCache.invalidatePrefix(`notif:${userId}:`);
 
     try {
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -1196,6 +1221,7 @@ router.patch('/requests/:id/read', authenticate, async (req, res) => {
         return res.status(403).json({ success: false, message: 'You cannot modify another user\'s request read state.' });
     }
     getReadRequestIds(userId).add(id);
+    apiCache.invalidatePrefix(`notif:${userId}:`);
     return res.json({ success: true, message: 'Request marked as read' });
 });
 

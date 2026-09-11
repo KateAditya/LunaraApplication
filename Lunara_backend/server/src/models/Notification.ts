@@ -1,6 +1,7 @@
 import { Model, DataTypes, Optional } from 'sequelize';
 import sequelize from '../config/database';
 import { NotificationCategory, NotificationPriority } from '../types/NotificationEventTypes';
+import apiCache from '../utils/apiCache';
 
 export interface NotificationAttributes {
     id: string;
@@ -180,4 +181,47 @@ Notification.init(
     }
 );
 
+// ─── Cache invalidation ──────────────────────────────────────────────────────
+// The mobile notifications endpoint caches its (expensive) enriched response
+// per user. Any write to this table must drop that user's entry so the next
+// read reflects the change immediately. Hooking the model rather than each
+// call site means every existing and future write path is covered, and no
+// calling code has to change.
+const invalidateNotificationCache = (recipientUserId?: string | null): void => {
+    if (!recipientUserId || typeof recipientUserId !== 'string') return;
+    apiCache.invalidatePrefix(`notif:${recipientUserId}:`);
+};
+
+Notification.addHook('afterCreate', (instance: any) => {
+    invalidateNotificationCache(instance?.recipientUserId);
+});
+
+Notification.addHook('afterUpdate', (instance: any) => {
+    invalidateNotificationCache(instance?.recipientUserId);
+});
+
+Notification.addHook('afterDestroy', (instance: any) => {
+    invalidateNotificationCache(instance?.recipientUserId);
+});
+
+Notification.addHook('afterBulkCreate', (instances: any[]) => {
+    for (const instance of instances || []) {
+        invalidateNotificationCache(instance?.recipientUserId);
+    }
+});
+
+// Bulk update/destroy do not yield instances, so derive the owner from the
+// WHERE clause. Callers always scope these by recipientUserId.
+Notification.addHook('afterBulkUpdate', (options: any) => {
+    invalidateNotificationCache(options?.where?.recipientUserId);
+});
+
+Notification.addHook('afterBulkDestroy', (options: any) => {
+    invalidateNotificationCache(options?.where?.recipientUserId);
+});
+
+/** Drops every cached notifications response for one user. */
+export const invalidateNotificationsFor = invalidateNotificationCache;
+
 export default Notification;
+

@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
 import 'upcoming_party_screen.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class EventPostsScreen extends StatefulWidget {
   const EventPostsScreen({super.key});
@@ -220,7 +221,7 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
                                   AspectRatio(
                                     aspectRatio: 16 / 9,
                                     child: image.isNotEmpty
-                                        ? Image.network(
+                                        ? LunaraCachedImage(
                                             image,
                                             fit: BoxFit.cover,
                                             errorBuilder: (context, error, stackTrace) => Container(

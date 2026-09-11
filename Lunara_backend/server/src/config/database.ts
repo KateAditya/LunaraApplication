@@ -12,9 +12,14 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
+        // Endpoints such as the notification feed fan out into many concurrent
+        // queries, and the every-minute crons draw from this same pool. A small
+        // ceiling makes those requests queue on `acquire` rather than run.
         min: parseInt(process.env.DB_POOL_MIN || '10'),
         max: parseInt(process.env.DB_POOL_MAX || '60'),
         acquire: 60000,
+        // Recycling connections aggressively forces a fresh TLS handshake to
+        // Azure Postgres on the next query, so keep idle connections around.
         idle: 10000,
         evict: 5000,
     },
@@ -48,7 +53,10 @@ const sequelize = new Sequelize({
         backoffBase: 1000,
         backoffExponent: 1.5,
     },
-    logging: (msg) => logger.debug(msg),
+    // Passing a function makes Sequelize build the SQL log string for every
+    // single query, even when the logger would discard it. `false` short-circuits
+    // that work entirely. Set SQL_DEBUG=true to get the old query logging back.
+    logging: process.env.SQL_DEBUG === 'true' ? (msg: string) => logger.debug(msg) : false,
     define: {
         timestamps: true,
         underscored: true,

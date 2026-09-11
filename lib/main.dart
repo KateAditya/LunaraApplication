@@ -12,12 +12,17 @@ import 'services/notification_navigator.dart';
 import 'services/push_notification_service.dart';
 import 'services/biometric_service.dart';
 import 'services/api_service.dart';
+import 'services/image_cache_service.dart';
 import 'firebase_options.dart';
 
 import 'services/subscription_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Size the decoded-image memory cache before any image is resolved.
+  LunaraImageCache.configure();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );

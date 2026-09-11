@@ -12,6 +12,7 @@ import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
 import '../../widgets/booking_cancellation_dialog.dart';
 import '../home/dashboard.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class DigitalTicketScreen extends StatefulWidget {
   final Map<dynamic, dynamic>? venue;
@@ -522,7 +523,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
         ),
       );
     }
-    return Image.network(
+    return LunaraCachedImage(
       imageUrl,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) => Container(

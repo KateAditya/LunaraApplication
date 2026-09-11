@@ -16,6 +16,7 @@ import 'vip_membership_screen.dart';
 import '../social/post_detail_screen.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class ProfileDetailView extends StatefulWidget {
   final User user;
@@ -631,7 +632,7 @@ class _ProfileDetailViewState extends State<ProfileDetailView> {
                         },
                     child: SizedBox.expand(
                       key: ValueKey<String>(photo),
-                      child: Image.network(
+                      child: LunaraCachedImage(
                         photo,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(

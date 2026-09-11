@@ -26,6 +26,7 @@ import '../../widgets/top_notification_banner.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../../widgets/dialogs/user_has_plan_conflict_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class PlanHubScreen extends StatefulWidget {
   final bool autoShowCreatePlan;
@@ -781,7 +782,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                   ),
                                 ),
                               )
-                            : Image.network(
+                            : LunaraCachedImage(
                                 ApiService.formatImageUrl(night['image']) ??
                                     night['image']!,
                                 fit: BoxFit.cover,

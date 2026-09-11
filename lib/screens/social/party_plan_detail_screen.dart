@@ -14,6 +14,7 @@ import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../../services/optimistic_action_guard.dart';
 import '../../services/realtime_sync_manager.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class _VenueImageFallback extends StatelessWidget {
   const _VenueImageFallback();
@@ -2518,7 +2519,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   if (hideVenueDetails)
                     const _SecretVenueImagePlaceholder()
                   else if (venueImageUrl != null && venueImageUrl.isNotEmpty)
-                    Image.network(
+                    LunaraCachedImage(
                       venueImageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => const _VenueImageFallback(),

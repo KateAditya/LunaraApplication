@@ -127,7 +127,6 @@ class LiveFeedScreen extends StatefulWidget {
 
 class LiveFeedScreenState extends State<LiveFeedScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  late AnimationController _pulseController;
 
   List<Map<String, dynamic>> _feedItems = [];
   List<Map<String, dynamic>> _notifications = [];
@@ -191,10 +190,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _sessionUserId = ApiService.currentUserId;
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
 
     // Instant frame-0 hydration from memory cache (zero loading latency)
     if (ApiService.cachedLiveFeedData != null || ApiService.cachedNotifications != null || widget.initialFeedItem != null) {
@@ -274,7 +269,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onRealtimeLiveFeedChanged() {
     if (!mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+
+    final now = DateTime.now();
+    final last = _lastRealtimeRefresh;
+
+    // Leading edge: the first event after a quiet period refreshes immediately,
+    // so an isolated update stays exactly as responsive as before.
+    if (last == null || now.difference(last) >= _realtimeCoalesceWindow) {
+      _lastRealtimeRefresh = now;
+      _loadFeed(showLoader: false, forceRefresh: true);
+      return;
+    }
+
+    // Inside the window: fold this and any further events into a single
+    // trailing refresh, so a burst costs two reloads rather than one each.
+    // The refresh still happens - it is delayed, never dropped.
+    if (_realtimeRefreshQueued) return;
+    _realtimeRefreshQueued = true;
+    _realtimeCoalesceTimer?.cancel();
+    _realtimeCoalesceTimer = Timer(
+      _realtimeCoalesceWindow - now.difference(last),
+      () {
+        _realtimeRefreshQueued = false;
+        if (!mounted) return;
+        _lastRealtimeRefresh = DateTime.now();
+        _loadFeed(showLoader: false, forceRefresh: true);
+      },
+    );
   }
 
   @override
@@ -301,7 +322,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
     _disposeSocketListeners();
     _pollingTimer?.cancel();
-    _pulseController.dispose();
+    _realtimeCoalesceTimer?.cancel();
     if (!kIsWeb) {
       try {
         _razorpay?.clear();
@@ -1144,6 +1165,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   bool _hasPendingForceRefresh = false;
   Timer? _feedDebounceTimer;
+
+  // Coalescing state for socket-driven refreshes. Each refresh costs four API
+  // calls, one of which is the expensive notifications endpoint, so a burst of
+  // realtime events used to cost one full reload per event.
+  Timer? _realtimeCoalesceTimer;
+  DateTime? _lastRealtimeRefresh;
+  bool _realtimeRefreshQueued = false;
+  static const Duration _realtimeCoalesceWindow = Duration(seconds: 3);
 
   Future<void> _loadFeed({
     bool showLoader = true,
@@ -11431,6 +11460,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         .where((i) => i.createdAt.isBefore(yesterdayStart))
         .toList();
 
+    // Flatten the three dated sections into one indexable list so the timeline
+    // can be built lazily. Order is identical to the previous nested layout:
+    // each non-empty section contributes its header followed by its items.
+    final timelineSlots = <Object>[
+      if (todayItems.isNotEmpty) ...['TODAY', ...todayItems],
+      if (yesterdayItems.isNotEmpty) ...['YESTERDAY', ...yesterdayItems],
+      if (earlierItems.isNotEmpty) ...['EARLIER', ...earlierItems],
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       body: SafeArea(
@@ -11494,33 +11532,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                 ),
                               ],
                             )
-                          : ListView(
+                          : ListView.builder(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
                               ),
                               physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                if (todayItems.isNotEmpty) ...[
-                                  _buildDateSectionHeader('TODAY'),
-                                  ...todayItems.map(
-                                    (item) => _buildSmartNotificationCard(item),
-                                  ),
-                                ],
-                                if (yesterdayItems.isNotEmpty) ...[
-                                  _buildDateSectionHeader('YESTERDAY'),
-                                  ...yesterdayItems.map(
-                                    (item) => _buildSmartNotificationCard(item),
-                                  ),
-                                ],
-                                if (earlierItems.isNotEmpty) ...[
-                                  _buildDateSectionHeader('EARLIER'),
-                                  ...earlierItems.map(
-                                    (item) => _buildSmartNotificationCard(item),
-                                  ),
-                                ],
-                                const SizedBox(height: 40),
-                              ],
+                              // Same rows, same order as before — built on demand
+                              // instead of all at once. A card costs 66 widget
+                              // constructions, so building the whole timeline
+                              // every frame was the bulk of this screen's work.
+                              // The trailing slot is the original SizedBox(40).
+                              itemCount: timelineSlots.length + 1,
+                              itemBuilder: (context, index) {
+                                if (index == timelineSlots.length) {
+                                  return const SizedBox(height: 40);
+                                }
+                                final slot = timelineSlots[index];
+                                return slot is String
+                                    ? _buildDateSectionHeader(slot)
+                                    : _buildSmartNotificationCard(
+                                        slot as UnifiedNotificationItem,
+                                      );
+                              },
                             ),
                     ),
             ),

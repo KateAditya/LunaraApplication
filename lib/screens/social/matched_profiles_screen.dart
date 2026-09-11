@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../../widgets/glass_card.dart';
 import 'chat_screen.dart';
 import '../../widgets/profile_share_sheet.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 /// Screen showing matched or liked profiles. Accessible by tapping match/like count.
 class MatchedProfilesScreen extends StatelessWidget {
@@ -297,7 +298,7 @@ class _MatchedProfileDetailScreen extends StatelessWidget {
                       ),
                     ),
                   )
-                : Image.network(profile['image'] ?? '', fit: BoxFit.cover),
+                : LunaraCachedImage(profile['image'] ?? '', fit: BoxFit.cover),
           ),
 
           // Gradient overlay

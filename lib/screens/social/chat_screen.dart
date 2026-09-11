@@ -8,6 +8,7 @@ import 'icebreaker_modal.dart';
 import '../../services/block_service.dart';
 import 'party_plan_detail_screen.dart';
 import '../discovery/venue_detail_screen.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -950,7 +951,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
 
     return ClipOval(
-      child: Image.network(
+      child: LunaraCachedImage(
         imageUrl,
         width: radius * 2,
         height: radius * 2,

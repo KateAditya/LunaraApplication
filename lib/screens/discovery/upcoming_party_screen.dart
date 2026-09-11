@@ -8,6 +8,7 @@ import 'party_event_booking_sheet.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
 import '../../widgets/upcoming_night_post_partner_sheet.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class UpcomingPartyScreen extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -306,7 +307,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                 fit: StackFit.expand,
                 children: [
                   if (imageUrl.isNotEmpty)
-                    Image.network(
+                    LunaraCachedImage(
                       imageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Container(

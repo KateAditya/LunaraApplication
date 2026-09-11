@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/booking_cancellation_dialog.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 enum HistoryFilterType {
   all,
@@ -1195,7 +1196,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
+                    child: LunaraCachedImage(
                       imageUrl,
                       width: 56,
                       height: 56,

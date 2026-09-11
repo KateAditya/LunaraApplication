@@ -19,6 +19,7 @@ import 'notification_navigator.dart';
 import 'push_notification_service.dart';
 import 'subscription_provider.dart';
 import 'realtime_sync_manager.dart';
+import 'image_cache_service.dart';
 import '../screens/auth/autoblocked_warning_screen.dart';
 
 class ApiService {
@@ -465,6 +466,13 @@ class ApiService {
       await PushNotificationService.unregisterTokenOnLogout();
     } catch (e) {
       debugPrint('Error unregistering FCM token on logout: $e');
+    }
+    // Drop cached photos so the next account on this device never sees the
+    // previous user's images.
+    try {
+      await LunaraImageCache.clearAll();
+    } catch (e) {
+      debugPrint('Error clearing image cache on logout: $e');
     }
     await clearAuthToken();
   }

@@ -8,6 +8,7 @@ import 'booking_process_screen.dart';
 import '../../widgets/light_map_view.dart';
 import '../../services/api_service.dart';
 import 'advanced_filters_screen.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class AllVenuesScreen extends StatefulWidget {
   final List<Venue> venues;
@@ -433,7 +434,7 @@ class _AllVenuesScreenState extends State<AllVenuesScreen> {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(24),
               ),
-              child: Image.network(
+              child: LunaraCachedImage(
                 venue.imageUrl ?? '',
                 height: 200,
                 width: double.infinity,

@@ -9,6 +9,7 @@ import '../../widgets/top_error_banner.dart';
 import '../../services/api_service.dart';
 import '../../services/onboarding_service.dart';
 import 'profile_photos_screen.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class SelfieVerificationScreen extends StatefulWidget {
   final Map<String, dynamic>? collectedData;
@@ -537,7 +538,7 @@ class _SelfieVerificationScreenState extends State<SelfieVerificationScreen>
 
   Widget _buildImageWidget(String path) {
     if (kIsWeb || path.startsWith('http') || path.startsWith('blob:')) {
-      return Image.network(path, fit: BoxFit.cover);
+      return LunaraCachedImage(path, fit: BoxFit.cover);
     }
     return Image.file(File(path), fit: BoxFit.cover);
   }

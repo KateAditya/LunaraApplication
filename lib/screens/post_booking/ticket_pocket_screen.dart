@@ -9,6 +9,7 @@ import '../social/party_plan_ticket_screen.dart';
 import '../social/strangers_meet_ticket_screen.dart';
 import '../../models/strangers_meet_request.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 enum TicketFilterCategory {
   all('all', 'ALL', Icons.all_inclusive_rounded),
@@ -1887,7 +1888,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(23),
                       ),
-                      child: Image.network(
+                      child: LunaraCachedImage(
                         cardHeaderImage,
                         fit: BoxFit.cover,
                         cacheWidth: 800,

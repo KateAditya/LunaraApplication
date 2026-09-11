@@ -4,6 +4,7 @@ import '../core/theme.dart';
 import '../models/user.dart';
 import '../screens/profile/profile_screen.dart';
 import '../services/api_service.dart';
+import '../services/image_cache_service.dart';
 
 class LunaraProfileImage extends StatelessWidget {
   final User? user;
@@ -151,11 +152,24 @@ class LunaraProfileImage extends StatelessWidget {
     final bool isNetwork =
         photo != null && photo.isNotEmpty && photo.startsWith('http');
 
+    // An avatar is tiny on screen; decode it at that size instead of at the
+    // source resolution, which is often several thousand pixels wide.
+    final avatarPx = LunaraImageCache.decodeTarget(
+      radius * 2,
+      MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0,
+    );
+
     Widget avatar = CircleAvatar(
       radius: radius,
       backgroundColor: Colors.grey[100],
       backgroundImage: isNetwork
-          ? CachedNetworkImageProvider(photo) as ImageProvider
+          ? CachedNetworkImageProvider(
+              photo,
+              cacheManager: LunaraImageCache.manager,
+              cacheKey: photo,
+              maxWidth: avatarPx,
+              maxHeight: avatarPx,
+            ) as ImageProvider
           : AssetImage(
               (photo != null && photo.isNotEmpty)
                   ? photo

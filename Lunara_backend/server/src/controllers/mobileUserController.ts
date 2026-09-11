@@ -25,6 +25,7 @@ import { RankingService } from '../services/rankingService';
 import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
 import { SubscriptionService } from '../services/subscriptionService';
 import { EntitlementService } from '../services/EntitlementService';
+import apiCache from '../utils/apiCache';
 
 // ─── Image compression constants ──────────────────────────────────────────────
 // Target HD/2K quality (~3-4 MB max target size, ultra-sharp & unblurred)
@@ -700,6 +701,13 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const currentUserId = req.user?.id || (req.query.currentUserId as string);
         const targetUserId = (req.query.userId as string)?.trim();
 
+        // High-speed in-memory cache check
+        const cacheKey = `customers:${currentUserId || 'guest'}:${page}:${limit}:${city || 'all'}:${isAllCities}:${search || ''}:${targetUserId || ''}`;
+        const cached = apiCache.get(cacheKey);
+        if (cached) {
+            return res.status(200).json(cached);
+        }
+
         // Build User-level where clause: include customers who are not soft-deleted
         const userWhere: any = {
             role: UserRole.CUSTOMER,
@@ -1006,14 +1014,17 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             };
         }).filter(Boolean); // Remove nulls if any
 
-        return res.status(200).json({
+        const responseData = {
             success: true,
             total: count,
             page,
             limit,
             totalPages,
             data,
-        });
+        };
+
+        apiCache.set(cacheKey, responseData, 30);
+        return res.status(200).json(responseData);
     } catch (error: any) {
         logger.error('[MobileUser] Error fetching customers:', error);
         return res.status(500).json({ success: false, message: 'Failed to retrieve customer list' });

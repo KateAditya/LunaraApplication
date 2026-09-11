@@ -17,6 +17,7 @@ import 'package:intl/intl.dart';
 import 'upcoming_party_screen.dart';
 import '../../main.dart';
 import '../../widgets/venue_cover_charge_notice.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class VenueDetailScreen extends StatefulWidget {
   final Map<String, dynamic> venue;
@@ -1249,7 +1250,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
             if (imgUrl.isNotEmpty)
               Stack(
                 children: [
-                  Image.network(
+                  LunaraCachedImage(
                     imgUrl,
                     height: 160,
                     width: double.infinity,
@@ -1649,7 +1650,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                   children: [
                     Positioned.fill(
                       child: night['image']!.isNotEmpty
-                          ? Image.network(
+                          ? LunaraCachedImage(
                               night['image']!,
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) =>
@@ -1850,7 +1851,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
                           color: Colors.black87,
                           child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 30),
                         )
-                      : Image.network(
+                      : LunaraCachedImage(
                           url,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => Container(
@@ -2026,7 +2027,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     if (isVideo) {
       return VenueVideoPlayer(videoUrl: url);
     } else {
-      return Image.network(
+      return LunaraCachedImage(
         url,
         fit: BoxFit.cover,
         alignment: Alignment.center,
@@ -2118,7 +2119,7 @@ class _FullScreenGalleryViewerState extends State<_FullScreenGalleryViewer> {
                 minScale: 0.5,
                 maxScale: 5.0,
                 child: Center(
-                  child: Image.network(
+                  child: LunaraCachedImage(
                     url,
                     fit: BoxFit.contain,
                     loadingBuilder: (context, child, loadingProgress) {
@@ -2270,7 +2271,7 @@ class MenuGallerySection extends StatelessWidget {
                       children: [
                         AspectRatio(
                           aspectRatio: 3 / 4,
-                          child: Image.network(
+                          child: LunaraCachedImage(
                             firstImage,
                             fit: BoxFit.cover,
                             errorBuilder: (_, _, _) => Container(
@@ -2458,7 +2459,7 @@ class _FullScreenMenuViewerState extends State<FullScreenMenuViewer> with Single
                   child: InteractiveViewer(
                     minScale: 0.8,
                     maxScale: 4.0,
-                    child: Image.network(
+                    child: LunaraCachedImage(
                       images[index],
                       fit: BoxFit.fitWidth,
                       width: double.infinity,
@@ -2524,7 +2525,7 @@ class _FullScreenImagePage extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 6.0,
-          child: Image.network(
+          child: LunaraCachedImage(
             imageUrl,
             fit: BoxFit.contain,
             loadingBuilder: (context, child, loadingProgress) {

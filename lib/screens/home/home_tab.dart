@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 import '../discovery/venue_detail_screen.dart';
 import '../../services/api_service.dart';
 import '../../models/venue.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -131,7 +132,7 @@ class _HomeTabState extends State<HomeTab> {
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                     child: venue.imageUrl != null
-                        ? Image.network(venue.imageUrl!, height: 120, width: double.infinity, fit: BoxFit.cover)
+                        ? LunaraCachedImage(venue.imageUrl!, height: 120, width: double.infinity, fit: BoxFit.cover)
                         : Container(height: 120, color: Colors.grey[200]),
                   ),
                   Padding(

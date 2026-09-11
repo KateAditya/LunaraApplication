@@ -30,6 +30,7 @@ import '../../widgets/vip_upgrade_button.dart';
 import '../../widgets/ad_announcement_dialog.dart';
 import '../../widgets/lunara_pulsing_logo_button.dart';
 import '../../main.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class DiscoveryScreen extends StatefulWidget {
   final int? initialFilterIndex;
@@ -1792,7 +1793,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: Image.network(
+                        child: LunaraCachedImage(
                           imageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
@@ -2121,7 +2122,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               errorBuilder: (context, error, stackTrace) => _buildNightFallbackBg(night),
                             )
                           : hasValidImg
-                              ? Image.network(
+                              ? LunaraCachedImage(
                                   imgUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) => _buildNightFallbackBg(night),
@@ -2390,7 +2391,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(24),
                       ),
-                      child: Image.network(
+                      child: LunaraCachedImage(
                         venue.imageUrl ?? '',
                         height: 180,
                         width: double.infinity,

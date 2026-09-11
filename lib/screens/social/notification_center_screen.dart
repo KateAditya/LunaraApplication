@@ -20,6 +20,7 @@ import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_countdown_button.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -4840,7 +4841,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           child: Icon(Icons.lock_rounded, color: Color(0xFFE9D5FF), size: 20),
                         )
                       : (senderPhoto != null && senderPhoto.isNotEmpty
-                          ? Image.network(
+                          ? LunaraCachedImage(
                               ApiService.formatImageUrl(senderPhoto) ?? '',
                               fit: BoxFit.cover,
                               errorBuilder: (_, _, _) => const Center(
@@ -5028,7 +5029,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ),
                 child: ClipOval(
                   child: senderPhoto != null && senderPhoto.isNotEmpty
-                      ? Image.network(
+                      ? LunaraCachedImage(
                           ApiService.formatImageUrl(senderPhoto) ?? '',
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => const Center(

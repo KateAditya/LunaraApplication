@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'lunara_cached_image.dart';
 
 class MatchCard extends StatelessWidget {
   final Map<String, dynamic> profile;
@@ -29,7 +30,7 @@ class MatchCard extends StatelessWidget {
                       ),
                     ),
                   )
-                : Image.network(
+                : LunaraCachedImage(
                     profile['image'] ?? 'https://picsum.photos/400/600',
                     fit: BoxFit.cover,
                   ),

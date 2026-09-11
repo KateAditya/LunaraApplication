@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../profile/profile_detail_view.dart';
+import '../../widgets/lunara_cached_image.dart';
 
 class PeopleWhoLikedYouScreen extends StatefulWidget {
   const PeopleWhoLikedYouScreen({super.key});
@@ -441,7 +442,7 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
             children: [
               // Photo
               if (photoUrl.isNotEmpty)
-                Image.network(
+                LunaraCachedImage(
                   photoUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => Container(

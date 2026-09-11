@@ -5,6 +5,7 @@ import '../../models/venue.dart';
 import 'post_detail_screen.dart';
 import '../../services/api_service.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../services/image_cache_service.dart';
 
 
 class AllPostsScreen extends StatefulWidget {
@@ -247,7 +248,12 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
       bgImage = const AssetImage('assets/images/secretimag.png');
     } else if (coverImageUrl != null && coverImageUrl.isNotEmpty) {
       if (coverImageUrl.startsWith('http')) {
-        bgImage = CachedNetworkImageProvider(coverImageUrl);
+        bgImage = CachedNetworkImageProvider(
+          coverImageUrl,
+          cacheManager: LunaraImageCache.manager,
+          cacheKey: coverImageUrl,
+          maxWidth: LunaraImageCache.maxDiskWidth,
+        );
       } else if (coverImageUrl.startsWith('assets/')) {
         bgImage = AssetImage(coverImageUrl);
       }
