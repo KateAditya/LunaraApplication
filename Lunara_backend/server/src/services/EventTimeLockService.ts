@@ -178,6 +178,7 @@ export class EventTimeLockService {
                     const groupParties = await GroupParty.findAll({
                         where: {
                             userId,
+                            partyDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
                             status: { [Op.notIn]: ['cancelled', 'expired', 'rejected'] },
                         },
                         include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],

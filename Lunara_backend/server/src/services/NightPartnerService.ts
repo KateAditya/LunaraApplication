@@ -104,6 +104,43 @@ export class NightPartnerService {
         return null;
     }
 
+    private static async findActiveMatchForNight(
+        userId: string,
+        venueId: string,
+        eventDate: string | Date
+    ): Promise<NightPartnerMatch | null> {
+        const formattedDate = this.normalizeDateString(eventDate);
+        const venue = await this.resolveVenue(venueId);
+        const resolvedVenueId = venue ? venue.id : venueId;
+        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
+
+        const existingMatches = await NightPartnerMatch.findAll({
+            where: {
+                [Op.or]: [{ hostId: userId }, { partnerId: userId }],
+                venueId: { [Op.in]: venueIdList },
+                eventDate: formattedDate,
+                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
+            },
+        });
+
+        const activeMatch = existingMatches.find((m) => {
+            if (m.status === NightPartnerMatchStatus.CANCELLED || m.status === NightPartnerMatchStatus.EXPIRED) {
+                return false;
+            }
+            if (m.cancellationStatus === NightPartnerCancellationStatus.APPROVED || m.cancellationStatus === NightPartnerCancellationStatus.REFUNDED) {
+                return false;
+            }
+            if (m.status === NightPartnerMatchStatus.PAYMENT_PENDING) {
+                if (m.paymentExpiresAt && new Date() >= new Date(m.paymentExpiresAt)) {
+                    return false;
+                }
+            }
+            return m.status === NightPartnerMatchStatus.CONFIRMED || m.status === NightPartnerMatchStatus.PAYMENT_PENDING || m.status === NightPartnerMatchStatus.MATCHED;
+        });
+
+        return activeMatch || null;
+    }
+
     /**
      * Authoritatively resolve event / couple ticket price for an upcoming night
      */
@@ -605,22 +642,7 @@ export class NightPartnerService {
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
         // Check if host already has an active match for this night
-        const existingMatches = await NightPartnerMatch.findAll({
-            where: {
-                [Op.or]: [{ hostId }, { partnerId: hostId }],
-                venueId: venue.id,
-                eventDate: new Date(eventDate),
-                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-            },
-        });
-
-        const activeMatch = existingMatches.find((m) => {
-            if (m.status === NightPartnerMatchStatus.PAYMENT_PENDING && m.paymentExpiresAt) {
-                return new Date() < new Date(m.paymentExpiresAt);
-            }
-            return m.status === NightPartnerMatchStatus.MATCHED || m.status === NightPartnerMatchStatus.CONFIRMED;
-        });
-
+        const activeMatch = await this.findActiveMatchForNight(hostId, venue.id, eventDate);
         if (activeMatch) {
             const err: any = new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
             err.code = 'HOST_ALREADY_HAS_ACTIVE_MATCH';
@@ -740,22 +762,7 @@ export class NightPartnerService {
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
         // Check if host already has an active match for this night
-        const existingMatches = await NightPartnerMatch.findAll({
-            where: {
-                [Op.or]: [{ hostId }, { partnerId: hostId }],
-                venueId: venue.id,
-                eventDate: new Date(eventDate),
-                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-            },
-        });
-
-        const activeMatch = existingMatches.find((m) => {
-            if (m.status === NightPartnerMatchStatus.PAYMENT_PENDING && m.paymentExpiresAt) {
-                return new Date() < new Date(m.paymentExpiresAt);
-            }
-            return m.status === NightPartnerMatchStatus.MATCHED || m.status === NightPartnerMatchStatus.CONFIRMED;
-        });
-
+        const activeMatch = await this.findActiveMatchForNight(hostId, venue.id, eventDate);
         if (activeMatch) {
             const err: any = new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
             err.code = 'HOST_ALREADY_HAS_ACTIVE_MATCH';
@@ -842,18 +849,19 @@ export class NightPartnerService {
 
         await sequelize.transaction(async (t) => {
             for (const pId of finalPartnerIds) {
+                const formattedDate = this.normalizeDateString(eventDate);
                 const [request, created] = await NightPartnerRequest.findOrCreate({
                     where: {
                         hostId,
                         partnerId: pId,
                         venueId: venue.id,
-                        eventDate: new Date(eventDate),
+                        eventDate: formattedDate as any,
                     },
                     defaults: {
                         hostId,
                         partnerId: pId,
                         venueId: venue.id,
-                        eventDate: new Date(eventDate),
+                        eventDate: formattedDate as any,
                         eventTime: eventTime || '20:00',
                         paymentMode,
                         hostPaid: true,
@@ -968,27 +976,21 @@ export class NightPartnerService {
         const venue = await Venue.findByPk(venueId);
         if (!venue) throw new Error('VENUE_NOT_FOUND');
 
+        const formattedDate = this.normalizeDateString(eventDate);
+
         // Check if partner is interested (optional for direct invitations)
         const interest = await NightInterest.findOne({
             where: {
                 userId: partnerId,
                 venueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
             },
         });
 
         // Check if host already has an active match for this night
-        const existingMatch = await NightPartnerMatch.findOne({
-            where: {
-                hostId,
-                venueId,
-                eventDate: new Date(eventDate),
-                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-            },
-        });
-
-        if (existingMatch) {
+        const activeMatch = await this.findActiveMatchForNight(hostId, venueId, formattedDate);
+        if (activeMatch) {
             throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
         }
 
@@ -1019,13 +1021,13 @@ export class NightPartnerService {
                 hostId,
                 partnerId,
                 venueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate as any,
             },
             defaults: {
                 hostId,
                 partnerId,
                 venueId,
-                eventDate: new Date(eventDate),
+                eventDate: formattedDate as any,
                 eventTime: eventTime || '20:00',
                 paymentMode,
                 status: NightPartnerRequestStatus.PENDING,
