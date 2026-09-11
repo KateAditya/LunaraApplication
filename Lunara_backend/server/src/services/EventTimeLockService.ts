@@ -437,6 +437,370 @@ export class EventTimeLockService {
 
         return { allowed: true };
     }
+
+    /**
+     * Batch validation for multiple users in a single parallel query set.
+     * Prevents database pool exhaustion when checking 10-50 invited users simultaneously.
+     */
+    public static async validateFourHourGapBatch(
+        userIds: string[],
+        proposedDateTimeInput: Date | string,
+        _eventType: 'party_plan' | 'group_party' | 'stranger_meet' | 'solo_booking' | 'large_party',
+        options?: { transaction?: Transaction; excludeVenueId?: string }
+    ): Promise<Map<string, TimeLockValidationResult>> {
+        const resultMap = new Map<string, TimeLockValidationResult>();
+        const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+        if (uniqueUserIds.length === 0) return resultMap;
+
+        const proposedTime = typeof proposedDateTimeInput === 'string'
+            ? new Date(proposedDateTimeInput)
+            : proposedDateTimeInput;
+
+        if (!proposedTime || isNaN(proposedTime.getTime())) {
+            for (const uid of uniqueUserIds) {
+                resultMap.set(uid, {
+                    allowed: false,
+                    reason: 'FOUR_HOUR_TIME_LOCK',
+                    conflictingEventType: 'PARTY_PLAN',
+                    conflictingEventId: '',
+                    conflictingEventTitle: 'Invalid Time',
+                    conflictingDateTime: '',
+                    nextAvailableTime: '',
+                    message: 'Invalid event date and time provided.'
+                });
+            }
+            return resultMap;
+        }
+
+        const transaction = options?.transaction;
+        const windowStart = new Date(proposedTime.getTime() - 5 * 60 * 60 * 1000);
+        const windowEnd = new Date(proposedTime.getTime() + 5 * 60 * 60 * 1000);
+        const windowStartDateStr = windowStart.toISOString().split('T')[0];
+        const windowEndDateStr = windowEnd.toISOString().split('T')[0];
+
+        const userEventsMap = new Map<string, Array<{
+            id: string;
+            type: 'PARTY_PLAN' | 'GROUP_PARTY' | 'STRANGER_MEET' | 'SOLO_BOOKING' | 'LARGE_PARTY';
+            title: string;
+            dateTime: Date;
+        }>>();
+
+        for (const uid of uniqueUserIds) {
+            userEventsMap.set(uid, []);
+        }
+
+        await Promise.all([
+            // 1. Party Plans (Host & Partner)
+            (async () => {
+                try {
+                    const [hostPlans, partnerRequests] = await Promise.all([
+                        PartyPlan.findAll({
+                            where: {
+                                userId: { [Op.in]: uniqueUserIds },
+                                status: { [Op.ne]: 'cancelled' },
+                                planDateTime: { [Op.between]: [windowStart, windowEnd] },
+                                [Op.or]: [
+                                    { lifecycleStatus: { [Op.eq]: null as any } },
+                                    { lifecycleStatus: { [Op.notIn]: ['cancelled', 'expired'] } }
+                                ]
+                            },
+                            include: [
+                                { model: PartyPlanRequest, as: 'requests' },
+                                { model: Venue, as: 'venue', attributes: ['id', 'name'] },
+                            ],
+                            transaction,
+                        }),
+                        PartyPlanRequest.findAll({
+                            where: {
+                                requesterId: { [Op.in]: uniqueUserIds },
+                                [Op.or]: [
+                                    { status: { [Op.in]: [PartyPlanRequestStatus.ACCEPTED, PartyPlanRequestStatus.PAYMENT_PENDING, PartyPlanRequestStatus.WAITING] } },
+                                    { joinerPaymentStatus: PartyPlanJoinerPaymentStatus.PAID },
+                                ],
+                            },
+                            transaction,
+                        })
+                    ]);
+
+                    for (const plan of hostPlans) {
+                        const p = plan as any;
+                        const hostPaidStr = (plan.hostPaymentStatus || '').toString().toLowerCase();
+                        const hasAcceptedRequest = p.requests?.some((r: any) =>
+                            ['accepted', 'payment_pending', 'confirmed', 'paid'].includes(r.status) && !r.cancelledAt
+                        ) || hostPaidStr === 'paid' || plan.matchedRequestId;
+
+                        if (hasAcceptedRequest || plan.isLive || plan.status === 'active') {
+                            const venueName = (plan as any).venue?.name;
+                            const events = userEventsMap.get(plan.userId);
+                            if (events) {
+                                events.push({
+                                    id: plan.id,
+                                    type: 'PARTY_PLAN',
+                                    title: venueName ? `${venueName} (Party Plan)` : (plan.message || 'Party Plan'),
+                                    dateTime: new Date(plan.planDateTime),
+                                });
+                            }
+                        }
+                    }
+
+                    const partnerPlanIds = partnerRequests
+                        .filter(r => !r.cancelledAt && r.planId)
+                        .map(r => r.planId);
+
+                    if (partnerPlanIds.length > 0) {
+                        const partnerPlans = await PartyPlan.findAll({
+                            where: { id: { [Op.in]: partnerPlanIds } },
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                            transaction,
+                        });
+
+                        const planMap = new Map<string, any>();
+                        for (const p of partnerPlans) planMap.set(p.id, p);
+
+                        for (const req of partnerRequests) {
+                            if (req.cancelledAt) continue;
+                            const plan = planMap.get(req.planId);
+                            if (!plan) continue;
+                            const planStatStr = (plan.status || '').toString().toLowerCase();
+                            const planLifeStr = (plan.lifecycleStatus || '').toString().toLowerCase();
+                            if (planStatStr === 'cancelled' || planStatStr === 'expired' || planLifeStr === 'cancelled' || planLifeStr === 'expired') continue;
+
+                            const venueName = (plan as any).venue?.name;
+                            const events = userEventsMap.get(req.requesterId);
+                            if (events) {
+                                events.push({
+                                    id: plan.id,
+                                    type: 'PARTY_PLAN',
+                                    title: venueName ? `${venueName} (Party Plan)` : (plan.message || 'Party Plan'),
+                                    dateTime: new Date(plan.planDateTime),
+                                });
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('Error fetching Party Plans for batch time lock:', err?.message || err);
+                }
+            })(),
+
+            // 2. Group Parties
+            (async () => {
+                try {
+                    const groupParties = await GroupParty.findAll({
+                        where: {
+                            userId: { [Op.in]: uniqueUserIds },
+                            partyDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
+                            status: { [Op.notIn]: ['cancelled', 'expired', 'rejected'] },
+                        },
+                        include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                        transaction,
+                    });
+
+                    for (const gp of groupParties) {
+                        const gpTime = parseBookingDateTime(gp.partyDate, gp.startTime);
+                        const venueName = (gp as any).venue?.name;
+                        const events = userEventsMap.get(gp.userId);
+                        if (events) {
+                            events.push({
+                                id: gp.id,
+                                type: 'GROUP_PARTY',
+                                title: venueName ? `${venueName} (Group Party)` : 'Group Party',
+                                dateTime: gpTime,
+                            });
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('Error fetching Group Parties for batch time lock:', err?.message || err);
+                }
+            })(),
+
+            // 3. Stranger Meets
+            (async () => {
+                try {
+                    const [hostMeets, joinerMeets] = await Promise.all([
+                        StrangersMeetRequest.findAll({
+                            where: {
+                                userId: { [Op.in]: uniqueUserIds },
+                                eventDateTime: { [Op.between]: [windowStart, windowEnd] },
+                                status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
+                            },
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                            transaction,
+                        }),
+                        StrangersMeetJoiner.findAll({
+                            where: {
+                                userId: { [Op.in]: uniqueUserIds },
+                                [Op.or]: [
+                                    { paymentStatus: StrangersMeetJoinerPaymentStatus.PAID },
+                                    { status: 'joined' },
+                                ],
+                            },
+                            include: [
+                                {
+                                    model: StrangersMeetRequest,
+                                    as: 'request',
+                                    where: {
+                                        eventDateTime: { [Op.between]: [windowStart, windowEnd] },
+                                        status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
+                                    },
+                                    include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                                },
+                            ],
+                            transaction,
+                        }),
+                    ]);
+
+                    for (const sm of hostMeets) {
+                        const venueName = (sm as any).venue?.name;
+                        const events = userEventsMap.get(sm.userId);
+                        if (events) {
+                            events.push({
+                                id: sm.id,
+                                type: 'STRANGER_MEET',
+                                title: venueName ? `${venueName} (Stranger Meet Host)` : (sm.subject || 'Stranger Meet'),
+                                dateTime: new Date(sm.eventDateTime),
+                            });
+                        }
+                    }
+
+                    for (const jm of joinerMeets) {
+                        const req = (jm as any).request;
+                        if (req) {
+                            const venueName = req.venue?.name;
+                            const events = userEventsMap.get(jm.userId);
+                            if (events) {
+                                events.push({
+                                    id: req.id,
+                                    type: 'STRANGER_MEET',
+                                    title: venueName ? `${venueName} (Stranger Meet)` : (req.subject || 'Stranger Meet'),
+                                    dateTime: new Date(req.eventDateTime),
+                                });
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('Error fetching Stranger Meets for batch time lock:', err?.message || err);
+                }
+            })(),
+
+            // 4. Bookings
+            (async () => {
+                try {
+                    const [bookings, memberSplits] = await Promise.all([
+                        Booking.findAll({
+                            where: {
+                                userId: { [Op.in]: uniqueUserIds },
+                                bookingDate: { [Op.between]: [windowStartDateStr, windowEndDateStr] },
+                                status: { [Op.ne]: BookingStatus.CANCELLED },
+                            },
+                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                            transaction,
+                        }),
+                        BookingMember.findAll({
+                            where: {
+                                userId: { [Op.in]: uniqueUserIds },
+                                paymentStatus: { [Op.in]: [MemberPaymentStatus.PAID, MemberPaymentStatus.PENDING] },
+                            },
+                            include: [
+                                {
+                                    model: GroupBooking,
+                                    as: 'groupBooking',
+                                    include: [
+                                        {
+                                            model: Booking,
+                                            as: 'booking',
+                                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name'] }],
+                                        },
+                                    ],
+                                },
+                            ],
+                            transaction,
+                        })
+                    ]);
+
+                    for (const b of bookings) {
+                        if (options?.excludeVenueId && b.venueId === options.excludeVenueId) continue;
+                        if (b.status === BookingStatus.CANCELLED) continue;
+                        const isLargeParty = b.goingMode === 'party_request' || (b as any).isLargePartyRequest;
+                        const isPending = b.status === BookingStatus.PENDING;
+                        const isPaid = b.paymentStatus === PaymentStatus.PAID || b.paymentStatus === PaymentStatus.PARTIALLY_PAID;
+                        if (isPending && !isPaid && !isLargeParty) {
+                            const createdAtMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                            if (Date.now() - createdAtMs > 30 * 60 * 1000) continue;
+                        }
+                        const bookingDateTime = parseBookingDateTime(b.bookingDate, b.startTime);
+                        const bType = isLargeParty ? 'LARGE_PARTY' : 'SOLO_BOOKING';
+                        const venueName = (b as any).venue?.name;
+                        const events = userEventsMap.get(b.userId);
+                        if (events) {
+                            events.push({
+                                id: b.id,
+                                type: bType,
+                                title: b.partySubject || (venueName ? `${venueName} (${isLargeParty ? 'With Friends' : 'Solo'})` : (isLargeParty ? 'With Friends Booking' : 'Solo Venue Booking')),
+                                dateTime: bookingDateTime,
+                            });
+                        }
+                    }
+
+                    for (const mb of memberSplits) {
+                        const groupBooking = (mb as any).groupBooking;
+                        const b = groupBooking?.booking;
+                        if (b && b.status !== BookingStatus.CANCELLED && mb.userId) {
+                            const bookingDateTime = parseBookingDateTime(b.bookingDate, b.startTime);
+                            const venueName = b.venue?.name;
+                            const events = userEventsMap.get(mb.userId);
+                            if (events) {
+                                events.push({
+                                    id: b.id,
+                                    type: 'LARGE_PARTY',
+                                    title: venueName ? `${venueName} (Group Member)` : 'Group Table Booking',
+                                    dateTime: bookingDateTime,
+                                });
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('Error fetching Bookings for batch time lock:', err?.message || err);
+                }
+            })(),
+        ]);
+
+        // Evaluate conflicts per user
+        for (const uid of uniqueUserIds) {
+            const activeEvents = userEventsMap.get(uid) || [];
+            let userConflict: TimeLockConflict | null = null;
+
+            for (const event of activeEvents) {
+                const existingTimeMs = event.dateTime.getTime();
+                const proposedTimeMs = proposedTime.getTime();
+                const timeDiffMs = Math.abs(proposedTimeMs - existingTimeMs);
+
+                if (timeDiffMs < FOUR_HOURS_MS) {
+                    const nextAvailableMs = existingTimeMs + FOUR_HOURS_MS;
+                    const nextAvailableDate = new Date(nextAvailableMs);
+                    const existingDateStr = formatTime12Hour(event.dateTime);
+                    const nextAvailableStr = formatTime12Hour(nextAvailableDate);
+                    const friendlyTypeName = event.type.replace(/_/g, ' ');
+                    const message = `User already has a ${friendlyTypeName} scheduled for ${existingDateStr}. Next event must be scheduled at least 4 hours apart (earliest available: ${nextAvailableStr}).`;
+
+                    userConflict = {
+                        allowed: false,
+                        reason: 'FOUR_HOUR_TIME_LOCK',
+                        conflictingEventType: event.type,
+                        conflictingEventId: event.id,
+                        conflictingEventTitle: event.title,
+                        conflictingDateTime: event.dateTime.toISOString(),
+                        nextAvailableTime: nextAvailableDate.toISOString(),
+                        message,
+                    };
+                    break;
+                }
+            }
+
+            resultMap.set(uid, userConflict || { allowed: true });
+        }
+
+        return resultMap;
+    }
 }
 
 export default EventTimeLockService;

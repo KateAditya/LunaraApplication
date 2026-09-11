@@ -60,7 +60,10 @@ export class RankingService {
             return [];
         }
 
-        const cacheKey = `rankings:${candidateUserIds.length}:${candidateUserIds.slice(0, 10).join('_')}`;
+        // Bound candidate scoring window to max 50 to prevent blocking the event loop or database pool
+        const targetIds = candidateUserIds.length > 50 ? candidateUserIds.slice(0, 50) : candidateUserIds;
+
+        const cacheKey = `rankings:${targetIds.length}:${targetIds.slice(0, 10).join('_')}`;
         const cached = apiCache.get<ScoreExplanation[]>(cacheKey);
         if (cached) {
             return cached;
@@ -84,7 +87,7 @@ export class RankingService {
                 UserMatch.findAll({
                     attributes: ['user2Id', [UserMatch.sequelize!.fn('COUNT', UserMatch.sequelize!.col('id')), 'count']],
                     where: {
-                        user2Id: { [Op.in]: candidateUserIds },
+                        user2Id: { [Op.in]: targetIds },
                         status: { [Op.in]: ['pending', 'connected'] },
                         createdAt: { [Op.gte]: thirtyDaysAgo },
                     },
@@ -93,7 +96,7 @@ export class RankingService {
                 UserLike.findAll({
                     attributes: ['targetUserId', [UserLike.sequelize!.fn('COUNT', UserLike.sequelize!.col('id')), 'count']],
                     where: {
-                        targetUserId: { [Op.in]: candidateUserIds },
+                        targetUserId: { [Op.in]: targetIds },
                         actionType: 'superlike',
                         createdAt: { [Op.gte]: thirtyDaysAgo },
                     },
@@ -102,7 +105,7 @@ export class RankingService {
                 PartyPlan.findAll({
                     attributes: ['userId', [PartyPlan.sequelize!.fn('COUNT', PartyPlan.sequelize!.col('id')), 'count']],
                     where: {
-                        userId: { [Op.in]: candidateUserIds },
+                        userId: { [Op.in]: targetIds },
                         status: { [Op.ne]: PartyPlanStatus.CANCELLED },
                     },
                     group: ['userId'],
@@ -110,7 +113,7 @@ export class RankingService {
                 StrangersMeetRequest.findAll({
                     attributes: ['userId', [StrangersMeetRequest.sequelize!.fn('COUNT', StrangersMeetRequest.sequelize!.col('id')), 'count']],
                     where: {
-                        userId: { [Op.in]: candidateUserIds },
+                        userId: { [Op.in]: targetIds },
                         status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
                     },
                     group: ['userId'],
@@ -118,14 +121,14 @@ export class RankingService {
                 GroupParty.findAll({
                     attributes: ['userId', [GroupParty.sequelize!.fn('COUNT', GroupParty.sequelize!.col('id')), 'count']],
                     where: {
-                        userId: { [Op.in]: candidateUserIds },
+                        userId: { [Op.in]: targetIds },
                         status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] },
                     },
                     group: ['userId'],
                 }),
                 UserSubscription.findAll({
                     where: {
-                        userId: { [Op.in]: candidateUserIds },
+                        userId: { [Op.in]: targetIds },
                         status: SubscriptionStatus.ACTIVE,
                         endDate: { [Op.gt]: now },
                     },
@@ -134,13 +137,13 @@ export class RankingService {
                 }),
                 ProfileBoost.findAll({
                     where: {
-                        userId: { [Op.in]: candidateUserIds },
+                        userId: { [Op.in]: targetIds },
                         status: ProfileBoostStatus.ACTIVE,
                         expiresAt: { [Op.gt]: now },
                     },
                 }),
                 User.findAll({
-                    where: { id: { [Op.in]: candidateUserIds } },
+                    where: { id: { [Op.in]: targetIds } },
                     attributes: ['id', 'reliabilityScore', 'isVerified'],
                     include: [
                         { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'city'] },
@@ -177,7 +180,7 @@ export class RankingService {
             usersWithProfiles.forEach((u: any) => userMap.set(u.id, u));
 
             // Calculate score per user
-            const rankings: ScoreExplanation[] = candidateUserIds.map((userId) => {
+            const rankings: ScoreExplanation[] = targetIds.map((userId) => {
                 const u = userMap.get(userId);
                 const likes = likesMap.get(userId) || 0;
                 const superlikes = superlikesMap.get(userId) || 0;
@@ -249,7 +252,7 @@ export class RankingService {
             return rankings;
         } catch (err: any) {
             logger.error('[RankingService] Error computing rankings:', err);
-            return candidateUserIds.map((userId) => ({
+            return targetIds.map((userId) => ({
                 userId,
                 finalRankScore: 100,
                 priorityTier: 5,

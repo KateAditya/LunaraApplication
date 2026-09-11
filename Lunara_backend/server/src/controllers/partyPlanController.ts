@@ -991,27 +991,24 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 const targetUserMap = new Map<string, any>();
                 for (const tu of targetUsers) targetUserMap.set(tu.id, tu);
 
-                // Run 4-hour time lock checks for all target users concurrently
-                const checkResults = await Promise.all(
-                    targetUserIds.map(async (targetId) => {
-                        const targetUser = targetUserMap.get(targetId);
-                        const targetName = targetUser
-                            ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'The selected user'
-                            : 'The selected user';
-                        const targetLockCheck = await EventTimeLockService.validateFourHourGap(targetId, planDateTime, 'party_plan');
-                        return { targetId, targetName, targetLockCheck };
-                    })
-                );
+                // Run batch 4-hour time lock checks for all target users efficiently in a single batch query
+                const batchCheckResults = await EventTimeLockService.validateFourHourGapBatch(targetUserIds, planDateTime, 'party_plan');
 
-                for (const item of checkResults) {
-                    if (!item.targetLockCheck.allowed) {
+                for (const targetId of targetUserIds) {
+                    const targetLockCheck = batchCheckResults.get(targetId) || { allowed: true };
+                    const targetUser = targetUserMap.get(targetId);
+                    const targetName = targetUser
+                        ? `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || 'The selected user'
+                        : 'The selected user';
+
+                    if (!targetLockCheck.allowed) {
                         conflictingUsers.push({
-                            id: item.targetId,
-                            name: item.targetName,
-                            reason: (item.targetLockCheck as any).message,
+                            id: targetId,
+                            name: targetName,
+                            reason: (targetLockCheck as any).message,
                         });
                     } else {
-                        validUserIds.push(item.targetId);
+                        validUserIds.push(targetId);
                     }
                 }
             }

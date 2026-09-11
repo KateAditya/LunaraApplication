@@ -793,29 +793,68 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
 
         const allUserIds = [...new Set(visibleMatchingUsers.map((u: any) => u.id))];
         const count = allUserIds.length;
-        const totalPages = Math.ceil(count / limit);
+        const totalPages = Math.ceil(count / limit) || 1;
 
-        // Bound candidate scoring window to the current page slice + buffer
-        const candidateWindow = targetUserId
-            ? allUserIds
-            : allUserIds.slice(offset, offset + limit);
+        // Fast path for invite list / large lookups / direct target search: bypass heavy 8-table ranking scan
+        const shouldComputeRanking = req.query.ranking !== 'false' && limit <= 60 && !targetUserId;
+
+        let paginatedUserIds: string[] = [];
+        let scoredUsersMap = new Map<string, any>();
+
+        if (shouldComputeRanking) {
+            // Bound candidate scoring window to max 50 items
+            const candidateWindow = allUserIds.slice(offset, offset + Math.min(limit, 50));
+            const rankingExplanations = await RankingService.computeRankings(candidateWindow);
+            const scoredUsers = rankingExplanations.map((exp) => ({
+                id: exp.userId,
+                rankScore: exp.finalRankScore,
+                priorityTier: exp.priorityTier,
+                likes: exp.rawMetrics.likesCount,
+                superlikes: exp.rawMetrics.superlikesCount,
+                plans: exp.rawMetrics.plansCount,
+                boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
+                vipTier: exp.rawMetrics.vipTier || 'FREE',
+                explainScore: exp.breakdown,
+            }));
+            const paginatedScoredUsers = scoredUsers.slice(0, limit);
+            paginatedUserIds = paginatedScoredUsers.map(u => u.id);
+            paginatedScoredUsers.forEach(u => scoredUsersMap.set(u.id, u));
+        } else {
+            paginatedUserIds = targetUserId
+                ? allUserIds
+                : allUserIds.slice(offset, offset + limit);
+
+            for (const uid of paginatedUserIds) {
+                scoredUsersMap.set(uid, {
+                    id: uid,
+                    rankScore: 100,
+                    priorityTier: 5,
+                    likes: 0,
+                    superlikes: 0,
+                    plans: 0,
+                    boosts: 0,
+                    vipTier: 'FREE',
+                    explainScore: {},
+                });
+            }
+        }
 
         const likedUserIdsSet = new Set<string>();
         const superlikedUserIdsSet = new Set<string>();
         const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
 
-        if (candidateWindow.length > 0 && currentUserId) {
+        if (paginatedUserIds.length > 0 && currentUserId) {
             const [mySwipes, myUserLikes] = await Promise.all([
                 UserMatch.findAll({
                     where: {
                         user1Id: currentUserId,
-                        user2Id: { [Op.in]: candidateWindow }
+                        user2Id: { [Op.in]: paginatedUserIds }
                     }
                 }),
                 UserLike.findAll({
                     where: {
                         userId: currentUserId,
-                        targetUserId: { [Op.in]: candidateWindow }
+                        targetUserId: { [Op.in]: paginatedUserIds }
                     }
                 })
             ]);
@@ -850,24 +889,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
 
-        const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
-        const rankingExplanations = await RankingService.computeRankings(candidateWindow);
-        const scoredUsers = rankingExplanations.map((exp) => ({
-            id: exp.userId,
-            rankScore: exp.finalRankScore,
-            priorityTier: exp.priorityTier,
-            likes: exp.rawMetrics.likesCount,
-            superlikes: exp.rawMetrics.superlikesCount,
-            plans: exp.rawMetrics.plansCount,
-            boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
-            vipTier: exp.rawMetrics.vipTier || 'FREE',
-            explainScore: exp.breakdown,
-        }));
-
-        const paginatedScoredUsers = scoredUsers.slice(0, limit);
-        const paginatedUserIds = paginatedScoredUsers.map(u => u.id);
-
-        // PHASE 2: Hydration
+        // PHASE 2: Hydration (Only loads the paginated slice of IDs)
         let fullRows: any[] = [];
         if (paginatedUserIds.length > 0) {
             fullRows = await User.findAll({
@@ -911,9 +933,12 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
 
         const userRowMap = new Map(fullRows.map((r: any) => [r.id, r]));
 
-        const data = paginatedScoredUsers.map(scoredUser => {
-            const user: any = userRowMap.get(scoredUser.id);
-            if (!user) return null; // Shouldn't happen
+        const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
+
+        const data = paginatedUserIds.map(uid => {
+            const user: any = userRowMap.get(uid);
+            if (!user) return null;
+            const scoredUser = scoredUsersMap.get(uid) || { rankScore: 100, priorityTier: 5, likes: 0, superlikes: 0, plans: 0, boosts: 0, vipTier: 'FREE', explainScore: {} };
 
             const age = user.dateOfBirth
                 ? Math.floor((Date.now() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
