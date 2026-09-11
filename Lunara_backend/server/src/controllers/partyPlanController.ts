@@ -574,7 +574,9 @@ async function confirmMatch(plan: PartyPlan, request: PartyPlanRequest, transact
                 io.to(`user_${plan.userId}`).emit('party_plan_updated', matchPayload);
                 io.to(`user_${request.requesterId}`).emit('party_plan_updated', matchPayload);
                 io.emit('party_plan_deleted', { planId: plan.id });
-                io.emit('live_feed_update', { action: 'match_confirmed', planId: plan.id, requestId: request.id });
+                // Private: plan accepted/removed from public feed — party_plan_deleted handles public removal
+                io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'match_confirmed', id: plan.id, planId: plan.id, requestId: request.id });
+                io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'match_confirmed', id: plan.id, planId: plan.id, requestId: request.id });
             }
         } catch (socketErr) {
             logger.warn('confirmMatch: Socket emission failed:', socketErr);
@@ -705,7 +707,7 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
                 const { io } = require('../server');
                 if (plan.visibility !== 'private') {
                     io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
-                    io.emit('live_feed_update', { action: 'party_plan_relisted', planId: plan.id, isLive: true });
+                    io.to('live_feed').emit('live_feed_update', { action: 'party_plan_relisted', id: plan.id, planId: plan.id, isLive: true });
                 } else {
                     io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
                 }
@@ -2766,7 +2768,9 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
 
                     // Remove from global feeds (plan is reserved) / live feed update
                     io.emit('party_plan_deleted', { planId: plan.id });
-                    io.emit('live_feed_update', { action: 'request_accepted', planId: plan.id, requestId: request.id });
+                    // Private: plan reserved — party_plan_deleted handles public removal
+                    io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'request_accepted', id: plan.id, planId: plan.id, requestId: request.id });
+                    io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'request_accepted', id: plan.id, planId: plan.id, requestId: request.id });
                 }
 
                 // Notify joiner via NotificationService
@@ -2961,7 +2965,9 @@ export const cancelPartyPlanRequest = async (req: Request, res: Response): Promi
                     io.to(`user_${callerUserId}`).emit('party_plan_request_updated', cancelPayload);
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                     io.to(`user_${callerUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
-                    io.emit('live_feed_update', { action: 'request_cancelled', planId: plan.id, requestId: request.id });
+                    // Private: request cancelled — only host and requester need this
+                    io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'request_cancelled', id: plan.id, planId: plan.id, requestId: request.id });
+                    io.to(`user_${callerUserId}`).emit('live_feed_update', { action: 'request_cancelled', id: plan.id, planId: plan.id, requestId: request.id });
                 }
             } catch (notifErr: any) {
                 logger.warn('Request cancellation notification failed:', notifErr.message);
@@ -3092,9 +3098,11 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
 
                 if (plan.visibility !== PartyPlanVisibility.PRIVATE) {
                     io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: plan.lifecycleStatus });
-                    io.emit('live_feed_update', { action: 'party_plan_relisted', planId: plan.id });
+                    io.to('live_feed').emit('live_feed_update', { action: 'party_plan_relisted', id: plan.id, planId: plan.id });
                 } else {
-                    io.emit('live_feed_update', { action: 'request_cancelled', planId: plan.id, requestId: request.id });
+                    // Private: request cancelled on private plan
+                    io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'request_cancelled', id: plan.id, planId: plan.id, requestId: request.id });
+                    io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'request_cancelled', id: plan.id, planId: plan.id, requestId: request.id });
                 }
             }
         } catch (socketErr: any) {
@@ -3233,8 +3241,9 @@ export const makePartyPlanPublic = async (req: Request, res: Response): Promise<
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, visibility: 'public', isLive: true });
                     io.emit('party_plan_created', plan);
                     io.emit('party_plan_relisted', { planId: plan.id });
-                    io.emit('live_feed_update', {
+                    io.to('live_feed').emit('live_feed_update', {
                         type: 'party_plan_created',
+                        id: plan.id,
                         partyPlanId: plan.id,
                     });
                 }
@@ -3457,7 +3466,9 @@ export const rejectPartyPlanRequest = async (req: Request, res: Response): Promi
                     });
                     io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
-                    io.emit('live_feed_update', { action: 'request_rejected', planId: plan.id, requestId: request.id });
+                    // Private: rejection only affects host and requester
+                    io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'request_rejected', id: plan.id, planId: plan.id, requestId: request.id });
+                    io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'request_rejected', id: plan.id, planId: plan.id, requestId: request.id });
                 }
             } catch (err: any) {
                 logger.warn('Failed to send rejection/decline notifications:', err.message);
@@ -3681,7 +3692,9 @@ export const verifyJoinerPayment = async (req: Request, res: Response): Promise<
                             io.to(`user_${request.requesterId}`).emit('party_plan_joiner_paid', joinerPaidPayload);
                             io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED });
                             io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.GUEST_PAYMENT_COMPLETED });
-                            io.emit('live_feed_update', { action: 'joiner_paid', planId: plan.id, requestId: request.id });
+                            // Private: joiner payment only affects host + joiner
+                            io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'joiner_paid', id: plan.id, planId: plan.id, requestId: request.id });
+                            io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'joiner_paid', id: plan.id, planId: plan.id, requestId: request.id });
                         }
                     } catch (err: any) {
                         logger.warn('Failed to notify host of joiner payment:', err.message);
@@ -5885,8 +5898,19 @@ export const confirmArrival = async (req: Request, res: Response): Promise<void>
                         partnerReachStatus: updatedPartnerReach
                     });
 
-                    io.emit('live_feed_update', {
+                    // Arrival is a private event between host and partner only
+                    io.to(`user_${userId}`).emit('live_feed_update', {
                         type: 'party_plan_reach_update',
+                        id: plan.id,
+                        planId: plan.id,
+                        partyPlanId: plan.id,
+                        hostReachStatus: updatedHostReach,
+                        partnerReachStatus: updatedPartnerReach,
+                        bothArrived
+                    });
+                    io.to(`user_${partnerId}`).emit('live_feed_update', {
+                        type: 'party_plan_reach_update',
+                        id: plan.id,
                         planId: plan.id,
                         partyPlanId: plan.id,
                         hostReachStatus: updatedHostReach,

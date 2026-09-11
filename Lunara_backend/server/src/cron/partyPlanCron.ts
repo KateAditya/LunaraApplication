@@ -739,11 +739,8 @@ export const startPartyPlanCron = () => {
                             planTitle: plan.message || 'Party Plan'
                         });
 
-                        io.emit('live_feed_update', {
-                            type: 'party_plan_reach_prompt',
-                            planId: plan.id,
-                            eventKey
-                        });
+                        // Targeted user emits above (lines 708 + 725) already cover host and joiner
+                        // No global live_feed broadcast needed — this is a private venue-approach prompt
                     }
                 }
             } catch (reach30mErr: any) {

@@ -416,7 +416,8 @@ export class GroupPartyService {
             if (io) {
                 io.to(`user_${groupParty.userId}`).emit('group_party_payment_success', { partyId: groupParty.id });
                 io.to(`user_${groupParty.userId}`).emit('group_party_status_update', { partyId: groupParty.id, status: 'confirmed' });
-                io.emit('live_feed_update', { action: 'group_party_confirmed', partyId: groupParty.id });
+                // Targeted room broadcast — only users subscribed to 'live_feed' room
+                io.to('live_feed').emit('live_feed_update', { action: 'group_party_confirmed', id: groupParty.id, partyId: groupParty.id });
             }
         } catch (socketErr: any) {
             logger.warn('GroupParty socket emit failed: ' + socketErr.message);
@@ -461,7 +462,8 @@ export class GroupPartyService {
                 const { io } = require('../server');
                 if (io) {
                     io.to(`user_${userId}`).emit('group_party_status_update', { partyId, status: 'cancelled' });
-                    io.emit('live_feed_update', { action: 'group_party_cancelled', partyId });
+                    // Targeted room broadcast — only users subscribed to 'live_feed' room
+                    io.to('live_feed').emit('live_feed_update', { action: 'group_party_cancelled', id: partyId, partyId });
                 }
             } catch (socketErr: any) {
                 logger.warn('GroupParty cancel socket emit failed: ' + socketErr.message);

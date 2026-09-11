@@ -363,8 +363,10 @@ export class StrangersMeetService {
                 const { io } = require('../server');
                 if (io) {
                     const card = await StrangersMeetService.enrichStrangersMeetNotificationCard(entityId, recipientUserId);
-                    const eventData = { entityId, meetId: entityId, eventType, card, ...(metadata || {}) };
+                    // Include 'id' so _patchEntityInFeed in Flutter can match without a full refetch
+                    const eventData = { id: entityId, entityId, meetId: entityId, eventType, card, ...(metadata || {}) };
 
+                    // Targeted: notify only the recipient user
                     io.to(`user_${recipientUserId}`).emit('strangers_meet_status_update', eventData);
                     io.to(`user_${recipientUserId}`).emit(eventType, eventData);
                     io.to(`user_${recipientUserId}`).emit('notification_updated', {
@@ -375,22 +377,19 @@ export class StrangersMeetService {
                         updatedAt: new Date().toISOString()
                     });
 
-                    // Broadcast live feed timeline refresh
+                    // Targeted room broadcast — only users subscribed to 'live_feed' room
+                    // (do NOT use io.emit() which would trigger a refetch on every connected user)
                     io.to('live_feed').emit('live_feed_update', {
                         type: 'strangers_meet_update',
-                        entityId,
-                        eventType
-                    });
-                    io.emit('live_feed_update', {
-                        type: 'strangers_meet_update',
+                        id: entityId,
                         entityId,
                         eventType
                     });
 
                     const typeLower = (eventType || '').toLowerCase();
                     if (typeLower.includes('cancel')) {
+                        // Targeted cancellation — only recipient, not broadcast to all
                         io.to(`user_${recipientUserId}`).emit('strangers_meet_cancelled', eventData);
-                        io.emit('strangers_meet_cancelled', eventData);
                     }
                     if (typeLower.includes('join')) {
                         io.to(`user_${recipientUserId}`).emit('strangers_meet_joiner_joined', eventData);

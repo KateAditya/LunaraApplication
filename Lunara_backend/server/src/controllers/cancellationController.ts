@@ -149,7 +149,7 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 if (io) {
                     io.emit('party_plan_deleted', { planId: plan.id });
                     io.emit('party_plan_cancelled', { planId: plan.id });
-                    io.emit('live_feed_update', { type: 'party_plan_cancelled', planId: plan.id });
+                    io.to('live_feed').emit('live_feed_update', { type: 'party_plan_cancelled', id: plan.id, planId: plan.id });
                 }
             } catch (_) {}
 
@@ -292,9 +292,18 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
                 io.to(`user_${userId}`).emit('party_plan_cancellation_requested', cancelPayload);
                 io.to(`user_${recipientUserId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
                 io.to(`user_${userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLATION_REQUESTED });
-                io.emit('live_feed_update', {
+                // Private cancellation request — only the two involved parties need this update
+                io.to(`user_${recipientUserId}`).emit('live_feed_update', {
                     type: 'party_plan_cancellation_requested',
                     action: 'cancellation_requested',
+                    id: plan.id,
+                    planId: plan.id,
+                    requestId: cancellationRequest.id,
+                });
+                io.to(`user_${userId}`).emit('live_feed_update', {
+                    type: 'party_plan_cancellation_requested',
+                    action: 'cancellation_requested',
+                    id: plan.id,
                     planId: plan.id,
                     requestId: cancellationRequest.id,
                 });
@@ -481,9 +490,17 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     io.to(`user_${userId}`).emit('party_plan_cancellation_declined', declinePayload);
                     io.to(`user_${cancellationRequest.requestedById}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
                     io.to(`user_${userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
-                    io.emit('live_feed_update', {
+                    // Private decline — only the two involved parties need this update
+                    io.to(`user_${cancellationRequest.requestedById}`).emit('live_feed_update', {
                         type: 'party_plan_cancellation_declined',
                         action: 'cancellation_declined',
+                        id: plan.id,
+                        planId: plan.id,
+                    });
+                    io.to(`user_${userId}`).emit('live_feed_update', {
+                        type: 'party_plan_cancellation_declined',
+                        action: 'cancellation_declined',
+                        id: plan.id,
                         planId: plan.id,
                     });
                 }
@@ -810,9 +827,11 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                         io.to(`user_${joinerId}`).emit('party_plan_updated', { planId: lockedPlan.id, status: PartyPlanStatus.CANCELLED, lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED });
                         // Remove from public live feed
                         io.emit('party_plan_deleted', { planId: lockedPlan.id });
-                        io.emit('live_feed_update', {
+                        // Public plan removal — live_feed room only (party_plan_deleted already handles removal)
+                        io.to('live_feed').emit('live_feed_update', {
                             type: 'party_plan_cancelled',
                             action: 'cancellation_approved',
+                            id: lockedPlan.id,
                             planId: lockedPlan.id,
                             requestId: cancellationRequest.id,
                         });

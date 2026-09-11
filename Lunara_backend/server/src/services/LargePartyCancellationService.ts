@@ -251,7 +251,7 @@ export class LargePartyCancellationService {
                         partyId: groupParty.id,
                         status: 'cancelled',
                     });
-                    io.emit('live_feed_update', { action: 'group_party_cancelled', partyId: groupParty.id });
+                    io.to('live_feed').emit('live_feed_update', { action: 'group_party_cancelled', id: groupParty.id, partyId: groupParty.id });
                 }
             } catch (err: any) {
                 logger.warn('[LargePartyCancellationService] Dispatch error:', err);
@@ -375,7 +375,7 @@ export class LargePartyCancellationService {
                     const { io } = require('../server');
                     if (io) {
                         io.to(`user_${cleanUserId}`).emit('booking_cancelled', { bookingId: booking.id, status: 'cancelled' });
-                        io.emit('live_feed_update', { action: 'booking_cancelled', bookingId: booking.id });
+                        io.to('live_feed').emit('live_feed_update', { action: 'booking_cancelled', id: booking.id, bookingId: booking.id });
                     }
                 } catch (err: any) {
                     logger.warn('[LargePartyCancellationService] Dispatch error:', err);
@@ -483,7 +483,7 @@ export class LargePartyCancellationService {
                         cancellationStatus: LargePartyCancellationStatus.PENDING_ADMIN_REVIEW,
                     });
 
-                    io.emit('live_feed_update', { action: 'large_party_cancellation_requested', bookingId: booking.id });
+                    io.to('live_feed').emit('live_feed_update', { action: 'large_party_cancellation_requested', id: booking.id, bookingId: booking.id });
                 }
             } catch (notifErr) {
                 logger.warn('Failed to dispatch notifications for large party cancellation request:', notifErr);
@@ -897,7 +897,7 @@ export class LargePartyCancellationService {
                     },
                 });
 
-                io.emit('live_feed_update', { action: 'large_party_cancellation_approved', bookingId, requestId });
+                io.to('live_feed').emit('live_feed_update', { action: 'large_party_cancellation_approved', id: bookingId, bookingId, requestId });
             }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for large party approval:', pushErr);
@@ -1028,7 +1028,7 @@ export class LargePartyCancellationService {
                         reason: rejectionReason.trim(),
                     },
                 });
-                io.emit('live_feed_update', { action: 'large_party_cancellation_rejected', bookingId, requestId });
+                io.to('live_feed').emit('live_feed_update', { action: 'large_party_cancellation_rejected', id: bookingId, bookingId, requestId });
             }
         } catch (pushErr) {
             logger.warn('Failed to send push/socket for large party rejection:', pushErr);

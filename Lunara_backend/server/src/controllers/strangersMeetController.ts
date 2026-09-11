@@ -950,11 +950,13 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
             logger.warn('Failed to send stranger meet approval notification: ' + notifErr.message);
         }
 
-        // Emit socket notification to host
+        // Emit socket notification + status update to host
         try {
             const { io } = require('../server');
             const venue = await Venue.findByPk(request.venueId);
             const venueName = venue?.name || 'Venue';
+
+            // In-app notification card
             io.to(`user_${request.userId}`).emit('notification_created', {
                 id: `sm_host_approved_${request.id}`,
                 title: 'Stranger Meet Approved',
@@ -965,6 +967,22 @@ export const approveRequest = async (req: Request, res: Response): Promise<void>
                     type: 'strangers_meet_approved',
                     requestId: request.id,
                 }
+            });
+
+            // Live Feed card patch — carries updated status & amounts so Flutter
+            // _patchEntityInFeed can update the card in-place without a full refetch
+            io.to(`user_${request.userId}`).emit('strangers_meet_approved', {
+                id: request.id,
+                requestId: request.id,
+                entityId: request.id,
+                status: request.status,                   // 'approved'
+                paymentStatus: request.paymentStatus,    // 'unpaid'
+                paymentAmount: request.paymentAmount,
+                platformChargePerSeat: request.platformChargePerSeat,
+                chargesPerHead: request.chargesPerHead,
+                adminNotes: request.adminNotes,
+                numberOfPersons: request.numberOfPersons,
+                venueName,
             });
         } catch (socketErr: any) {
             logger.warn('Failed to emit approve request socket notification: ' + socketErr.message);
@@ -1349,18 +1367,22 @@ export const confirmJoinPayment = async (req: Request, res: Response): Promise<v
             logger.warn('Failed to send join confirmation notification: ' + notifErr.message);
         }
 
-        // Emit socket event for real-time slots updates
+        // Emit socket event for real-time slots updates (targeted: host + joiner only)
         try {
             const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
             if (updatedRequest) {
                 const formatted = formatRequest(updatedRequest);
                 const { io } = require('../server');
-                io.emit('strangers_meet_updated', {
+                const slotPayload = {
+                    id: request.id,
                     requestId: request.id,
                     slotsFilled: formatted.slotsFilled,
                     joinedCount: formatted.joinedCount,
                     paymentCount: formatted.paymentCount,
-                });
+                };
+                // Targeted: host + the paying joiner only
+                io.to(`user_${request.userId}`).emit('strangers_meet_updated', slotPayload);
+                io.to(`user_${userId}`).emit('strangers_meet_updated', slotPayload);
             }
         } catch (socketErr) {
             logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
@@ -1769,13 +1791,14 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 }
             });
 
-            // Emit socket event for real-time slots updates
+            // Emit socket event for real-time slots updates (targeted: host + accepted joiner only)
             try {
                 const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
                 if (updatedRequest) {
                     const formatted = formatRequest(updatedRequest);
                     const { io } = require('../server');
-                    io.emit('strangers_meet_updated', {
+                    const slotPayload = {
+                        id: request.id,
                         requestId: request.id,
                         slotsFilled: formatted.slotsFilled,
                         joinedCount: formatted.joinedCount,
@@ -1784,7 +1807,10 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                         maximumCapacity: request.numberOfPersons,
                         remainingCapacity: remainingSlots,
                         isFull,
-                    });
+                    };
+                    // Targeted: host + the accepted joiner only
+                    io.to(`user_${request.userId}`).emit('strangers_meet_updated', slotPayload);
+                    io.to(`user_${joiner.userId}`).emit('strangers_meet_updated', slotPayload);
                 }
             } catch (socketErr) {
                 logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
@@ -1850,18 +1876,22 @@ export const handleJoinRequest = async (req: Request, res: Response): Promise<vo
                 }
             });
 
-            // Emit socket event for real-time slots updates
+            // Emit socket event for real-time slots updates (targeted: host + rejected joiner only)
             try {
                 const updatedRequest = await StrangersMeetRequest.findByPk(request.id, { include: buildIncludes() });
                 if (updatedRequest) {
                     const formatted = formatRequest(updatedRequest);
                     const { io } = require('../server');
-                    io.emit('strangers_meet_updated', {
+                    const slotPayload = {
+                        id: request.id,
                         requestId: request.id,
                         slotsFilled: formatted.slotsFilled,
                         joinedCount: formatted.joinedCount,
                         paymentCount: formatted.paymentCount,
-                    });
+                    };
+                    // Targeted: host + the rejected joiner only
+                    io.to(`user_${request.userId}`).emit('strangers_meet_updated', slotPayload);
+                    io.to(`user_${joiner.userId}`).emit('strangers_meet_updated', slotPayload);
                 }
             } catch (socketErr) {
                 logger.warn('Socket emission failed for strangers_meet_updated:', socketErr);
@@ -2147,11 +2177,12 @@ export const updateChargesPerHead = async (req: Request, res: Response): Promise
 
                 const { io } = require('../server');
                 if (io) {
-                    io.emit('live_feed_update', {
+                    io.to('live_feed').emit('live_feed_update', {
                         type: 'strangers_meet_published',
+                        id: request.id,
                         entityId: request.id,
                     });
-                    io.emit('strangers_meet_published', {
+                    io.to('live_feed').emit('strangers_meet_published', {
                         id: request.id,
                         chargesPerHead: parsedCharges,
                     });

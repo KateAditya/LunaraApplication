@@ -540,6 +540,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _onPartyPlanRequestUpdated,
     );
     ApiService.addSocketListener(
+      'strangers_meet_approved', // admin approval — triggers payment button
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
       'upcoming_night_created',
       _onPartyPlanRequestUpdated,
     );
@@ -835,6 +839,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _onPartyPlanRequestUpdated,
     );
     ApiService.removeSocketListener(
+      'strangers_meet_approved',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
       'upcoming_night_created',
       _onPartyPlanRequestUpdated,
     );
@@ -914,7 +922,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
 
     final map = Map<String, dynamic>.from(data);
-    final entityId = (map['partyPlanId'] ?? map['planId'] ?? map['bookingId'] ?? map['id'] ?? map['_id'] ?? '').toString();
+    // Extract entity ID — support all card types:
+    // Party Plan: partyPlanId / planId
+    // Stranger Meet: entityId / meetId / requestId
+    // Bookings: bookingId
+    // Generic: id / _id
+    final entityId = (map['partyPlanId'] ??
+            map['planId'] ??
+            map['entityId'] ??
+            map['meetId'] ??
+            map['requestId'] ??
+            map['bookingId'] ??
+            map['id'] ??
+            map['_id'] ??
+            '')
+        .toString();
     if (entityId.isEmpty) {
       _loadFeed(showLoader: false);
       return;
