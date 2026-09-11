@@ -35,73 +35,84 @@ async function expireUnpaidLargePartyRequests(now: Date): Promise<void> {
         },
     });
 
-    for (const booking of expiredBookings) {
-        await booking.update({
-            adminApprovalStatus: AdminApprovalStatus.EXPIRED,
-            status: BookingStatus.CANCELLED,
-        });
+    if (expiredBookings.length > 0) {
+        const userIds = [...new Set(expiredBookings.map(b => b.userId).filter(Boolean))];
+        const venueIds = [...new Set(expiredBookings.map(b => b.venueId).filter(Boolean))];
+        const [users, venues] = await Promise.all([
+            User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'fcmToken'] }),
+            Venue.findAll({ where: { id: { [Op.in]: venueIds } }, attributes: ['id', 'name'] }),
+        ]);
+        const userMap = new Map(users.map(u => [u.id, u]));
+        const venueMap = new Map(venues.map(v => [v.id, v]));
 
-        try {
-            const host = await User.findByPk(booking.userId, { attributes: ['id', 'fcmToken'] });
-            const venue = await Venue.findByPk(booking.venueId, { attributes: ['id', 'name'] });
-            const venueName = venue?.name || 'Venue';
-            const title = 'Large Party Request Expired ⌛';
-            const body = `Your party request at ${venueName} expired because payment wasn't completed before the event started.`;
+        for (const booking of expiredBookings) {
+            await booking.update({
+                adminApprovalStatus: AdminApprovalStatus.EXPIRED,
+                status: BookingStatus.CANCELLED,
+            });
 
             try {
-                const NotificationModel = (await import('../models/Notification')).default;
-                await NotificationModel.create({
-                    recipientUserId: booking.userId,
-                    eventType: 'large_party_expired',
-                    category: 'bookings' as any,
-                    entityType: 'booking',
-                    entityId: booking.id,
-                    title,
-                    body,
-                    priority: 'HIGH' as any,
-                    isRead: false,
-                    metadata: { bookingId: booking.id, venueName },
-                });
-            } catch (dbErr) {
-                logger.warn('[Cron] Failed to save DB notification for large party expiry: ' + dbErr);
-            }
+                const host = userMap.get(booking.userId);
+                const venue = venueMap.get(booking.venueId);
+                const venueName = venue?.name || 'Venue';
+                const title = 'Large Party Request Expired ⌛';
+                const body = `Your party request at ${venueName} expired because payment wasn't completed before the event started.`;
 
-            if (host?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(host.fcmToken, {
-                    title,
-                    body,
-                    data: { type: 'large_party_expired', bookingId: booking.id },
-                });
-            }
-
-            const { io } = require('../server');
-            if (io) {
-                io.to(`user_${booking.userId}`).emit('large_party_status_update', {
-                    bookingId: booking.id,
-                    status: booking.adminApprovalStatus,
-                });
                 try {
-                    const { GroupPartyService } = await import('../services/GroupPartyService');
-                    const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
-                    io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
-                } catch (cardErr) {}
+                    const NotificationModel = (await import('../models/Notification')).default;
+                    await NotificationModel.create({
+                        recipientUserId: booking.userId,
+                        eventType: 'large_party_expired',
+                        category: 'bookings' as any,
+                        entityType: 'booking',
+                        entityId: booking.id,
+                        title,
+                        body,
+                        priority: 'HIGH' as any,
+                        isRead: false,
+                        metadata: { bookingId: booking.id, venueName },
+                    });
+                } catch (dbErr) {
+                    logger.warn('[Cron] Failed to save DB notification for large party expiry: ' + dbErr);
+                }
+
+                if (host?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title,
+                        body,
+                        data: { type: 'large_party_expired', bookingId: booking.id },
+                    });
+                }
+
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${booking.userId}`).emit('large_party_status_update', {
+                        bookingId: booking.id,
+                        status: booking.adminApprovalStatus,
+                    });
+                    try {
+                        const { GroupPartyService } = await import('../services/GroupPartyService');
+                        const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, booking.userId);
+                        io.to(`user_${booking.userId}`).emit('notification_updated', enrichedCard);
+                    } catch (cardErr) {}
+                }
+
+                try {
+                    const AuditLog = (await import('../models/AuditLog')).default;
+                    await AuditLog.logAction({
+                        userId: booking.userId,
+                        action: 'LARGE_PARTY_EXPIRED',
+                        bookingId: booking.id,
+                        metadata: { venueName },
+                    }).catch(() => {});
+                } catch (aErr) {}
+            } catch (notifyErr: any) {
+                logger.warn(`[Cron] Failed to notify user for expired large party booking ${booking.id}: ` + notifyErr.message);
             }
 
-            try {
-                const AuditLog = (await import('../models/AuditLog')).default;
-                await AuditLog.logAction({
-                    userId: booking.userId,
-                    action: 'LARGE_PARTY_EXPIRED',
-                    bookingId: booking.id,
-                    metadata: { venueName },
-                }).catch(() => {});
-            } catch (aErr) {}
-        } catch (notifyErr: any) {
-            logger.warn(`[Cron] Failed to notify user for expired large party booking ${booking.id}: ` + notifyErr.message);
+            logger.info(`[Cron] Expired unpaid large party booking ${booking.id}`);
         }
-
-        logger.info(`[Cron] Expired unpaid large party booking ${booking.id}`);
     }
 
     const expiredGroupParties = await GroupParty.findAll({
@@ -112,45 +123,56 @@ async function expireUnpaidLargePartyRequests(now: Date): Promise<void> {
         },
     });
 
-    for (const groupParty of expiredGroupParties) {
-        await groupParty.update({ status: GroupPartyStatus.EXPIRED });
+    if (expiredGroupParties.length > 0) {
+        const gpUserIds = [...new Set(expiredGroupParties.map(gp => gp.userId).filter(Boolean))];
+        const gpVenueIds = [...new Set(expiredGroupParties.map(gp => gp.venueId).filter(Boolean))];
+        const [gpUsers, gpVenues] = await Promise.all([
+            User.findAll({ where: { id: { [Op.in]: gpUserIds } }, attributes: ['id', 'fcmToken'] }),
+            Venue.findAll({ where: { id: { [Op.in]: gpVenueIds } }, attributes: ['id', 'name'] }),
+        ]);
+        const gpUserMap = new Map(gpUsers.map(u => [u.id, u]));
+        const gpVenueMap = new Map(gpVenues.map(v => [v.id, v]));
 
-        try {
-            const host = await User.findByPk(groupParty.userId, { attributes: ['id', 'fcmToken'] });
-            const venue = await Venue.findByPk(groupParty.venueId, { attributes: ['id', 'name'] });
-            const venueName = venue?.name || 'Venue';
-            const title = 'Group Party Request Expired ⌛';
-            const body = `Your group party request at ${venueName} expired because payment wasn't completed before the event started.`;
+        for (const groupParty of expiredGroupParties) {
+            await groupParty.update({ status: GroupPartyStatus.EXPIRED });
 
-            if (host?.fcmToken) {
-                const { sendPushNotification } = require('../services/fcmService');
-                await sendPushNotification(host.fcmToken, {
-                    title,
-                    body,
-                    data: { type: 'group_party_expired', partyId: groupParty.id },
-                });
+            try {
+                const host = gpUserMap.get(groupParty.userId);
+                const venue = gpVenueMap.get(groupParty.venueId);
+                const venueName = venue?.name || 'Venue';
+                const title = 'Group Party Request Expired ⌛';
+                const body = `Your group party request at ${venueName} expired because payment wasn't completed before the event started.`;
+
+                if (host?.fcmToken) {
+                    const { sendPushNotification } = require('../services/fcmService');
+                    await sendPushNotification(host.fcmToken, {
+                        title,
+                        body,
+                        data: { type: 'group_party_expired', partyId: groupParty.id },
+                    });
+                }
+
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`user_${groupParty.userId}`).emit('large_party_status_update', {
+                        bookingId: groupParty.id,
+                        status: groupParty.status,
+                    });
+                    io.to(`user_${groupParty.userId}`).emit('notification_created', {
+                        id: `group_party_${groupParty.id}_expired`,
+                        title,
+                        body,
+                        createdAt: new Date().toISOString(),
+                        read: false,
+                        data: { type: 'group_party_expired', partyId: groupParty.id },
+                    });
+                }
+            } catch (notifyErr: any) {
+                logger.warn(`[Cron] Failed to notify user for expired group party ${groupParty.id}: ` + notifyErr.message);
             }
 
-            const { io } = require('../server');
-            if (io) {
-                io.to(`user_${groupParty.userId}`).emit('large_party_status_update', {
-                    bookingId: groupParty.id,
-                    status: groupParty.status,
-                });
-                io.to(`user_${groupParty.userId}`).emit('notification_created', {
-                    id: `group_party_${groupParty.id}_expired`,
-                    title,
-                    body,
-                    createdAt: new Date().toISOString(),
-                    read: false,
-                    data: { type: 'group_party_expired', partyId: groupParty.id },
-                });
-            }
-        } catch (notifyErr: any) {
-            logger.warn(`[Cron] Failed to notify user for expired group party ${groupParty.id}: ` + notifyErr.message);
+            logger.info(`[Cron] Expired unpaid group party ${groupParty.id}`);
         }
-
-        logger.info(`[Cron] Expired unpaid group party ${groupParty.id}`);
     }
 }
 

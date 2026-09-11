@@ -3,12 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, PartyPlan, GroupParty, StrangersMeetRequest, Booking, Plan, Venue, Ticket, PartyPlanRequest, StrangersMeetJoiner, NightPartnerMatch } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, Plan, Venue, PartyPlan, Booking, GroupParty, StrangersMeetRequest } from '../models';
 import { RewardPointsService } from '../services/rewardPointsService';
-import { PartyPlanStatus } from '../models/PartyPlan';
-import { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
-import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
-import { GroupPartyStatus } from '../models/GroupParty';
 import Notification from '../models/Notification';
 import UserLike from '../models/UserLike';
 import User, { UserRole } from '../models/User';
@@ -18,7 +14,8 @@ import SubscriptionPackage from '../models/SubscriptionPackage';
 import bcrypt from 'bcryptjs';
 
 import { logger } from '../config/logger';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
+import sequelize from '../config/database';
 import { getUserGalleryDir } from '../middleware/upload';
 import SocialConnection, { ConnectionStatus } from '../models/SocialConnection';
 import UserPenalty from '../models/UserPenalty';
@@ -342,183 +339,41 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         }
         const isOwnProfile = !!viewerId && viewerId === userId;
 
-        // Fetch all profile components concurrently in parallel
-        const [user, profile, preferences, allPhotos] = await Promise.all([
-            User.findByPk(userId, {
-                attributes: [
-                    'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
-                    'role', 'isVerified', 'isActive', 'mfaEnabled',
-                    'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth',
-                ],
-            }),
-            UserProfile.findOne({ where: { userId } }),
-            UserPreference.findOne({ where: { userId } }),
-            UserPhoto.findAll({
-                where: { userId },
-                order: [
-                    ['isPrimary', 'DESC'],
-                    ['displayOrder', 'ASC'],
-                    ['uploadedAt', 'DESC'],
-                ],
-                attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
-            }),
-        ]);
-
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
-
-        const photoRecord = allPhotos.length > 0 ? allPhotos[0] : null;
-
-        // Build primary profile photo URL
-        let profilePhotoUrl: string | null = null;
-        let profilePhotoPath: string | null = null;
-
-        if (photoRecord) {
-            profilePhotoPath = photoRecord.filePath;
-            profilePhotoUrl = '/' + photoRecord.filePath.replace(/\\/g, '/');
-        } else if (user.profileImageUrl) {
-            profilePhotoUrl = user.profileImageUrl;
-        }
-
-        // Compute age from dateOfBirth
-        const age = (user as any).dateOfBirth
-            ? Math.floor(
-                (Date.now() - new Date((user as any).dateOfBirth).getTime()) /
-                (365.25 * 24 * 60 * 60 * 1000)
-            )
-            : null;
-
-        // Map gallery photos to URL-ready objects
-        const photos = allPhotos.map(p => ({
-            id: p.id,
-            url: '/' + p.filePath.replace(/\\/g, '/'),
-            filePath: p.filePath,
-            fileSize: p.fileSize,
-            mimeType: p.mimeType,
-            isPrimary: p.isPrimary,
-            displayOrder: p.displayOrder,
-            uploadedAt: p.uploadedAt,
-        }));
-
-        // Fetch all profile metrics, superlikes, subscription, and requester like/superlike status in a single parallel batch
+        // Fetch all profile components and metrics in a single parallel batch of 3-4 optimized queries
         const requesterUserId = req.user?.id || (req.query.currentUserId as string);
         const shouldCheckRequester = !!(requesterUserId && requesterUserId !== userId);
 
         const [
-            superLikesFromMatches,
-            likesCount,
-            superLikesFromLikes,
-            partyPlansCnt,
-            strangersMeetCnt,
-            groupPartyCnt,
-            rawTickets,
-            rawBookings,
-            rawGroupParties,
-            rawStrangersHost,
-            rawStrangersJoiner,
-            rawPartyHost,
-            rawPartyJoiner,
-            connectedMatches,
-            nightPartnerMatches,
-            partyPlanMatchedHosts,
-            partyPlanAcceptedJoiners,
-            socialConnections,
+            userWithProfile,
             activeSub,
+            metricsResult,
+            matchedPartnersResult,
             existingSwipe,
             existingUserLike,
             existingUserSuperLike,
-            smEventsJoined,       // SM events this user joined (to collect host IDs)
-            smJoinersOfMyEvents,  // Accepted joiners of SM events hosted by this user
         ] = await Promise.all([
-            UserMatch.count({
-                where: {
-                    user2Id: userId,
-                    matchReason: 'superlike',
-                    status: { [Op.in]: ['pending', 'connected'] }
-                }
+            User.findByPk(userId, {
+                attributes: [
+                    'id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl',
+                    'role', 'isVerified', 'isActive', 'mfaEnabled',
+                    'createdAt', 'updatedAt', 'lastLoginAt', 'dateOfBirth', 'rewardPoints'
+                ],
+                include: [
+                    { model: UserProfile, as: 'profile' },
+                    { model: UserPreference, as: 'preferences' },
+                    {
+                        model: UserPhoto,
+                        as: 'photos',
+                        attributes: ['id', 'filePath', 'fileSize', 'mimeType', 'isPrimary', 'displayOrder', 'uploadedAt'],
+                        required: false,
+                    }
+                ],
+                order: [
+                    [{ model: UserPhoto, as: 'photos' }, 'isPrimary', 'DESC'],
+                    [{ model: UserPhoto, as: 'photos' }, 'displayOrder', 'ASC'],
+                    [{ model: UserPhoto, as: 'photos' }, 'uploadedAt', 'DESC'],
+                ]
             }),
-            UserLike.count({
-                where: {
-                    targetUserId: userId,
-                    actionType: 'like'
-                }
-            }),
-            UserLike.count({
-                where: {
-                    targetUserId: userId,
-                    actionType: 'superlike'
-                }
-            }),
-            PartyPlan.count({
-                where: {
-                    userId,
-                    status: { [Op.ne]: PartyPlanStatus.CANCELLED }
-                }
-            }),
-            StrangersMeetRequest.count({
-                where: {
-                    userId,
-                    status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] }
-                }
-            }),
-            GroupParty.count({
-                where: {
-                    userId,
-                    status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] }
-                }
-            }),
-            Ticket.findAll({ where: { userId }, attributes: ['id', 'bookingId', 'ticketId'] }).catch(() => []),
-            Booking.findAll({ where: { userId }, attributes: ['id', 'status', 'paymentStatus', 'goingMode', 'isLargePartyRequest', 'specialRequests', 'ticketCode'] }).catch(() => []),
-            GroupParty.findAll({ where: { userId }, attributes: ['id', 'ticketCode'] }).catch(() => []),
-            StrangersMeetRequest.findAll({ where: { userId }, attributes: ['id', 'ticketId'] }).catch(() => []),
-            StrangersMeetJoiner.findAll({ where: { userId, status: { [Op.notIn]: ['rejected'] } }, attributes: ['id', 'strangersMeetRequestId'] }).catch(() => []),
-            PartyPlan.findAll({ where: { userId, status: { [Op.ne]: PartyPlanStatus.CANCELLED } }, attributes: ['id'] }).catch(() => []),
-            PartyPlanRequest.findAll({ where: { requesterId: userId, status: PartyPlanRequestStatus.ACCEPTED }, attributes: ['id', 'planId'] }).catch(() => []),
-            UserMatch.findAll({
-                where: {
-                    [Op.or]: [
-                        { user1Id: userId, status: { [Op.in]: ['connected', 'matched'] } },
-                        { user2Id: userId, status: { [Op.in]: ['connected', 'matched'] } }
-                    ]
-                },
-                attributes: ['user1Id', 'user2Id']
-            }).catch(() => []),
-            NightPartnerMatch.findAll({
-                where: {
-                    [Op.or]: [
-                        { hostId: userId },
-                        { partnerId: userId }
-                    ],
-                    status: { [Op.in]: ['MATCHED', 'PAYMENT_PENDING', 'CONFIRMED'] }
-                },
-                attributes: ['hostId', 'partnerId']
-            }).catch(() => []),
-            PartyPlan.findAll({
-                where: {
-                    userId,
-                    matchedRequestId: { [Op.ne]: null as any },
-                    status: { [Op.ne]: PartyPlanStatus.CANCELLED }
-                },
-                include: [{ model: PartyPlanRequest, as: 'matchedRequest', attributes: ['requesterId'] }]
-            }).catch(() => []),
-            PartyPlanRequest.findAll({
-                where: {
-                    requesterId: userId,
-                    status: PartyPlanRequestStatus.ACCEPTED
-                },
-                include: [{ model: PartyPlan, as: 'plan', attributes: ['userId'] }]
-            }).catch(() => []),
-            SocialConnection.findAll({
-                where: {
-                    [Op.or]: [
-                        { requesterId: userId },
-                        { receiverId: userId }
-                    ],
-                    status: ConnectionStatus.ACCEPTED
-                },
-                attributes: ['requesterId', 'receiverId']
-            }).catch(() => []),
             UserSubscription.findOne({
                 where: {
                     userId,
@@ -528,6 +383,43 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
                 order: [['createdAt', 'DESC']],
             }).catch(() => null),
+            sequelize.query(`
+                SELECT 
+                    (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id = :userId AND action_type = 'like') AS likes_count,
+                    (
+                        (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id = :userId AND action_type = 'superlike') + 
+                        (SELECT COUNT(*)::int FROM user_matches WHERE user2_id = :userId AND match_reason = 'superlike' AND status IN ('pending', 'connected'))
+                    ) AS superlikes_count,
+                    (SELECT COUNT(*)::int FROM party_plans WHERE user_id = :userId AND status != 'cancelled') AS party_plans_count,
+                    (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id = :userId AND status NOT IN ('cancelled', 'rejected')) AS strangers_meet_count,
+                    (SELECT COUNT(*)::int FROM group_parties WHERE user_id = :userId AND status NOT IN ('cancelled', 'rejected', 'expired')) AS group_party_count,
+                    (
+                        (SELECT COUNT(*)::int FROM tickets WHERE user_id = :userId) +
+                        (SELECT COUNT(*)::int FROM bookings WHERE user_id = :userId) +
+                        (SELECT COUNT(*)::int FROM group_parties WHERE user_id = :userId) +
+                        (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id = :userId) +
+                        (SELECT COUNT(*)::int FROM strangers_meet_joiners WHERE user_id = :userId AND status != 'rejected') +
+                        (SELECT COUNT(*)::int FROM party_plans WHERE user_id = :userId AND status != 'cancelled') +
+                        (SELECT COUNT(*)::int FROM party_plan_requests WHERE requester_id = :userId AND status = 'accepted')
+                    ) AS total_bookings;
+            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch(() => [{}]),
+            sequelize.query(`
+                SELECT DISTINCT partner_id FROM (
+                    SELECT CASE WHEN user1_id = :userId THEN user2_id ELSE user1_id END AS partner_id FROM user_matches WHERE (user1_id = :userId OR user2_id = :userId) AND status IN ('connected', 'matched')
+                    UNION
+                    SELECT CASE WHEN host_id = :userId THEN partner_id ELSE host_id END AS partner_id FROM night_partner_matches WHERE (host_id = :userId OR partner_id = :userId) AND status IN ('MATCHED', 'PAYMENT_PENDING', 'CONFIRMED')
+                    UNION
+                    SELECT requester_id AS partner_id FROM party_plan_requests ppr JOIN party_plans pp ON pp.id = ppr.plan_id WHERE pp.user_id = :userId AND ppr.status = 'accepted'
+                    UNION
+                    SELECT pp.user_id AS partner_id FROM party_plan_requests ppr JOIN party_plans pp ON pp.id = ppr.plan_id WHERE ppr.requester_id = :userId AND ppr.status = 'accepted'
+                    UNION
+                    SELECT CASE WHEN requester_id = :userId THEN receiver_id ELSE requester_id END AS partner_id FROM social_connections WHERE (requester_id = :userId OR receiver_id = :userId) AND status = 'accepted'
+                    UNION
+                    SELECT sm.user_id AS partner_id FROM strangers_meet_joiners smj JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id WHERE smj.user_id = :userId AND smj.status NOT IN ('rejected')
+                    UNION
+                    SELECT smj.user_id AS partner_id FROM strangers_meet_joiners smj JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id WHERE sm.user_id = :userId AND smj.status NOT IN ('rejected')
+                ) partners WHERE partner_id IS NOT NULL AND partner_id != :userId;
+            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch(() => []),
             shouldCheckRequester
                 ? UserMatch.findOne({
                     where: {
@@ -554,99 +446,60 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     }
                 }).catch(() => null)
                 : Promise.resolve(null),
-            // Strangers Meet: events this user joined → need host IDs from the parent SM request
-            StrangersMeetJoiner.findAll({
-                where: { userId, status: { [Op.notIn]: ['rejected'] } },
-                include: [{ model: StrangersMeetRequest, as: 'strangersMeetRequest', attributes: ['userId'] }],
-                attributes: ['id', 'strangersMeetRequestId']
-            }).catch(() => []),
-            // Strangers Meet: accepted joiners of SM events this user hosted
-            StrangersMeetJoiner.findAll({
-                where: { status: { [Op.notIn]: ['rejected'] } },
-                include: [{
-                    model: StrangersMeetRequest,
-                    as: 'strangersMeetRequest',
-                    where: { userId },
-                    attributes: ['id']
-                }],
-                attributes: ['userId']
-            }).catch(() => []),
         ]);
 
-        // Calculate dynamic total bookings matching Ticket Pocket
-        const seenBookingKeys = new Set<string>();
-        for (const t of rawTickets) {
-            if (t.bookingId) seenBookingKeys.add(`booking_${t.bookingId}`);
-            else if (t.ticketId) seenBookingKeys.add(`ticket_${t.ticketId}`);
-            else seenBookingKeys.add(`ticket_id_${t.id}`);
+        const user = userWithProfile;
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
         }
-        for (const b of rawBookings) {
-            seenBookingKeys.add(`booking_${b.id}`);
-        }
-        for (const gp of rawGroupParties) {
-            seenBookingKeys.add(`group_party_${gp.id}`);
-        }
-        for (const sm of rawStrangersHost) {
-            seenBookingKeys.add(`strangers_meet_host_${sm.id}`);
-        }
-        for (const smj of rawStrangersJoiner) {
-            seenBookingKeys.add(`strangers_meet_joiner_${smj.id}`);
-        }
-        for (const p of rawPartyHost) {
-            seenBookingKeys.add(`party_plan_host_${p.id}`);
-        }
-        for (const pr of rawPartyJoiner) {
-            seenBookingKeys.add(`party_plan_joiner_${pr.id}`);
-        }
-        const bookingsCount = seenBookingKeys.size;
 
-        // Calculate unique matched profile partners across all matching features
-        const matchedPartnerIds = new Set<string>();
-        for (const m of connectedMatches) {
-            const partnerId = m.user1Id === userId ? m.user2Id : m.user1Id;
-            if (partnerId && partnerId !== userId && partnerId !== 'masked') {
-                matchedPartnerIds.add(partnerId);
-            }
+        const profile = (user as any).profile || null;
+        const preferences = (user as any).preferences || null;
+        const allPhotos = (user as any).photos || [];
+
+        const photoRecord = allPhotos.length > 0 ? allPhotos[0] : null;
+
+        // Build primary profile photo URL
+        let profilePhotoUrl: string | null = null;
+        let profilePhotoPath: string | null = null;
+
+        if (photoRecord) {
+            profilePhotoPath = photoRecord.filePath;
+            profilePhotoUrl = '/' + photoRecord.filePath.replace(/\\/g, '/');
+        } else if (user.profileImageUrl) {
+            profilePhotoUrl = user.profileImageUrl;
         }
-        for (const nm of nightPartnerMatches) {
-            const partnerId = nm.hostId === userId ? nm.partnerId : nm.hostId;
-            if (partnerId && partnerId !== userId) {
-                matchedPartnerIds.add(partnerId);
-            }
-        }
-        for (const ph of partyPlanMatchedHosts) {
-            const rId = (ph as any).matchedRequest?.requesterId;
-            if (rId && rId !== userId) {
-                matchedPartnerIds.add(rId);
-            }
-        }
-        for (const pj of partyPlanAcceptedJoiners) {
-            const hId = (pj as any).plan?.userId;
-            if (hId && hId !== userId) {
-                matchedPartnerIds.add(hId);
-            }
-        }
-        for (const sc of socialConnections) {
-            const partnerId = sc.requesterId === userId ? sc.receiverId : sc.requesterId;
-            if (partnerId && partnerId !== userId) {
-                matchedPartnerIds.add(partnerId);
-            }
-        }
-        // Strangers Meet: add host of each SM event the user joined
-        for (const smj of smEventsJoined) {
-            const hostId = (smj as any).strangersMeetRequest?.userId;
-            if (hostId && hostId !== userId) {
-                matchedPartnerIds.add(hostId);
-            }
-        }
-        // Strangers Meet: add each accepted joiner of SM events the user hosted
-        for (const smJoiner of smJoinersOfMyEvents) {
-            const joinerId = (smJoiner as any).userId;
-            if (joinerId && joinerId !== userId) {
-                matchedPartnerIds.add(joinerId);
-            }
-        }
-        const matchesCount = matchedPartnerIds.size;
+
+        // Compute age from dateOfBirth
+        const age = (user as any).dateOfBirth
+            ? Math.floor(
+                (Date.now() - new Date((user as any).dateOfBirth).getTime()) /
+                (365.25 * 24 * 60 * 60 * 1000)
+            )
+            : null;
+
+        // Map gallery photos to URL-ready objects
+        const photos = allPhotos.map((p: any) => ({
+            id: p.id,
+            url: '/' + p.filePath.replace(/\\/g, '/'),
+            filePath: p.filePath,
+            fileSize: p.fileSize,
+            mimeType: p.mimeType,
+            isPrimary: p.isPrimary,
+            displayOrder: p.displayOrder,
+            uploadedAt: p.uploadedAt,
+        }));
+
+        const metricsRow = Array.isArray(metricsResult) && metricsResult.length > 0 ? (metricsResult[0] as any) : (metricsResult as any) || {};
+        const likesCount = parseInt(metricsRow.likes_count || '0', 10);
+        const receivedSuperLikes = parseInt(metricsRow.superlikes_count || '0', 10);
+        const partyPlansCnt = parseInt(metricsRow.party_plans_count || '0', 10);
+        const strangersMeetCnt = parseInt(metricsRow.strangers_meet_count || '0', 10);
+        const groupPartyCnt = parseInt(metricsRow.group_party_count || '0', 10);
+        const bookingsCount = parseInt(metricsRow.total_bookings || '0', 10);
+
+        const partnersList = Array.isArray(matchedPartnersResult) ? matchedPartnersResult : [];
+        const matchesCount = partnersList.length;
 
         // Process daily login streak and ensure dynamic points are properly awarded & calculated
         let currentRewardPoints = user.rewardPoints != null && user.rewardPoints >= 0 ? user.rewardPoints : 0;
@@ -674,7 +527,6 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
         }
         const pointsCount = currentRewardPoints;
 
-        const receivedSuperLikes = (superLikesFromMatches || 0) + (superLikesFromLikes || 0);
         const plansCount = (partyPlansCnt || 0) + (strangersMeetCnt || 0) + (groupPartyCnt || 0);
 
         const subscriptionTier: string = (activeSub as any)?.package?.tier ?? 'FREE';
@@ -911,22 +763,27 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit);
 
+        // Bound candidate scoring window to the current page slice + buffer
+        const candidateWindow = targetUserId
+            ? allUserIds
+            : allUserIds.slice(offset, offset + limit);
+
         const likedUserIdsSet = new Set<string>();
         const superlikedUserIdsSet = new Set<string>();
         const mySwipesMap: Record<string, { status: string; matchReason: string }> = {};
 
-        if (allUserIds.length > 0 && currentUserId) {
+        if (candidateWindow.length > 0 && currentUserId) {
             const [mySwipes, myUserLikes] = await Promise.all([
                 UserMatch.findAll({
                     where: {
                         user1Id: currentUserId,
-                        user2Id: { [Op.in]: allUserIds }
+                        user2Id: { [Op.in]: candidateWindow }
                     }
                 }),
                 UserLike.findAll({
                     where: {
                         userId: currentUserId,
-                        targetUserId: { [Op.in]: allUserIds }
+                        targetUserId: { [Op.in]: candidateWindow }
                     }
                 })
             ]);
@@ -962,7 +819,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         }
 
         const tierRankMap: Record<string, number> = { FREE: 0, CORE: 1, PLUS: 2, PRO: 3, ELITE: 4 };
-        const rankingExplanations = await RankingService.computeRankings(allUserIds);
+        const rankingExplanations = await RankingService.computeRankings(candidateWindow);
         const scoredUsers = rankingExplanations.map((exp) => ({
             id: exp.userId,
             rankScore: exp.finalRankScore,
@@ -975,7 +832,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             explainScore: exp.breakdown,
         }));
 
-        const paginatedScoredUsers = scoredUsers.slice(offset, offset + limit);
+        const paginatedScoredUsers = scoredUsers.slice(0, limit);
         const paginatedUserIds = paginatedScoredUsers.map(u => u.id);
 
         // PHASE 2: Hydration

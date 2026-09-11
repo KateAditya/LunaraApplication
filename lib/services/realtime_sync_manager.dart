@@ -207,7 +207,14 @@ class RealtimeSyncManager with WidgetsBindingObserver {
     // 5. User Profiles, Photos, Connections
     if (eventType.startsWith('profile_') || eventType == 'user_status_changed' || entity == 'user') {
       profileNotifier.value = eventEnvelope;
-      ApiService.profileUpdateNotifier.value++;
+      final eventUserId = (data['userId'] ?? entityId).toString();
+      final currentUid = ApiService.currentUserId;
+      if (currentUid != null &&
+          eventUserId.isNotEmpty &&
+          eventUserId.toLowerCase() == currentUid.toLowerCase() &&
+          eventType != 'user_status_changed') {
+        ApiService.profileUpdateNotifier.value++;
+      }
     }
 
     // 6. Social Likes / Super Likes / Matches

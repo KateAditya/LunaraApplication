@@ -370,8 +370,12 @@ io.on('connection', (socket) => {
         logger.info(`Socket ${socket.id} joined user room user_${userId} and live_feed`);
 
         try {
-            await User.update({ isOnline: true, lastActiveAt: new Date() }, { where: { id: userId } });
-            io.emit('user_status_changed', { userId, isOnline: true, lastActiveAt: new Date() });
+            const now = new Date();
+            await User.update({ isOnline: true, lastActiveAt: now }, { where: { id: userId } });
+
+            // Targeted emission: notify admin room and user's own socket
+            io.to('admin').emit('user_status_changed', { userId, isOnline: true, lastActiveAt: now });
+            socket.emit('user_status_changed', { userId, isOnline: true, lastActiveAt: now });
 
             const convs = await Conversation.findAll({
                 where: {
@@ -392,7 +396,11 @@ io.on('connection', (socket) => {
                 );
                 for (const conv of convs) {
                     const otherUser = (conv.participantOne && userId && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? conv.participantTwo : conv.participantOne;
-                    io.to(`user_${otherUser}`).emit('messages_delivered', { conversationId: conv.id });
+                    if (otherUser) {
+                        // Targeted emission to conversation partner only
+                        io.to(`user_${otherUser}`).emit('user_status_changed', { userId, isOnline: true, lastActiveAt: now });
+                        io.to(`user_${otherUser}`).emit('messages_delivered', { conversationId: conv.id });
+                    }
                 }
             }
         } catch (err) {
@@ -467,7 +475,22 @@ io.on('connection', (socket) => {
             try {
                 const now = new Date();
                 await User.update({ isOnline: false, lastActiveAt: now }, { where: { id: userId } });
-                io.emit('user_status_changed', { userId, isOnline: false, lastActiveAt: now });
+                
+                // Targeted emission to admin and active conversation partners only
+                io.to('admin').emit('user_status_changed', { userId, isOnline: false, lastActiveAt: now });
+
+                const convs = await Conversation.findAll({
+                    where: {
+                        [Op.or]: [{ participantOne: userId }, { participantTwo: userId }]
+                    },
+                    attributes: ['participantOne', 'participantTwo']
+                });
+                for (const conv of convs) {
+                    const otherUser = (conv.participantOne && conv.participantOne.toLowerCase() === userId.toLowerCase()) ? conv.participantTwo : conv.participantOne;
+                    if (otherUser) {
+                        io.to(`user_${otherUser}`).emit('user_status_changed', { userId, isOnline: false, lastActiveAt: now });
+                    }
+                }
             } catch (err) {
                 logger.error('Failed to update offline status:', err);
             }

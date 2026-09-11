@@ -1268,20 +1268,17 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             notifWhere.createdAt = { [Op.gt]: user.clearedNotificationsAt };
         }
 
-        // Execute phase 1 independent queries in parallel using indexed count / id queries
+        // Execute all independent badge count queries concurrently in parallel
         const [
             unreadNotificationsCount,
-            myTablePlans,
-            myPartyPlans,
-            myStrangersMeets,
             unreadPartyRequestsCount,
             unreadPlanRequestsCount,
-            userConversations
+            userConversations,
+            incomingPartyReqs,
+            incomingStrangerJoiners,
+            incomingTableReqs,
         ] = await Promise.all([
             Notification.count({ where: notifWhere }),
-            Plan.findAll({ where: { userId: uId }, attributes: ['id'] }),
-            PartyPlan.findAll({ where: { userId: uId }, attributes: ['id'] }),
-            StrangersMeetRequest.findAll({ where: { userId: uId }, attributes: ['id'] }),
             PartyPlanRequest.count({ where: partyReqWhere }),
             PlanJoinRequest.count({ where: planReqWhere }),
             Conversation.findAll({
@@ -1293,12 +1290,42 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                     status: { [Op.ne]: 'blocked' }
                 },
                 attributes: ['id', 'participantOne', 'participantTwo', 'unreadOne', 'unreadTwo', 'deletedByOne', 'deletedByTwo']
-            })
+            }),
+            PartyPlanRequest.findAll({
+                where: { status: 'pending' },
+                include: [{
+                    model: PartyPlan,
+                    as: 'plan',
+                    where: { userId: uId },
+                    attributes: ['id', 'selectedUsers']
+                }],
+                attributes: ['id', 'requesterId', 'createdAt']
+            }).then(reqs => reqs.filter(r => {
+                const planUsers = (r as any).plan?.selectedUsers;
+                const isPrivateInvite = Array.isArray(planUsers) && planUsers.includes(r.requesterId);
+                return !isPrivateInvite;
+            })).catch(() => []),
+            StrangersMeetJoiner.findAll({
+                where: { status: 'pending' },
+                include: [{
+                    model: StrangersMeetRequest,
+                    as: 'strangersMeetRequest',
+                    where: { userId: uId },
+                    attributes: ['id']
+                }],
+                attributes: ['id', 'createdAt']
+            }).catch(() => []),
+            PlanJoinRequest.findAll({
+                where: { status: 'pending' },
+                include: [{
+                    model: Plan,
+                    as: 'plan',
+                    where: { userId: uId },
+                    attributes: ['id']
+                }],
+                attributes: ['id', 'createdAt']
+            }).catch(() => []),
         ]);
-
-        const myTablePlanIds = myTablePlans.map(p => p.id);
-        const myPartyPlanIds = myPartyPlans.map(p => p.id);
-        const myStrangersMeetIds = myStrangersMeets.map(m => m.id);
 
         let chatCount = 0;
         for (const conv of userConversations) {
@@ -1309,39 +1336,6 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             const unread = isP1 ? ((conv as any).unreadOne || 0) : ((conv as any).unreadTwo || 0);
             chatCount += Number(unread || 0);
         }
-
-        // Execute phase 2 dependent queries in parallel
-        const [
-            incomingTableReqs,
-            incomingPartyReqs,
-            incomingStrangerJoiners
-        ] = await Promise.all([
-            myTablePlanIds.length > 0
-                ? PlanJoinRequest.findAll({ where: { planId: { [Op.in]: myTablePlanIds }, status: 'pending' }, attributes: ['id', 'createdAt'] })
-                : Promise.resolve([]),
-            myPartyPlanIds.length > 0
-                ? PartyPlanRequest.findAll({
-                    where: {
-                        planId: { [Op.in]: myPartyPlanIds },
-                        status: 'pending',
-                    },
-                    include: [{ model: PartyPlan, as: 'plan', attributes: ['selectedUsers'] }]
-                }).then(reqs => reqs.filter(r => {
-                    const planUsers = (r as any).plan?.selectedUsers;
-                    const isPrivateInvite = Array.isArray(planUsers) && planUsers.includes(r.requesterId);
-                    return !isPrivateInvite; // Only voluntary join requests count as incoming requests for host
-                }))
-                : Promise.resolve([]),
-            myStrangersMeetIds.length > 0
-                ? StrangersMeetJoiner.findAll({
-                    where: {
-                        strangersMeetRequestId: { [Op.in]: myStrangersMeetIds },
-                        status: 'pending'
-                    },
-                    attributes: ['id', 'createdAt']
-                })
-                : Promise.resolve([])
-        ]);
 
         const unreadIncomingTableRequestsCount = incomingTableReqs.filter(r => !activeReadRequestIds.has(r.id) && (!clearedAtTime || new Date((r as any).createdAt || 0).getTime() > clearedAtTime)).length;
         const unreadIncomingPartyRequestsCount = incomingPartyReqs.filter(r => !activeReadRequestIds.has(r.id) && (!clearedAtTime || new Date((r as any).createdAt || 0).getTime() > clearedAtTime)).length;

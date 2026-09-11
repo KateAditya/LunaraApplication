@@ -233,10 +233,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    // Background sync timer every 15 seconds (sockets provide instant real-time pushes)
-    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Background sync timer as fallback when sockets are reconnecting or for periodic sync
+    _pollingTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (mounted &&
-          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+          !ApiService.isSocketConnected) {
         _loadFeed(showLoader: false);
       }
     });
@@ -890,12 +891,73 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onNotificationsReadAll(dynamic data) {
     if (!mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    setState(() {
+      _notifications = _notifications.map((n) => {...n, 'read': true, 'isRead': true}).toList();
+      _cachedTimeline = _buildUnifiedTimeline();
+    });
+  }
+
+  void _patchEntityInFeed(dynamic data) {
+    if (!mounted || data == null) return;
+    if (data is! Map) {
+      _loadFeed(showLoader: false);
+      return;
+    }
+
+    final map = Map<String, dynamic>.from(data);
+    final entityId = (map['partyPlanId'] ?? map['planId'] ?? map['bookingId'] ?? map['id'] ?? map['_id'] ?? '').toString();
+    if (entityId.isEmpty) {
+      _loadFeed(showLoader: false);
+      return;
+    }
+
+    bool matched = false;
+
+    // 1. Patch _feedItems
+    final newFeed = _feedItems.map((item) {
+      final itemId = (item['id'] ?? item['_id'] ?? '').toString();
+      if (itemId == entityId) {
+        matched = true;
+        return {...item, ...map};
+      }
+      return item;
+    }).toList();
+
+    // 2. Patch _largePartyBookings
+    final newLargeParties = _largePartyBookings.map((b) {
+      final bId = (b['id'] ?? b['_id'] ?? '').toString();
+      if (bId == entityId) {
+        matched = true;
+        return {...b, ...map};
+      }
+      return b;
+    }).toList();
+
+    // 3. Patch _userBookings
+    final newUserBookings = _userBookings.map((b) {
+      final bId = (b['id'] ?? b['_id'] ?? '').toString();
+      if (bId == entityId) {
+        matched = true;
+        return {...b, ...map};
+      }
+      return b;
+    }).toList();
+
+    if (matched) {
+      setState(() {
+        _feedItems = newFeed;
+        _largePartyBookings = newLargeParties;
+        _userBookings = newUserBookings;
+        _cachedTimeline = _buildUnifiedTimeline();
+      });
+    } else {
+      // New entity created or not in current timeline — fetch silently
+      _loadFeed(showLoader: false);
+    }
   }
 
   void _onPartyPlanRequestUpdated(dynamic data) {
-    if (!mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _patchEntityInFeed(data);
   }
 
   void _onNotificationCreated(dynamic data) {
@@ -917,8 +979,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           recipientId != currentUid) {
         return;
       }
-      _loadFeed(showLoader: false, forceRefresh: true);
-      _loadGroupPartyBookings();
+
+      // Prepend notification directly to memory and rebuild timeline instantly
+      final notifId = notifMap['id']?.toString() ?? '';
+      final alreadyExists = _notifications.any((n) => (n['id']?.toString() ?? '') == notifId && notifId.isNotEmpty);
+      if (!alreadyExists) {
+        setState(() {
+          _notifications = [notifMap, ..._notifications];
+          _cachedTimeline = _buildUnifiedTimeline();
+        });
+      }
+
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'New Notification 🔔',
         body: notifMap['body'] ?? '',
@@ -928,9 +999,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ? Map<String, dynamic>.from(notifMap['metadata'])
                   : notifMap),
       );
-    } else {
-      _loadFeed(showLoader: false, forceRefresh: true);
-      _loadGroupPartyBookings();
     }
   }
 
@@ -950,8 +1018,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           recipientId != currentUid) {
         return;
       }
-      _loadFeed(showLoader: false, forceRefresh: true);
-      _loadGroupPartyBookings();
+      _patchEntityInFeed(data);
       TopNotificationBanner.show(
         title: notifMap['title'] ?? 'Group Party Updated 🎉',
         body:
@@ -963,39 +1030,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             : null,
       );
     } else {
-      _loadFeed(showLoader: false, forceRefresh: true);
-      _loadGroupPartyBookings();
+      _patchEntityInFeed(data);
     }
   }
 
   void _onPartyPlanCreated(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      setState(() {
+        _feedItems = [map, ..._feedItems];
+        _cachedTimeline = _buildUnifiedTimeline();
+      });
+    } else {
+      _loadFeed(showLoader: false);
+    }
   }
 
   void _onPartyPlanDeleted(dynamic data) {
     if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    if (data is Map) {
+      final delId = (data['partyPlanId'] ?? data['planId'] ?? data['id'])?.toString();
+      if (delId != null && delId.isNotEmpty) {
+        setState(() {
+          _feedItems = _feedItems.where((item) => (item['id'] ?? item['_id'])?.toString() != delId).toList();
+          _cachedTimeline = _buildUnifiedTimeline();
+        });
+        return;
+      }
+    }
+    _loadFeed(showLoader: false);
   }
 
   void _onPartyPlanRequestAccepted(dynamic data) {
-    if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _patchEntityInFeed(data);
   }
 
   void _onPartyPlanMatchSuccess(dynamic data) {
-    if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _patchEntityInFeed(data);
   }
 
   void _onPartyPlanHostPaid(dynamic data) {
-    if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _patchEntityInFeed(data);
   }
 
   void _onPartyPlanJoinerPaid(dynamic data) {
-    if (!mounted || !context.mounted) return;
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _patchEntityInFeed(data);
   }
 
   void _onPlanUnavailable(dynamic data) {
@@ -1005,9 +1085,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ?.toString();
       if (pId != null && pId.isNotEmpty) {
         ApiService.markPartyPlanAsCancelledLocal(pId);
+        setState(() {
+          _feedItems = _feedItems.where((item) => (item['id'] ?? item['_id'])?.toString() != pId).toList();
+          _cachedTimeline = _buildUnifiedTimeline();
+        });
+        return;
       }
     }
-    _loadFeed(showLoader: false, forceRefresh: true);
+    _loadFeed(showLoader: false);
   }
 
   Future<void> _loadGroupPartyBookings() async {

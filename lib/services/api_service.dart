@@ -317,6 +317,8 @@ class ApiService {
     }
   }
 
+  static bool get isSocketConnected => socket != null && socket!.connected == true;
+
   static void initSocket() {
     final userId = currentUserId;
     if (userId == null) return;
