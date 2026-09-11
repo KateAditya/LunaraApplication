@@ -13,6 +13,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { logger } from './config/logger';
 import { connectDatabase } from './config/database';
+import { redisService } from './config/redis';
 import { errorHandler } from './middleware/errorHandler';
 import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
@@ -534,6 +535,7 @@ const startServer = async () => {
         httpServer.listen(PORT, () => {
             logger.info(`Worker ${process.pid} running server on http://${HOST}:${PORT}`);
             logger.info(`Environment: ${process.env.NODE_ENV}`);
+            logger.info(`Cache Engine: ${redisService.isReady() ? 'Azure Managed Redis' : 'In-Memory High-Speed Cache'}`);
         });
 
         // Start Background Cron Jobs
