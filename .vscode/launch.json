@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter: Run App (Debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "Flutter: Run App (Profile Mode)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "Backend: Debug Server (TypeScript/ts-node)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/lunara_backend/server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["ts-node", "--transpile-only", "src/server.ts"],
+      "restart": true,
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Backend: Debug Compiled Server (dist/server.js)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/lunara_backend/server",
+      "program": "${workspaceFolder}/lunara_backend/server/dist/server.js",
+      "restart": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Backend: Attach to Running Process (Port 9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Flutter + Backend",
+      "configurations": [
+        "Backend: Debug Server (TypeScript/ts-node)",
+        "Flutter: Run App (Debug)"
+      ]
+    }
+  ]
+}

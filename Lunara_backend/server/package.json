@@ -5,8 +5,13 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon",
+    "dev:inspect": "nodemon --inspect=0.0.0.0:9229",
     "build": "tsc",
     "start": "node dist/server.js",
+    "start:inspect": "node --inspect=0.0.0.0:9229 dist/server.js",
+    "profile:doctor": "npx clinic doctor -- node dist/server.js",
+    "profile:flame": "npx clinic flame -- node dist/server.js",
+    "profile:bubble": "npx clinic bubbleprof -- node dist/server.js",
     "test": "jest --runInBand --detectOpenHandles --forceExit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",

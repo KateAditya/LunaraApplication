@@ -55,7 +55,8 @@ class ApiService {
   static final Map<String, List<Map<String, dynamic>>> _cachedCustomers = {};
   static final Map<String, DateTime> _customersCacheTimestamps = {};
 
-  static final Map<String, List<Map<String, dynamic>>> _cachedStrangersMeetFeed = {};
+  static final Map<String, List<Map<String, dynamic>>>
+  _cachedStrangersMeetFeed = {};
   static final Map<String, DateTime> _strangersMeetFeedCacheTimestamps = {};
 
   static Map<String, dynamic>? _cachedWalletBalance;
@@ -77,7 +78,8 @@ class ApiService {
   static DateTime? _subscriptionPackagesCacheTime;
 
   static Map<String, dynamic>? get cachedLiveFeedData => _cachedLiveFeedData;
-  static List<Map<String, dynamic>>? get cachedNotifications => _cachedNotifications;
+  static List<Map<String, dynamic>>? get cachedNotifications =>
+      _cachedNotifications;
 
   // Uses your machine's local IP (192.168.0.154) for local dev on a real device
   static String get baseUrl {
@@ -135,7 +137,8 @@ class ApiService {
   /// state from the previous account. Server data remains the source of truth.
   static final ValueNotifier<int> authSessionNotifier = ValueNotifier<int>(0);
 
-  static String _userPreferenceKey(String base, String userId) => '$base.$userId';
+  static String _userPreferenceKey(String base, String userId) =>
+      '$base.$userId';
 
   static void _ensureLocalStateForCurrentUser() {
     final userId = currentUserId;
@@ -182,7 +185,10 @@ class ApiService {
 
   /// Synchronously registers a newly created or updated party plan for 0ms instant display in Live Feed
   static void registerOptimisticPartyPlan(Map<String, dynamic> planData) {
-    final id = (planData['id'] ?? planData['partyPlanId'] ?? planData['planId'])?.toString() ?? '';
+    final id =
+        (planData['id'] ?? planData['partyPlanId'] ?? planData['planId'])
+            ?.toString() ??
+        '';
     if (id.isEmpty) return;
     _optimisticPartyPlans[id] = Map<String, dynamic>.from(planData);
     notifyFeedNeedsRefresh();
@@ -194,18 +200,23 @@ class ApiService {
   }
 
   /// Mark a party plan as requested locally for instant UI responsiveness.
-  static void markPartyPlanAsRequestedLocal(String planId, [Map<String, dynamic>? requestData]) {
+  static void markPartyPlanAsRequestedLocal(
+    String planId, [
+    Map<String, dynamic>? requestData,
+  ]) {
     _ensureLocalStateForCurrentUser();
     if (planId.isEmpty) return;
     _cachedRequestedPlanIds.add(planId);
-    _cachedPartyPlanRequests[planId] = requestData ?? {
-      'id': 'local_$planId',
-      'planId': planId,
-      'partyPlanId': planId,
-      'status': 'pending',
-      'joinerPaymentStatus': 'unpaid',
-      'createdAt': DateTime.now().toIso8601String(),
-    };
+    _cachedPartyPlanRequests[planId] =
+        requestData ??
+        {
+          'id': 'local_$planId',
+          'planId': planId,
+          'partyPlanId': planId,
+          'status': 'pending',
+          'joinerPaymentStatus': 'unpaid',
+          'createdAt': DateTime.now().toIso8601String(),
+        };
     _saveCachedRequestsToPrefs();
   }
 
@@ -254,7 +265,9 @@ class ApiService {
     final userId = currentUserId;
     final savedRequestedPlansJson = userId == null
         ? null
-        : prefs.getString(_userPreferenceKey('cached_requested_plan_ids', userId));
+        : prefs.getString(
+            _userPreferenceKey('cached_requested_plan_ids', userId),
+          );
     if (savedRequestedPlansJson != null) {
       try {
         final List<dynamic> list = jsonDecode(savedRequestedPlansJson);
@@ -317,7 +330,8 @@ class ApiService {
     }
   }
 
-  static bool get isSocketConnected => socket != null && socket!.connected == true;
+  static bool get isSocketConnected =>
+      socket != null && socket!.connected == true;
 
   static void initSocket() {
     final userId = currentUserId;
@@ -463,26 +477,41 @@ class ApiService {
 
   static String? get authToken => _authToken;
 
-  static Future<User?> fetchProfile({String? userId, bool forceRefresh = false}) async {
+  static Future<User?> fetchProfile({
+    String? userId,
+    bool forceRefresh = false,
+  }) async {
     try {
       if (_authToken == null) {
         await initAuthToken();
       }
       String? targetUserId = userId;
-      if (targetUserId == 'undefined' || targetUserId == 'null' || (targetUserId != null && targetUserId.trim().isEmpty)) {
+      if (targetUserId == 'undefined' ||
+          targetUserId == 'null' ||
+          (targetUserId != null && targetUserId.trim().isEmpty)) {
         targetUserId = null;
       }
       targetUserId ??= currentUserId ?? cachedCurrentUser?.id;
 
-      final isSelf = targetUserId == null || targetUserId == currentUserId || (cachedCurrentUser != null && targetUserId == cachedCurrentUser!.id);
-      if (isSelf && !forceRefresh && cachedCurrentUser != null && _lastProfileFetchTime != null) {
-        if (DateTime.now().difference(_lastProfileFetchTime!) < const Duration(seconds: 15)) {
+      final isSelf =
+          targetUserId == null ||
+          targetUserId == currentUserId ||
+          (cachedCurrentUser != null && targetUserId == cachedCurrentUser!.id);
+      if (isSelf &&
+          !forceRefresh &&
+          cachedCurrentUser != null &&
+          _lastProfileFetchTime != null) {
+        if (DateTime.now().difference(_lastProfileFetchTime!) <
+            const Duration(seconds: 15)) {
           return cachedCurrentUser;
         }
       }
 
       final Map<String, String> queryParams = {};
-      if (targetUserId != null && targetUserId != 'undefined' && targetUserId != 'null' && targetUserId.trim().isNotEmpty) {
+      if (targetUserId != null &&
+          targetUserId != 'undefined' &&
+          targetUserId != 'null' &&
+          targetUserId.trim().isNotEmpty) {
         queryParams['userId'] = targetUserId;
       }
 
@@ -549,7 +578,10 @@ class ApiService {
     return cachedCurrentUser!.calculateMatchWith(other);
   }
 
-  static Future<List<Venue>> fetchVenues({String? city, bool forceRefresh = false}) async {
+  static Future<List<Venue>> fetchVenues({
+    String? city,
+    bool forceRefresh = false,
+  }) async {
     final targetCity = (city ?? selectedCity ?? '').trim();
     final cacheKey = targetCity.toLowerCase();
     final now = DateTime.now();
@@ -660,7 +692,8 @@ class ApiService {
     bool forceRefresh = false,
   }) async {
     final targetCity = includeAllCities ? 'all' : (city ?? selectedCity ?? '');
-    final cacheKey = '${targetCity.toLowerCase()}_${limit}_${page}_$includeAllCities';
+    final cacheKey =
+        '${targetCity.toLowerCase()}_${limit}_${page}_$includeAllCities';
     final now = DateTime.now();
 
     if (!forceRefresh && _cachedCustomers.containsKey(cacheKey)) {
@@ -718,7 +751,10 @@ class ApiService {
     return [];
   }
 
-  static Future<List<Package>> fetchVenuePackages(String venueId, {bool forceRefresh = false}) async {
+  static Future<List<Package>> fetchVenuePackages(
+    String venueId, {
+    bool forceRefresh = false,
+  }) async {
     if (venueId.isEmpty) return [];
     final now = DateTime.now();
 
@@ -740,12 +776,16 @@ class ApiService {
             jsonResponse['data'] ?? jsonResponse['packages'];
 
         if (packageList is List) {
-          final list = packageList.map((json) => Package.fromJson(json)).toList();
+          final list = packageList
+              .map((json) => Package.fromJson(json))
+              .toList();
           _cachedPackagesByVenue[venueId] = list;
           _packagesCacheTimestamps[venueId] = DateTime.now();
           return list;
         } else if (jsonResponse is List) {
-          final list = jsonResponse.map((json) => Package.fromJson(json)).toList();
+          final list = jsonResponse
+              .map((json) => Package.fromJson(json))
+              .toList();
           _cachedPackagesByVenue[venueId] = list;
           _packagesCacheTimestamps[venueId] = DateTime.now();
           return list;
@@ -849,7 +889,8 @@ class ApiService {
       } else {
         try {
           final data = jsonDecode(response.body);
-          final msg = data['message'] ?? data['error'] ?? 'Failed to submit request';
+          final msg =
+              data['message'] ?? data['error'] ?? 'Failed to submit request';
           throw Exception(msg);
         } catch (e) {
           if (e is Exception) rethrow;
@@ -866,12 +907,17 @@ class ApiService {
   static DateTime? _bookingsCacheTime;
   static List<dynamic>? _cachedBookings;
 
-  static Future<List<dynamic>?> fetchBookings({bool forceRefresh = false}) async {
+  static Future<List<dynamic>?> fetchBookings({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return null;
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedBookings != null && _bookingsCacheTime != null && now.difference(_bookingsCacheTime!).inSeconds < 30) {
+    if (!forceRefresh &&
+        _cachedBookings != null &&
+        _bookingsCacheTime != null &&
+        now.difference(_bookingsCacheTime!).inSeconds < 30) {
       return _cachedBookings;
     }
 
@@ -907,7 +953,9 @@ class ApiService {
 
   /// Fetches only the current user's large-party (group party) booking requests.
   /// Returns them as a typed list sorted newest-first.
-  static Future<List<Map<String, dynamic>>> fetchMyLargePartyBookings({bool forceRefresh = false}) async {
+  static Future<List<Map<String, dynamic>>> fetchMyLargePartyBookings({
+    bool forceRefresh = false,
+  }) async {
     try {
       final userId = currentUserId;
       if (userId == null) return [];
@@ -923,7 +971,8 @@ class ApiService {
                 final gm = b['goingMode']?.toString();
                 if (gm != 'party_request' || gm == 'plan') return false;
                 final spec = b['specialRequests']?.toString() ?? '';
-                if (spec.contains('"joinerId"') || spec.contains('"planId"')) return false;
+                if (spec.contains('"joinerId"') || spec.contains('"planId"'))
+                  return false;
                 return true;
               })
               .map((b) => Map<String, dynamic>.from(b)),
@@ -943,16 +992,27 @@ class ApiService {
             final List rawList = data['data'];
             for (final gp in rawList) {
               if (gp is Map) {
-                final totalCount = (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5) is int
+                final totalCount =
+                    (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
+                        is int
                     ? (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
-                    : (int.tryParse((gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5).toString()) ?? 5);
+                    : (int.tryParse(
+                            (gp['numberOfFriends'] ??
+                                    gp['totalParticipants'] ??
+                                    5)
+                                .toString(),
+                          ) ??
+                          5);
                 final hostUser = gp['user'] ?? gp['host'];
                 groupParties.add({
                   'id': gp['id'],
                   'bookingId': gp['id'],
                   'venue': gp['venue'],
                   'venueName': gp['venue']?['name'],
-                  'venueAddress': gp['venue']?['addressLine1'] ?? gp['venue']?['city'] ?? '',
+                  'venueAddress':
+                      gp['venue']?['addressLine1'] ??
+                      gp['venue']?['city'] ??
+                      '',
                   'status': gp['status']?.toString() ?? 'pending',
                   'bookingStatus': gp['status']?.toString() ?? 'pending',
                   'paymentStatus': gp['paymentStatus']?.toString(),
@@ -965,7 +1025,9 @@ class ApiService {
                   'partySubject': 'Group Party',
                   'bookingDate': gp['partyDate'],
                   'partyDate': gp['partyDate'],
-                  'startTime': (gp['startTime'] != null && gp['startTime'].toString().trim().isNotEmpty)
+                  'startTime':
+                      (gp['startTime'] != null &&
+                          gp['startTime'].toString().trim().isNotEmpty)
                       ? gp['startTime'].toString().trim()
                       : '08:00 PM',
                   'approvedAmount': gp['totalAmount'],
@@ -986,16 +1048,23 @@ class ApiService {
           }
         }
       } catch (gpErr) {
-        debugPrint('fetchMyGroupParties in fetchMyLargePartyBookings error: $gpErr');
+        debugPrint(
+          'fetchMyGroupParties in fetchMyLargePartyBookings error: $gpErr',
+        );
       }
 
       // Combine both
-      final List<Map<String, dynamic>> combined = [...bookingParties, ...groupParties];
+      final List<Map<String, dynamic>> combined = [
+        ...bookingParties,
+        ...groupParties,
+      ];
 
       // Sort newest-first by createdAt
       combined.sort((a, b) {
-        final da = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(0);
-        final db = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(0);
+        final da =
+            DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(0);
+        final db =
+            DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(0);
         return db.compareTo(da);
       });
 
@@ -1013,12 +1082,17 @@ class ApiService {
   /// Fetches ALL tickets for current user across standard bookings, group parties (<= 20), and confirmed party plans.
   /// Reads directly from the backend `Ticket` table (`GET /api/mobile/tickets`)
   /// — the actual source of truth every real ticket-generation helper writes to.
-  static Future<List<Map<String, dynamic>>> fetchAllUserTickets({bool forceRefresh = false}) async {
+  static Future<List<Map<String, dynamic>>> fetchAllUserTickets({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return [];
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedTickets != null && _ticketsCacheTime != null && now.difference(_ticketsCacheTime!).inSeconds < 30) {
+    if (!forceRefresh &&
+        _cachedTickets != null &&
+        _ticketsCacheTime != null &&
+        now.difference(_ticketsCacheTime!).inSeconds < 30) {
       return _cachedTickets!;
     }
 
@@ -1030,9 +1104,14 @@ class ApiService {
     return _inFlightTickets!;
   }
 
-  static Future<List<Map<String, dynamic>>> _doFetchAllUserTickets(String userId) async {
+  static Future<List<Map<String, dynamic>>> _doFetchAllUserTickets(
+    String userId,
+  ) async {
     try {
-      final response = await get('/api/mobile/tickets', queryParameters: {'tab': 'all', 'userId': userId});
+      final response = await get(
+        '/api/mobile/tickets',
+        queryParameters: {'tab': 'all', 'userId': userId},
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
@@ -1055,7 +1134,10 @@ class ApiService {
     try {
       final bookings = await fetchBookings(forceRefresh: true);
       if (bookings != null && bookings.isNotEmpty) {
-        return bookings.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList();
+        return bookings
+            .whereType<Map>()
+            .map((b) => Map<String, dynamic>.from(b))
+            .toList();
       }
     } catch (e) {
       debugPrint('fetchAllUserTickets fallback error: $e');
@@ -1063,8 +1145,6 @@ class ApiService {
 
     return <Map<String, dynamic>>[];
   }
-
-
 
   static Future<Map<String, dynamic>?> swipeUser({
     required String targetUserId,
@@ -1112,10 +1192,7 @@ class ApiService {
 
       final response = await post(
         '/api/mobile/user/unlike',
-        body: {
-          'userId': userId,
-          'targetUserId': targetUserId,
-        },
+        body: {'userId': userId, 'targetUserId': targetUserId},
       );
 
       if (response.statusCode == 200) {
@@ -1210,7 +1287,8 @@ class ApiService {
   }) async {
     try {
       final userId = currentUserId;
-      if (userId == null) return {'users': [], 'pagination': {}, 'locked': false};
+      if (userId == null)
+        return {'users': [], 'pagination': {}, 'locked': false};
 
       final response = await get(
         '/api/mobile/user/who-liked-me',
@@ -1297,7 +1375,11 @@ class ApiService {
     bool forceRefresh = false,
   }) async {
     final now = DateTime.now();
-    if (!forceRefresh && venueId == null && date == null && _cachedLiveFeedData != null && _liveFeedCacheTime != null) {
+    if (!forceRefresh &&
+        venueId == null &&
+        date == null &&
+        _cachedLiveFeedData != null &&
+        _liveFeedCacheTime != null) {
       if (now.difference(_liveFeedCacheTime!).inSeconds < 5) {
         return _cachedLiveFeedData!;
       }
@@ -1316,22 +1398,36 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          final myReqs = List<Map<String, dynamic>>.from(data['myRequests'] ?? []);
+          final myReqs = List<Map<String, dynamic>>.from(
+            data['myRequests'] ?? [],
+          );
           for (final req in myReqs) {
-            final pId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
-            final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
-            if (pId != null && pId.isNotEmpty && reqStatus != 'cancelled' && reqStatus != 'rejected') {
+            final pId =
+                req['partyPlanId']?.toString() ??
+                req['planId']?.toString() ??
+                req['plan']?['id']?.toString();
+            final reqStatus =
+                (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending')
+                    .toString()
+                    .toLowerCase();
+            if (pId != null &&
+                pId.isNotEmpty &&
+                reqStatus != 'cancelled' &&
+                reqStatus != 'rejected') {
               markPartyPlanAsRequestedLocal(pId, req);
             }
           }
           final feedList = List<Map<String, dynamic>>.from(data['data'] ?? []);
           final Set<String> existingPlanIds = {};
           for (final f in feedList) {
-            final pid = (f['id'] ?? f['planId'] ?? f['partyPlanId'])?.toString();
+            final pid = (f['id'] ?? f['planId'] ?? f['partyPlanId'])
+                ?.toString();
             if (pid != null) existingPlanIds.add(pid);
           }
           for (final r in myReqs) {
-            final pid = (r['partyPlanId'] ?? r['planId'] ?? r['id'] ?? r['plan']?['id'])?.toString();
+            final pid =
+                (r['partyPlanId'] ?? r['planId'] ?? r['id'] ?? r['plan']?['id'])
+                    ?.toString();
             if (pid != null) existingPlanIds.add(pid);
           }
           _optimisticPartyPlans.forEach((optId, optPlan) {
@@ -1365,7 +1461,12 @@ class ApiService {
     }
     final fallbackFeed = <Map<String, dynamic>>[];
     _optimisticPartyPlans.forEach((_, optPlan) => fallbackFeed.add(optPlan));
-    return {'feed': fallbackFeed, 'myRequests': [], 'incomingRequests': [], 'pendingPayments': []};
+    return {
+      'feed': fallbackFeed,
+      'myRequests': [],
+      'incomingRequests': [],
+      'pendingPayments': [],
+    };
   }
 
   static Future<PartyPlanRequestResult> requestToJoinPartyPlanDetailed(
@@ -1488,9 +1589,18 @@ class ApiService {
         if (data['success'] == true && data['data'] != null) {
           final list = List<Map<String, dynamic>>.from(data['data']);
           for (final req in list) {
-            final pId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
-            final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
-            if (pId != null && pId.isNotEmpty && reqStatus != 'cancelled' && reqStatus != 'rejected') {
+            final pId =
+                req['partyPlanId']?.toString() ??
+                req['planId']?.toString() ??
+                req['plan']?['id']?.toString();
+            final reqStatus =
+                (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending')
+                    .toString()
+                    .toLowerCase();
+            if (pId != null &&
+                pId.isNotEmpty &&
+                reqStatus != 'cancelled' &&
+                reqStatus != 'rejected') {
               markPartyPlanAsRequestedLocal(pId, req);
             }
           }
@@ -1588,7 +1698,9 @@ class ApiService {
 
   /// Loads the authoritative Party Plan data used when opening a notification
   /// or push deep link, where the original payload only contains a plan ID.
-  static Future<Map<String, dynamic>?> fetchPartyPlanDetail(String planId) async {
+  static Future<Map<String, dynamic>?> fetchPartyPlanDetail(
+    String planId,
+  ) async {
     if (planId.isEmpty) return null;
     try {
       final response = await get('/api/mobile/party-plans/$planId');
@@ -1605,7 +1717,10 @@ class ApiService {
   }
 
   /// Cancels only the caller's unaccepted Party Plan request.
-  static Future<bool> cancelPartyPlanRequest(String reqId, {String? reason}) async {
+  static Future<bool> cancelPartyPlanRequest(
+    String reqId, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
@@ -1634,7 +1749,10 @@ class ApiService {
   }
 
   /// Withdraws the caller's accepted request before their payment completes.
-  static Future<bool> withdrawPartyPlanRequest(String reqId, {String? reason}) async {
+  static Future<bool> withdrawPartyPlanRequest(
+    String reqId, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
@@ -1663,7 +1781,10 @@ class ApiService {
   }
 
   /// Host-only: withdraws an acceptance while the participant remains unpaid.
-  static Future<bool> revokePartyPlanAcceptance(String reqId, {String? reason}) async {
+  static Future<bool> revokePartyPlanAcceptance(
+    String reqId, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
@@ -1756,9 +1877,13 @@ class ApiService {
     return false;
   }
 
-  static Future<Map<String, dynamic>?> cancelPartyPlanDetailed(String planId, {String? reason}) async {
+  static Future<Map<String, dynamic>?> cancelPartyPlanDetailed(
+    String planId, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not authenticated'};
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/cancel',
@@ -1767,7 +1892,9 @@ class ApiService {
       markPartyPlanAsCancelledLocal(planId);
       notifyFeedNeedsRefresh();
       final data = jsonDecode(response.body);
-      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': response.statusCode == 200};
     } catch (e) {
       debugPrint('cancelPartyPlan error: $e');
       return {'success': false, 'message': e.toString()};
@@ -1785,7 +1912,8 @@ class ApiService {
     String? reason,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not authenticated'};
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/repost',
@@ -1798,16 +1926,21 @@ class ApiService {
       markPartyPlanAsCancelledLocal(planId);
       notifyFeedNeedsRefresh();
       final data = jsonDecode(response.body);
-      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': response.statusCode == 200};
     } catch (e) {
       debugPrint('repostPartyPlan error: $e');
       return {'success': false, 'message': e.toString()};
     }
   }
 
-  static Future<Map<String, dynamic>?> makePartyPlanPublic(String planId) async {
+  static Future<Map<String, dynamic>?> makePartyPlanPublic(
+    String planId,
+  ) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not authenticated'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not authenticated'};
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/make-public',
@@ -1815,19 +1948,25 @@ class ApiService {
       );
       notifyFeedNeedsRefresh();
       final data = jsonDecode(response.body);
-      return data is Map<String, dynamic> ? data : {'success': response.statusCode == 200};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': response.statusCode == 200};
     } catch (e) {
       debugPrint('makePartyPlanPublic error: $e');
       return {'success': false, 'message': e.toString()};
     }
   }
 
-  static Future<Map<String, dynamic>?> fetchWalletBalance({bool forceRefresh = false}) async {
+  static Future<Map<String, dynamic>?> fetchWalletBalance({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return null;
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedWalletBalance != null && _walletBalanceCacheTime != null) {
+    if (!forceRefresh &&
+        _cachedWalletBalance != null &&
+        _walletBalanceCacheTime != null) {
       if (now.difference(_walletBalanceCacheTime!).inSeconds < 10) {
         return _cachedWalletBalance;
       }
@@ -1852,12 +1991,16 @@ class ApiService {
     return _cachedWalletBalance;
   }
 
-  static Future<Map<String, dynamic>?> fetchWalletData({bool forceRefresh = false}) async {
+  static Future<Map<String, dynamic>?> fetchWalletData({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return null;
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedWalletData != null && _walletDataCacheTime != null) {
+    if (!forceRefresh &&
+        _cachedWalletData != null &&
+        _walletDataCacheTime != null) {
       if (now.difference(_walletDataCacheTime!).inSeconds < 10) {
         return _cachedWalletData;
       }
@@ -1882,7 +2025,9 @@ class ApiService {
     return _cachedWalletData;
   }
 
-  static Future<Map<String, dynamic>?> createWalletRechargeOrder(double amount) async {
+  static Future<Map<String, dynamic>?> createWalletRechargeOrder(
+    double amount,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
@@ -1957,7 +2102,9 @@ class ApiService {
   }
 
   static String cleanBookingId(String rawId) {
-    final uuidRegex = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+    final uuidRegex = RegExp(
+      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+    );
     final match = uuidRegex.firstMatch(rawId);
     if (match != null) {
       return match.group(0)!;
@@ -2056,13 +2203,17 @@ class ApiService {
           if (alternateMobileNumber != null && alternateMobileNumber.isNotEmpty)
             'alternateMobileNumber': alternateMobileNumber,
           if (bankName != null && bankName.isNotEmpty) 'bankName': bankName,
-          if (accountNumber != null && accountNumber.isNotEmpty) 'accountNumber': accountNumber,
-          if (accountHolderName != null && accountHolderName.isNotEmpty) 'accountHolderName': accountHolderName,
+          if (accountNumber != null && accountNumber.isNotEmpty)
+            'accountNumber': accountNumber,
+          if (accountHolderName != null && accountHolderName.isNotEmpty)
+            'accountHolderName': accountHolderName,
           if (ifscCode != null && ifscCode.isNotEmpty) 'ifscCode': ifscCode,
           if (upiId != null && upiId.isNotEmpty) 'upiId': upiId,
           if (upiNumber != null && upiNumber.isNotEmpty) 'upiNumber': upiNumber,
-          if (foodPreference != null && foodPreference.isNotEmpty) 'foodPreference': foodPreference,
-          if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
+          if (foodPreference != null && foodPreference.isNotEmpty)
+            'foodPreference': foodPreference,
+          if (drinkPreference != null && drinkPreference.isNotEmpty)
+            'drinkPreference': drinkPreference,
         },
       );
       if (response.statusCode == 201) {
@@ -2077,7 +2228,8 @@ class ApiService {
       } else {
         try {
           final data = jsonDecode(response.body);
-          final msg = data['message'] ?? data['error'] ?? 'Failed to submit request';
+          final msg =
+              data['message'] ?? data['error'] ?? 'Failed to submit request';
           throw Exception(msg);
         } catch (e) {
           if (e is Exception) rethrow;
@@ -2144,10 +2296,15 @@ class ApiService {
     String id,
   ) async {
     try {
-      final cleanId = id.trim().replaceAll(
-        RegExp(r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_|strangers_meet_|notification_|notif_)'),
-        '',
-      ).trim();
+      final cleanId = id
+          .trim()
+          .replaceAll(
+            RegExp(
+              r'^(sm_host_approved_|sm_join_|sm_meet_|sm_|stranger_meet_|strangers_meet_|notification_|notif_)',
+            ),
+            '',
+          )
+          .trim();
 
       final response = await get('/api/mobile/strangers-meet/$cleanId');
       if (response.statusCode == 200) {
@@ -2187,7 +2344,8 @@ class ApiService {
       if (response.statusCode == 200 && data['success'] == true) {
         return data;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to initiate payment';
+        final msg =
+            data['message'] ?? data['error'] ?? 'Failed to initiate payment';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2222,7 +2380,8 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to confirm payment';
+        final msg =
+            data['message'] ?? data['error'] ?? 'Failed to confirm payment';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2231,17 +2390,17 @@ class ApiService {
     }
   }
 
-  static Future<bool> updateStrangersMeetCharges(String id, double chargesPerHead) async {
+  static Future<bool> updateStrangersMeetCharges(
+    String id,
+    double chargesPerHead,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return false;
 
     try {
       final response = await patch(
         '/api/mobile/strangers-meet/$id/charges',
-        body: {
-          'userId': userId,
-          'chargesPerHead': chargesPerHead,
-        },
+        body: {'userId': userId, 'chargesPerHead': chargesPerHead},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -2273,7 +2432,10 @@ class ApiService {
       if (response.statusCode == 200 && data['success'] == true) {
         return data;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to initiate join payment';
+        final msg =
+            data['message'] ??
+            data['error'] ??
+            'Failed to initiate join payment';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2308,7 +2470,10 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to confirm join payment';
+        final msg =
+            data['message'] ??
+            data['error'] ??
+            'Failed to confirm join payment';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2333,7 +2498,10 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to complete strangers meet';
+        final msg =
+            data['message'] ??
+            data['error'] ??
+            'Failed to complete strangers meet';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2355,18 +2523,22 @@ class ApiService {
         '/api/mobile/strangers-meet/$id/join-request',
         body: {
           'userId': userId,
-          if (foodPreference != null && foodPreference.isNotEmpty) 'foodPreference': foodPreference,
-          if (drinkPreference != null && drinkPreference.isNotEmpty) 'drinkPreference': drinkPreference,
+          if (foodPreference != null && foodPreference.isNotEmpty)
+            'foodPreference': foodPreference,
+          if (drinkPreference != null && drinkPreference.isNotEmpty)
+            'drinkPreference': drinkPreference,
         },
       );
       final data = jsonDecode(response.body);
-      if ((response.statusCode == 201 || response.statusCode == 200) && data['success'] == true) {
+      if ((response.statusCode == 201 || response.statusCode == 200) &&
+          data['success'] == true) {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to send join request';
+        final msg =
+            data['message'] ?? data['error'] ?? 'Failed to send join request';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2395,7 +2567,8 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to handle join request';
+        final msg =
+            data['message'] ?? data['error'] ?? 'Failed to handle join request';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2423,7 +2596,10 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return true;
       } else {
-        final msg = data['message'] ?? data['error'] ?? 'Failed to submit settlement request';
+        final msg =
+            data['message'] ??
+            data['error'] ??
+            'Failed to submit settlement request';
         throw Exception(msg);
       }
     } catch (e) {
@@ -2433,7 +2609,9 @@ class ApiService {
   }
 
   /// Fetch financial breakdown for a Strangers Meet (platform fee, host profit, settlement)
-  static Future<Map<String, dynamic>?> fetchStrangersMeetFinancials(String id) async {
+  static Future<Map<String, dynamic>?> fetchStrangersMeetFinancials(
+    String id,
+  ) async {
     try {
       final response = await get('/api/mobile/strangers-meet/$id/financials');
       if (response.statusCode == 200) {
@@ -2458,7 +2636,8 @@ class ApiService {
     try {
       final Map<String, dynamic> body = {'userId': userId};
       if (durationHours != null) body['durationHours'] = durationHours;
-      if (customEndDateTime != null) body['customEndDateTime'] = customEndDateTime;
+      if (customEndDateTime != null)
+        body['customEndDateTime'] = customEndDateTime;
 
       final response = await post(
         '/api/mobile/strangers-meet/$id/start',
@@ -2491,7 +2670,8 @@ class ApiService {
     try {
       final Map<String, dynamic> body = {'userId': userId};
       if (additionalHours != null) body['additionalHours'] = additionalHours;
-      if (customEndDateTime != null) body['customEndDateTime'] = customEndDateTime;
+      if (customEndDateTime != null)
+        body['customEndDateTime'] = customEndDateTime;
 
       final response = await post(
         '/api/mobile/strangers-meet/$id/extend',
@@ -2513,7 +2693,10 @@ class ApiService {
   }
 
   /// Host marks Strangers Meet as not started
-  static Future<Map<String, dynamic>?> reportStrangersMeetNotStarted(String id, {String? reason}) async {
+  static Future<Map<String, dynamic>?> reportStrangersMeetNotStarted(
+    String id, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
@@ -2529,7 +2712,9 @@ class ApiService {
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
         return data['data'];
       } else {
-        throw Exception(data['message'] ?? 'Failed to mark meetup as not started');
+        throw Exception(
+          data['message'] ?? 'Failed to mark meetup as not started',
+        );
       }
     } catch (e) {
       debugPrint('reportStrangersMeetNotStarted error: $e');
@@ -2538,7 +2723,9 @@ class ApiService {
   }
 
   /// Host confirms Strangers Meet ended
-  static Future<Map<String, dynamic>?> confirmStrangersMeetEnded(String id) async {
+  static Future<Map<String, dynamic>?> confirmStrangersMeetEnded(
+    String id,
+  ) async {
     final userId = currentUserId;
     if (userId == null) throw Exception('User not logged in');
 
@@ -2569,13 +2756,11 @@ class ApiService {
     String? otherReasonText,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not logged in'};
 
     try {
-      final Map<String, dynamic> body = {
-        'userId': userId,
-        'reason': reason,
-      };
+      final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
       if (otherReasonText != null && otherReasonText.trim().isNotEmpty) {
         body['otherReasonText'] = otherReasonText.trim();
       }
@@ -2589,11 +2774,18 @@ class ApiService {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
-        return {'success': true, 'message': data['message'], 'data': data['data']};
+        return {
+          'success': true,
+          'message': data['message'],
+          'data': data['data'],
+        };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? data['error'] ?? 'Failed to request cancellation',
+          'message':
+              data['message'] ??
+              data['error'] ??
+              'Failed to request cancellation',
         };
       }
     } catch (e) {
@@ -2610,13 +2802,11 @@ class ApiService {
     String? rejectReason,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not logged in'};
 
     try {
-      final Map<String, dynamic> body = {
-        'userId': userId,
-        'action': action,
-      };
+      final Map<String, dynamic> body = {'userId': userId, 'action': action};
       if (rejectReason != null && rejectReason.trim().isNotEmpty) {
         body['rejectReason'] = rejectReason.trim();
       }
@@ -2630,11 +2820,18 @@ class ApiService {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
-        return {'success': true, 'message': data['message'], 'data': data['data']};
+        return {
+          'success': true,
+          'message': data['message'],
+          'data': data['data'],
+        };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? data['error'] ?? 'Failed to respond to cancellation',
+          'message':
+              data['message'] ??
+              data['error'] ??
+              'Failed to respond to cancellation',
         };
       }
     } catch (e) {
@@ -2650,13 +2847,11 @@ class ApiService {
     String? reasonText,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not logged in'};
 
     try {
-      final Map<String, dynamic> body = {
-        'userId': userId,
-        'reason': reason,
-      };
+      final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
       if (reasonText != null && reasonText.trim().isNotEmpty) {
         body['reasonText'] = reasonText.trim();
       }
@@ -2670,11 +2865,18 @@ class ApiService {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerStrangerMeetSync();
-        return {'success': true, 'message': data['message'], 'data': data['data']};
+        return {
+          'success': true,
+          'message': data['message'],
+          'data': data['data'],
+        };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? data['error'] ?? 'Failed to request host cancellation',
+          'message':
+              data['message'] ??
+              data['error'] ??
+              'Failed to request host cancellation',
         };
       }
     } catch (e) {
@@ -2695,13 +2897,11 @@ class ApiService {
     String? ifscCode,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not logged in'};
 
     try {
-      final Map<String, dynamic> body = {
-        'userId': userId,
-        'reason': reason,
-      };
+      final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
       if (reasonDetails != null && reasonDetails.trim().isNotEmpty) {
         body['reasonDetails'] = reasonDetails.trim();
       }
@@ -2729,11 +2929,18 @@ class ApiService {
       if (response.statusCode == 200 && data['success'] == true) {
         clearBookingCache();
         notifyFeedNeedsRefresh();
-        return {'success': true, 'message': data['message'], 'data': data['data']};
+        return {
+          'success': true,
+          'message': data['message'],
+          'data': data['data'],
+        };
       } else {
         return {
           'success': false,
-          'message': data['message'] ?? data['error'] ?? 'Failed to submit cancellation request',
+          'message':
+              data['message'] ??
+              data['error'] ??
+              'Failed to submit cancellation request',
         };
       }
     } catch (e) {
@@ -2743,9 +2950,13 @@ class ApiService {
   }
 
   /// Fetch cancellation status for a Large Party
-  static Future<Map<String, dynamic>?> fetchLargePartyCancellationStatus(String bookingId) async {
+  static Future<Map<String, dynamic>?> fetchLargePartyCancellationStatus(
+    String bookingId,
+  ) async {
     try {
-      final response = await get('/api/mobile/bookings/$bookingId/cancellation-status');
+      final response = await get(
+        '/api/mobile/bookings/$bookingId/cancellation-status',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -2760,9 +2971,13 @@ class ApiService {
   }
 
   /// Fetch cancellation status for a Stranger Meet
-  static Future<Map<String, dynamic>?> fetchStrangersMeetCancellationStatus(String id) async {
+  static Future<Map<String, dynamic>?> fetchStrangersMeetCancellationStatus(
+    String id,
+  ) async {
     try {
-      final response = await get('/api/mobile/strangers-meet/$id/cancellation-status');
+      final response = await get(
+        '/api/mobile/strangers-meet/$id/cancellation-status',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) return data['data'];
@@ -2904,7 +3119,10 @@ class ApiService {
     if (errStr.contains('500') || errStr.contains('Internal Server Error')) {
       return 'The server encountered a temporary issue. Please try again in a few moments.';
     }
-    if (errStr.contains('502') || errStr.contains('Bad Gateway') || errStr.contains('503') || errStr.contains('Service Unavailable')) {
+    if (errStr.contains('502') ||
+        errStr.contains('Bad Gateway') ||
+        errStr.contains('503') ||
+        errStr.contains('Service Unavailable')) {
       return 'Server is briefly undergoing maintenance. Please try again shortly.';
     }
     if (errStr.startsWith('Exception: ')) {
@@ -2937,7 +3155,9 @@ class ApiService {
       final request = http.Request('GET', uri);
       request.headers.addAll(headers);
       request.body = jsonEncode(body);
-      final streamedResponse = await _httpClient.send(request).timeout(timeout ?? defaultTimeout);
+      final streamedResponse = await _httpClient
+          .send(request)
+          .timeout(timeout ?? defaultTimeout);
       final response = await http.Response.fromStream(streamedResponse);
       _checkAutoblockedResponse(response);
       return response;
@@ -2954,12 +3174,16 @@ class ApiService {
       while (true) {
         attempts++;
         try {
-          final res = await _httpClient.get(uri, headers: headers).timeout(timeout ?? defaultTimeout);
+          final res = await _httpClient
+              .get(uri, headers: headers)
+              .timeout(timeout ?? defaultTimeout);
           _checkAutoblockedResponse(res);
           return res;
         } on TimeoutException {
           if (attempts >= 2) rethrow;
-          debugPrint('[ApiService] GET $uri timed out on attempt $attempts, retrying once...');
+          debugPrint(
+            '[ApiService] GET $uri timed out on attempt $attempts, retrying once...',
+          );
           await Future.delayed(const Duration(milliseconds: 500));
         } catch (e) {
           rethrow;
@@ -2976,7 +3200,9 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+  static Future<Map<String, dynamic>> updateProfile(
+    Map<String, dynamic> data,
+  ) async {
     try {
       final response = await put('/api/profile/update', body: data);
       debugPrint('updateProfile ${response.statusCode}: ${response.body}');
@@ -2989,14 +3215,14 @@ class ApiService {
       }
       return {
         'success': false,
-        'message': resData['message'] ?? resData['error'] ?? 'Failed to update profile (${response.statusCode})',
+        'message':
+            resData['message'] ??
+            resData['error'] ??
+            'Failed to update profile (${response.statusCode})',
       };
     } catch (e) {
       debugPrint('updateProfile error: $e');
-      return {
-        'success': false,
-        'message': 'Error: $e',
-      };
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 
@@ -3026,10 +3252,12 @@ class ApiService {
           ),
         );
       }
-      final fields = <String, String>{
-        'isPrimary': isPrimary.toString(),
-      };
-      final response = await postMultipart('/api/profile/photos', files: files, fields: fields);
+      final fields = <String, String>{'isPrimary': isPrimary.toString()};
+      final response = await postMultipart(
+        '/api/profile/photos',
+        files: files,
+        fields: fields,
+      );
       debugPrint('uploadProfilePhotos status: ${response.statusCode}');
       debugPrint('uploadProfilePhotos body: ${response.body}');
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -3068,7 +3296,9 @@ class ApiService {
   static Future<Map<String, dynamic>> setPrimaryPhoto(String photoId) async {
     try {
       final userId = currentUserId;
-      final requestBody = userId != null ? {'userId': userId} : <String, dynamic>{};
+      final requestBody = userId != null
+          ? {'userId': userId}
+          : <String, dynamic>{};
 
       var response = await put(
         '/api/profile/photos/$photoId/primary',
@@ -3103,7 +3333,10 @@ class ApiService {
       };
     } catch (e) {
       debugPrint('setPrimaryPhoto error: $e');
-      return {'success': false, 'message': 'Failed to update profile picture: $e'};
+      return {
+        'success': false,
+        'message': 'Failed to update profile picture: $e',
+      };
     }
   }
 
@@ -3137,10 +3370,7 @@ class ApiService {
             msg = firstErr;
           }
         }
-        return {
-          'success': false,
-          'message': msg,
-        };
+        return {'success': false, 'message': msg};
       }
     } catch (e) {
       debugPrint('changePassword error: $e');
@@ -3164,11 +3394,13 @@ class ApiService {
       if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await _httpClient.put(
-      uri,
-      headers: headers,
-      body: body != null ? jsonEncode(body) : null,
-    ).timeout(timeout ?? defaultTimeout);
+    final response = await _httpClient
+        .put(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -3186,11 +3418,13 @@ class ApiService {
       if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await _httpClient.post(
-      uri,
-      headers: headers,
-      body: body != null ? jsonEncode(body) : null,
-    ).timeout(timeout ?? defaultTimeout);
+    final response = await _httpClient
+        .post(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -3208,11 +3442,13 @@ class ApiService {
       if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
       if (_authToken != null) 'Authorization': 'Bearer $_authToken',
     };
-    final response = await _httpClient.patch(
-      uri,
-      headers: headers,
-      body: body != null ? jsonEncode(body) : null,
-    ).timeout(timeout ?? defaultTimeout);
+    final response = await _httpClient
+        .patch(
+          uri,
+          headers: headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(response);
     return response;
   }
@@ -3233,7 +3469,9 @@ class ApiService {
     final request = http.Request('DELETE', uri);
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
-    final streamed = await _httpClient.send(request).timeout(timeout ?? defaultTimeout);
+    final streamed = await _httpClient
+        .send(request)
+        .timeout(timeout ?? defaultTimeout);
     final response = await http.Response.fromStream(streamed);
     _checkAutoblockedResponse(response);
     return response;
@@ -3301,12 +3539,17 @@ class ApiService {
         body['contextType'] ??= 'plan';
       }
       final response = await post('/api/mobile/chat/conversations', body: body);
-      debugPrint('[Chat] createOrGetConversation status=${response.statusCode}');
-      debugPrint('[Chat] createOrGetConversation body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
+      debugPrint(
+        '[Chat] createOrGetConversation status=${response.statusCode}',
+      );
+      debugPrint(
+        '[Chat] createOrGetConversation body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}',
+      );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          final convId = data['data']?['conversationId']?.toString() ??
+          final convId =
+              data['data']?['conversationId']?.toString() ??
               data['data']?['id']?.toString();
           debugPrint('[Chat] got conversationId: $convId');
           return convId;
@@ -3339,8 +3582,12 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages',
         queryParameters: params,
       );
-      debugPrint('[Chat] fetchMessages status=${response.statusCode} convId=$conversationId');
-      debugPrint('[Chat] fetchMessages body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
+      debugPrint(
+        '[Chat] fetchMessages status=${response.statusCode} convId=$conversationId',
+      );
+      debugPrint(
+        '[Chat] fetchMessages body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
@@ -3388,8 +3635,12 @@ class ApiService {
         '/api/mobile/chat/conversations/$conversationId/messages',
         body: body,
       );
-      debugPrint('[Chat] sendMessage status=${response.statusCode} convId=$conversationId');
-      debugPrint('[Chat] sendMessage body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}');
+      debugPrint(
+        '[Chat] sendMessage status=${response.statusCode} convId=$conversationId',
+      );
+      debugPrint(
+        '[Chat] sendMessage body=${response.body.substring(0, response.body.length > 300 ? 300 : response.body.length)}',
+      );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -3725,14 +3976,17 @@ class ApiService {
     return false;
   }
 
-  static bool get isLoggedIn => _authToken != null && _authToken!.trim().isNotEmpty;
+  static bool get isLoggedIn =>
+      _authToken != null && _authToken!.trim().isNotEmpty;
 
   static String? get currentUserId {
     if (_authToken != null && _authToken!.trim().isNotEmpty) {
       try {
         final parts = _authToken!.split('.');
         if (parts.length == 3) {
-          String normalized = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+          String normalized = parts[1]
+              .replaceAll('-', '+')
+              .replaceAll('_', '/');
           switch (normalized.length % 4) {
             case 2:
               normalized += '==';
@@ -3743,12 +3997,16 @@ class ApiService {
           }
           final payload = utf8.decode(base64.decode(normalized));
           final data = jsonDecode(payload);
-          final rawId = data['userId']?.toString() ??
+          final rawId =
+              data['userId']?.toString() ??
               data['id']?.toString() ??
               data['_id']?.toString() ??
               data['user_id']?.toString() ??
               data['sub']?.toString();
-          if (rawId != null && rawId != 'undefined' && rawId != 'null' && rawId.trim().isNotEmpty) {
+          if (rawId != null &&
+              rawId != 'undefined' &&
+              rawId != 'null' &&
+              rawId.trim().isNotEmpty) {
             return rawId;
           }
         }
@@ -3756,7 +4014,8 @@ class ApiService {
         debugPrint('Error decoding JWT in currentUserId: $e');
       }
     }
-    if (cachedCurrentUser?.id != null && cachedCurrentUser!.id.trim().isNotEmpty) {
+    if (cachedCurrentUser?.id != null &&
+        cachedCurrentUser!.id.trim().isNotEmpty) {
       return cachedCurrentUser!.id;
     }
     return null;
@@ -3776,11 +4035,13 @@ class ApiService {
       final userId = currentUserId;
       if (userId == null || userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      final reqs = prefs.getStringList(
+      final reqs =
+          prefs.getStringList(
             _userPreferenceKey('localReadRequestIds', userId),
           ) ??
           [];
-      final notifs = prefs.getStringList(
+      final notifs =
+          prefs.getStringList(
             _userPreferenceKey('localReadNotificationIds', userId),
           ) ??
           [];
@@ -3825,12 +4086,16 @@ class ApiService {
   }
 
   /// Fetch in-app notifications for current user
-  static Future<List<Map<String, dynamic>>> fetchNotifications({bool forceRefresh = false}) async {
+  static Future<List<Map<String, dynamic>>> fetchNotifications({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return [];
 
     final now = DateTime.now();
-    if (!forceRefresh && _cachedNotifications != null && _notificationsCacheTime != null) {
+    if (!forceRefresh &&
+        _cachedNotifications != null &&
+        _notificationsCacheTime != null) {
       if (now.difference(_notificationsCacheTime!).inSeconds < 20) {
         return _cachedNotifications!;
       }
@@ -3881,13 +4146,16 @@ class ApiService {
     final cleanCount = count < 0 ? 0 : count;
     if (_cachedBadgeCounts != null) {
       _cachedBadgeCounts!['chatCount'] = cleanCount;
-      _cachedBadgeCounts!['totalCount'] = (_cachedBadgeCounts!['liveFeedCount'] ?? 0) + cleanCount;
+      _cachedBadgeCounts!['totalCount'] =
+          (_cachedBadgeCounts!['liveFeedCount'] ?? 0) + cleanCount;
     }
     chatBadgeNotifier.value = cleanCount;
   }
 
   /// Fetches real unread count for badge indicators
-  static Future<Map<String, int>> fetchBadgeCounts({bool forceRefresh = false}) async {
+  static Future<Map<String, int>> fetchBadgeCounts({
+    bool forceRefresh = false,
+  }) async {
     final userId = currentUserId;
     if (userId == null) {
       return {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
@@ -3896,7 +4164,9 @@ class ApiService {
     final now = DateTime.now();
     if (forceRefresh) {
       _badgeCountsCacheTime = null;
-    } else if (_cachedBadgeCounts != null && _badgeCountsCacheTime != null && now.difference(_badgeCountsCacheTime!).inSeconds < 15) {
+    } else if (_cachedBadgeCounts != null &&
+        _badgeCountsCacheTime != null &&
+        now.difference(_badgeCountsCacheTime!).inSeconds < 15) {
       return _cachedBadgeCounts!;
     }
 
@@ -3946,7 +4216,8 @@ class ApiService {
       } finally {
         _inFlightBadgeCounts = null;
       }
-      return _cachedBadgeCounts ?? {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
+      return _cachedBadgeCounts ??
+          {'liveFeedCount': 0, 'chatCount': 0, 'totalCount': 0};
     }();
 
     return _inFlightBadgeCounts!;
@@ -4037,7 +4308,10 @@ class ApiService {
   }
 
   /// Reject/decline a party plan request
-  static Future<bool> rejectPartyPlanRequest(String reqId, {String? reason}) async {
+  static Future<bool> rejectPartyPlanRequest(
+    String reqId, {
+    String? reason,
+  }) async {
     final userId = currentUserId;
     if (userId == null) return false;
     try {
@@ -4058,7 +4332,9 @@ class ApiService {
   }
 
   /// Accept a party plan invite
-  static Future<Map<String, dynamic>?> acceptPartyPlanInvite(String reqId) async {
+  static Future<Map<String, dynamic>?> acceptPartyPlanInvite(
+    String reqId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
@@ -4284,7 +4560,9 @@ class ApiService {
     return false;
   }
 
-  static Future<Map<String, dynamic>?> initiateLargePartyPayment(String bookingId) async {
+  static Future<Map<String, dynamic>?> initiateLargePartyPayment(
+    String bookingId,
+  ) async {
     try {
       final cleanId = cleanBookingId(bookingId);
       final userId = currentUserId; // fallback for auth extraction on backend
@@ -4302,7 +4580,9 @@ class ApiService {
           return Map<String, dynamic>.from(data);
         }
       } else {
-        debugPrint('initiateLargePartyPayment error [${response.statusCode}]: ${response.body}');
+        debugPrint(
+          'initiateLargePartyPayment error [${response.statusCode}]: ${response.body}',
+        );
         try {
           final data = jsonDecode(response.body);
           if (data is Map) {
@@ -4377,7 +4657,8 @@ class ApiService {
           'mobileNumber': mobileNumber,
           'optionalMobileNumber': optionalMobileNumber,
           'isUpcomingNight': isUpcomingNight,
-          if (paymentMode != null && paymentMode.isNotEmpty) 'paymentMode': paymentMode,
+          if (paymentMode != null && paymentMode.isNotEmpty)
+            'paymentMode': paymentMode,
         },
       );
       try {
@@ -4419,7 +4700,6 @@ class ApiService {
     return null;
   }
 
-
   static Future<Map<String, dynamic>?> payNowBooking(
     String bookingId, {
     String? paymentMethod,
@@ -4437,15 +4717,23 @@ class ApiService {
           'userId': userId,
           ...?paymentMethod == null ? null : {'paymentMethod': paymentMethod},
           ...?transactionId == null ? null : {'transactionId': transactionId},
-          ...?razorpayOrderId == null ? null : {'razorpay_order_id': razorpayOrderId},
-          ...?razorpayPaymentId == null ? null : {'razorpay_payment_id': razorpayPaymentId},
-          ...?razorpaySignature == null ? null : {'razorpay_signature': razorpaySignature},
+          ...?razorpayOrderId == null
+              ? null
+              : {'razorpay_order_id': razorpayOrderId},
+          ...?razorpayPaymentId == null
+              ? null
+              : {'razorpay_payment_id': razorpayPaymentId},
+          ...?razorpaySignature == null
+              ? null
+              : {'razorpay_signature': razorpaySignature},
         },
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
-          final res = Map<String, dynamic>.from(data['data'] is Map ? data['data'] : data);
+          final res = Map<String, dynamic>.from(
+            data['data'] is Map ? data['data'] : data,
+          );
           res['success'] = true;
           return res;
         }
@@ -4532,11 +4820,7 @@ class ApiService {
     try {
       final response = await delete(
         '/api/mobile/nights/interested',
-        body: {
-          'userId': userId,
-          'venueId': venueId,
-          'eventDate': date,
-        },
+        body: {'userId': userId, 'venueId': venueId, 'eventDate': date},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -4611,9 +4895,13 @@ class ApiService {
     return [];
   }
 
-  static Future<Map<String, dynamic>?> fetchPartnerProfilePreview(String targetUserId) async {
+  static Future<Map<String, dynamic>?> fetchPartnerProfilePreview(
+    String targetUserId,
+  ) async {
     try {
-      final response = await get('/api/mobile/nights/partners/$targetUserId/profile');
+      final response = await get(
+        '/api/mobile/nights/partners/$targetUserId/profile',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -4682,8 +4970,10 @@ class ApiService {
           'eventDate': date,
           'eventTime': time ?? '20:00',
           'paymentMode': paymentMode,
-          if (partnerIds != null && partnerIds.isNotEmpty) 'partnerIds': partnerIds,
-          if (ticketPrice != null && ticketPrice > 0) 'ticketPrice': ticketPrice,
+          if (partnerIds != null && partnerIds.isNotEmpty)
+            'partnerIds': partnerIds,
+          if (ticketPrice != null && ticketPrice > 0)
+            'ticketPrice': ticketPrice,
         },
       );
       final data = jsonDecode(response.body);
@@ -4717,8 +5007,11 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
-      final resolvedPartnerIds = partnerIds ?? (partnerId != null ? [partnerId] : <String>[]);
-      final primaryPartnerId = partnerId ?? (resolvedPartnerIds.isNotEmpty ? resolvedPartnerIds.first : '');
+      final resolvedPartnerIds =
+          partnerIds ?? (partnerId != null ? [partnerId] : <String>[]);
+      final primaryPartnerId =
+          partnerId ??
+          (resolvedPartnerIds.isNotEmpty ? resolvedPartnerIds.first : '');
       final response = await post(
         '/api/mobile/nights/invite-payment/verify',
         body: {
@@ -4736,7 +5029,9 @@ class ApiService {
         },
       );
       final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || response.statusCode == 201 || (data is Map && data['success'] == true)) {
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          (data is Map && data['success'] == true)) {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerLiveFeedSync();
@@ -4745,7 +5040,9 @@ class ApiService {
         }
         return {'success': true};
       }
-      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Verification failed'};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': false, 'message': 'Verification failed'};
     } catch (e) {
       debugPrint('verifyNightInvitePayment error: $e');
       return {'success': false, 'message': e.toString()};
@@ -4756,7 +5053,10 @@ class ApiService {
     required String requestId,
     required String action, // 'accept' | 'decline'
   }) async {
-    final res = await respondToNightPartnerRequestDetailed(requestId: requestId, action: action);
+    final res = await respondToNightPartnerRequestDetailed(
+      requestId: requestId,
+      action: action,
+    );
     return res['success'] == true;
   }
 
@@ -4765,7 +5065,8 @@ class ApiService {
     required String action, // 'accept' | 'decline'
   }) async {
     final userId = currentUserId;
-    if (userId == null) return {'success': false, 'message': 'User not logged in'};
+    if (userId == null)
+      return {'success': false, 'message': 'User not logged in'};
     try {
       final cleanId = requestId
           .replaceAll('upcoming_night_timeline_', '')
@@ -4779,13 +5080,11 @@ class ApiService {
           .trim();
       final response = await patch(
         '/api/mobile/nights/requests/$cleanId',
-        body: {
-          'partnerId': userId,
-          'action': action.toLowerCase(),
-        },
+        body: {'partnerId': userId, 'action': action.toLowerCase()},
       );
       final data = jsonDecode(response.body);
-      if (response.statusCode == 200 || (data is Map && data['success'] == true)) {
+      if (response.statusCode == 200 ||
+          (data is Map && data['success'] == true)) {
         clearBookingCache();
         notifyFeedNeedsRefresh();
         RealtimeSyncManager.instance.triggerLiveFeedSync();
@@ -4801,7 +5100,7 @@ class ApiService {
         'success': false,
         'message': data is Map
             ? (data['message'] ?? 'Failed to respond')
-            : 'Failed to respond'
+            : 'Failed to respond',
       };
     } catch (e) {
       debugPrint('respondToNightPartnerRequest error: $e');
@@ -4828,10 +5127,7 @@ class ApiService {
           .trim();
       final response = await post(
         '/api/mobile/nights/matches/$cleanId/pay',
-        body: {
-          'hostId': userId,
-          'paymentMode': paymentMode,
-        },
+        body: {'hostId': userId, 'paymentMode': paymentMode},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -4939,14 +5235,15 @@ class ApiService {
     return [];
   }
 
-
   // â”€â”€ Swipe Status & Subscription Limits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Returns the current user's swipe action on [targetUserId] today,
   /// and the plan limits so the UI can enforce them without a server round-trip.
   /// Response: { alreadyLiked, alreadySuperLiked, dailyLikesLimit, dailyLikesUsed,
   ///             superlikesRemaining, superlikesPerCycle }
-  static Future<Map<String, dynamic>> fetchSwipeStatus(String targetUserId) async {
+  static Future<Map<String, dynamic>> fetchSwipeStatus(
+    String targetUserId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return {};
     try {
@@ -4966,16 +5263,15 @@ class ApiService {
     return {};
   }
 
-  static Future<Map<String, dynamic>?> backtrackSwipe(String targetUserId) async {
+  static Future<Map<String, dynamic>?> backtrackSwipe(
+    String targetUserId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
       final response = await post(
         '/api/mobile/user/backtrack',
-        body: {
-          'userId': userId,
-          'targetUserId': targetUserId,
-        },
+        body: {'userId': userId, 'targetUserId': targetUserId},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -4989,7 +5285,9 @@ class ApiService {
         return {
           'success': false,
           'limitReached': true,
-          'message': data['message'] ?? 'You have reached your daily backtrack limit. Upgrade your plan to get more backtracks!',
+          'message':
+              data['message'] ??
+              'You have reached your daily backtrack limit. Upgrade your plan to get more backtracks!',
         };
       }
     } catch (e) {
@@ -5004,9 +5302,7 @@ class ApiService {
     final userId = currentUserId;
     if (userId == null) return {};
     try {
-      final response = await get(
-        '/api/mobile/subscriptions/current',
-      );
+      final response = await get('/api/mobile/subscriptions/current');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -5057,12 +5353,15 @@ class ApiService {
   }
 
   /// Fetches available Add-on packages catalog with in-memory caching (5-min TTL)
-  static Future<List<Map<String, dynamic>>> fetchAvailableAddons({bool forceRefresh = false}) async {
+  static Future<List<Map<String, dynamic>>> fetchAvailableAddons({
+    bool forceRefresh = false,
+  }) async {
     if (!forceRefresh &&
         _cachedAddonPackages != null &&
         _cachedAddonPackages!.isNotEmpty &&
         _addonPackagesCacheTime != null &&
-        DateTime.now().difference(_addonPackagesCacheTime!) < const Duration(minutes: 5)) {
+        DateTime.now().difference(_addonPackagesCacheTime!) <
+            const Duration(minutes: 5)) {
       return _cachedAddonPackages!;
     }
     try {
@@ -5086,31 +5385,123 @@ class ApiService {
     }
     // Reliable default catalog so add-on store always renders instantly
     return const [
-      {'id': '712d2b51-04b1-47fc-ac31-12a214a837b8', 'name': '+5 Super Likes', 'featureKey': 'superlike', 'feature_key': 'superlike', 'quantity': 5, 'price': 99.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': 'Stand out and connect instantly with 5 priority Super Likes.', 'displayOrder': 1, 'display_order': 1, 'isActive': true, 'is_active': true},
-      {'id': '150ce90d-d356-4cb7-b801-65501aa2455d', 'name': '+15 Super Likes', 'featureKey': 'superlike', 'feature_key': 'superlike', 'quantity': 15, 'price': 249.0, 'currency': 'INR', 'badge': 'BEST VALUE', 'description': 'Triple your connections with 15 Super Likes at huge savings.', 'displayOrder': 2, 'display_order': 2, 'isActive': true, 'is_active': true},
-      {'id': '01a67a88-5ce5-43b3-a900-87ac24e115c4', 'name': '+1 Profile Boost', 'featureKey': 'profile_boost', 'feature_key': 'profile_boost', 'quantity': 1, 'price': 49.0, 'currency': 'INR', 'badge': 'LIGHTNING', 'description': 'Get up to 10x more profile views with a 30-minute spotlight.', 'displayOrder': 3, 'display_order': 3, 'isActive': true, 'is_active': true},
-      {'id': 'f6019794-ca8e-4b13-b9aa-60c237d1bd56', 'name': '+3 Profile Boosts', 'featureKey': 'profile_boost', 'feature_key': 'profile_boost', 'quantity': 3, 'price': 129.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': '3 profile boosts to dominate the weekend nightlife scene.', 'displayOrder': 4, 'display_order': 4, 'isActive': true, 'is_active': true},
-      {'id': '6326f437-d869-401e-bf17-d37a885071cb', 'name': '+5 Party Plans', 'featureKey': 'party_creation', 'feature_key': 'party_creation', 'quantity': 5, 'price': 199.0, 'currency': 'INR', 'badge': 'EXCLUSIVE', 'description': 'Host 5 additional epic party plans without upgrading your plan.', 'displayOrder': 5, 'display_order': 5, 'isActive': true, 'is_active': true},
-      {'id': 'a9522a2d-e727-4fb3-9ff8-f5700417170d', 'name': '+10 Backtracks', 'featureKey': 'backtrack', 'feature_key': 'backtrack', 'quantity': 10, 'price': 49.0, 'currency': 'INR', 'badge': 'POPULAR', 'description': 'Undo up to 10 left swipes and get a second chance to connect.', 'displayOrder': 6, 'display_order': 6, 'isActive': true, 'is_active': true},
+      {
+        'id': '712d2b51-04b1-47fc-ac31-12a214a837b8',
+        'name': '+5 Super Likes',
+        'featureKey': 'superlike',
+        'feature_key': 'superlike',
+        'quantity': 5,
+        'price': 99.0,
+        'currency': 'INR',
+        'badge': 'POPULAR',
+        'description':
+            'Stand out and connect instantly with 5 priority Super Likes.',
+        'displayOrder': 1,
+        'display_order': 1,
+        'isActive': true,
+        'is_active': true,
+      },
+      {
+        'id': '150ce90d-d356-4cb7-b801-65501aa2455d',
+        'name': '+15 Super Likes',
+        'featureKey': 'superlike',
+        'feature_key': 'superlike',
+        'quantity': 15,
+        'price': 249.0,
+        'currency': 'INR',
+        'badge': 'BEST VALUE',
+        'description':
+            'Triple your connections with 15 Super Likes at huge savings.',
+        'displayOrder': 2,
+        'display_order': 2,
+        'isActive': true,
+        'is_active': true,
+      },
+      {
+        'id': '01a67a88-5ce5-43b3-a900-87ac24e115c4',
+        'name': '+1 Profile Boost',
+        'featureKey': 'profile_boost',
+        'feature_key': 'profile_boost',
+        'quantity': 1,
+        'price': 49.0,
+        'currency': 'INR',
+        'badge': 'LIGHTNING',
+        'description':
+            'Get up to 10x more profile views with a 30-minute spotlight.',
+        'displayOrder': 3,
+        'display_order': 3,
+        'isActive': true,
+        'is_active': true,
+      },
+      {
+        'id': 'f6019794-ca8e-4b13-b9aa-60c237d1bd56',
+        'name': '+3 Profile Boosts',
+        'featureKey': 'profile_boost',
+        'feature_key': 'profile_boost',
+        'quantity': 3,
+        'price': 129.0,
+        'currency': 'INR',
+        'badge': 'POPULAR',
+        'description':
+            '3 profile boosts to dominate the weekend nightlife scene.',
+        'displayOrder': 4,
+        'display_order': 4,
+        'isActive': true,
+        'is_active': true,
+      },
+      {
+        'id': '6326f437-d869-401e-bf17-d37a885071cb',
+        'name': '+5 Party Plans',
+        'featureKey': 'party_creation',
+        'feature_key': 'party_creation',
+        'quantity': 5,
+        'price': 199.0,
+        'currency': 'INR',
+        'badge': 'EXCLUSIVE',
+        'description':
+            'Host 5 additional epic party plans without upgrading your plan.',
+        'displayOrder': 5,
+        'display_order': 5,
+        'isActive': true,
+        'is_active': true,
+      },
+      {
+        'id': 'a9522a2d-e727-4fb3-9ff8-f5700417170d',
+        'name': '+10 Backtracks',
+        'featureKey': 'backtrack',
+        'feature_key': 'backtrack',
+        'quantity': 10,
+        'price': 49.0,
+        'currency': 'INR',
+        'badge': 'POPULAR',
+        'description':
+            'Undo up to 10 left swipes and get a second chance to connect.',
+        'displayOrder': 6,
+        'display_order': 6,
+        'isActive': true,
+        'is_active': true,
+      },
     ];
   }
 
   /// Purchases an Add-on using Smart Credit Wallet
-  static Future<Map<String, dynamic>> purchaseAddonWithWallet(String addonPackageId, {int count = 1}) async {
+  static Future<Map<String, dynamic>> purchaseAddonWithWallet(
+    String addonPackageId, {
+    int count = 1,
+  }) async {
     try {
       final response = await post(
         '/api/mobile/subscriptions/addons/pay-wallet',
-        body: {
-          'addonPackageId': addonPackageId,
-          'count': count,
-        },
+        body: {'addonPackageId': addonPackageId, 'count': count},
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
         _cachedAddonPackages = null;
         _addonPackagesCacheTime = null;
       }
-      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Unknown response'};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': false, 'message': 'Unknown response'};
     } catch (e) {
       debugPrint('purchaseAddonWithWallet error: $e');
       return {'success': false, 'message': e.toString()};
@@ -5118,13 +5509,13 @@ class ApiService {
   }
 
   /// Creates a Razorpay Order for an Add-on package
-  static Future<Map<String, dynamic>?> createAddonRazorpayOrder(String addonPackageId) async {
+  static Future<Map<String, dynamic>?> createAddonRazorpayOrder(
+    String addonPackageId,
+  ) async {
     try {
       final response = await post(
         '/api/mobile/subscriptions/addons/create-order',
-        body: {
-          'addonPackageId': addonPackageId,
-        },
+        body: {'addonPackageId': addonPackageId},
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -5156,14 +5547,14 @@ class ApiService {
         },
       );
       final data = jsonDecode(response.body);
-      return data is Map<String, dynamic> ? data : {'success': false, 'message': 'Verification failed'};
+      return data is Map<String, dynamic>
+          ? data
+          : {'success': false, 'message': 'Verification failed'};
     } catch (e) {
       debugPrint('verifyAddonRazorpayPayment error: $e');
       return {'success': false, 'message': e.toString()};
     }
   }
-
-
 
   static Future<Map<String, dynamic>?> createGroupParty({
     required String venueId,
@@ -5191,7 +5582,8 @@ class ApiService {
           'numberOfFriends': numberOfFriends,
           'partyDate': partyDate,
           'mobileNumber': mobileNumber.trim(),
-          if (optionalMobileNumber != null && optionalMobileNumber.trim().isNotEmpty)
+          if (optionalMobileNumber != null &&
+              optionalMobileNumber.trim().isNotEmpty)
             'optionalMobileNumber': optionalMobileNumber.trim(),
           if (foodPreference != null && foodPreference.trim().isNotEmpty)
             'foodPreference': foodPreference.trim(),
@@ -5314,7 +5706,9 @@ class ApiService {
         }
       } else {
         final data = jsonDecode(response.body);
-        return {'error': data['message'] ?? 'Failed to load cancellation preview'};
+        return {
+          'error': data['message'] ?? 'Failed to load cancellation preview',
+        };
       }
     } catch (e) {
       debugPrint('fetchBookingCancellationPreview error: $e');
@@ -5374,14 +5768,16 @@ class ApiService {
     return null;
   }
 
-
   // â”€â”€ Subscription API Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  static Future<List<dynamic>> fetchSubscriptionPackages({bool forceRefresh = false}) async {
+  static Future<List<dynamic>> fetchSubscriptionPackages({
+    bool forceRefresh = false,
+  }) async {
     if (!forceRefresh &&
         _cachedSubscriptionPackages != null &&
         _subscriptionPackagesCacheTime != null &&
-        DateTime.now().difference(_subscriptionPackagesCacheTime!) < const Duration(minutes: 5)) {
+        DateTime.now().difference(_subscriptionPackagesCacheTime!) <
+            const Duration(minutes: 5)) {
       return _cachedSubscriptionPackages!;
     }
     try {
@@ -5401,7 +5797,9 @@ class ApiService {
     return _cachedSubscriptionPackages ?? [];
   }
 
-  static Future<Map<String, dynamic>?> createSubscriptionOrder(String packageId) async {
+  static Future<Map<String, dynamic>?> createSubscriptionOrder(
+    String packageId,
+  ) async {
     try {
       final response = await post(
         '/api/mobile/subscriptions/create-order',
@@ -5437,10 +5835,12 @@ class ApiService {
           'paymentMethod': paymentMethod,
         },
       );
-      
+
       final data = jsonDecode(response.body);
       return {
-        'success': response.statusCode == 200 || response.statusCode == 201 ? (data['success'] ?? true) : false,
+        'success': response.statusCode == 200 || response.statusCode == 201
+            ? (data['success'] ?? true)
+            : false,
         'message': data['message'] ?? 'Failed to activate subscription.',
         'data': data['data'] ?? data,
         'statusCode': response.statusCode,
@@ -5480,11 +5880,7 @@ class ApiService {
     try {
       final response = await post(
         '/api/mobile/wallet/pay-boost',
-        body: {
-          'count': boostCount,
-          'boostCount': boostCount,
-          'price': price,
-        },
+        body: {'count': boostCount, 'boostCount': boostCount, 'price': price},
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -5515,10 +5911,12 @@ class ApiService {
           'razorpay_signature': razorpaySignature,
         },
       );
-      
+
       final data = jsonDecode(response.body);
       return {
-        'success': response.statusCode == 200 || response.statusCode == 201 ? (data['success'] ?? true) : false,
+        'success': response.statusCode == 200 || response.statusCode == 201
+            ? (data['success'] ?? true)
+            : false,
         'message': data['message'] ?? 'Failed to purchase boosts.',
         'data': data['data'] ?? data,
         'statusCode': response.statusCode,
@@ -5662,17 +6060,24 @@ class ApiService {
     }
     return null;
   }
+
   /// Fetch full ticket data for a party plan request (host + joiner profiles, ticketCode, expiresAt)
-  static Future<Map<String, dynamic>?> fetchPartyPlanTicket(String reqId) async {
+  static Future<Map<String, dynamic>?> fetchPartyPlanTicket(
+    String reqId,
+  ) async {
     try {
-      final response = await get('/api/mobile/party-plans/requests/$reqId/ticket');
+      final response = await get(
+        '/api/mobile/party-plans/requests/$reqId/ticket',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
           return Map<String, dynamic>.from(data['data']);
         }
       }
-      debugPrint('fetchPartyPlanTicket failed [${response.statusCode}]: ${response.body}');
+      debugPrint(
+        'fetchPartyPlanTicket failed [${response.statusCode}]: ${response.body}',
+      );
     } catch (e) {
       debugPrint('fetchPartyPlanTicket error: $e');
     }
@@ -5686,7 +6091,9 @@ class ApiService {
   }) async {
     try {
       final Uint8List selfieBytes = await XFile(selfiePath).readAsBytes();
-      final Uint8List profileBytes = await XFile(profilePhotoPath).readAsBytes();
+      final Uint8List profileBytes = await XFile(
+        profilePhotoPath,
+      ).readAsBytes();
 
       if (selfieBytes.isEmpty || profileBytes.isEmpty) {
         return {
@@ -5701,10 +6108,7 @@ class ApiService {
 
       final response = await post(
         '/api/mobile/auth/verify-face',
-        body: {
-          'selfie': selfieBase64,
-          'profilePhoto': profileBase64,
-        },
+        body: {'selfie': selfieBase64, 'profilePhoto': profileBase64},
       );
 
       final data = jsonDecode(response.body);
@@ -5760,7 +6164,6 @@ class ApiService {
     }
   }
 
-
   /// Permanently soft-delete the user's account and perform full session cleanup
   static Future<Map<String, dynamic>> deleteAccount({
     required String password,
@@ -5768,23 +6171,25 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) {
-      return {'success': false, 'message': 'Authentication required. Please log in again.'};
+      return {
+        'success': false,
+        'message': 'Authentication required. Please log in again.',
+      };
     }
 
     try {
       final response = await post(
         '/api/mobile/user/delete-account',
-        body: {
-          'userId': userId,
-          'password': password,
-          'reason': reason ?? '',
-        },
+        body: {'userId': userId, 'password': password, 'reason': reason ?? ''},
       );
 
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
         await logout();
-        return {'success': true, 'message': data['message'] ?? 'Account deleted successfully'};
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Account deleted successfully',
+        };
       } else {
         return {
           'success': false,
@@ -5819,7 +6224,9 @@ class ApiService {
       return await _inFlightGets[inFlightKey]!;
     }
     final future = () async {
-      final res = await _httpClient.get(uri, headers: _authHeaders).timeout(timeout ?? defaultTimeout);
+      final res = await _httpClient
+          .get(uri, headers: _authHeaders)
+          .timeout(timeout ?? defaultTimeout);
       _checkAutoblockedResponse(res);
       return res;
     }();
@@ -5831,23 +6238,29 @@ class ApiService {
     }
   }
 
-  static Future<http.Response> _post(String path, Map<String, dynamic> body, {Duration? timeout}) async {
+  static Future<http.Response> _post(
+    String path,
+    Map<String, dynamic> body, {
+    Duration? timeout,
+  }) async {
     final uri = Uri.parse('$baseUrl$path');
-    final res = await _httpClient.post(
-      uri,
-      headers: _authHeaders,
-      body: jsonEncode(body),
-    ).timeout(timeout ?? defaultTimeout);
+    final res = await _httpClient
+        .post(uri, headers: _authHeaders, body: jsonEncode(body))
+        .timeout(timeout ?? defaultTimeout);
     _checkAutoblockedResponse(res);
     return res;
   }
 
   /// Fetch user tickets with tab filtering ('upcoming', 'active', 'used', 'expired', 'cancelled')
-  static Future<List<Map<String, dynamic>>> getUserTickets({String tab = 'all'}) async {
+  static Future<List<Map<String, dynamic>>> getUserTickets({
+    String tab = 'all',
+  }) async {
     final userId = currentUserId ?? '';
     if (userId.isEmpty) return [];
     try {
-      final response = await _get('/api/mobile/tickets?userId=$userId&tab=$tab');
+      final response = await _get(
+        '/api/mobile/tickets?userId=$userId&tab=$tab',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
@@ -5878,10 +6291,14 @@ class ApiService {
   }
 
   /// Get a secure time-limited download URL for a ticket PDF
-  static Future<Map<String, dynamic>> getTicketDownloadUrl(String ticketId) async {
+  static Future<Map<String, dynamic>> getTicketDownloadUrl(
+    String ticketId,
+  ) async {
     final userId = currentUserId ?? '';
     try {
-      final response = await _get('/api/mobile/tickets/$ticketId/download-url?userId=$userId');
+      final response = await _get(
+        '/api/mobile/tickets/$ticketId/download-url?userId=$userId',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
@@ -5896,7 +6313,9 @@ class ApiService {
   }
 
   /// Create a shareable token for a ticket (returns shareText for WhatsApp/clipboard)
-  static Future<Map<String, dynamic>> createTicketShareToken(String ticketId) async {
+  static Future<Map<String, dynamic>> createTicketShareToken(
+    String ticketId,
+  ) async {
     final userId = currentUserId ?? '';
     try {
       final response = await _post(
@@ -5949,7 +6368,9 @@ class ApiService {
     try {
       final userId = currentUserId;
       if (userId == null) return null;
-      final response = await _get('/api/mobile/party-plans/safety-checks/pending?userId=$userId');
+      final response = await _get(
+        '/api/mobile/party-plans/safety-checks/pending?userId=$userId',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
@@ -5982,10 +6403,7 @@ class ApiService {
       return {'success': false, 'message': 'Not authenticated'};
     }
     try {
-      final body = <String, dynamic>{
-        'userId': userId,
-        'reason': reason,
-      };
+      final body = <String, dynamic>{'userId': userId, 'reason': reason};
       if (otherReasonText != null && otherReasonText.isNotEmpty) {
         body['otherReasonText'] = otherReasonText;
       }
@@ -6007,11 +6425,15 @@ class ApiService {
   }
 
   /// Fetch the active cancellation request state for a Party Plan
-  static Future<Map<String, dynamic>?> getPartyPlanCancellationRequest(String planId) async {
+  static Future<Map<String, dynamic>?> getPartyPlanCancellationRequest(
+    String planId,
+  ) async {
     final userId = currentUserId;
     if (userId == null) return null;
     try {
-      final response = await _get('/api/mobile/plans/$planId/cancellation-request?userId=$userId');
+      final response = await _get(
+        '/api/mobile/plans/$planId/cancellation-request?userId=$userId',
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) return data;
@@ -6039,11 +6461,7 @@ class ApiService {
     try {
       final response = await _post(
         '/api/mobile/plans/$cleanPlanId/cancellation-request/respond',
-        {
-          'userId': userId,
-          'requestId': requestId,
-          'action': action,
-        },
+        {'userId': userId, 'requestId': requestId, 'action': action},
       );
       final resData = jsonDecode(response.body) as Map<String, dynamic>;
       if (resData['success'] == true) {
@@ -6066,7 +6484,10 @@ class ApiService {
   }) async {
     try {
       final cleanPlanId = planId.replaceFirst(
-        RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+        RegExp(
+          r'^(pp_|party_plan_|party_plan_timeline_)',
+          caseSensitive: false,
+        ),
         '',
       );
       final response = await _post(
@@ -6086,25 +6507,36 @@ class ApiService {
       if (body is Map<String, dynamic>) {
         return body;
       }
-      return {'success': response.statusCode >= 200 && response.statusCode < 300};
+      return {
+        'success': response.statusCode >= 200 && response.statusCode < 300,
+      };
     } catch (e) {
       debugPrint('confirmArrival error: $e');
       return {'success': false, 'message': '$e'};
     }
   }
 
-  static Future<Map<String, dynamic>> getPartyPlanReachStatus(String planId) async {
+  static Future<Map<String, dynamic>> getPartyPlanReachStatus(
+    String planId,
+  ) async {
     try {
       final cleanPlanId = planId.replaceFirst(
-        RegExp(r'^(pp_|party_plan_|party_plan_timeline_)', caseSensitive: false),
+        RegExp(
+          r'^(pp_|party_plan_|party_plan_timeline_)',
+          caseSensitive: false,
+        ),
         '',
       );
-      final response = await _get('/api/mobile/party-plans/$cleanPlanId/reach-status');
+      final response = await _get(
+        '/api/mobile/party-plans/$cleanPlanId/reach-status',
+      );
       final dynamic body = jsonDecode(response.body);
       if (body is Map<String, dynamic>) {
         return body;
       }
-      return {'success': response.statusCode >= 200 && response.statusCode < 300};
+      return {
+        'success': response.statusCode >= 200 && response.statusCode < 300,
+      };
     } catch (e) {
       debugPrint('getPartyPlanReachStatus error: $e');
       return {'success': false, 'message': '$e'};
@@ -6120,16 +6552,13 @@ class ApiService {
     String? reportReason,
   }) async {
     try {
-      final response = await _post(
-        '/api/mobile/party-plans/$planId/review',
-        {
-          'reviewerId': reviewerId,
-          'rating': rating,
-          'comment': comment,
-          'isReported': isReported,
-          'reportReason': reportReason,
-        },
-      );
+      final response = await _post('/api/mobile/party-plans/$planId/review', {
+        'reviewerId': reviewerId,
+        'rating': rating,
+        'comment': comment,
+        'isReported': isReported,
+        'reportReason': reportReason,
+      });
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {
       debugPrint('submitPartyReview error: $e');

@@ -53,7 +53,7 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
 
         // Check if user already has a primary photo
         const hasPrimary = await UserPhoto.findOne({ where: { userId, isPrimary: true } });
-        
+
         // Decide if the first uploaded file in this request should be primary
         const makePrimary = (req.body.isPrimary === 'true') || !hasPrimary;
 
@@ -140,9 +140,9 @@ export const uploadPhotos = async (req: Request, res: Response): Promise<Respons
                     const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
                     const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
                     const containerClient = blobServiceClient.getContainerClient(containerName);
-                    
-                    const blobName = relativePath.startsWith('uploads/') 
-                        ? relativePath.substring(8) 
+
+                    const blobName = relativePath.startsWith('uploads/')
+                        ? relativePath.substring(8)
                         : relativePath;
 
                     const blockBlobClient = containerClient.getBlockBlobClient(blobName);
@@ -1837,16 +1837,16 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             if (currentUser && targetUser) {
                 const { SubscriptionService } = require('../services/subscriptionService');
                 const canSeeWhoLikedTarget = await SubscriptionService.hasAccess(targetUserId, 'who_liked_me');
-                
+
                 const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
                 const isSuper = action === 'superlike';
-                
+
                 // Superlike is strictly excluded from masking: always visible to receiver regardless of tier
                 const title = isSuper
                     ? `⭐ ${senderName} Super Liked You!`
                     : (canSeeWhoLikedTarget ? `💖 ${senderName} liked your profile!` : '❤️ Someone liked your profile');
-                    
-                const body = isSuper 
+
+                const body = isSuper
                     ? `${senderName} sent you a Super Like! 💜`
                     : (canSeeWhoLikedTarget ? `${senderName} liked your profile ❤️` : 'Someone liked your profile! Upgrade to VIP to see who!');
 
@@ -2052,7 +2052,7 @@ export const unlikeUser = async (req: Request, res: Response): Promise<Response>
         try {
             const { EngagementService } = await import('../services/engagementService');
             await EngagementService.logLikeRemoved(userId, targetUserId);
-        } catch (_) {}
+        } catch (_) { }
 
         // Unlike is 100% silent to the target user (no push/socket/in-app alert)
 
@@ -2621,15 +2621,3 @@ export default {
     backtrackSwipe,
     deleteAccount,
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/mobile/user/delete-account
-// Permanently soft-deletes the user's account:
-//   1. Validates password (security re-auth gate)
-//   2. Snapshots all user data into deleted_accounts archive
-//   3. Soft-deletes the user: sets isDeleted=true, isActive=false
-//   4. Clears FCM token so no more push notifications
-//   5. Returns ACCOUNT_DELETED so client clears local state
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTE: This function is defined outside the default export to keep the file
-// structure clean. It is referenced in the export above.
