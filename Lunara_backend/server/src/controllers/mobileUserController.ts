@@ -385,41 +385,73 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
             }).catch(() => null),
             sequelize.query(`
                 SELECT 
-                    (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id = :userId AND action_type = 'like') AS likes_count,
+                    (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id::text = :userId AND action_type = 'like') AS likes_count,
                     (
-                        (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id = :userId AND action_type = 'superlike') + 
-                        (SELECT COUNT(*)::int FROM user_matches WHERE user2_id = :userId AND match_reason = 'superlike' AND status IN ('pending', 'connected'))
+                        (SELECT COUNT(*)::int FROM user_likes WHERE target_user_id::text = :userId AND action_type = 'superlike') + 
+                        (SELECT COUNT(*)::int FROM user_matches WHERE user2_id::text = :userId AND match_reason = 'superlike' AND status::text IN ('pending', 'connected'))
                     ) AS superlikes_count,
-                    (SELECT COUNT(*)::int FROM party_plans WHERE user_id = :userId AND status != 'cancelled') AS party_plans_count,
-                    (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id = :userId AND status NOT IN ('cancelled', 'rejected')) AS strangers_meet_count,
-                    (SELECT COUNT(*)::int FROM group_parties WHERE user_id = :userId AND status NOT IN ('cancelled', 'rejected', 'expired')) AS group_party_count,
+                    (SELECT COUNT(*)::int FROM party_plans WHERE user_id::text = :userId AND status::text != 'cancelled') AS party_plans_count,
+                    (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id::text = :userId AND status::text NOT IN ('cancelled', 'rejected')) AS strangers_meet_count,
+                    (SELECT COUNT(*)::int FROM group_parties WHERE user_id::text = :userId AND status::text NOT IN ('cancelled', 'rejected', 'expired')) AS group_party_count,
                     (
-                        (SELECT COUNT(*)::int FROM tickets WHERE user_id = :userId) +
-                        (SELECT COUNT(*)::int FROM bookings WHERE user_id = :userId) +
-                        (SELECT COUNT(*)::int FROM group_parties WHERE user_id = :userId) +
-                        (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id = :userId) +
-                        (SELECT COUNT(*)::int FROM strangers_meet_joiners WHERE user_id = :userId AND status != 'rejected') +
-                        (SELECT COUNT(*)::int FROM party_plans WHERE user_id = :userId AND status != 'cancelled') +
-                        (SELECT COUNT(*)::int FROM party_plan_requests WHERE requester_id = :userId AND status = 'accepted')
+                        (SELECT COUNT(*)::int FROM tickets WHERE user_id::text = :userId) +
+                        (SELECT COUNT(*)::int FROM bookings WHERE user_id::text = :userId) +
+                        (SELECT COUNT(*)::int FROM group_parties WHERE user_id::text = :userId) +
+                        (SELECT COUNT(*)::int FROM strangers_meet_requests WHERE user_id::text = :userId) +
+                        (SELECT COUNT(*)::int FROM strangers_meet_joiners WHERE user_id::text = :userId AND status::text != 'rejected') +
+                        (SELECT COUNT(*)::int FROM party_plans WHERE user_id::text = :userId AND status::text != 'cancelled') +
+                        (SELECT COUNT(*)::int FROM party_plan_requests WHERE requester_id::text = :userId AND status::text = 'accepted')
                     ) AS total_bookings;
-            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch(() => [{}]),
+            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch((err) => {
+                logger.error('[MobileUser] Error fetching profile metrics:', err);
+                return [{}];
+            }),
             sequelize.query(`
                 SELECT DISTINCT partner_id FROM (
-                    SELECT CASE WHEN user1_id = :userId THEN user2_id ELSE user1_id END AS partner_id FROM user_matches WHERE (user1_id = :userId OR user2_id = :userId) AND status IN ('connected', 'matched')
+                    SELECT CASE WHEN user1_id::text = :userId THEN user2_id::text ELSE user1_id::text END AS partner_id 
+                    FROM user_matches 
+                    WHERE (user1_id::text = :userId OR user2_id::text = :userId) 
+                      AND status::text IN ('connected', 'matched')
                     UNION
-                    SELECT CASE WHEN host_id = :userId THEN partner_id ELSE host_id END AS partner_id FROM night_partner_matches WHERE (host_id = :userId OR partner_id = :userId) AND status IN ('MATCHED', 'PAYMENT_PENDING', 'CONFIRMED')
+                    SELECT CASE WHEN host_id::text = :userId THEN partner_id::text ELSE host_id::text END AS partner_id 
+                    FROM night_partner_matches 
+                    WHERE (host_id::text = :userId OR partner_id::text = :userId) 
+                      AND status::text IN ('MATCHED', 'PAYMENT_PENDING', 'CONFIRMED')
                     UNION
-                    SELECT requester_id AS partner_id FROM party_plan_requests ppr JOIN party_plans pp ON pp.id = ppr.plan_id WHERE pp.user_id = :userId AND ppr.status = 'accepted'
+                    SELECT ppr.requester_id::text AS partner_id 
+                    FROM party_plan_requests ppr 
+                    JOIN party_plans pp ON pp.id = ppr.plan_id 
+                    WHERE pp.user_id::text = :userId 
+                      AND ppr.status::text IN ('accepted', 'payment_pending')
                     UNION
-                    SELECT pp.user_id AS partner_id FROM party_plan_requests ppr JOIN party_plans pp ON pp.id = ppr.plan_id WHERE ppr.requester_id = :userId AND ppr.status = 'accepted'
+                    SELECT pp.user_id::text AS partner_id 
+                    FROM party_plan_requests ppr 
+                    JOIN party_plans pp ON pp.id = ppr.plan_id 
+                    WHERE ppr.requester_id::text = :userId 
+                      AND ppr.status::text IN ('accepted', 'payment_pending')
                     UNION
-                    SELECT CASE WHEN requester_id = :userId THEN receiver_id ELSE requester_id END AS partner_id FROM social_connections WHERE (requester_id = :userId OR receiver_id = :userId) AND status = 'accepted'
+                    SELECT CASE WHEN requester_id::text = :userId THEN receiver_id::text ELSE requester_id::text END AS partner_id 
+                    FROM social_connections 
+                    WHERE (requester_id::text = :userId OR receiver_id::text = :userId) 
+                      AND status::text = 'accepted'
                     UNION
-                    SELECT sm.user_id AS partner_id FROM strangers_meet_joiners smj JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id WHERE smj.user_id = :userId AND smj.status NOT IN ('rejected')
+                    SELECT sm.user_id::text AS partner_id 
+                    FROM strangers_meet_joiners smj 
+                    JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id 
+                    WHERE smj.user_id::text = :userId 
+                      AND smj.status::text NOT IN ('rejected', 'cancelled')
                     UNION
-                    SELECT smj.user_id AS partner_id FROM strangers_meet_joiners smj JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id WHERE sm.user_id = :userId AND smj.status NOT IN ('rejected')
-                ) partners WHERE partner_id IS NOT NULL AND partner_id != :userId;
-            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch(() => []),
+                    SELECT smj.user_id::text AS partner_id 
+                    FROM strangers_meet_joiners smj 
+                    JOIN strangers_meet_requests sm ON sm.id = smj.strangers_meet_request_id 
+                    WHERE sm.user_id::text = :userId 
+                      AND smj.status::text NOT IN ('rejected', 'cancelled')
+                ) partners 
+                WHERE partner_id IS NOT NULL AND partner_id != :userId;
+            `, { replacements: { userId }, type: QueryTypes.SELECT }).catch((err) => {
+                logger.error('[MobileUser] Error fetching matched partners list:', err);
+                return [];
+            }),
             shouldCheckRequester
                 ? UserMatch.findOne({
                     where: {

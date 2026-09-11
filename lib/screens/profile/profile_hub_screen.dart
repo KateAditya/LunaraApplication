@@ -75,12 +75,31 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
 
     final tickets = (results[1] as List<Map<String, dynamic>>?) ?? [];
 
-    // matchesCount from the backend (getMyProfile) is the authoritative source — it already
-    // aggregates UserMatch (swipes), NightPartnerMatch (party plans), PartyPlanRequest
-    // (accepted joiners/hosts), and SocialConnections (strangers meet). Never override it
-    // with a local swipe-only count, which would miss all non-swipe match types.
-    final backendMatchesCount = user?.matchesCount ?? 0;
-    final backendPoints = user?.pointsCount ?? 0;
+    int backendMatchesCount = user?.matchesCount ?? 0;
+    int backendPoints = user?.pointsCount ?? 0;
+
+    if (backendMatchesCount <= 0) {
+      try {
+        final swipes = await ApiService.fetchMyLikesAndMatches();
+        final connected = swipes.where((s) {
+          final st = s['status']?.toString().toLowerCase();
+          return st == 'connected' || st == 'matched';
+        }).length;
+        if (connected > 0) {
+          backendMatchesCount = connected;
+        }
+      } catch (_) {}
+    }
+
+    if (backendPoints <= 0) {
+      try {
+        final wallet = await ApiService.fetchWalletBalance();
+        final pts = wallet?['rewardPoints'] ?? wallet?['reward_points'] ?? wallet?['points'];
+        if (pts != null) {
+          backendPoints = int.tryParse(pts.toString()) ?? 0;
+        }
+      } catch (_) {}
+    }
 
     if (mounted) {
       setState(() {
