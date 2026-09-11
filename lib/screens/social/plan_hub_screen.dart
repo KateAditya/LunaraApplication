@@ -193,7 +193,11 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     // Stage 2: Concurrently load customer profiles with accurate loading state
     unawaited(() async {
       try {
-        final customers = await ApiService.fetchCustomers(limit: 50);
+        final customers = await ApiService.fetchCustomers(
+          limit: 500,
+          includeAllCities: true,
+          forceRefresh: true,
+        );
         if (mounted) {
           setState(() {
             _customerList = customers;
@@ -1680,12 +1684,19 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         return StatefulBuilder(
           builder: (builderCtx, setModalState) {
             final eligibleUsers = customerList.where((u) {
-              final isNotMe = u['id']?.toString() != ApiService.currentUserId;
-              final name =
-                  (u['name'] ?? u['firstName'] ?? u['first_name'] ?? '')
-                      .toString()
-                      .toLowerCase();
-              return isNotMe && name.contains(searchVal.toLowerCase());
+              final uid = u['id']?.toString() ?? '';
+              if (uid.isEmpty || uid == 'null') return false;
+              final isNotMe = uid != ApiService.currentUserId;
+              final rawName = (u['name'] ??
+                      u['firstName'] ??
+                      u['first_name'] ??
+                      u['fullName'] ??
+                      u['profile']?['displayName'] ??
+                      '')
+                  .toString()
+                  .trim();
+              final search = searchVal.trim().toLowerCase();
+              return isNotMe && (search.isEmpty || rawName.toLowerCase().contains(search));
             }).toList();
 
             return Container(
@@ -1860,11 +1871,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                             itemBuilder: (context, index) {
                               final user = eligibleUsers[index];
                               final uId = user['id']?.toString() ?? '';
-                              final uName =
-                                  user['name'] ??
-                                  user['firstName'] ??
-                                  user['first_name'] ??
-                                  'User';
+                              final rawName = (user['name'] ??
+                                      user['firstName'] ??
+                                      user['first_name'] ??
+                                      user['fullName'] ??
+                                      user['profile']?['displayName'] ??
+                                      '')
+                                  .toString()
+                                  .trim();
+                              final uName = rawName.isNotEmpty ? rawName : 'User';
                               final isSel = tempSelected.contains(uId);
 
                               return GestureDetector(
@@ -1915,7 +1930,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           LunaraProfileImage(
                                             userData: user,
                                             radius: 26,
-                                            showGradientBorder: isSel,
+                                            showGradientBorder: true,
                                             isInteractive: false,
                                           ),
                                           Positioned(
@@ -3444,156 +3459,143 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           },
                         ),
                         const SizedBox(height: 8),
-                        SizedBox(
-                          height: 95,
-                          child: _customerList.isEmpty
-                              ? const Center(
-                                  child: Text(
-                                    'No profiles available',
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                )
-                              : ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount:
-                                      _customerList.where((u) {
-                                        final name =
-                                            (u['name'] ??
-                                                    u['firstName'] ??
-                                                    u['first_name'] ??
-                                                    '')
-                                                .toString()
-                                                .toLowerCase();
-                                        final searchVal = userSearchQuery
-                                            .toLowerCase();
-                                        final isNotMe =
-                                            u['id']?.toString() !=
-                                            ApiService.currentUserId;
-                                        return name.contains(searchVal) &&
-                                            isNotMe;
-                                      }).length +
-                                      1, // +1 for the View All tile
-                                  itemBuilder: (ctx, idx) {
-                                    final filteredList = _customerList.where((
-                                      u,
-                                    ) {
-                                      final name =
-                                          (u['name'] ??
-                                                  u['firstName'] ??
-                                                  u['first_name'] ??
-                                                  '')
-                                              .toString()
-                                              .toLowerCase();
-                                      final searchVal = userSearchQuery
-                                          .toLowerCase();
-                                      final isNotMe =
-                                          u['id']?.toString() !=
-                                          ApiService.currentUserId;
-                                      return name.contains(searchVal) &&
-                                          isNotMe;
-                                    }).toList();
+                        Builder(
+                          builder: (context) {
+                            final filteredList = _customerList.where((u) {
+                              final uid = u['id']?.toString() ?? '';
+                              if (uid.isEmpty || uid == 'null') return false;
+                              final isNotMe = uid != ApiService.currentUserId;
+                              final rawName = (u['name'] ??
+                                      u['firstName'] ??
+                                      u['first_name'] ??
+                                      u['fullName'] ??
+                                      u['profile']?['displayName'] ??
+                                      '')
+                                  .toString()
+                                  .trim();
+                              final search = userSearchQuery.trim().toLowerCase();
+                              return isNotMe &&
+                                  (search.isEmpty || rawName.toLowerCase().contains(search));
+                            }).toList();
 
-                                    // Trailing 'VIEW ALL' card
-                                    if (idx == filteredList.length) {
-                                      return GestureDetector(
-                                        onTap: () {
-                                          _showAllProfilesSelectionModal(
-                                            parentContext: context,
-                                            customerList: _customerList,
-                                            selectedUserIds: selectedUserIds,
-                                            onSelectionChanged: (newSel) {
-                                              setSheetState(() {
-                                                selectedUserIds.clear();
-                                                selectedUserIds.addAll(newSel);
-                                              });
-                                            },
-                                          );
-                                        },
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 14,
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              Container(
-                                                width: 48,
-                                                height: 48,
-                                                decoration: BoxDecoration(
-                                                  color: LunaraTheme
-                                                      .electricViolet
-                                                      .withValues(alpha: 0.1),
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: LunaraTheme
-                                                        .electricViolet,
-                                                    width: 1.5,
-                                                  ),
-                                                ),
-                                                child: const Icon(
-                                                  Icons.grid_view_rounded,
-                                                  color: LunaraTheme
-                                                      .electricViolet,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              const Text(
-                                                'View All',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: LunaraTheme
-                                                      .electricViolet,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
+                            return SizedBox(
+                              height: 95,
+                              child: filteredList.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        'No profiles available',
+                                        style: TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 12,
                                         ),
-                                      );
-                                    }
-
-                                    final p = filteredList[idx];
-                                    final pId = p['id']?.toString() ?? '';
-                                    final pName =
-                                        p['name'] ??
-                                        p['firstName'] ??
-                                        p['first_name'] ??
-                                        'User';
-                                    final isSelected = selectedUserIds.contains(
-                                      pId,
-                                    );
-
-                                    return GestureDetector(
-                                      onTap: () {
-                                        setSheetState(() {
-                                          if (isSelected) {
-                                            selectedUserIds.remove(pId);
-                                          } else {
-                                            if (selectedUserIds.length >= 50) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Maximum 50 invites allowed.',
-                                                  ),
-                                                  backgroundColor:
-                                                      Colors.redAccent,
-                                                ),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: filteredList.length + 1, // +1 for the View All tile
+                                      itemBuilder: (ctx, idx) {
+                                        // Trailing 'VIEW ALL' card
+                                        if (idx == filteredList.length) {
+                                          return GestureDetector(
+                                            onTap: () {
+                                              _showAllProfilesSelectionModal(
+                                                parentContext: context,
+                                                customerList: _customerList,
+                                                selectedUserIds: selectedUserIds,
+                                                onSelectionChanged: (newSel) {
+                                                  setSheetState(() {
+                                                    selectedUserIds.clear();
+                                                    selectedUserIds.addAll(newSel);
+                                                  });
+                                                },
                                               );
-                                              return;
-                                            }
-                                            selectedUserIds.add(pId);
-                                          }
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 14,
-                                        ),
+                                            },
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(
+                                                right: 14,
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    width: 48,
+                                                    height: 48,
+                                                    decoration: BoxDecoration(
+                                                      color: LunaraTheme
+                                                          .electricViolet
+                                                          .withValues(alpha: 0.1),
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(
+                                                        color: LunaraTheme
+                                                            .electricViolet,
+                                                        width: 1.5,
+                                                      ),
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.grid_view_rounded,
+                                                      color: LunaraTheme
+                                                          .electricViolet,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  const Text(
+                                                    'View All',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: LunaraTheme
+                                                          .electricViolet,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }
+
+                                        final p = filteredList[idx];
+                                        final pId = p['id']?.toString() ?? '';
+                                        final rawPName = (p['name'] ??
+                                                p['firstName'] ??
+                                                p['first_name'] ??
+                                                p['fullName'] ??
+                                                p['profile']?['displayName'] ??
+                                                '')
+                                            .toString()
+                                            .trim();
+                                        final pName = rawPName.isNotEmpty ? rawPName : 'User';
+                                        final isSelected = selectedUserIds.contains(
+                                          pId,
+                                        );
+
+                                        return GestureDetector(
+                                          onTap: () {
+                                            setSheetState(() {
+                                              if (isSelected) {
+                                                selectedUserIds.remove(pId);
+                                              } else {
+                                                if (selectedUserIds.length >= 50) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Maximum 50 invites allowed.',
+                                                      ),
+                                                      backgroundColor:
+                                                          Colors.redAccent,
+                                                    ),
+                                                  );
+                                                  return;
+                                                }
+                                                selectedUserIds.add(pId);
+                                              }
+                                            });
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 14,
+                                            ),
                                         child: Column(
                                           children: [
                                             Stack(
@@ -3648,6 +3650,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                     );
                                   },
                                 ),
+                            );
+                          },
                         ),
                       ],
 

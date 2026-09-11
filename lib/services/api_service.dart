@@ -654,12 +654,12 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchCustomers({
     String? city,
-    int limit = 50,
+    int limit = 500,
     int page = 1,
-    bool includeAllCities = false,
+    bool includeAllCities = true,
     bool forceRefresh = false,
   }) async {
-    final targetCity = city ?? selectedCity ?? '';
+    final targetCity = includeAllCities ? 'all' : (city ?? selectedCity ?? '');
     final cacheKey = '${targetCity.toLowerCase()}_${limit}_${page}_$includeAllCities';
     final now = DateTime.now();
 
@@ -694,12 +694,16 @@ class ApiService {
         final data = jsonDecode(response.body);
         final dynamic list = data['customers'] ?? data['data'];
         if (list != null && list is List) {
-          final result = List<Map<String, dynamic>>.from(list);
+          final result = List<Map<String, dynamic>>.from(
+            list.where((item) => item is Map && item['id'] != null),
+          );
           _cachedCustomers[cacheKey] = result;
           _customersCacheTimestamps[cacheKey] = DateTime.now();
           return result;
         } else if (data is List) {
-          final result = List<Map<String, dynamic>>.from(data);
+          final result = List<Map<String, dynamic>>.from(
+            data.where((item) => item is Map && item['id'] != null),
+          );
           _cachedCustomers[cacheKey] = result;
           _customersCacheTimestamps[cacheKey] = DateTime.now();
           return result;

@@ -5066,10 +5066,46 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       }
 
+      final String notifStatus = (n['status'] ?? '').toString().toUpperCase();
+      final String notifEventType = (n['eventType'] ?? n['type'] ?? '').toString().toLowerCase();
+      final String notifReason = (n['reason'] ?? n['cancellationReason'] ?? n['metadata']?['reason'] ?? '').toString().toLowerCase();
+      final String currentTitleLower = title.toLowerCase();
+      final String currentBodyLower = body.toLowerCase();
+
+      if (notifStatus == 'EXPIRED' ||
+          notifStatus == 'NO_LONGER_AVAILABLE' ||
+          notifStatus == 'DECLINED' ||
+          notifStatus == 'REJECTED' ||
+          notifStatus == 'CANCELLED' ||
+          notifStatus == 'WITHDRAWN' ||
+          n['isExpired'] == true ||
+          notifEventType.contains('unavailable') ||
+          notifEventType.contains('declined') ||
+          notifEventType.contains('cancelled') ||
+          notifEventType.contains('rejected') ||
+          notifEventType.contains('expired') ||
+          notifReason.contains('no_longer_available') ||
+          notifReason.contains('partner_already_selected') ||
+          currentTitleLower.contains('no longer available') ||
+          currentTitleLower.contains('unavailable') ||
+          currentTitleLower.contains('declined') ||
+          currentTitleLower.contains('cancelled') ||
+          currentTitleLower.contains('expired') ||
+          currentBodyLower.contains('no longer available') ||
+          currentBodyLower.contains('another partner') ||
+          badge == 'NO LONGER AVAILABLE' ||
+          badge == 'EXPIRED' ||
+          badge == 'DECLINED' ||
+          badge == 'CANCELLED') {
+        isExpired = true;
+      }
+
       List<NotificationAction>? actionsList;
       if (isExpired) {
         accentColor = const Color(0xFF9CA3AF);
-        badge = 'EXPIRED';
+        if (badge != 'NO LONGER AVAILABLE' && badge != 'DECLINED' && badge != 'CANCELLED') {
+          badge = 'EXPIRED';
+        }
       } else if (actionText != null && actionTap != null) {
         actionsList = [
           NotificationAction(
@@ -5228,6 +5264,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ];
       }
 
+      final fiStatus = (fi['status'] ?? '').toString().toUpperCase();
+      final bool isExpiredItem = fiStatus == 'EXPIRED' ||
+          fiStatus == 'CANCELLED' ||
+          fiStatus == 'REJECTED' ||
+          fiStatus == 'DECLINED' ||
+          fiStatus == 'NO_LONGER_AVAILABLE' ||
+          fi['isExpired'] == true;
+
       items.add(
         UnifiedNotificationItem(
           id: id.isNotEmpty
@@ -5239,18 +5283,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           createdAt: createdAt,
           timeAgo: timeAgo,
           isRead: isRead,
-          isExpired: false,
+          isExpired: isExpiredItem,
           priority: isPendingPayment ? 'CRITICAL' : 'NORMAL',
-          badgeText: badge,
-          accentColor: accentColor,
+          badgeText: isExpiredItem ? 'EXPIRED' : badge,
+          accentColor: isExpiredItem ? const Color(0xFF9CA3AF) : accentColor,
           categoryIcon: icon,
           avatarUrl:
               _extractVenuePhoto(fi['venue']) ??
               _extractVenuePhoto(fi) ??
               fi['venueImageUrl']?.toString(),
-          actionButtonText: actionText,
-          onActionTap: actionTap,
-          actions: actionsList,
+          actionButtonText: isExpiredItem ? null : actionText,
+          onActionTap: isExpiredItem ? null : actionTap,
+          actions: isExpiredItem ? null : actionsList,
           rawData: fi,
           statusSummary: isPendingPayment
               ? 'Payment Pending'
@@ -7589,7 +7633,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (planStatus == 'expired' ||
         lifecycleStatus == 'expired' ||
-        lifecycleStatus == 'payment_expired') {
+        lifecycleStatus == 'payment_expired' ||
+        planStatus == 'cancelled' ||
+        lifecycleStatus == 'cancelled') {
       isExpired = true;
     }
 
@@ -8794,6 +8840,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (hasAnotherPartner) {
+        isExpired = true;
         title = 'Party Plan Unavailable';
         badge = 'NO LONGER AVAILABLE';
         accent = const Color(0xFFEF4444);
@@ -8979,6 +9026,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (myStatus == 'rejected' || myStatus == 'declined') {
+        isExpired = true;
         title = '❌ Request Declined';
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
@@ -8999,6 +9047,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (myStatus == 'withdrawn' || myStatus == 'cancelled') {
+        isExpired = true;
         title = '↩️ Request Cancelled';
         badge = 'CANCELLED';
         accent = const Color(0xFF9CA3AF);
@@ -9098,7 +9147,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       createdAt: latestCreatedAt,
       timeAgo: _formatTimeAgo(latestCreatedAt),
       isRead: allRead,
-      isExpired: isExpired,
+      isExpired: isExpired ||
+          badge == 'NO LONGER AVAILABLE' ||
+          badge == 'EXPIRED' ||
+          badge == 'DECLINED' ||
+          badge == 'CANCELLED',
       badgeText: badge,
       accentColor: accent,
       categoryIcon: Icons.celebration_rounded,
@@ -9304,7 +9357,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (meetStatus == 'completed' ||
         meetStatus == 'expired' ||
         meetStatus == 'cancelled') {
-      if (meetStatus == 'expired') isExpired = true;
+      if (meetStatus == 'expired' || meetStatus == 'cancelled') isExpired = true;
     }
 
     final dynamic rawCharges =
@@ -10584,7 +10637,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             'Request sent to $hostName for Stranger Meet at $venueName. Waiting for host approval.';
         statusSummary = 'Pending Approval';
         actionsList = null;
-      } else if (myStatus == 'rejected' || myStatus == 'declined') {
+      } else if (myStatus == 'rejected' || myStatus == 'declined' || myStatus == 'cancelled' || myStatus == 'withdrawn') {
+        isExpired = true;
         title = '❌ Request Declined';
         badge = 'DECLINED';
         accent = const Color(0xFF9CA3AF);
@@ -10683,13 +10737,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       createdAt: latestCreatedAt,
       timeAgo: _formatTimeAgo(latestCreatedAt),
       isRead: allRead,
-      isExpired: isExpired,
+      isExpired: isExpired ||
+          badge == 'NO LONGER AVAILABLE' ||
+          badge == 'EXPIRED' ||
+          badge == 'DECLINED' ||
+          badge == 'CANCELLED',
       badgeText: badge,
       accentColor: accent,
       categoryIcon: Icons.people_alt_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: isExpired ? null : actionsList,
+      actions: (isExpired ||
+              badge == 'NO LONGER AVAILABLE' ||
+              badge == 'EXPIRED' ||
+              badge == 'DECLINED' ||
+              badge == 'CANCELLED')
+          ? null
+          : actionsList,
       rawData: {
         'id': meetId,
         'plan': meetMap,

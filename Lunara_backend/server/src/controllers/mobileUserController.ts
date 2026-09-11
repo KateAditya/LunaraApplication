@@ -691,7 +691,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const limitQuery = (req.query.limit as string)?.toLowerCase();
         const limit = (limitQuery === 'all' || limitQuery === '0')
             ? 1000
-            : Math.min(1000, parseInt(req.query.limit as string) || 200);
+            : Math.min(1000, parseInt(req.query.limit as string) || 500);
         const offset = (page - 1) * limit;
         const search = (req.query.search as string)?.trim();
         const city = (req.query.city as string)?.trim();
@@ -928,11 +928,20 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             const isLiked = likedUserIdsSet.has(user.id);
             const isSuperLiked = superlikedUserIdsSet.has(user.id);
 
+            const fallbackFullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+            const fallbackName = fallbackFullName || user.profile?.displayName || user.firstName || 'User';
+            const resolvedFirstName = user.firstName || user.profile?.displayName || fallbackName;
+
             return {
                 id: user.id,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                fullName: `${user.firstName} ${user.lastName}`.trim(),
+                firstName: resolvedFirstName,
+                lastName: user.lastName || '',
+                fullName: fallbackName,
+                name: fallbackName,
+                displayName: user.profile?.displayName || fallbackName,
+                city: user.profile?.city ?? null,
+                bio: user.profile?.bio ?? null,
+                gender: user.profile?.gender ?? null,
                 email: user.email,
                 phone: user.phone,
                 age,
@@ -941,6 +950,9 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 isVerified: user.isVerified,
                 isActive: user.isActive,
                 profilePhotoUrl: photoUrl,
+                photoUrl: photoUrl,
+                profilePhoto: photoUrl,
+                imageUrl: photoUrl,
                 createdAt: user.createdAt,
                 lastLoginAt: user.lastLoginAt ?? null,
                 profile: user.profile ?? null,
@@ -961,6 +973,7 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 rankScore: scoredUser.rankScore,
                 rankingPriority: scoredUser.priorityTier,
                 subscriptionTier: scoredUser.vipTier,
+                tier: scoredUser.vipTier,
                 tierRank: tierRankMap[scoredUser.vipTier] ?? 0,
                 isLiked,
                 isSuperLiked,

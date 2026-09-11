@@ -9,8 +9,6 @@ import UserPhoto from '../models/UserPhoto';
 import VenueImage from '../models/VenueImage';
 import { logger } from '../config/logger';
 import '../models';
-import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscription';
-import Conversation from '../models/Conversation';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage, { PackageTier } from '../models/SubscriptionPackage';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
@@ -1809,42 +1807,7 @@ export const startPartyPlanCron = () => {
                 }
             }
 
-            // 3. Check for recently expired chat subscriptions
-            const expiredChats = await ChatSubscription.findAll({
-                where: {
-                    status: ChatSubscriptionStatus.ACTIVE,
-                    validUntil: {
-                        [Op.lt]: now
-                    }
-                }
-            });
-
-            for (const sub of expiredChats) {
-                await sub.update({ status: ChatSubscriptionStatus.EXPIRED });
-                
-                // Get the conversation participants and send a push notification
-                try {
-                    const conv = await Conversation.findByPk(sub.conversationId);
-                    if (conv) {
-                        const host = await User.findByPk(conv.participantOne);
-                        const joiner = await User.findByPk(conv.participantTwo);
-                        const tokens = [host?.fcmToken, joiner?.fcmToken].filter(t => t && t.trim() !== '') as string[];
-                        if (tokens.length > 0) {
-                            const { sendMulticastPushNotification } = require('../services/fcmService');
-                            await sendMulticastPushNotification(tokens, {
-                                title: '💬 Chat Expired',
-                                body: 'Your private chat session has expired. Extend it to keep chatting!',
-                                data: {
-                                    type: 'chat_expired',
-                                    conversationId: sub.conversationId,
-                                },
-                            });
-                        }
-                    }
-                } catch (pushErr: any) {
-                    logger.warn('Failed to send chat expired push notification:', pushErr.message);
-                }
-            }
+            // 3. Chat subscriptions are permanently free & unlimited (no expiration)
 
             // 4. Check for user subscription expiration and expiration warnings (24h/72h alert)
             const activeSubscriptions = await UserSubscription.findAll({

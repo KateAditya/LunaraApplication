@@ -44,17 +44,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final Set<String> _deletingMessageIds = {};
   Map<String, dynamic>? _replyingToMessage;
 
-  // ── Chat Session / Subscription state ───────────────────────────────────────
-  bool _chatSessionLoaded = false;
-  bool _canChat = true; // optimistic default until API responds
-  int _daysLeft = 0;
-  // ignore: unused_field
-  bool _isFreeChat = false;
-  int? _extensionDays; // null until admin config loaded
-  double? _extensionPrice; // null until admin config loaded
-  // ignore: unused_field
-  DateTime? _chatExpiresAt;
-  bool _adminSettingsAvailable = false; // true only when admin responded
+
 
   String _safeString(dynamic val, [String fallback = '']) {
     if (val == null) return fallback;
@@ -273,7 +263,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     setState(() {
       _isPlanCancelled = true;
       _isCancellationPending = false;
-      _canChat = false;
     });
   }
 
@@ -621,31 +610,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _checkChatSession() async {
-    final convId = _conversationId;
-    if (convId == null || convId.isEmpty) return;
-    final result = await ApiService.getChatSessionStatus(convId);
-    if (!mounted) return;
-
-    // Settings come from admin panel — only apply if API responded successfully
-    final settings = result?['settings'] as Map<String, dynamic>?;
-    final extDays = (settings?['extensionDays'] as num?)?.toInt();
-    final extPrice = (settings?['extensionPrice'] as num?)?.toDouble();
-
-    setState(() {
-      _chatSessionLoaded = true;
-      _adminSettingsAvailable = result != null && settings != null;
-      // Chat is free — if API fails or returns null, always allow chat
-      _canChat = result == null ? true : (result['canChat'] == true);
-      _daysLeft = (result?['daysLeft'] as num?)?.toInt() ?? 3650;
-      _isFreeChat = result == null ? true : (result['isFree'] == true);
-      // Only update if admin returned a value — never use a local default
-      if (extDays != null) _extensionDays = extDays;
-      if (extPrice != null) _extensionPrice = extPrice;
-      final expiresStr = result?['expiresAt']?.toString();
-      _chatExpiresAt = expiresStr != null
-          ? DateTime.tryParse(expiresStr)
-          : null;
-    });
+    // Chat is permanently free and unlimited (no session expiration or subscription gating)
   }
 
   Future<void> _fetchMessages({
@@ -1025,9 +990,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final bool chatExpired = _chatSessionLoaded && !_canChat;
-    final bool expiringSoon = _chatSessionLoaded && _canChat && _daysLeft <= 2;
-
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFC),
       appBar: _buildAppBar(context),
@@ -1076,8 +1038,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 // Event context card if linked
                 _buildEventContextCard(),
 
-                // Expiry warning banner
-                if (expiringSoon) _buildExpiryBanner(),
                 Expanded(
                   child: _isLoading
                       ? const Center(
@@ -1085,11 +1045,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             color: Color(0xFF7C3AED),
                           ),
                         )
-                      : chatExpired
-                      ? _buildChatExpiredState()
-                      : _canChat || !_chatSessionLoaded
-                      ? _buildMessageList()
-                      : _buildNoAccessState(),
+                      : _buildMessageList(),
                 ),
                 if (_isBlocked)
                   Container(
@@ -1110,9 +1066,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   )
-                else if (chatExpired)
-                  _buildExpiredInputBar()
-                else if (_canChat || !_chatSessionLoaded)
+                else
                   _buildInputArea(context),
               ],
             ),
@@ -1305,419 +1259,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
   }
 
-  // ── Chat Session UI Helpers ──────────────────────────────────────────────────
 
-  Widget _buildExpiryBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.orange.shade700,
-      child: Row(
-        children: [
-          const Icon(Icons.timer_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _daysLeft == 0
-                  ? 'Chat expires today!'
-                  : 'Chat expires in $_daysLeft day${_daysLeft == 1 ? '' : 's'}.',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          // Only show EXTEND chip when admin has configured the price
-          if (_adminSettingsAvailable && _extensionPrice != null)
-            GestureDetector(
-              onTap: _showExtendOptions,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'EXTEND',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChatExpiredState() {
-    final price = _extensionPrice;
-    final days = _extensionDays;
-    final adminReady = _adminSettingsAvailable && price != null && days != null;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.lock_clock_rounded,
-                size: 56,
-                color: Color(0xFF7F00FF),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Chat Period Ended',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              adminReady
-                  ? 'Your free chat window has expired. Pay ₹${price.toStringAsFixed(0)} to continue chatting for $days more days.'
-                  : 'Your chat window has expired. Pricing is managed by the admin — please wait for configuration.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 32),
-            if (adminReady) ...[
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _showExtendOptions,
-                  icon: const Icon(Icons.bolt_rounded),
-                  label: Text('EXTEND FOR ₹${price.toStringAsFixed(0)}'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7F00FF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _requestOtherToPay,
-                  icon: const Icon(Icons.person_add_alt_1_rounded),
-                  label: const Text('ASK THEM TO PAY'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF7F00FF),
-                    side: const BorderSide(color: Color(0xFF7F00FF)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-            ] else
-              _buildAdminPendingBadge(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNoAccessState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 56,
-                color: Colors.grey,
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'No one available yet',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'When both of you match and connect, your chat will open automatically.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black54,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExpiredInputBar() {
-    final price = _extensionPrice;
-    final adminReady = _adminSettingsAvailable && price != null;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.white,
-      child: adminReady
-          ? Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _showExtendOptions,
-                    icon: const Icon(Icons.bolt_rounded, size: 18),
-                    label: Text('Extend Chat – ₹${price.toStringAsFixed(0)}'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7F00FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                OutlinedButton(
-                  onPressed: _requestOtherToPay,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF7F00FF),
-                    side: const BorderSide(color: Color(0xFF7F00FF)),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-                ),
-              ],
-            )
-          : _buildAdminPendingBadge(),
-    );
-  }
-
-  /// Shown when admin has not yet configured chat pricing
-  Widget _buildAdminPendingBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.amber.shade300),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.admin_panel_settings_rounded,
-            size: 18,
-            color: Colors.amber.shade700,
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              'Chat extension is managed by the admin. Please check back later.',
-              style: TextStyle(
-                color: Colors.amber.shade800,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showExtendOptions() {
-    final price = _extensionPrice;
-    final days = _extensionDays;
-
-    // Block if admin hasn't configured pricing
-    if (!_adminSettingsAvailable || price == null || days == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(
-                Icons.admin_panel_settings_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Chat extension charges are managed by the admin.'),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.amber.shade700,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.admin_panel_settings_rounded,
-                  color: Color(0xFF7F00FF),
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Extend Your Chat',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Admin-configured pricing: ₹${price.toStringAsFixed(0)} for $days days.',
-              style: const TextStyle(color: Colors.black54, fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  await _payToExtend();
-                },
-                icon: const Icon(Icons.payment_rounded),
-                label: Text('PAY ₹${price.toStringAsFixed(0)} NOW'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7F00FF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  await _requestOtherToPay();
-                },
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('ASK THEM TO PAY'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF7F00FF),
-                  side: const BorderSide(color: Color(0xFF7F00FF)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _payToExtend() async {
-    final convId = _conversationId;
-    final days = _extensionDays;
-    if (convId == null || !_adminSettingsAvailable) return;
-    // In a real flow, open Razorpay here and pass the paymentId
-    final ok = await ApiService.extendChat(convId);
-    if (ok && mounted) {
-      await _checkChatSession();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ Chat extended for ${days ?? '?'} days!'),
-          backgroundColor: const Color(0xFF7F00FF),
-        ),
-      );
-    }
-  }
-
-  Future<void> _requestOtherToPay() async {
-    final convId = _conversationId;
-    final targetId = widget.user['id']?.toString();
-    if (convId == null || targetId == null) return;
-    if (!_adminSettingsAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Cannot send request — admin pricing not configured.',
-          ),
-          backgroundColor: Colors.amber.shade700,
-        ),
-      );
-      return;
-    }
-    final ok = await ApiService.requestChatExtension(convId, targetId);
-    if (ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Extension request sent!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
 
   Future<String?> _showWhatsAppDeleteDialog({
     required bool canDeleteForEveryone,
@@ -2626,11 +2168,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final requesterName = _safeString(payload['requesterName'], 'Your match');
     final extensionDays = _safeInt(
       payload['extensionDays'],
-      _extensionDays ?? 7,
+      7,
     );
     final extensionPrice =
         (payload['extensionPrice'] as num?)?.toDouble() ??
-        _extensionPrice ??
         100.0;
     final requesterId = payload['requesterId']?.toString();
 
