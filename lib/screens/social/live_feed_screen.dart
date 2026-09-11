@@ -111,12 +111,14 @@ class LiveFeedScreen extends StatefulWidget {
   final bool isTab;
   final VoidCallback? onCountChanged;
   final int initialTabIndex;
+  final Map<String, dynamic>? initialFeedItem;
 
   const LiveFeedScreen({
     super.key,
     this.isTab = false,
     this.onCountChanged,
     this.initialTabIndex = 0,
+    this.initialFeedItem,
   });
 
   @override
@@ -195,7 +197,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     )..repeat(reverse: true);
 
     // Instant frame-0 hydration from memory cache (zero loading latency)
-    if (ApiService.cachedLiveFeedData != null || ApiService.cachedNotifications != null) {
+    if (ApiService.cachedLiveFeedData != null || ApiService.cachedNotifications != null || widget.initialFeedItem != null) {
       final cachedFeed = ApiService.cachedLiveFeedData;
       if (cachedFeed != null) {
         _feedItems = [
@@ -203,6 +205,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ...List<Map<String, dynamic>>.from(cachedFeed['myRequests'] ?? []),
           ...List<Map<String, dynamic>>.from(cachedFeed['incomingRequests'] ?? []),
           ...List<Map<String, dynamic>>.from(cachedFeed['pendingPayments'] ?? []),
+        ];
+      }
+      if (widget.initialFeedItem != null) {
+        final initId = (widget.initialFeedItem!['id'] ?? widget.initialFeedItem!['_id'] ?? '').toString();
+        _feedItems = [
+          widget.initialFeedItem!,
+          ..._feedItems.where((i) => (i['id'] ?? i['_id'] ?? '').toString() != initId)
         ];
       }
       if (ApiService.cachedNotifications != null) {

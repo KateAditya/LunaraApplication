@@ -4233,6 +4233,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                       timeout: const Duration(seconds: 25),
                                     );
 
+                                    Map<String, dynamic>? authoritativePlanData;
                                     if (response.statusCode == 200 ||
                                         response.statusCode == 201) {
                                       if (!mounted) return;
@@ -4271,11 +4272,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                               'profileImageUrl': photo,
                                             };
                                           }
+                                          authoritativePlanData = planData;
                                         }
                                       } catch (_) {}
-
-                                      ApiService.planPostedNotifier.value++;
-                                      ApiService.notifyFeedNeedsRefresh();
 
                                       // Close the create-plan bottom sheet
                                       Navigator.pop(context);
@@ -4288,10 +4287,10 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         body: 'You need to pay ₹99 to post and activate your party plan.',
                                       );
 
-                                      // Redirect directly to Live Feed screen where the Pay button card is displayed
+                                      // Redirect directly to Live Feed screen with instant frame-0 card hydration
                                       Navigator.of(parentContext).pushReplacement(
                                         MaterialPageRoute(
-                                          builder: (_) => const LiveFeedScreen(),
+                                          builder: (_) => LiveFeedScreen(initialFeedItem: authoritativePlanData),
                                         ),
                                       );
 

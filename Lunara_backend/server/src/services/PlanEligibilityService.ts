@@ -58,20 +58,28 @@ export class PlanEligibilityService {
      */
     public static async resolveConfig(
         userId: string,
-        planType: string
+        planType: string,
+        options?: { user?: any; tier?: string; transaction?: Transaction }
     ): Promise<PlanTimeLockConfigAttributes> {
         // Resolve user role
-        const user = await User.findByPk(userId);
-        const role = user?.role || 'customer';
+        let role = options?.user?.role;
+        if (!role) {
+            const user = await User.findByPk(userId, { attributes: ['id', 'role'], transaction: options?.transaction });
+            role = user?.role || 'customer';
+        }
 
         // Resolve subscription tier
-        let tier = 'FREE';
-        const activeSub = await UserSubscription.findOne({
-            where: { userId, status: 'ACTIVE' },
-            include: [{ model: SubscriptionPackage, as: 'package' }]
-        });
-        if (activeSub && (activeSub as any).package) {
-            tier = (activeSub as any).package.tier;
+        let tier = options?.tier;
+        if (!tier) {
+            tier = 'FREE';
+            const activeSub = await UserSubscription.findOne({
+                where: { userId, status: 'ACTIVE' },
+                include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                transaction: options?.transaction
+            });
+            if (activeSub && (activeSub as any).package) {
+                tier = (activeSub as any).package.tier;
+            }
         }
 
         const scopes = [
@@ -140,7 +148,7 @@ export class PlanEligibilityService {
         userId: string,
         planType: string,
         startTimeInput: Date | string,
-        options?: { transaction?: Transaction }
+        options?: { user?: any; tier?: string; transaction?: Transaction }
     ): Promise<{
         eligible: boolean;
         reasonCode?: string;
@@ -179,7 +187,7 @@ export class PlanEligibilityService {
             };
         }
 
-        const config = await this.resolveConfig(userId, planType);
+        const config = await this.resolveConfig(userId, planType, options);
 
         if (!config.timeLockEnabled) {
             return { eligible: true };
@@ -352,7 +360,8 @@ export class PlanEligibilityService {
         userId: string,
         planType: string,
         startTimeInput: Date | string,
-        callback: (transaction: Transaction) => Promise<any>
+        callback: (transaction: Transaction) => Promise<any>,
+        options?: { user?: any; tier?: string }
     ): Promise<any> {
         return await sequelize.transaction(async (t) => {
             // Non-party-plan flows (Group parties, solo bookings, strangers meet) are not subject to party plan locks
@@ -368,7 +377,7 @@ export class PlanEligibilityService {
             });
 
             // Re-validate eligibility under current database state inside transaction
-            const eligibility = await this.checkEligibility(userId, planType, startTimeInput, { transaction: t });
+            const eligibility = await this.checkEligibility(userId, planType, startTimeInput, { ...options, transaction: t });
             if (!eligibility.eligible) {
                 const error: any = new Error(eligibility.message || 'Time lock conflict detected.');
                 error.code = eligibility.reasonCode || 'PLAN_TIME_LOCKED';

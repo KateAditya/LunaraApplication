@@ -939,10 +939,15 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 status: { [Op.ne]: PartyPlanStatus.CANCELLED },
                 hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
             },
+            attributes: ['id'],
         });
-        for (const stale of staleSameDayPlans) {
-            await stale.update({ status: PartyPlanStatus.CANCELLED });
-            await PlanEligibilityService.releaseLock(stale.id);
+        if (staleSameDayPlans.length > 0) {
+            const staleIds = staleSameDayPlans.map(s => s.id);
+            await PartyPlan.update(
+                { status: PartyPlanStatus.CANCELLED },
+                { where: { id: { [Op.in]: staleIds } } }
+            );
+            await Promise.all(staleIds.map(id => PlanEligibilityService.releaseLock(id)));
         }
 
         // ── Validate Selected Users for Private & Both Mode ───────────────────
@@ -1083,7 +1088,8 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 }, { transaction });
 
                 return plan;
-            }
+            },
+            { user }
         );
 
         const responseData = {
