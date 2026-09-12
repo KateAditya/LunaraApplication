@@ -20,7 +20,7 @@ class RedisService {
         const port = parseInt(process.env.REDIS_PORT || '10000', 10);
         const password = process.env.REDIS_PASSWORD;
         const useTls = process.env.REDIS_TLS !== 'false';
-        const isClusterPolicy = process.env.REDIS_CLUSTER === 'true' || process.env.REDIS_PORT === '10000';
+        const isClusterPolicy = process.env.REDIS_CLUSTER === 'true';
 
         if (!host) {
             logger.info('[Redis] REDIS_HOST not configured. Operating in high-speed In-Memory Cache mode.');

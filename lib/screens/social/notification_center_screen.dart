@@ -21,6 +21,7 @@ import '../../widgets/smart_checkout_sheet.dart';
 import '../../widgets/lunara_countdown_button.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../widgets/lunara_cached_image.dart';
+import '../../widgets/party_safety_check_dialog.dart';
 
 class NotificationCenterScreen extends StatefulWidget {
   const NotificationCenterScreen({super.key});
@@ -1490,6 +1491,25 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final titleLower = title.toLowerCase();
     final bodyLower = body.toLowerCase();
 
+    // ── Safety Check event routing ──────────────────────────────────
+    final bool isSafetyCheck =
+        eventType.contains('SAFETY_CHECK') ||
+        eventType == 'PARTY_SAFETY_CHECK' ||
+        type.contains('safety_check') ||
+        item['entityType'] == 'PartySafetyCheck' ||
+        item['actionType'] == 'safety_check' ||
+        item['category'] == 'safety' ||
+        (item['category'] == 'alert' && (titleLower.contains('safety') || bodyLower.contains('safe'))) ||
+        titleLower.contains('safety check') ||
+        titleLower.contains('has your party ended') ||
+        bodyLower.contains('confirm you are safe') ||
+        bodyLower.contains('safe & sound') ||
+        bodyLower.contains('has your party ended');
+
+    if (isSafetyCheck) {
+      return _buildSafetyCheckCard(item);
+    }
+
     // ── Cancellation event routing ────────────────────────────────────
     final bool isPartyPlanCancellation =
         eventType.contains('PARTY_PLAN_CANCELLATION') ||
@@ -2894,6 +2914,289 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSafetyCheckCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? item['metadata'] as Map<String, dynamic>
+        : (item['data'] is Map
+              ? item['data'] as Map<String, dynamic>
+              : <String, dynamic>{});
+
+    final checkId = (data['checkId'] ??
+            data['id'] ??
+            item['entityId'] ??
+            item['id'] ??
+            '')
+        .toString();
+
+    final title = (item['title'] ?? 'Safety Check: Has your party ended?').toString();
+    final body = (item['body'] ?? 'Your party started 3 hours ago. Please confirm you are safe & sound.').toString();
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['created_at']);
+    final safetyStatus = (data['safetyStatus'] ?? item['safetyStatus'] ?? 'NO_RESPONSE').toString();
+    final isAnswered = safetyStatus == 'SAFE' || safetyStatus == 'NEED_HELP' || safetyStatus == 'EXTENDED' || item['answered'] == true;
+
+    final isSafeKey = 'SAFETY_SAFE:$checkId';
+    final isHelpKey = 'SAFETY_HELP:$checkId';
+    final isActionLoading = _loadingActionKeys.contains(isSafeKey) || _loadingActionKeys.contains(isHelpKey);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isUnread ? const Color(0xFF10B981).withValues(alpha: 0.5) : const Color(0xFFE2E8F0),
+          width: isUnread ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            _markAsRead(item);
+            PartySafetyCheckDialog.showIfNeeded(
+              context,
+              onSubmitted: () {
+                setState(() {
+                  item['isRead'] = true;
+                  item['answered'] = true;
+                  item['safetyStatus'] = 'SAFE';
+                });
+                _fetchNotifications();
+              },
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Header: Shield Icon + Title + Time
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: safetyStatus == 'NEED_HELP'
+                            ? Colors.red.withValues(alpha: 0.12)
+                            : const Color(0xFF10B981).withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        safetyStatus == 'NEED_HELP'
+                            ? Icons.warning_rounded
+                            : Icons.shield_outlined,
+                        size: 20,
+                        color: safetyStatus == 'NEED_HELP'
+                            ? Colors.red.shade700
+                            : const Color(0xFF10B981),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              if (timeStr.isNotEmpty)
+                                Text(
+                                  timeStr,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            body,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFF475569),
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Action area
+                if (isAnswered)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: safetyStatus == 'NEED_HELP'
+                          ? Colors.red.withValues(alpha: 0.08)
+                          : const Color(0xFF10B981).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          safetyStatus == 'NEED_HELP' ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                          size: 16,
+                          color: safetyStatus == 'NEED_HELP' ? Colors.red.shade700 : const Color(0xFF10B981),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          safetyStatus == 'NEED_HELP'
+                              ? 'Alert Reported to Safety Team'
+                              : 'Confirmed Safe & Reached Home',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: safetyStatus == 'NEED_HELP' ? Colors.red.shade800 : const Color(0xFF065F46),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      // 🟢 Yes, I'm Safe button
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: isActionLoading
+                              ? null
+                              : () async {
+                                  _markAsRead(item);
+                                  setState(() => _loadingActionKeys.add(isSafeKey));
+                                  try {
+                                    final res = await ApiService.submitSafetyCheckStatus(
+                                      checkId: checkId,
+                                      safetyStatus: 'SAFE',
+                                      notes: 'Confirmed safe via Notification Center',
+                                    );
+                                    if (mounted && res['success'] == true) {
+                                      setState(() {
+                                        item['safetyStatus'] = 'SAFE';
+                                        item['answered'] = true;
+                                        item['isRead'] = true;
+                                      });
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: const Text('🟢 Confirmed safe! Stay safe!'),
+                                          backgroundColor: const Color(0xFF10B981),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error confirming safety: $e');
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _loadingActionKeys.remove(isSafeKey));
+                                    }
+                                  }
+                                },
+                          icon: _loadingActionKeys.contains(isSafeKey)
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
+                          label: const Text(
+                            'I\'M SAFE',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // 🔴 No, Need Help button
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: isActionLoading
+                              ? null
+                              : () {
+                                  _markAsRead(item);
+                                  PartySafetyCheckDialog.showIfNeeded(
+                                    context,
+                                    onSubmitted: () {
+                                      setState(() {
+                                        item['isRead'] = true;
+                                        item['answered'] = true;
+                                        item['safetyStatus'] = 'NEED_HELP';
+                                      });
+                                      _fetchNotifications();
+                                    },
+                                  );
+                                },
+                          icon: const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.redAccent),
+                          label: const Text(
+                            'NEED HELP',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

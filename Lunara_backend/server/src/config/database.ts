@@ -12,11 +12,14 @@ const sequelize = new Sequelize({
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     pool: {
-        // Endpoints such as the notification feed fan out into many concurrent
-        // queries, and the every-minute crons draw from this same pool. A small
-        // ceiling makes those requests queue on `acquire` rather than run.
-        min: parseInt(process.env.DB_POOL_MIN || '10'),
-        max: parseInt(process.env.DB_POOL_MAX || '60'),
+        // Sized against the server, not against demand. This Azure Postgres tier
+        // reports max_connections=50 with 10 reserved, so ~40 are usable across
+        // every process that connects (app instances, admin panel, migrations,
+        // any dev session). Exceeding that trades slow requests for failed ones.
+        // Verify with: node add-performance-indexes.js (it prints the budget).
+        // Raise these only after moving to a tier with more connections.
+        min: parseInt(process.env.DB_POOL_MIN || '5'),
+        max: parseInt(process.env.DB_POOL_MAX || '20'),
         acquire: 60000,
         // Recycling connections aggressively forces a fresh TLS handshake to
         // Azure Postgres on the next query, so keep idle connections around.
@@ -328,9 +331,9 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         target_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         action_type VARCHAR(50) NOT NULL,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        CONSTRAINT unique_user_target_like UNIQUE (user_id, target_user_id)
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_target_action_like_unique ON user_likes (user_id, target_user_id, action_type);
 
                     -- users columns
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='mfa_enabled') THEN ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE; END IF;

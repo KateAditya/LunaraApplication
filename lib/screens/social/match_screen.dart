@@ -99,6 +99,35 @@ class _MatchScreenState extends State<MatchScreen>
         if (u2 == myId && u1 != null) {
           incomingBySenderId[u1] = swipe;
         }
+
+        // Direct connected matches resolution from swipe records
+        final status = swipe['status']?.toString().toLowerCase();
+        if (status == 'connected') {
+          final isUser1 = u1 == myId;
+          final otherUser = isUser1 ? swipe['user2'] : swipe['user1'];
+          final otherId = isUser1 ? u2 : u1;
+          if (otherId != null && !resolvedMatched.any((p) => p['id'] == otherId)) {
+            final firstName = otherUser?['firstName']?.toString() ?? 'Match';
+            final lastName = otherUser?['lastName']?.toString() ?? '';
+            final fullName = '$firstName $lastName'.trim();
+            final photo = otherUser?['profileImageUrl']?.toString() ?? 'https://picsum.photos/400/600';
+            resolvedMatched.add({
+              'id': otherId,
+              'name': fullName.toUpperCase(),
+              'age': 25,
+              'vibe': 'NIGHT OWL',
+              'verified': true,
+              'distance': 'Connected',
+              'image': photo,
+              'isAsset': false,
+              'interests': [],
+              'matchChance': 0.95,
+              'isLiked': true,
+              'isSuperLiked': swipe['matchReason'] == 'superlike',
+              'isMatched': true,
+            });
+          }
+        }
       }
 
       final List<Map<String, dynamic>> discoveryProfiles = [];
@@ -109,18 +138,18 @@ class _MatchScreenState extends State<MatchScreen>
           if (myId != null && u.id == myId) continue;
 
           // Filter by selected city
-          if (selectedCity != null && selectedCity.isNotEmpty) {
-            if (u.city == null ||
+          if (selectedCity != null && selectedCity.isNotEmpty && selectedCity.toLowerCase() != 'all') {
+            if (u.city != null &&
+                u.city!.isNotEmpty &&
                 u.city!.toLowerCase() != selectedCity.toLowerCase()) {
               continue;
             }
           }
 
-
           // Calculate match percentage dynamically
           final matchPct = ApiService.calculateMatchPercentage(u);
 
-          // O(1) instantaneous lookup via HashMap (eliminates O(N*M) nested scans)
+          // O(1) instantaneous lookup via HashMap
           final outgoingSwipe = outgoingByTargetId[u.id];
           final incomingSwipe = incomingBySenderId[u.id];
 
@@ -177,17 +206,51 @@ class _MatchScreenState extends State<MatchScreen>
           };
 
           if (isMatched) {
-            resolvedMatched.add(profileMap);
+            if (!resolvedMatched.any((p) => p['id'] == u.id)) {
+              resolvedMatched.add(profileMap);
+            }
           } else if (isSuperLiked) {
-            resolvedSuperLiked.add(profileMap);
+            if (!resolvedSuperLiked.any((p) => p['id'] == u.id)) {
+              resolvedSuperLiked.add(profileMap);
+            }
           } else if (isLiked) {
-            resolvedLiked.add(profileMap);
+            if (!resolvedLiked.any((p) => p['id'] == u.id)) {
+              resolvedLiked.add(profileMap);
+            }
           }
 
           if (!swipedUserIds.contains(u.id)) {
             discoveryProfiles.add(profileMap);
           }
         } catch (_) {}
+      }
+
+      // Fallback: If filtered city yielded no discovery profiles, include all available un-swiped profiles
+      if (discoveryProfiles.isEmpty && rawCustomers.isNotEmpty) {
+        for (var c in rawCustomers) {
+          try {
+            final u = User.fromJson(c);
+            if (myId != null && u.id == myId) continue;
+            if (!swipedUserIds.contains(u.id) && !discoveryProfiles.any((p) => p['id'] == u.id)) {
+              final matchPct = ApiService.calculateMatchPercentage(u);
+              discoveryProfiles.add({
+                'id': u.id,
+                'name': u.fullName.toUpperCase(),
+                'age': u.age ?? 25,
+                'vibe': (u.occupation ?? 'Night Owl').toUpperCase(),
+                'verified': u.isVerified,
+                'distance': 'Nearby',
+                'image': u.profilePhoto ?? 'https://picsum.photos/400/600',
+                'isAsset': false,
+                'interests': u.interests,
+                'matchChance': matchPct / 100.0,
+                'isLiked': false,
+                'isSuperLiked': false,
+                'isMatched': false,
+              });
+            }
+          } catch (_) {}
+        }
       }
 
       if (mounted) {
@@ -996,24 +1059,43 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Widget _buildHeader() {
+    final canPop = Navigator.canPop(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(
-                'DISCOVER',
-                style: LunaraTheme.bodyStyle.copyWith(
-                  fontSize: 12,
-                  letterSpacing: 2,
+              if (canPop) ...[
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 16),
+                  ),
                 ),
-              ),
-              Text(
-                'NIGHT MATCH',
-                style: LunaraTheme.headingStyle.copyWith(fontSize: 24),
+              ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DISCOVER',
+                    style: LunaraTheme.bodyStyle.copyWith(
+                      fontSize: 12,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  Text(
+                    'NIGHT MATCH',
+                    style: LunaraTheme.headingStyle.copyWith(fontSize: 22),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1078,76 +1160,83 @@ class _MatchScreenState extends State<MatchScreen>
         final canBacktrack = _swipedHistory.isNotEmpty && !backtrackExhausted;
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _interactionButton(
-                icon: Icons.replay,
-                color: canBacktrack
-                    ? const Color(0xFFFFB703)
-                    : const Color(0xFFFFB703).withValues(alpha: 0.35),
-                isGlowing: canBacktrack,
-                glowColor: const Color(0xFFFFB703),
-                gradient: canBacktrack ? LunaraTheme.amberGlow : null,
-                onTap: _rewindLastSwipe,
-                label: 'REWIND',
-                badgeText: backtrackLabel,
-                badgeColor: backtrackExhausted ? Colors.grey : const Color(0xFFFFB703),
-              ),
-              _interactionButton(
-                icon: Icons.close,
-                color: LunaraTheme.primaryDeep,
-                onTap: () {
-                  _swipeCard(false, customAction: 'nope');
-                },
-                label: 'NOPE',
-              ),
-              _interactionButton(
-                icon: isTopLiked ? Icons.favorite : Icons.favorite_border,
-                color: isTopLiked
-                    ? const Color(0xFF00C853)
-                    : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
-                iconColor: isTopLiked ? Colors.white : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
-                isGlowing: isTopLiked,
-                glowColor: const Color(0xFF00C853),
-                gradient: isTopLiked
-                    ? const LinearGradient(
-                        colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : null,
-                onTap: () {
-                  _swipeCard(true, customAction: 'like');
-                },
-                isLarge: true,
-                label: isTopLiked ? 'LIKED' : 'LIKE',
-              ),
-              _interactionButton(
-                icon: isTopSuperLiked ? Icons.star : Icons.star_border,
-                color: isTopSuperLiked
-                    ? const Color(0xFFFFD700)
-                    : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
-                iconColor: isTopSuperLiked ? Colors.white : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
-                isGlowing: isTopSuperLiked,
-                glowColor: const Color(0xFFFFD700),
-                gradient: isTopSuperLiked
-                    ? const LinearGradient(
-                        colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : null,
-                onTap: () {
-                  _swipeCard(true, customAction: 'superlike');
-                },
-                label: isTopSuperLiked ? 'SUPER' : 'SUPER',
-                badgeText: superLabel,
-                badgeColor: superExhausted ? Colors.grey : (isTopSuperLiked ? const Color(0xFFFFD700) : LunaraTheme.primaryRich),
-              ),
-              _buildBoostButton(provider),
-            ],
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _interactionButton(
+                  icon: Icons.replay,
+                  color: canBacktrack
+                      ? const Color(0xFFFFB703)
+                      : const Color(0xFFFFB703).withValues(alpha: 0.35),
+                  isGlowing: canBacktrack,
+                  glowColor: const Color(0xFFFFB703),
+                  gradient: canBacktrack ? LunaraTheme.amberGlow : null,
+                  onTap: _rewindLastSwipe,
+                  label: 'REWIND',
+                  badgeText: backtrackLabel,
+                  badgeColor: backtrackExhausted ? Colors.grey : const Color(0xFFFFB703),
+                ),
+                const SizedBox(width: 8),
+                _interactionButton(
+                  icon: Icons.close,
+                  color: LunaraTheme.primaryDeep,
+                  onTap: () {
+                    _swipeCard(false, customAction: 'nope');
+                  },
+                  label: 'NOPE',
+                ),
+                const SizedBox(width: 8),
+                _interactionButton(
+                  icon: isTopLiked ? Icons.favorite : Icons.favorite_border,
+                  color: isTopLiked
+                      ? const Color(0xFF00C853)
+                      : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
+                  iconColor: isTopLiked ? Colors.white : (likeExhausted ? LunaraTheme.accentVivid.withValues(alpha: 0.4) : LunaraTheme.accentVivid),
+                  isGlowing: isTopLiked,
+                  glowColor: const Color(0xFF00C853),
+                  gradient: isTopLiked
+                      ? const LinearGradient(
+                          colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  onTap: () {
+                    _swipeCard(true, customAction: 'like');
+                  },
+                  isLarge: true,
+                  label: isTopLiked ? 'LIKED' : 'LIKE',
+                ),
+                const SizedBox(width: 8),
+                _interactionButton(
+                  icon: isTopSuperLiked ? Icons.star : Icons.star_border,
+                  color: isTopSuperLiked
+                      ? const Color(0xFFFFD700)
+                      : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
+                  iconColor: isTopSuperLiked ? Colors.white : (superExhausted ? LunaraTheme.primaryRich.withValues(alpha: 0.4) : LunaraTheme.primaryRich),
+                  isGlowing: isTopSuperLiked,
+                  glowColor: const Color(0xFFFFD700),
+                  gradient: isTopSuperLiked
+                      ? const LinearGradient(
+                          colors: [Color(0xFFFFD700), Color(0xFFFF8C00)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  onTap: () {
+                    _swipeCard(true, customAction: 'superlike');
+                  },
+                  label: isTopSuperLiked ? 'SUPER' : 'SUPER',
+                  badgeText: superLabel,
+                  badgeColor: superExhausted ? Colors.grey : (isTopSuperLiked ? const Color(0xFFFFD700) : LunaraTheme.primaryRich),
+                ),
+                const SizedBox(width: 8),
+                _buildBoostButton(provider),
+              ],
+            ),
           ),
         );
       },
@@ -1167,7 +1256,7 @@ class _MatchScreenState extends State<MatchScreen>
     Color? glowColor,
     Color? iconColor,
   }) {
-    final double size = isLarge ? 74 : 54;
+    final double size = isLarge ? 64 : 48;
     final effectiveGlowColor = glowColor ?? color;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1221,7 +1310,7 @@ class _MatchScreenState extends State<MatchScreen>
                 child: Icon(
                   icon,
                   color: iconColor ?? (isGlowing ? Colors.white : color),
-                  size: isLarge ? 30 : 22,
+                  size: isLarge ? 28 : 20,
                 ),
               ),
             ),

@@ -518,7 +518,9 @@ export class SubscriptionService {
                 if (featureKey === 'priority_visibility') return !!plan.hasPriorityVisibility;
                 if (featureKey === 'trust_badge') return !!plan.hasTrustBadge;
                 if (featureKey === 'elite_badge') return !!plan.hasEliteBadge;
-                if (featureKey === 'who_liked_me') return !!plan.canSeeWhoLiked;
+                if (featureKey === 'who_liked_me' || featureKey === 'can_see_who_liked') {
+                    return !!plan.canSeeWhoLiked || ['PLUS', 'PRO', 'ELITE'].includes(plan.tier as string);
+                }
             }
             return false;
         } catch (err) {

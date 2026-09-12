@@ -455,6 +455,7 @@ router.post('/:id/cancellation-response', authenticate, respondToCancellationReq
 import { respondToSafetyCheck, getPendingSafetyCheck } from '../controllers/mobileSafetyCheckController';
 
 router.post('/safety-checks/respond', authenticate, respondToSafetyCheck);
+router.post('/safety-checks/:checkId/respond', authenticate, respondToSafetyCheck);
 router.get('/safety-checks/pending', authenticate, getPendingSafetyCheck);
 
 // Phase 2 & 3 Routes

@@ -676,7 +676,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['superlike', 'super_likes', 'super_like'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -746,7 +746,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['profile_boost', 'boost', 'boosts'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -821,7 +821,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['daily_likes', 'likes', 'like'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -913,7 +913,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['backtrack', 'undo', 'backtracks'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -968,7 +968,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -1011,7 +1011,7 @@ export class EntitlementService {
                 where: {
                     userId,
                     featureKey: { [Op.in]: addonKeys },
-                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                    status: UserAddonStatus.ACTIVE,
                     remainingQuantity: { [Op.gt]: 0 },
                 },
                 order: [['createdAt', 'ASC']],
@@ -1047,7 +1047,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: addonKeys },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,

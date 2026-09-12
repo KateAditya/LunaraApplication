@@ -1279,7 +1279,11 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] != null) {
-          return Map<String, dynamic>.from(data['data']);
+          final resData = Map<String, dynamic>.from(data['data']);
+          resData['totalCount'] = resData['totalCount'] ?? resData['count'] ?? 0;
+          resData['superlikesCount'] = resData['superlikesCount'] ?? 0;
+          resData['locked'] = resData['locked'] ?? (resData['canSeeWhoLiked'] == false);
+          return resData;
         }
       }
       return null;
@@ -1295,8 +1299,9 @@ class ApiService {
   }) async {
     try {
       final userId = currentUserId;
-      if (userId == null)
+      if (userId == null) {
         return {'users': [], 'pagination': {}, 'locked': false};
+      }
 
       final response = await get(
         '/api/mobile/user/who-liked-me',
@@ -1309,8 +1314,25 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return Map<String, dynamic>.from(data['data']);
+        if (data['success'] == true) {
+          final dynamic rawList = data['data'] ?? data['users'];
+          final users = rawList is List
+              ? List<Map<String, dynamic>>.from(rawList.whereType<Map>())
+              : <Map<String, dynamic>>[];
+          final pagination = data['pagination'] is Map
+              ? Map<String, dynamic>.from(data['pagination'])
+              : <String, dynamic>{};
+          return {
+            'users': users,
+            'pagination': pagination,
+            'locked': false,
+            'canSeeWhoLiked': true,
+          };
+        }
+      } else if (response.statusCode == 403) {
+        final data = jsonDecode(response.body);
+        if (data['code'] == 'VIP_REQUIRED' || data['success'] == false) {
+          return {'users': [], 'pagination': {}, 'locked': true};
         }
       }
       return {'users': [], 'pagination': {}, 'locked': false};

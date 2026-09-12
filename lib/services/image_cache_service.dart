@@ -44,19 +44,20 @@ class LunaraImageCache {
   /// Ceiling on the *number* of decoded images held in memory.
   static const int maxMemoryCacheCount = 400;
 
-  static CacheManager? _manager;
+  static LunaraCacheManager? _manager;
 
-  /// Shared disk cache manager used by every Lunara image widget.
-  static CacheManager get manager {
-    return _manager ??= CacheManager(
-      Config(
-        cacheKey,
-        stalePeriod: stalePeriod,
-        maxNrOfCacheObjects: maxCacheObjects,
-        repo: JsonCacheInfoRepository(databaseName: cacheKey),
-        fileService: HttpFileService(),
-      ),
-    );
+  /// Shared disk cache manager, or `null` on web.
+  ///
+  /// The disk cache is backed by `JsonCacheInfoRepository`, which resolves a
+  /// directory through `path_provider`. That plugin has no web implementation,
+  /// so building this manager in a browser throws
+  /// `MissingPluginException(getApplicationSupportDirectory)` and every image
+  /// that uses it fails to load. On web we return `null`, which makes
+  /// `cached_network_image` fall back to its own web-safe default — the browser
+  /// already keeps its own HTTP cache there, so nothing is lost.
+  static LunaraCacheManager? get manager {
+    if (kIsWeb) return null;
+    return _manager ??= LunaraCacheManager();
   }
 
   /// Applies the in-memory decoded-image limits. Call once from `main()` after
@@ -89,7 +90,7 @@ class LunaraImageCache {
   static Future<void> evict(String? url) async {
     if (url == null || url.isEmpty) return;
     try {
-      await manager.removeFile(url);
+      await manager?.removeFile(url);
     } catch (e) {
       debugPrint('[LunaraImageCache] evict(disk) failed for $url: $e');
     }
@@ -113,7 +114,7 @@ class LunaraImageCache {
   static Future<void> clearAll() async {
     clearMemory();
     try {
-      await manager.emptyCache();
+      await manager?.emptyCache();
     } catch (e) {
       debugPrint('[LunaraImageCache] clearAll failed: $e');
     }
@@ -124,6 +125,10 @@ class LunaraImageCache {
   ///
   /// Failures are swallowed per-URL: prefetching is best-effort by definition.
   static Future<void> prefetch(Iterable<String?> urls) async {
+    final cacheManager = manager;
+    // Nothing to warm on web: there is no disk cache to populate.
+    if (cacheManager == null) return;
+
     final targets = urls
         .where((u) => u != null && u.isNotEmpty && u.startsWith('http'))
         .cast<String>()
@@ -133,11 +138,34 @@ class LunaraImageCache {
     await Future.wait(
       targets.map((url) async {
         try {
-          await manager.downloadFile(url);
+          await cacheManager.downloadFile(url);
         } catch (_) {
           // Best-effort only.
         }
       }),
     );
   }
+}
+
+/// Disk cache manager for Lunara images.
+///
+/// It **must** mix in [ImageCacheManager]. `cached_network_image` only honours
+/// `maxWidthDiskCache` / `maxHeightDiskCache` when the manager implements that
+/// interface, and it asserts on the mismatch — which throws in debug builds and
+/// silently drops the resizing in release builds. A plain [CacheManager] here is
+/// why images failed to load on Android while still working on web (where this
+/// manager is not used at all).
+class LunaraCacheManager extends CacheManager with ImageCacheManager {
+  LunaraCacheManager()
+      : super(
+          Config(
+            LunaraImageCache.cacheKey,
+            stalePeriod: LunaraImageCache.stalePeriod,
+            maxNrOfCacheObjects: LunaraImageCache.maxCacheObjects,
+            repo: JsonCacheInfoRepository(
+              databaseName: LunaraImageCache.cacheKey,
+            ),
+            fileService: HttpFileService(),
+          ),
+        );
 }

@@ -159,21 +159,68 @@ router.get('/blocks', authenticate, mobileUserController.getBlockedUsers);
 router.get('/blocks/details', optionalAuth, mobileUserController.getBlockedUsersDetails);
 
 // Per-user read notification tracking (keyed by userId to prevent cross-user leakage)
+//
+// These are a best-effort supplement, not a source of truth. Read state is
+// durably held in three other places: the client sends its own
+// readNotificationIds with each request, Notification.isRead is persisted, and
+// User.clearedNotificationsAt bounds the whole feed. This map is also discarded
+// on every process restart, so the app already tolerates losing it entirely.
+//
+// Left unbounded it grows for the life of the process, which shows up as
+// lengthening GC pauses and eventually an out-of-memory restart. Bounding it
+// is strictly safer than that: an evicted entry falls back to the three sources
+// above, exactly as it would after a restart.
+const MAX_TRACKED_USERS = 2000;
+const MAX_IDS_PER_USER = 300;
+
 const userReadNotificationIds = new Map<string, Set<string>>();
 const userReadRequestIds = new Map<string, Set<string>>();
 
-function getReadNotificationIds(userId: string): Set<string> {
-    if (!userReadNotificationIds.has(userId)) {
-        userReadNotificationIds.set(userId, new Set<string>());
+/**
+ * Fetches this user's set, refreshing its recency. When the map is over
+ * capacity the least-recently-used user is dropped. Map preserves insertion
+ * order, so re-inserting on access gives LRU semantics for free.
+ */
+function getTrackedSet(map: Map<string, Set<string>>, userId: string): Set<string> {
+    let ids = map.get(userId);
+    if (ids === undefined) {
+        ids = new Set<string>();
+    } else {
+        map.delete(userId);
     }
-    return userReadNotificationIds.get(userId)!;
+    map.set(userId, ids);
+
+    while (map.size > MAX_TRACKED_USERS) {
+        const oldest = map.keys().next();
+        if (oldest.done) break;
+        map.delete(oldest.value);
+    }
+    return ids;
 }
 
-function getReadRequestIds(userId: string): Set<string> {
-    if (!userReadRequestIds.has(userId)) {
-        userReadRequestIds.set(userId, new Set<string>());
+/** Records an id, discarding this user's oldest once past the per-user cap. */
+function addTrackedId(ids: Set<string>, id: string): void {
+    if (ids.has(id)) return;
+    ids.add(id);
+    while (ids.size > MAX_IDS_PER_USER) {
+        const oldest = ids.values().next();
+        if (oldest.done) break;
+        ids.delete(oldest.value);
     }
-    return userReadRequestIds.get(userId)!;
+}
+
+/** Marks one notification read for this user. */
+function markNotificationRead(userId: string, id: string): void {
+    addTrackedId(getTrackedSet(userReadNotificationIds, userId), id);
+}
+
+/** Marks one request read for this user. */
+function markRequestRead(userId: string, id: string): void {
+    addTrackedId(getTrackedSet(userReadRequestIds, userId), id);
+}
+
+function getReadNotificationIds(userId: string): Set<string> {
+    return getTrackedSet(userReadNotificationIds, userId);
 }
 
 function getDateSection(createdAtStr: string): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
@@ -1143,9 +1190,10 @@ router.patch('/notifications/:id/read', authenticate, async (req, res) => {
     if (suppliedUserId && suppliedUserId !== userId) {
         return res.status(403).json({ success: false, message: 'You cannot modify another user\'s notifications.' });
     }
-    getReadNotificationIds(userId).add(id);
+    markNotificationRead(userId, id);
     // The read set lives in memory, so no model hook fires for it.
     apiCache.invalidatePrefix(`notif:${userId}:`);
+    apiCache.invalidatePrefix(`badge:${userId}:`);
 
     try {
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -1220,8 +1268,9 @@ router.patch('/requests/:id/read', authenticate, async (req, res) => {
     if (suppliedUserId && suppliedUserId !== userId) {
         return res.status(403).json({ success: false, message: 'You cannot modify another user\'s request read state.' });
     }
-    getReadRequestIds(userId).add(id);
+    markRequestRead(userId, id);
     apiCache.invalidatePrefix(`notif:${userId}:`);
+    apiCache.invalidatePrefix(`badge:${userId}:`);
     return res.json({ success: true, message: 'Request marked as read' });
 });
 
@@ -1251,6 +1300,21 @@ router.get('/badge-counts', authenticate, async (req, res) => {
             ...clientParsedNotifIds,
             ...getReadNotificationIds(uId),
         ]);
+
+        // Badge counts are polled every 30s by the dashboard and recomputed from
+        // eight queries each time. Cache briefly, keyed by the same inputs the
+        // response depends on. The TTL is well inside the existing 30s poll
+        // interval, so this never makes a badge staler than it already was, and
+        // the notification write hooks drop this key the moment anything changes.
+        const badgeFingerprint = createHash('sha1')
+            .update(`${typeof clientReadReqIds === 'string' ? clientReadReqIds : ''}|${typeof clientReadNotifIds === 'string' ? clientReadNotifIds : ''}`)
+            .digest('hex')
+            .slice(0, 16);
+        const badgeCacheKey = `badge:${uId}:${badgeFingerprint}`;
+        const cachedBadges = apiCache.get<any>(badgeCacheKey);
+        if (cachedBadges) {
+            return res.json(cachedBadges);
+        }
 
         const isUUID = (str: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
         const validReadRequestUUIDs = Array.from(activeReadRequestIds).filter(isUUID);
@@ -1374,14 +1438,18 @@ router.get('/badge-counts', authenticate, async (req, res) => {
                               unreadPartyRequestsCount + 
                               unreadPlanRequestsCount;
 
-        return res.json({
+        const badgePayload = {
             success: true,
             data: {
                 liveFeedCount,
                 chatCount,
                 totalCount: liveFeedCount + chatCount
             }
-        });
+        };
+        // 10s is a third of the dashboard's own 30s poll, so a badge can never
+        // be staler than it already was; writes invalidate this key immediately.
+        apiCache.set(badgeCacheKey, badgePayload, 10);
+        return res.json(badgePayload);
     } catch (error: any) {
         console.error('Error fetching badge counts:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
@@ -1455,6 +1523,19 @@ router.post('/safety-check', authenticate, async (req, res) => {
         console.error('Error submitting safety check:', error);
         return res.status(500).json({ success: false, message: 'Failed to submit safety check.' });
     }
+});
+
+router.post('/safety-checks/respond', authenticate, (req, res) => {
+    const { respondToSafetyCheck } = require('../controllers/mobileSafetyCheckController');
+    return respondToSafetyCheck(req, res);
+});
+router.post('/safety-checks/:checkId/respond', authenticate, (req, res) => {
+    const { respondToSafetyCheck } = require('../controllers/mobileSafetyCheckController');
+    return respondToSafetyCheck(req, res);
+});
+router.get('/safety-checks/pending', authenticate, (req, res) => {
+    const { getPendingSafetyCheck } = require('../controllers/mobileSafetyCheckController');
+    return getPendingSafetyCheck(req, res);
 });
 
 /**

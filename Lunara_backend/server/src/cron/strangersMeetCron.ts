@@ -23,6 +23,20 @@ import { checkAndTriggerStrangersMeetLifecycle } from './partyPlanCron';
 let isStrangersMeetCronRunning = false;
 const escalatedCancellationMap = new Map<string, number>();
 
+// Entries are only consulted inside the re-alert window below; once an entry is
+// older than that, `nowMs - lastAlerted >= window` is already true and the code
+// proceeds exactly as if it were absent. Dropping those entries is therefore a
+// no-op on behaviour, and stops this map growing for the life of the process.
+const ESCALATION_REALERT_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+function pruneEscalationMap(nowMs: number): void {
+    for (const [requestId, lastAlerted] of escalatedCancellationMap) {
+        if (nowMs - lastAlerted >= ESCALATION_REALERT_WINDOW_MS) {
+            escalatedCancellationMap.delete(requestId);
+        }
+    }
+}
+
 export const startStrangersMeetCron = () => {
     // Run every minute with overlap protection
     cron.schedule('* * * * *', () => {
@@ -241,10 +255,11 @@ export const startStrangersMeetCron = () => {
             });
 
             const nowMs = now.getTime();
+            pruneEscalationMap(nowMs);
             for (const cancelReq of overdueCancellations) {
                 const lastAlerted = escalatedCancellationMap.get(cancelReq.id);
                 // Alert and write AuditLog at most once every 6 hours per cancellation request instead of every 60 seconds
-                if (lastAlerted && (nowMs - lastAlerted) < 6 * 60 * 60 * 1000) {
+                if (lastAlerted && (nowMs - lastAlerted) < ESCALATION_REALERT_WINDOW_MS) {
                     continue;
                 }
                 escalatedCancellationMap.set(cancelReq.id, nowMs);

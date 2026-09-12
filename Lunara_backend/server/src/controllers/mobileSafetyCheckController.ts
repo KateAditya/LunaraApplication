@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 import User from '../models/User';
-import UserProfile from '../models/UserProfile';
-import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
 
 /**
@@ -11,12 +9,15 @@ import { logger } from '../config/logger';
  */
 export const respondToSafetyCheck = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { checkId, safetyStatus, notes, locationLat, locationLng } = req.body;
+        const checkId = req.params.checkId || req.body.checkId;
+        const { safetyStatus, notes, locationLat, locationLng, reasons, opinion } = req.body;
         const userId = req.user!.id;
 
         if (!checkId || !safetyStatus) {
             return res.status(400).json({ success: false, message: 'checkId and safetyStatus are required' });
         }
+
+        const combinedNotes = notes || (Array.isArray(reasons) ? reasons.join(', ') : reasons) || opinion || '';
 
         const safetyCheck = await PartySafetyCheck.findByPk(checkId);
         if (!safetyCheck) {
@@ -26,16 +27,51 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
             return res.status(403).json({ success: false, message: 'You can only respond to your own safety check' });
         }
 
-        const isEmergency = safetyStatus === SafetyStatus.NEED_HELP;
+        const isEmergency = safetyStatus === SafetyStatus.NEED_HELP || safetyStatus === 'NEED_HELP' || safetyStatus === 'UNSAFE';
 
         await safetyCheck.update({
-            safetyStatus: safetyStatus as SafetyStatus,
-            notes: notes || undefined,
+            safetyStatus: isEmergency ? SafetyStatus.NEED_HELP : (safetyStatus === 'EXTENDED' ? SafetyStatus.EXTENDED : SafetyStatus.SAFE),
+            notes: combinedNotes || undefined,
             locationLat: locationLat ? Number(locationLat) : undefined,
             locationLng: locationLng ? Number(locationLng) : undefined,
             alertTriggered: isEmergency,
             respondedAt: new Date(),
         });
+
+        // Mark associated notification as read
+        try {
+            const Notification = (await import('../models/Notification')).default;
+            await Notification.update(
+                { isRead: true },
+                {
+                    where: {
+                        recipientUserId: userId,
+                        entityId: checkId,
+                    }
+                }
+            );
+        } catch (notifErr: any) {
+            logger.warn('Failed to update notification status on safety check response:', notifErr.message);
+        }
+
+        // Also save to user-to-user SafetyCheck table if partner exists
+        if (safetyCheck.partnerUserId) {
+            try {
+                const SafetyCheck = (await import('../models')).SafetyCheck;
+                if (SafetyCheck) {
+                    await SafetyCheck.create({
+                        userId,
+                        partnerId: safetyCheck.partnerUserId,
+                        feltSafe: !isEmergency,
+                        prebuiltAnswers: Array.isArray(reasons) ? reasons.join(', ') : (reasons || ''),
+                        opinion: combinedNotes,
+                        status: isEmergency ? 'pending' : 'resolved',
+                    });
+                }
+            } catch (scErr: any) {
+                logger.warn('Failed to mirror to SafetyCheck table:', scErr.message);
+            }
+        }
 
         // If Emergency / NEED_HELP, broadcast high-priority admin alert via Socket.IO
         if (isEmergency) {
@@ -51,7 +87,7 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
                         phone: user?.phone,
                     },
                     venueName: safetyCheck.venueName,
-                    notes: notes || 'User pressed Emergency / Need Help button',
+                    notes: combinedNotes || 'User pressed Emergency / Need Help button',
                     locationLat: locationLat || null,
                     locationLng: locationLng || null,
                     timestamp: new Date().toISOString(),
@@ -96,18 +132,14 @@ export const getPendingSafetyCheck = async (req: Request, res: Response): Promis
         let partnerInfo = null;
         if (pendingCheck.partnerUserId) {
             const partner: any = await User.findByPk(pendingCheck.partnerUserId, {
-                attributes: ['id', 'firstName', 'lastName', 'phone'],
-                include: [
-                    { model: UserProfile, as: 'profile', attributes: ['avatarUrl'] },
-                    { model: UserPhoto, as: 'photos', attributes: ['photoUrl'] }
-                ]
+                attributes: ['id', 'firstName', 'lastName', 'phone', 'profileImageUrl'],
             });
             if (partner) {
                 partnerInfo = {
                     id: partner.id,
                     name: `${partner.firstName} ${partner.lastName}`.trim(),
                     phone: partner.phone,
-                    avatarUrl: partner.profile?.avatarUrl || partner.photos?.[0]?.photoUrl || null,
+                    avatarUrl: partner.profileImageUrl || null,
                 };
             }
         }

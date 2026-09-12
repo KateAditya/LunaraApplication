@@ -3,11 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
-import { UserProfile, UserPreference, UserPhoto, UserMatch, Plan, Venue, PartyPlan, Booking, GroupParty, StrangersMeetRequest } from '../models';
+import { UserProfile, UserPreference, UserPhoto, UserMatch, Plan, Venue, PartyPlan, Booking, GroupParty, StrangersMeetRequest, UserLike, User } from '../models';
 import { RewardPointsService } from '../services/rewardPointsService';
 import Notification from '../models/Notification';
-import UserLike from '../models/UserLike';
-import User, { UserRole } from '../models/User';
+import { UserRole } from '../models/User';
 import DeletedAccount from '../models/DeletedAccount';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
 import SubscriptionPackage from '../models/SubscriptionPackage';
@@ -1550,11 +1549,18 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             }
 
             // Persist like in UserLike table
-            await UserLike.upsert({
-                userId,
-                targetUserId,
-                actionType: 'like',
-            });
+            try {
+                const existing = await UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } });
+                if (!existing) {
+                    await UserLike.create({
+                        userId,
+                        targetUserId,
+                        actionType: 'like',
+                    });
+                }
+            } catch (likeErr: any) {
+                logger.warn('[swipeUser] Non-fatal error persisting UserLike (like):', likeErr?.message || likeErr);
+            }
         } else if (action === 'superlike') {
             const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'superlike', 1, {
                 requestId: `SUPERLIKE_${userId}_${targetUserId}_${Date.now()}`,
@@ -1629,11 +1635,18 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             }
 
             // Persist superlike in UserLike table
-            await UserLike.upsert({
-                userId,
-                targetUserId,
-                actionType: 'superlike',
-            });
+            try {
+                const existing = await UserLike.findOne({ where: { userId, targetUserId, actionType: 'superlike' } });
+                if (!existing) {
+                    await UserLike.create({
+                        userId,
+                        targetUserId,
+                        actionType: 'superlike',
+                    });
+                }
+            } catch (superErr: any) {
+                logger.warn('[swipeUser] Non-fatal error persisting UserLike (superlike):', superErr?.message || superErr);
+            }
         }
 
         // 2. If action is nope (declining/ignoring)
@@ -2184,10 +2197,12 @@ export const getWhoLikedSummary = async (req: Request, res: Response): Promise<R
         return res.status(200).json({
             success: true,
             data: {
+                totalCount: count,
                 count,
                 superlikesCount,
                 periodDays: 7,
                 canSeeWhoLiked,
+                locked: !canSeeWhoLiked,
             },
         });
     } catch (error: any) {
@@ -2231,7 +2246,15 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
                 {
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'city', 'age', 'occupation', 'interests', 'bio'],
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'dateOfBirth'],
+                    include: [
+                        {
+                            model: UserProfile,
+                            as: 'profile',
+                            attributes: ['city', 'occupation', 'interests', 'bio'],
+                            required: false,
+                        }
+                    ]
                 },
             ],
             order: [['createdAt', 'DESC']],
@@ -2251,20 +2274,33 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
 
         const data = rows.map((r: any) => {
             const senderUser = (r as any).user;
+            const senderProfile = senderUser?.profile;
             const senderId = r.userId;
             const isMutual = myLikedSet.has(senderId);
+            const fullName = `${senderUser?.firstName || ''} ${senderUser?.lastName || ''}`.trim() || 'LUNARA MEMBER';
+            const photo = senderUser?.profileImageUrl || 'https://picsum.photos/400/600';
+            let calculatedAge = 25;
+            if (senderUser?.dateOfBirth) {
+                const dob = new Date(senderUser.dateOfBirth);
+                const diff = Date.now() - dob.getTime();
+                const ageDt = new Date(diff);
+                calculatedAge = Math.abs(ageDt.getUTCFullYear() - 1970);
+            }
 
             return {
                 id: senderUser?.id || senderId,
-                name: `${senderUser?.firstName || ''} ${senderUser?.lastName || ''}`.trim().toUpperCase() || 'LUNARA MEMBER',
+                name: fullName.toUpperCase(),
+                fullName,
                 firstName: senderUser?.firstName || '',
                 lastName: senderUser?.lastName || '',
-                age: senderUser?.age || 25,
-                city: senderUser?.city || '',
-                vibe: (senderUser?.occupation || 'Night Owl').toUpperCase(),
-                image: senderUser?.profileImageUrl || 'https://picsum.photos/400/600',
-                interests: senderUser?.interests || [],
-                bio: senderUser?.bio || '',
+                age: calculatedAge,
+                city: senderProfile?.city || '',
+                vibe: (senderProfile?.occupation || 'Night Owl').toUpperCase(),
+                occupation: senderProfile?.occupation || '',
+                profilePhoto: photo,
+                image: photo,
+                interests: senderProfile?.interests || [],
+                bio: senderProfile?.bio || '',
                 actionType: r.actionType,
                 likedAt: r.createdAt,
                 isSuperLike: r.actionType === 'superlike',

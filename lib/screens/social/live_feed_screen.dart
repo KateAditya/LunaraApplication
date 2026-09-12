@@ -33,6 +33,7 @@ import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../../widgets/party_safety_check_dialog.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// Unified Notification Item Schema
@@ -133,6 +134,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   List<Map<String, dynamic>> _largePartyBookings = [];
   List<Map<String, dynamic>> _userBookings = [];
   List<UnifiedNotificationItem> _cachedTimeline = [];
+  Map<String, dynamic>? _pendingSafetyCheck;
+  bool _isSafetyActionLoading = false;
   bool _isLoading = true;
   bool _isFetchingFeed = false;
   Timer? _pollingTimer;
@@ -1199,12 +1202,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.fetchNotifications(forceRefresh: forceRefresh),
         ApiService.fetchMyLargePartyBookings(forceRefresh: forceRefresh),
         ApiService.fetchBookings(forceRefresh: forceRefresh),
+        ApiService.fetchPendingSafetyCheck(),
       ]);
 
       final data = responses[0] as Map<String, dynamic>;
       final notifs = responses[1] as List<Map<String, dynamic>>;
       final largeParties = responses[2] as List<Map<String, dynamic>>;
       final rawBookings = (responses[3] as List<dynamic>?) ?? [];
+      final pendingSafetyCheck = responses[4] as Map<String, dynamic>?;
       final userBookings = rawBookings
           .whereType<Map>()
           .map((b) => Map<String, dynamic>.from(b))
@@ -1223,6 +1228,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _feedItems = combined;
         _largePartyBookings = largeParties;
         _userBookings = userBookings;
+        _pendingSafetyCheck = pendingSafetyCheck;
         _notifications = notifs.map((n) {
           final nId = n['id']?.toString() ?? '';
           if (_localReadNotificationIds.contains(nId) ||
@@ -11476,6 +11482,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           children: [
             _buildHeader(context, totalUnread: totalUnread),
             _buildStatusFilterBar(),
+            if (_pendingSafetyCheck != null)
+              _buildSafetyCheckBanner(),
             Expanded(
               child: _isLoading && filteredItems.isEmpty
                   ? const Center(
@@ -12812,5 +12820,189 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
     }
+  }
+
+  Widget _buildSafetyCheckBanner() {
+    if (_pendingSafetyCheck == null) return const SizedBox.shrink();
+
+    final checkData = _pendingSafetyCheck!;
+    final venueName = (checkData['venueName'] ?? checkData['venue']?['name'] ?? 'the venue').toString();
+    final checkId = (checkData['id'] ?? checkData['_id'] ?? checkData['checkId'] ?? '').toString();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF10B981).withValues(alpha: 0.6),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10B981).withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  size: 20,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'POST-PARTY SAFETY CHECK',
+                      style: TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.0,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Your party at $venueName started 3 hours ago. Please confirm you are safe & sound.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF475569),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                onPressed: () => setState(() => _pendingSafetyCheck = null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              // 🟢 Yes, I'm Safe
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isSafetyActionLoading
+                      ? null
+                      : () async {
+                          setState(() => _isSafetyActionLoading = true);
+                          try {
+                            final res = await ApiService.submitSafetyCheckStatus(
+                              checkId: checkId,
+                              safetyStatus: 'SAFE',
+                              notes: 'Confirmed safe via Live Feed Banner',
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _pendingSafetyCheck = null;
+                                _isSafetyActionLoading = false;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('🟢 Confirmed safe! Stay safe!'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            debugPrint('Error confirming safety: $e');
+                            if (mounted) setState(() => _isSafetyActionLoading = false);
+                          }
+                        },
+                  icon: _isSafetyActionLoading
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
+                  label: const Text(
+                    'I\'M SAFE',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: Colors.white,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 🔴 No, Need Help
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isSafetyActionLoading
+                      ? null
+                      : () {
+                          PartySafetyCheckDialog.showIfNeeded(
+                            context,
+                            onSubmitted: () {
+                              if (mounted) {
+                                setState(() => _pendingSafetyCheck = null);
+                              }
+                            },
+                          );
+                        },
+                  icon: const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.redAccent),
+                  label: const Text(
+                    'NEED HELP',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
 import PartySafetyCheck, { SafetyStatus } from '../models/PartySafetyCheck';
 import User from '../models/User';
-import UserProfile from '../models/UserProfile';
-import UserPhoto from '../models/UserPhoto';
 import { logger } from '../config/logger';
 
 /**
@@ -34,21 +32,13 @@ export const getAdminPartyPlanSafetyChecks = async (req: Request, res: Response)
         // Enrich with user-centric Host & Partner details
         const enrichedChecks = await Promise.all(checks.map(async (check) => {
             const user: any = await User.findByPk(check.userId, {
-                attributes: ['id', 'firstName', 'lastName', 'email', 'phone'],
-                include: [
-                    { model: UserProfile, as: 'profile', attributes: ['avatarUrl'] },
-                    { model: UserPhoto, as: 'photos', attributes: ['photoUrl'] }
-                ]
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
             });
 
             let partner: any = null;
             if (check.partnerUserId) {
                 partner = await User.findByPk(check.partnerUserId, {
-                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone'],
-                    include: [
-                        { model: UserProfile, as: 'profile', attributes: ['avatarUrl'] },
-                        { model: UserPhoto, as: 'photos', attributes: ['photoUrl'] }
-                    ]
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
                 });
             }
 
@@ -71,14 +61,14 @@ export const getAdminPartyPlanSafetyChecks = async (req: Request, res: Response)
                     name: `${user.firstName} ${user.lastName}`.trim(),
                     email: user.email,
                     phone: user.phone,
-                    avatarUrl: user.profile?.avatarUrl || user.photos?.[0]?.photoUrl || null,
+                    avatarUrl: user.profileImageUrl || null,
                 } : null,
                 partner: partner ? {
                     id: partner.id,
                     name: `${partner.firstName} ${partner.lastName}`.trim(),
                     email: partner.email,
                     phone: partner.phone,
-                    avatarUrl: partner.profile?.avatarUrl || partner.photos?.[0]?.photoUrl || null,
+                    avatarUrl: partner.profileImageUrl || null,
                 } : null,
             };
         }));

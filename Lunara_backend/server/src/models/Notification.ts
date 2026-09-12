@@ -190,6 +190,8 @@ Notification.init(
 const invalidateNotificationCache = (recipientUserId?: string | null): void => {
     if (!recipientUserId || typeof recipientUserId !== 'string') return;
     apiCache.invalidatePrefix(`notif:${recipientUserId}:`);
+    // Badge counts are derived from the same rows, so they go stale together.
+    apiCache.invalidatePrefix(`badge:${recipientUserId}:`);
 };
 
 Notification.addHook('afterCreate', (instance: any) => {
