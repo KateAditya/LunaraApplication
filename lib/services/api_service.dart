@@ -5725,9 +5725,10 @@ class ApiService {
     bool isGroupParty = false,
   }) async {
     try {
+      final cleanId = cleanBookingId(bookingId);
       final path = isGroupParty
-          ? '/api/mobile/group-parties/$bookingId/cancellation-preview'
-          : '/api/mobile/bookings/$bookingId/cancellation-preview';
+          ? '/api/mobile/group-parties/$cleanId/cancellation-preview'
+          : '/api/mobile/bookings/$cleanId/cancellation-preview';
       final response = await get(path);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -5754,9 +5755,10 @@ class ApiService {
     Map<String, dynamic>? payoutDetails,
   }) async {
     try {
+      final cleanId = cleanBookingId(bookingId);
       final path = isGroupParty
-          ? '/api/mobile/group-parties/$bookingId/cancel'
-          : '/api/mobile/bookings/$bookingId/cancel';
+          ? '/api/mobile/group-parties/$cleanId/cancel'
+          : '/api/mobile/bookings/$cleanId/cancel';
       final Map<String, dynamic> body = {
         'reason': reason ?? 'Cancelled by user',
       };

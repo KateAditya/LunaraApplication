@@ -51,6 +51,15 @@ class _StrangersMeetCancellationDialogState
     extends State<StrangersMeetCancellationDialog> {
   String _selectedReason = 'Schedule conflict / Plans changed';
   final TextEditingController _otherReasonController = TextEditingController();
+
+  // Payout destination state for >= ₹1500
+  String _selectedDestination = 'WALLET'; // 'WALLET', 'UPI_ID', 'UPI_NUMBER', 'BANK_ACCOUNT'
+  final TextEditingController _upiIdController = TextEditingController();
+  final TextEditingController _upiPhoneController = TextEditingController();
+  final TextEditingController _accountNumberController = TextEditingController();
+  final TextEditingController _ifscController = TextEditingController();
+  final TextEditingController _holderNameController = TextEditingController();
+
   bool _isSubmitting = false;
   String? _errorMessage;
 
@@ -64,6 +73,11 @@ class _StrangersMeetCancellationDialogState
   @override
   void dispose() {
     _otherReasonController.dispose();
+    _upiIdController.dispose();
+    _upiPhoneController.dispose();
+    _accountNumberController.dispose();
+    _ifscController.dispose();
+    _holderNameController.dispose();
     super.dispose();
   }
 
@@ -271,10 +285,13 @@ class _StrangersMeetCancellationDialogState
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'If approved by the host, ₹${widget.paidAmount.toStringAsFixed(0)} will be credited directly to your Lunara Smart Wallet.',
+                      widget.paidAmount < 1500
+                          ? '✅ Fast Refund: Since amount is under ₹1500, ₹${widget.paidAmount.toStringAsFixed(0)} will be credited directly to your Lunara Smart Wallet upon host approval.'
+                          : 'ℹ️ Amount is ₹1500 or above: You may receive your refund via Lunara Wallet, UPI ID, or registered Bank Account upon host approval.',
                       style: GoogleFonts.inter(
-                        color: Colors.white38,
+                        color: widget.paidAmount < 1500 ? const Color(0xFF10B981) : Colors.white70,
                         fontSize: 11,
+                        fontWeight: widget.paidAmount < 1500 ? FontWeight.w500 : FontWeight.normal,
                         height: 1.3,
                       ),
                     ),
@@ -282,6 +299,141 @@ class _StrangersMeetCancellationDialogState
                 ),
               ),
               const SizedBox(height: 16),
+
+              if (widget.paidAmount >= 1500) ...[
+                Text(
+                  'Select Refund Destination',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E2E),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF2E2E48)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedDestination,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF1E1E2E),
+                      icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'WALLET',
+                          child: Text('💜 Lunara Smart Wallet (Instant)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 'UPI_ID',
+                          child: Text('⚡ UPI ID (GPay / PhonePe / Paytm)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 'UPI_NUMBER',
+                          child: Text('📱 Mobile / UPI Phone Number', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 'BANK_ACCOUNT',
+                          child: Text('🏦 Bank Account Transfer (IMPS / NEFT)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedDestination = val);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                if (_selectedDestination == 'UPI_ID') ...[
+                  TextField(
+                    controller: _upiIdController,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Enter UPI ID (e.g. username@okhdfcbank)',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E2E),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: LunaraTheme.electricViolet)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else if (_selectedDestination == 'UPI_NUMBER') ...[
+                  TextField(
+                    controller: _upiPhoneController,
+                    keyboardType: TextInputType.phone,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Enter 10-digit Mobile / UPI Phone Number',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E2E),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: LunaraTheme.electricViolet)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ] else if (_selectedDestination == 'BANK_ACCOUNT') ...[
+                  TextField(
+                    controller: _accountNumberController,
+                    keyboardType: TextInputType.number,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Bank Account Number',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E2E),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: LunaraTheme.electricViolet)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _ifscController,
+                    textCapitalization: TextCapitalization.characters,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'IFSC Code (e.g. HDFC0001234)',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E2E),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: LunaraTheme.electricViolet)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _holderNameController,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Account Holder Name',
+                      hintStyle: GoogleFonts.inter(color: Colors.white30, fontSize: 12),
+                      filled: true,
+                      fillColor: const Color(0xFF1E1E2E),
+                      contentPadding: const EdgeInsets.all(12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2E2E48))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: LunaraTheme.electricViolet)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ],
 
               // Reason dropdown / selection
               Text(

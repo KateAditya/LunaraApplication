@@ -561,7 +561,7 @@ const startServer = async () => {
     }
 };
 
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module && process.env.NODE_ENV !== 'test') {
     const enableCluster = process.env.ENABLE_CLUSTER === 'true' && (cluster.isPrimary || (cluster as any).isMaster);
     
     if (enableCluster) {

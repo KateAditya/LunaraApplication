@@ -1,6 +1,6 @@
 import apiClient from './client';
 
-export type BookingPolicyType = 'SOLO_BOOKING' | 'GROUP_PARTY';
+export type BookingPolicyType = 'SOLO_BOOKING' | 'GROUP_PARTY' | 'STRANGERS_MEET' | 'LARGE_PARTY' | 'EVENT_BOOKING';
 
 export interface BookingPolicyConfig {
   id: string;
@@ -28,6 +28,9 @@ export interface BookingPolicyResponse {
   data: {
     SOLO_BOOKING: BookingPolicyConfig;
     GROUP_PARTY: BookingPolicyConfig;
+    STRANGERS_MEET?: BookingPolicyConfig;
+    LARGE_PARTY?: BookingPolicyConfig;
+    EVENT_BOOKING?: BookingPolicyConfig;
   };
   message?: string;
 }

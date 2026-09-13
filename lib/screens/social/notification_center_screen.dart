@@ -15,6 +15,7 @@ import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'live_feed_screen.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'large_party_ticket_screen.dart';
 import '../discovery/digital_ticket_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
 import '../../widgets/smart_checkout_sheet.dart';
@@ -4520,24 +4521,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     final venueMap = bookingData['venue'] is Map
                         ? Map<String, dynamic>.from(bookingData['venue'])
                         : {'name': bookingData['venueName'] ?? 'Venue'};
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => DigitalTicketScreen(
-                          venue: venueMap,
-                          date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
-                          time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
-                          table: 'Confirmed Entry',
-                          guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
-                          package: 'Confirmed Entry',
-                          totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
-                          ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
-                          status: 'CONFIRMED',
-                          booking: bookingData,
-                          user: ApiService.cachedCurrentUser,
+                    final isGroupOrLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1) > 1 ||
+                        bookingData['isGroupParty'] == true ||
+                        bookingData['isLargePartyRequest'] == true ||
+                        bookingData['goingMode'] == 'party_request' ||
+                        bookingData['type'] == 'group_party_timeline' ||
+                        bookingData['type'] == 'large_party_timeline' ||
+                        bookingData['isGroupBooking'] == true ||
+                        (item['id']?.toString().startsWith('group_party_') ?? false) ||
+                        (item['id']?.toString().startsWith('large_party_') ?? false);
+
+                    if (isGroupOrLarge) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LargePartyTicketScreen(
+                            booking: bookingData,
+                            venue: venueMap,
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DigitalTicketScreen(
+                            venue: venueMap,
+                            date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
+                            time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
+                            table: 'Confirmed Entry',
+                            guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
+                            package: 'Confirmed Entry',
+                            totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+                            ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
+                            status: 'CONFIRMED',
+                            booking: bookingData,
+                            user: ApiService.cachedCurrentUser,
+                          ),
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(
                     Icons.confirmation_number_outlined,

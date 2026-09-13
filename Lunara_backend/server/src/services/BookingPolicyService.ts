@@ -10,6 +10,7 @@ import { NotificationService } from './NotificationService';
 import { RealtimeEventBroker } from './RealtimeEventBroker';
 import { formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 import { parseBookingDateTime } from './EventTimeLockService';
+import { sanitizeBookingId } from '../controllers/mobileBookingController';
 
 export interface BookingTimeValidationResult {
     allowed: boolean;
@@ -275,9 +276,10 @@ export class BookingPolicyService {
      * Preview cancellation details for Solo Booking.
      */
     public static async getSoloBookingCancellationPreview(
-        bookingId: string,
+        rawBookingId: string,
         userId: string
     ): Promise<CancellationPreviewResult> {
+        const bookingId = sanitizeBookingId(rawBookingId);
         let booking = await Booking.findOne({
             where: { id: bookingId, userId },
             include: [{ model: Venue, as: 'venue' }],
@@ -340,7 +342,7 @@ export class BookingPolicyService {
      * Atomically cancels Solo Booking, invalidates tickets, and issues wallet refund (<= 1500) or saves payout details (> 1500).
      */
     public static async cancelAndRefundSoloBooking(
-        bookingId: string,
+        rawBookingId: string,
         userId: string,
         cancellationReason?: string,
         payoutDetails?: RefundPayoutDetails,
@@ -353,6 +355,7 @@ export class BookingPolicyService {
         walletTransactionId?: string;
         refundMethod: string;
     }> {
+        const bookingId = sanitizeBookingId(rawBookingId);
         let booking = await Booking.findOne({
             where: { id: bookingId, userId },
             include: [{ model: Venue, as: 'venue' }],
@@ -546,9 +549,10 @@ export class BookingPolicyService {
      * Preview cancellation details for Small Group Party (<= 20).
      */
     public static async getSmallGroupPartyCancellationPreview(
-        partyId: string,
+        rawPartyId: string,
         userId: string
     ): Promise<CancellationPreviewResult> {
+        const partyId = sanitizeBookingId(rawPartyId);
         // 1. Check GroupParty table
         const party = await GroupParty.findOne({
             where: { id: partyId, userId },
@@ -644,7 +648,7 @@ export class BookingPolicyService {
      * Atomically cancels Small Group Party (<= 20), invalidates tickets, and issues wallet refund (<= 1500) or saves payout details (> 1500).
      */
     public static async cancelAndRefundGroupParty(
-        partyId: string,
+        rawPartyId: string,
         userId: string,
         cancellationReason?: string,
         payoutDetails?: RefundPayoutDetails
@@ -656,6 +660,7 @@ export class BookingPolicyService {
         walletTransactionId?: string;
         refundMethod: string;
     }> {
+        const partyId = sanitizeBookingId(rawPartyId);
         let party = await GroupParty.findOne({
             where: { id: partyId, userId },
             include: [{ model: Venue, as: 'venue' }],

@@ -943,6 +943,35 @@ export class StrangersMeetService {
             throw new Error('Only confirmed and paid participants can request cancellation.');
         }
 
+        // ── Dynamic Admin-Configured Cancellation Cutoff Enforcement ───────────
+        try {
+            const { BookingPolicyService } = await import('./BookingPolicyService');
+            const { BookingPolicyType } = await import('../models/BookingPolicyConfig');
+            const policy = await BookingPolicyService.getPolicy(BookingPolicyType.STRANGERS_MEET);
+            if (policy && policy.isActive) {
+                if (!policy.refundEnabled) {
+                    throw new Error('Cancellation refunds for Stranger Meets are currently disabled by administration.');
+                }
+                if (request.eventDateTime) {
+                    const cutoffHours = Number(policy.cancellationCutoffHours || 2.0);
+                    const cutoffMs = cutoffHours * 60 * 60 * 1000;
+                    const eventTime = new Date(request.eventDateTime).getTime();
+                    const now = Date.now();
+                    if (now > eventTime - cutoffMs) {
+                        const cutoffDisplay = cutoffHours >= 24
+                            ? `${(cutoffHours / 24).toFixed(0)} day(s)`
+                            : `${cutoffHours} hour(s)`;
+                        throw new Error(`Cancellation cutoff window has passed. Stranger Meet cancellations must be submitted at least ${cutoffDisplay} before the meetup start time.`);
+                    }
+                }
+            }
+        } catch (policyErr: any) {
+            if (policyErr.message.includes('Cancellation cutoff window') || policyErr.message.includes('Cancellation refunds')) {
+                throw policyErr;
+            }
+            logger.warn('[StrangersMeetService] Policy cutoff check fallback: ' + policyErr.message);
+        }
+
         // Check if there is already a pending cancellation request
         const existingPending = await StrangersMeetCancellationRequest.findOne({
             where: {
@@ -1078,7 +1107,7 @@ export class StrangersMeetService {
                             { status: 'paid' },
                             { status: 'accepted' },
                         ],
-                        status: { [Op.notIn]: ['rejected', 'cancelled'] },
+                        status: { [Op.ne]: StrangersMeetJoinerStatus.REJECTED },
                     },
                     transaction: t,
                 });
@@ -1282,6 +1311,30 @@ export class StrangersMeetService {
         ];
         if (terminalStatuses.includes(request.status)) {
             throw new Error('Cancellation is not available for a completed, ended, or already cancelled Stranger Meet.');
+        }
+
+        // ── Dynamic Admin-Configured Cancellation Cutoff Enforcement ───────────
+        try {
+            const { BookingPolicyService } = await import('./BookingPolicyService');
+            const { BookingPolicyType } = await import('../models/BookingPolicyConfig');
+            const policy = await BookingPolicyService.getPolicy(BookingPolicyType.STRANGERS_MEET);
+            if (policy && policy.isActive && request.eventDateTime) {
+                const cutoffHours = Number(policy.cancellationCutoffHours || 2.0);
+                const cutoffMs = cutoffHours * 60 * 60 * 1000;
+                const eventTime = new Date(request.eventDateTime).getTime();
+                const now = Date.now();
+                if (now > eventTime - cutoffMs) {
+                    const cutoffDisplay = cutoffHours >= 24
+                        ? `${(cutoffHours / 24).toFixed(0)} day(s)`
+                        : `${cutoffHours} hour(s)`;
+                    throw new Error(`Cancellation cutoff window has passed. Stranger Meet cancellations must be submitted at least ${cutoffDisplay} before the meetup start time.`);
+                }
+            }
+        } catch (policyErr: any) {
+            if (policyErr.message.includes('Cancellation cutoff window')) {
+                throw policyErr;
+            }
+            logger.warn('[StrangersMeetService] Policy cutoff check fallback: ' + policyErr.message);
         }
 
         // Check if there is already a pending cancellation request
@@ -2017,6 +2070,40 @@ export class StrangersMeetService {
                 }
             })
         );
+
+        // Dispatch notification to unpaid/pending participants without false refund claims
+        try {
+            const paidJoinerIdSet = new Set(allPaidJoiners.map(j => j.id));
+            const unpaidJoiners = await StrangersMeetJoiner.findAll({
+                where: {
+                    strangersMeetRequestId: cancellation.meetId,
+                    id: { [Op.notIn]: Array.from(paidJoinerIdSet) },
+                    status: { [Op.ne]: StrangersMeetJoinerStatus.REJECTED },
+                }
+            });
+            await Promise.all(
+                unpaidJoiners.map(async (uj) => {
+                    try {
+                        await this.emitNotification({
+                            recipientUserId: uj.userId,
+                            eventType: 'strangers_meet_cancelled',
+                            title: '❌ Strangers Meet Cancelled',
+                            body: `The Strangers Meet "${request.subject}" was cancelled by the host.`,
+                            entityId: request.id,
+                            metadata: {
+                                meetId: request.id,
+                                refundAmount: 0,
+                                isPaid: false,
+                            },
+                        });
+                    } catch (nErr: any) {
+                        logger.warn(`[StrangersMeetService] Failed to notify unpaid member ${uj.userId}: ${nErr.message}`);
+                    }
+                })
+            );
+        } catch (unpaidErr: any) {
+            logger.warn('[StrangersMeetService] Error notifying unpaid joiners: ' + unpaidErr.message);
+        }
 
         // Realtime Socket updates (Phase 21)
         try {

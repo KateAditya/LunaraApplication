@@ -5,7 +5,6 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { UserProfile, UserPreference, UserPhoto, UserMatch, Plan, Venue, PartyPlan, Booking, GroupParty, StrangersMeetRequest, UserLike, User } from '../models';
 import { RewardPointsService } from '../services/rewardPointsService';
-import Notification from '../models/Notification';
 import { UserRole } from '../models/User';
 import DeletedAccount from '../models/DeletedAccount';
 import UserSubscription, { SubscriptionStatus } from '../models/UserSubscription';
@@ -1747,7 +1746,7 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     });
                 }
 
-                // Emit live new_match events
+                // Emit live new_match socket events for active chat listeners without creating intrusive separate match notifications
                 try {
                     const [currentUser, targetUser] = await Promise.all([
                         User.findByPk(userId),
@@ -1755,47 +1754,19 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     ]);
                     if (currentUser && targetUser) {
                         const { io } = require('../server');
-                        io.to(`user_${userId}`).emit('new_match', {
-                            matchedUser: targetUser.get({ plain: true }),
-                            conversationId: conversation.id
-                        });
-                        io.to(`user_${targetUserId}`).emit('new_match', {
-                            matchedUser: currentUser.get({ plain: true }),
-                            conversationId: conversation.id
-                        });
-
-                        // Emit notification_created to the target user
-                        io.to(`user_${targetUserId}`).emit('notification_created', {
-                            id: `match_${mySwipe.id}`,
-                            title: 'New Match!',
-                            body: `You and ${currentUser.firstName} are a match! 🎉`,
-                            createdAt: new Date().toISOString(),
-                            read: false,
-                            sender: {
-                                id: currentUser.id,
-                                firstName: currentUser.firstName,
-                                lastName: currentUser.lastName,
-                                profileImageUrl: currentUser.profileImageUrl,
-                            }
-                        });
-
-                        if (targetUser.fcmToken) {
-                            const { sendPushNotification } = require('../services/fcmService');
-                            await sendPushNotification(targetUser.fcmToken, {
-                                title: 'New Match!',
-                                body: `You and ${currentUser.firstName} are a match! 🎉`,
-                                data: {
-                                    type: 'match',
-                                    senderId: currentUser.id,
-                                    senderName: `${currentUser.firstName} ${currentUser.lastName}`,
-                                    senderImage: currentUser.profileImageUrl || '',
-                                    conversationId: conversation.id,
-                                }
+                        if (io) {
+                            io.to(`user_${userId}`).emit('new_match', {
+                                matchedUser: targetUser.get({ plain: true }),
+                                conversationId: conversation.id
+                            });
+                            io.to(`user_${targetUserId}`).emit('new_match', {
+                                matchedUser: currentUser.get({ plain: true }),
+                                conversationId: conversation.id
                             });
                         }
                     }
                 } catch (emitErr) {
-                    logger.error('[swipeUser] Failed to emit new_match socket event / push notification:', emitErr);
+                    logger.error('[swipeUser] Failed to emit new_match socket event:', emitErr);
                 }
 
                 const [finalLikeRow, finalSuperRow] = await Promise.all([
@@ -1906,102 +1877,58 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                 const isRecipientVipOrSuper = isSuper || canSeeWhoLikedTarget;
 
                 try {
-                    await Notification.findOrCreate({
-                        where: {
-                            recipientUserId: targetUserId,
-                            entityType: 'user_match',
-                            entityId: match.id,
-                        },
-                        defaults: {
-                            recipientUserId: targetUserId,
-                            actorUserId: currentUser.id,
-                            title,
-                            body,
-                            category: isSuper ? 'super_like' : 'likes',
-                            eventType: isSuper ? 'super_like' : 'like',
-                            actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
-                            entityType: 'user_match',
-                            entityId: match.id,
-                            isRead: false,
-                            priority: (isSuper ? 'HIGH' : 'NORMAL') as any,
-                            deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
-                            idempotencyKey: dedupeKey,
-                            metadata: isRecipientVipOrSuper ? {
-                                matchId: match.id,
-                                senderId: currentUser.id,
-                                senderName,
-                                senderImage: currentUser.profileImageUrl || '',
-                                postedPlans,
-                                action: isSuper ? 'superlike' : 'like',
-                            } : {
-                                matchId: match.id,
-                                isMasked: true,
-                                action: 'like',
-                            },
-                        }
-                    });
-                } catch (dbNotifErr) {
-                    logger.warn('[swipeUser] Failed to persist like/superlike notification:', dbNotifErr);
-                }
-
-                const { io } = require('../server');
-                if (io) {
-                    io.to(`user_${targetUserId}`).emit('notification_created', {
-                        id: `match_${match.id}`,
+                    const { NotificationService } = require('../services/NotificationService');
+                    await NotificationService.dispatch({
+                        recipientUserId: targetUserId,
+                        actorUserId: currentUser.id,
                         title,
                         body,
                         category: isSuper ? 'super_like' : 'likes',
-                        type: isSuper ? 'super_like' : 'like',
-                        createdAt: new Date().toISOString(),
-                        read: false,
-                        sender: isRecipientVipOrSuper ? {
-                            id: currentUser.id,
-                            firstName: currentUser.firstName,
-                            lastName: currentUser.lastName,
-                            profileImageUrl: currentUser.profileImageUrl,
-                        } : {
-                            id: 'masked',
-                            firstName: 'Someone',
-                            lastName: '',
-                            profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
-                        },
-                        data: isRecipientVipOrSuper ? {
+                        eventType: isSuper ? 'super_like' : 'like',
+                        actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
+                        entityType: 'user_match',
+                        entityId: match.id,
+                        priority: isSuper ? 'HIGH' : 'NORMAL',
+                        deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
+                        imageUrl: isRecipientVipOrSuper ? (currentUser.profileImageUrl || undefined) : undefined,
+                        idempotencyKey: dedupeKey,
+                        metadata: isRecipientVipOrSuper ? {
                             matchId: match.id,
                             senderId: currentUser.id,
                             senderName,
                             senderImage: currentUser.profileImageUrl || '',
                             postedPlans,
                             action: isSuper ? 'superlike' : 'like',
+                            actor: {
+                                id: currentUser.id,
+                                firstName: currentUser.firstName,
+                                lastName: currentUser.lastName,
+                                profileImageUrl: currentUser.profileImageUrl,
+                            },
                         } : {
                             matchId: match.id,
                             isMasked: true,
                             action: 'like',
-                        }
+                            actor: {
+                                id: 'masked',
+                                firstName: 'Someone',
+                                lastName: '',
+                                profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                            },
+                        },
                     });
+                } catch (dbNotifErr) {
+                    logger.warn('[swipeUser] Failed to persist/dispatch like notification:', dbNotifErr);
+                }
 
+                const { io } = require('../server');
+                if (io) {
                     // Emit real-time like_received event for live UI synchronization
                     io.to(`user_${targetUserId}`).emit('like_received', {
                         matchId: match.id,
                         likerId: isRecipientVipOrSuper ? currentUser.id : 'masked',
                         isSuper,
                         timestamp: new Date().toISOString(),
-                    });
-                }
-
-                if (targetUser.fcmToken) {
-                    const { sendPushNotification } = require('../services/fcmService');
-                    await sendPushNotification(targetUser.fcmToken, {
-                        title,
-                        body,
-                        data: isRecipientVipOrSuper ? {
-                            type: isSuper ? 'superlike' : 'like',
-                            senderId: currentUser.id,
-                            senderName,
-                            senderImage: currentUser.profileImageUrl || '',
-                        } : {
-                            type: 'like',
-                            isMasked: 'true',
-                        }
                     });
                 }
             }

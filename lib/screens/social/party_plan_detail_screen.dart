@@ -96,6 +96,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _alreadyRequested = false;
   bool _isInvitedUser = false;
   bool _isAcceptingInvite = false;
+  bool _isDecliningInvite = false;
+  bool _isStatusLoading = true;
   String? _requestStatus;
   String? _activeRequestId;
   String? _fetchedVenueImageUrl;
@@ -164,7 +166,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       _pendingRequests = initialReqs.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     }
 
-    if (widget.plan['isInvite'] == true || widget.plan['isInvitedUser'] == true || widget.plan['type'] == 'party_plan_invitation' || widget.plan['eventType'] == 'party_plan_invitation') {
+    final selectedUsers = widget.plan['selectedUsers'] ?? widget.plan['selectedUserIds'];
+    final bool inSelectedUsers = selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUid);
+    final hostId = (widget.plan['userId'] ?? widget.plan['hostId'] ?? widget.plan['user']?['id'] ?? '').toString();
+
+    if (widget.plan['isInvite'] == true ||
+        widget.plan['isInvitedUser'] == true ||
+        widget.plan['type'] == 'party_plan_invitation' ||
+        widget.plan['eventType'] == 'party_plan_invitation' ||
+        widget.plan['requestType'] == 'private_invite' ||
+        (currentUid.isNotEmpty && currentUid != hostId && inSelectedUsers)) {
       _isInvitedUser = true;
     }
     if (widget.plan['requestId'] != null || widget.plan['activeRequestId'] != null) {
@@ -1415,10 +1426,20 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     try {
       // The host has no join request for their own plan. Avoid deriving the
       // host CTA from participant request cache/state.
-      if (_isHostPlan(widget.plan)) return;
+      if (_isHostPlan(widget.plan)) {
+        if (mounted && _isStatusLoading) {
+          setState(() => _isStatusLoading = false);
+        }
+        return;
+      }
       final currentUserId = ApiService.currentUserId ?? _currentUserId ?? '';
       final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
-      if (targetPlanId.isEmpty) return;
+      if (targetPlanId.isEmpty) {
+        if (mounted && _isStatusLoading) {
+          setState(() => _isStatusLoading = false);
+        }
+        return;
+      }
 
       final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
       final bool isPaidInitial = _isJoinerPaid(widget.plan);
@@ -1508,11 +1529,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
 
       final planData = widget.plan;
-      final hostId = (planData['userId'] ?? planData['hostId'] ?? '').toString();
-      final selectedUsers = planData['selectedUsers'];
+      final hostId = (planData['userId'] ?? planData['hostId'] ?? planData['user']?['id'] ?? '').toString();
+      final selectedUsers = planData['selectedUsers'] ?? planData['selectedUserIds'];
       final bool inSelectedUsers = selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUserId);
       if (currentUserId.isNotEmpty && currentUserId != hostId && (inSelectedUsers || planData['isInvite'] == true || planData['requestType'] == 'private_invite')) {
         isInvited = true;
+      }
+
+      if (isInvited && reqId == null) {
+        reqId = targetPlanId;
       }
 
       if (mounted) {
@@ -1520,19 +1545,26 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           _alreadyRequested = requested;
           _isInvitedUser = isInvited;
           _activeRequestId = reqId ?? _activeRequestId;
-          _requestStatus = reqStatus;
+          _requestStatus = reqStatus ?? (_isInvitedUser ? 'pending' : null);
+          _isStatusLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error checking request status in PartyPlanDetailScreen: $e');
+      if (mounted) {
+        setState(() {
+          _isStatusLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _handleAcceptInvite() async {
-    if (_activeRequestId == null || _activeRequestId!.isEmpty) return;
+    final reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (reqId.isEmpty) return;
     setState(() => _isAcceptingInvite = true);
     try {
-      final res = await ApiService.acceptPartyPlanInvite(_activeRequestId!);
+      final res = await ApiService.acceptPartyPlanInvite(reqId);
       if (!mounted) return;
       setState(() => _isAcceptingInvite = false);
 
@@ -1574,6 +1606,71 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         setState(() => _isAcceptingInvite = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error accepting invite: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleDeclineInvite() async {
+    final reqId = _activeRequestId ?? widget.plan['requestId']?.toString() ?? widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (reqId.isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F003A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Decline Invitation?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to decline this party plan invitation?', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Decline', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isDecliningInvite = true);
+    try {
+      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      if (!mounted) return;
+      setState(() => _isDecliningInvite = false);
+
+      if (success) {
+        final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+        ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+        setState(() {
+          _alreadyRequested = false;
+          _isInvitedUser = false;
+          _requestStatus = 'declined';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invitation declined'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _refreshPlanDetails();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to decline invitation'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDecliningInvite = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error declining invite: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -2815,6 +2912,32 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (isMatchedWithAnother) {
       return _partnerAlreadySelectedBanner();
     }
+    if (_isStatusLoading && !isMyRequestConfirmed) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Container(
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -2939,7 +3062,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
                 ),
               )
-            : ((_alreadyRequested || isPartnerByPlan) && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending' || !joinerPaid))
+            : ((_alreadyRequested || isPartnerByPlan) && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2986,53 +3109,106 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                 ],
               )
-            : (_alreadyRequested && _isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited'))
-                    ? GestureDetector(
-                        onTap: _isAcceptingInvite ? null : _handleAcceptInvite,
-                        child: Container(
+            : (_isInvitedUser && (_requestStatus == 'pending' || _requestStatus == 'invited' || _requestStatus == null))
+                ? Row(
+                    children: [
+                      // Decline Button
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
                           height: 58,
-                          decoration: BoxDecoration(
-                            gradient: _isAcceptingInvite ? null : LunaraTheme.purpleGradient,
-                            color: _isAcceptingInvite ? Colors.grey.withValues(alpha: 0.3) : null,
-                            borderRadius: BorderRadius.circular(18),
-                            boxShadow: _isAcceptingInvite
+                          child: OutlinedButton(
+                            onPressed: (_isDecliningInvite || _isAcceptingInvite)
                                 ? null
-                                : [
-                                    BoxShadow(
-                                      color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (_isAcceptingInvite)
-                                const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              else
-                                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
-                              const SizedBox(width: 10),
-                              Text(
-                                _isAcceptingInvite ? 'ACCEPTING INVITE...' : 'ACCEPT INVITE',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
-                                ),
+                                : _handleDeclineInvite,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              side: BorderSide(
+                                color: Colors.redAccent.withValues(alpha: 0.6),
+                                width: 1.5,
                               ),
-                            ],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                            ),
+                            child: _isDecliningInvite
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                                    ),
+                                  )
+                                : const Text(
+                                    'DECLINE',
+                                    style: TextStyle(
+                                      fontFamily: 'AllroundGothic',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
                           ),
                         ),
-                      )
+                      ),
+                      const SizedBox(width: 12),
+                      // Accept Button
+                      Expanded(
+                        flex: 3,
+                        child: GestureDetector(
+                          onTap: (_isAcceptingInvite || _isDecliningInvite) ? null : _handleAcceptInvite,
+                          child: Container(
+                            height: 58,
+                            decoration: BoxDecoration(
+                              gradient: (_isAcceptingInvite || _isDecliningInvite) ? null : LunaraTheme.purpleGradient,
+                              color: (_isAcceptingInvite || _isDecliningInvite) ? Colors.grey.withValues(alpha: 0.3) : null,
+                              borderRadius: BorderRadius.circular(18),
+                              boxShadow: (_isAcceptingInvite || _isDecliningInvite)
+                                  ? null
+                                  : [
+                                      BoxShadow(
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (_isAcceptingInvite)
+                                  const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                else
+                                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    _isAcceptingInvite ? 'ACCEPTING...' : 'ACCEPT INVITE',
+                                    style: const TextStyle(
+                                      fontFamily: 'AllroundGothic',
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
                 : _alreadyRequested
                     ? Container(
                         height: 58,

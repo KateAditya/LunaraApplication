@@ -15,6 +15,7 @@ import '../../widgets/lunara_network_image.dart';
 import 'strangers_meet_payment_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'chat_screen.dart';
+import 'party_plan_detail_screen.dart';
 import '../../services/optimistic_action_guard.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
 
@@ -33,6 +34,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   StrangersMeetRequest? _meetRequest;
   bool _isProcessing = false;
   bool _alreadyRequested = false;
+  bool _isPartyPlanStatusLoading = true;
+  bool _isInvitedUser = false;
+  String? _partyPlanRequestStatus;
+  String? _partyPlanActiveRequestId;
+  bool _isAcceptingInvite = false;
+  bool _isDecliningInvite = false;
   late Razorpay _razorpay;
   String? _lastOrderId;
   double? _calculatedDistanceKm;
@@ -55,10 +62,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final targetPlanId = widget.post['id']?.toString() ?? '';
+    final currentUserId = ApiService.currentUserId ?? '';
+    final hostId = (widget.post['userId'] ?? widget.post['hostId'] ?? widget.post['user']?['id'] ?? '').toString();
+    final selectedUsers = widget.post['selectedUsers'] ?? widget.post['selectedUserIds'];
+    final bool inSelectedUsers = selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUserId);
+
+    if (widget.post['isInvite'] == true ||
+        widget.post['isInvitedUser'] == true ||
+        widget.post['type'] == 'party_plan_invitation' ||
+        widget.post['requestType'] == 'private_invite' ||
+        (currentUserId.isNotEmpty && currentUserId != hostId && inSelectedUsers)) {
+      _isInvitedUser = true;
+    }
+
     _alreadyRequested = widget.post['hasRequested'] == true ||
         widget.post['isRequested'] == true ||
         widget.post['requestStatus'] == 'pending' ||
         widget.post['myRequest'] != null ||
+        _isInvitedUser ||
         ApiService.isPartyPlanRequestedSync(targetPlanId);
 
     RealtimeSyncManager.instance.strangerMeetNotifier.addListener(_onRealtimePostDetailChanged);
@@ -88,13 +109,64 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadPartyPlanDetails() async {
     try {
       final targetPlanId = widget.post['id']?.toString() ?? '';
-      final myRequests = await ApiService.fetchMyPartyPlanRequests();
+      if (targetPlanId.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isPartyPlanStatusLoading = false;
+          });
+        }
+        return;
+      }
+      final currentUserId = ApiService.currentUserId ?? '';
+
+      final results = await Future.wait([
+        ApiService.fetchPartyPlanDetail(targetPlanId),
+        ApiService.fetchMyPartyPlanRequests(),
+      ]);
+
+      final planDetail = results[0] as Map<String, dynamic>?;
+      final myRequests = results[1] as List<Map<String, dynamic>>? ?? [];
+
       bool requested = false;
+      bool isInvited = false;
+      String? reqStatus;
+      String? reqId;
+
+      final planData = planDetail ?? widget.post;
+      final hostId = (planData['userId'] ?? planData['hostId'] ?? planData['user']?['id'] ?? widget.post['userId'] ?? '').toString();
+      final bool isHost = currentUserId.isNotEmpty && currentUserId == hostId;
+
+      final selectedUsers = planData['selectedUsers'] ?? planData['selectedUserIds'] ?? widget.post['selectedUsers'] ?? widget.post['selectedUserIds'];
+      final bool inSelectedUsers = selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUserId);
+
+      if (currentUserId.isNotEmpty && !isHost && (inSelectedUsers || planData['isInvite'] == true || planData['requestType'] == 'private_invite' || widget.post['isInvite'] == true)) {
+        isInvited = true;
+      }
+
+      if (planData['requests'] is List) {
+        for (final r in planData['requests']) {
+          if (r is Map) {
+            final requesterId = (r['requesterId'] ?? r['requester']?['id'] ?? r['userId'] ?? '').toString();
+            if (currentUserId.isNotEmpty && requesterId == currentUserId) {
+              reqId = r['id']?.toString();
+              reqStatus = (r['status'] ?? 'pending').toString().toLowerCase();
+              final reqIsInvite = r['isInvite'] == true || r['requestType'] == 'private_invite' || inSelectedUsers;
+              if (reqIsInvite) isInvited = true;
+              if (reqStatus != 'cancelled' && reqStatus != 'rejected' && reqStatus != 'declined') {
+                requested = true;
+              }
+              break;
+            }
+          }
+        }
+      }
+
       for (final req in myRequests) {
-        final planId =
-            req['partyPlanId']?.toString() ?? req['planId']?.toString();
+        final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
         if (planId == targetPlanId) {
-          final reqStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+          reqId = req['id']?.toString() ?? reqId;
+          final rawStatus = (req['status'] ?? req['joinerPaymentStatus'] ?? 'pending').toString().toLowerCase();
+          reqStatus = rawStatus;
           bool isPaymentExpired = false;
           final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
           if (paymentTimeoutAtStr != null) {
@@ -105,10 +177,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               }
             } catch (_) {}
           }
-          if (reqStatus != 'cancelled' &&
-              reqStatus != 'rejected' &&
-              reqStatus != 'declined' &&
-              reqStatus != 'payment_failed' &&
+          final reqIsInvite = req['isInvite'] == true ||
+              req['requestType'] == 'private_invite' ||
+              req['isPrivateInvite'] == true ||
+              req['invitedBy'] != null ||
+              inSelectedUsers;
+          if (reqIsInvite) {
+            isInvited = true;
+          }
+
+          if (rawStatus != 'cancelled' &&
+              rawStatus != 'rejected' &&
+              rawStatus != 'declined' &&
+              rawStatus != 'payment_failed' &&
               !isPaymentExpired) {
             requested = true;
           } else {
@@ -118,13 +199,135 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           break;
         }
       }
+
+      if (isInvited && reqId == null) {
+        reqId = targetPlanId;
+      }
+
       if (mounted) {
         setState(() {
-          _alreadyRequested = requested;
+          _alreadyRequested = requested || isInvited;
+          _isInvitedUser = isInvited;
+          _partyPlanRequestStatus = reqStatus ?? (_isInvitedUser ? 'pending' : null);
+          _partyPlanActiveRequestId = reqId;
+          _isPartyPlanStatusLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading party plan details in PostDetailScreen: $e');
+      if (mounted) {
+        setState(() {
+          _isPartyPlanStatusLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAcceptPartyPlanInvite() async {
+    final reqId = _partyPlanActiveRequestId ?? widget.post['id']?.toString() ?? '';
+    if (reqId.isEmpty) return;
+
+    setState(() => _isAcceptingInvite = true);
+    try {
+      final res = await ApiService.acceptPartyPlanInvite(reqId);
+      if (!mounted) return;
+      setState(() => _isAcceptingInvite = false);
+
+      if (res != null && res['success'] == true) {
+        final bool isSelfPay = res['isSelfPay'] == true || (res['message']?.toString().toLowerCase().contains('host') ?? false);
+        final bool hostPaid = res['hostPaid'] == true;
+        setState(() {
+          _partyPlanRequestStatus = isSelfPay ? (hostPaid ? 'confirmed' : 'accepted') : 'payment_pending';
+          _alreadyRequested = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? '🎉 Invite Accepted!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _loadPartyPlanDetails();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res?['message'] ?? 'Failed to accept invite'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAcceptingInvite = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error accepting invite: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleRejectPartyPlanInvite() async {
+    final reqId = _partyPlanActiveRequestId ?? widget.post['id']?.toString() ?? '';
+    if (reqId.isEmpty) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F003A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Decline Invitation?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to decline this party plan invitation?', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Decline', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isDecliningInvite = true);
+    try {
+      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      if (!mounted) return;
+      setState(() => _isDecliningInvite = false);
+
+      if (success) {
+        final targetPlanId = widget.post['id']?.toString() ?? '';
+        if (targetPlanId.isNotEmpty) {
+          ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+        }
+        setState(() {
+          _alreadyRequested = false;
+          _isInvitedUser = false;
+          _partyPlanRequestStatus = 'declined';
+          _partyPlanActiveRequestId = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invitation declined.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        _loadPartyPlanDetails();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to decline invitation.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDecliningInvite = false);
+        debugPrint('Error declining invite: $e');
+      }
     }
   }
 
@@ -3038,252 +3241,488 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: (widget.post['status']?.toString().toLowerCase() == 'inactive' ||
-                        widget.post['status']?.toString().toLowerCase() == 'closed' ||
-                        widget.post['status']?.toString().toLowerCase() == 'cancelled' ||
-                        widget.post['status']?.toString().toLowerCase() == 'completed' ||
-                        widget.post['isLive'] == false)
+                child: _isPartyPlanStatusLoading
                     ? Container(
                         width: double.infinity,
                         height: 60,
                         decoration: BoxDecoration(
-                          color: Colors.grey[200],
+                          color: Colors.grey.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(
+                            color: Colors.grey.withValues(alpha: 0.2),
+                          ),
                         ),
                         child: const Center(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.lock_rounded, color: Colors.grey),
-                              SizedBox(width: 8),
-                              Text(
-                                'PLAN CLOSED / CONFIRMED WITH ANOTHER USER',
-                                style: TextStyle(
-                                  fontFamily: 'AllroundGothic',
-                                  color: Colors.grey,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                            ),
                           ),
                         ),
                       )
-                    : _alreadyRequested
+                    : (widget.post['status']?.toString().toLowerCase() == 'inactive' ||
+                            widget.post['status']?.toString().toLowerCase() == 'closed' ||
+                            widget.post['status']?.toString().toLowerCase() == 'cancelled' ||
+                            widget.post['status']?.toString().toLowerCase() == 'completed' ||
+                            widget.post['isLive'] == false)
                         ? Container(
                             width: double.infinity,
                             height: 60,
                             decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.15),
+                              color: Colors.grey[200],
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.green.withValues(alpha: 0.4),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: const Center(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.lock_rounded, color: Colors.grey),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'PLAN CLOSED / CONFIRMED WITH ANOTHER USER',
+                                    style: TextStyle(
+                                      fontFamily: 'AllroundGothic',
+                                      color: Colors.grey,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16.0,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.check_circle_rounded,
-                                  color: Colors.green,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'REQUEST SENT — AWAITING HOST APPROVAL',
-                                  style: const TextStyle(
-                                    fontFamily: 'AllroundGothic',
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    letterSpacing: 0.5,
+                          )
+                        : (_isInvitedUser && (_partyPlanRequestStatus == 'pending' || _partyPlanRequestStatus == 'invited' || _partyPlanRequestStatus == null))
+                            ? Row(
+                                children: [
+                                  // Decline Button
+                                  Expanded(
+                                    flex: 2,
+                                    child: SizedBox(
+                                      height: 60,
+                                      child: OutlinedButton(
+                                        onPressed: (_isDecliningInvite || _isAcceptingInvite)
+                                            ? null
+                                            : _handleRejectPartyPlanInvite,
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.redAccent,
+                                          side: BorderSide(
+                                            color: Colors.redAccent.withValues(alpha: 0.6),
+                                            width: 1.5,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                        ),
+                                        child: _isDecliningInvite
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                                                ),
+                                              )
+                                            : const Text(
+                                                'DECLINE',
+                                                style: TextStyle(
+                                                  fontFamily: 'AllroundGothic',
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    : Container(
-                        width: double.infinity,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          gradient: LunaraTheme.purpleGradient,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFb952eb).withValues(alpha: 0.35),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          onPressed: (_alreadyRequested || _isProcessing)
-                              ? null
-                              : () async {
-                                  if (_alreadyRequested) return;
-                                  final planId = widget.post['id']?.toString() ?? '';
-                                  if (planId.isEmpty) return;
-
-                                  if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
-
-                                  final prevAlreadyRequested = _alreadyRequested;
-
-                                  setState(() {
-                                    _isProcessing = true;
-                                  });
-
-                                  final messenger = ScaffoldMessenger.of(context);
-
-                                  try {
-                                    final result = await ApiService.requestToJoinPartyPlanDetailed(planId);
-                                    if (!mounted) return;
-
-                                    if (result.alreadyRequested || result.success) {
-                                      setState(() {
-                                        _alreadyRequested = true;
-                                        _isProcessing = false;
-                                      });
-                                      if (result.isNewRequest) {
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            backgroundColor: Colors.transparent,
-                                            elevation: 0,
-                                            behavior: SnackBarBehavior.floating,
-                                            content: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 20,
-                                                vertical: 16,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                gradient: LunaraTheme.purpleGradient,
-                                                borderRadius: BorderRadius.circular(16),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                                    blurRadius: 15,
-                                                    offset: const Offset(0, 8),
-                                                  ),
-                                                ],
-                                              ),
-                                              child: const Row(
+                                  const SizedBox(width: 12),
+                                  // Accept Button
+                                  Expanded(
+                                    flex: 3,
+                                    child: Container(
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        gradient: LunaraTheme.purpleGradient,
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ElevatedButton(
+                                        onPressed: (_isAcceptingInvite || _isDecliningInvite)
+                                            ? null
+                                            : _handleAcceptPartyPlanInvite,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                        ),
+                                        child: _isAcceptingInvite
+                                            ? const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                                ),
+                                              )
+                                            : const Row(
+                                                mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                                                  SizedBox(width: 12),
-                                                  Expanded(
+                                                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                                                  SizedBox(width: 8),
+                                                  Flexible(
                                                     child: Text(
-                                                      'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                                                      'ACCEPT INVITE',
                                                       style: TextStyle(
+                                                        fontFamily: 'AllroundGothic',
                                                         color: Colors.white,
-                                                        fontSize: 12,
+                                                        fontSize: 14,
                                                         fontWeight: FontWeight.bold,
                                                         letterSpacing: 0.5,
                                                       ),
+                                                      overflow: TextOverflow.ellipsis,
                                                     ),
                                                   ),
                                                 ],
                                               ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : (_partyPlanRequestStatus == 'accepted' || _partyPlanRequestStatus == 'payment_pending')
+                                ? Container(
+                                    width: double.infinity,
+                                    height: 60,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF00C853).withValues(alpha: 0.35),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 8),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => PartyPlanDetailScreen(
+                                              plan: Map<String, dynamic>.from(widget.post),
+                                              autoOpenPaymentSheet: true,
                                             ),
                                           ),
                                         );
-                                      }
-                                    } else {
-                                      if (mounted) {
-                                        setState(() {
-                                          _alreadyRequested = prevAlreadyRequested;
-                                          _isProcessing = false;
-                                        });
-                                      }
-                                      if (TimeLockBlockedDialog.isConflictError(result.message) ||
-                                          (result.rawData != null && result.rawData!['allowed'] == false)) {
-                                        TimeLockBlockedDialog.show(
-                                          context,
-                                          errorData: result.rawData ?? {'message': result.message},
-                                        );
-                                      } else {
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            content: Text(TimeLockBlockedDialog.cleanErrorMessage(result.message)),
-                                            backgroundColor: Colors.red,
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                                          SizedBox(width: 10),
+                                          Text(
+                                            'PAY SAFETY DEPOSIT (₹99)',
+                                            style: TextStyle(
+                                              fontFamily: 'AllroundGothic',
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.5,
+                                            ),
                                           ),
-                                        );
-                                      }
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _alreadyRequested = prevAlreadyRequested;
-                                        _isProcessing = false;
-                                      });
-                                      if (TimeLockBlockedDialog.isConflictError(e)) {
-                                        TimeLockBlockedDialog.showWithMessage(context, e.toString());
-                                      } else {
-                                        messenger.showSnackBar(
-                                          SnackBar(
-                                            content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
-                                            backgroundColor: Colors.red,
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : (_partyPlanRequestStatus == 'confirmed' || _partyPlanRequestStatus == 'paid')
+                                    ? Container(
+                                        width: double.infinity,
+                                        height: 60,
+                                        decoration: BoxDecoration(
+                                          gradient: LunaraTheme.purpleGradient,
+                                          borderRadius: BorderRadius.circular(20),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 8),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ElevatedButton(
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => PartyPlanDetailScreen(
+                                                  plan: Map<String, dynamic>.from(widget.post),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.transparent,
+                                            shadowColor: Colors.transparent,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
                                           ),
-                                        );
-                                      }
-                                    }
-                                  } finally {
-                                    OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _isProcessing
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          child: const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.celebration_rounded, color: Colors.white, size: 22),
+                                              SizedBox(width: 10),
+                                              Text(
+                                                'JOINED & CONFIRMED 🎉',
+                                                style: TextStyle(
+                                                  fontFamily: 'AllroundGothic',
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       )
-                                    : Icon(hideVenue ? Icons.lock_rounded : Icons.bolt, color: Colors.white),
-                                const SizedBox(width: 12),
-                                Flexible(
-                                  child: Text(
-                                    _isProcessing
-                                        ? 'SENDING REQUEST...'
-                                        : (hideVenue
-                                            ? 'SEND REQUEST TO SEE VENUE & DETAILS'
-                                            : 'JOIN THE VIBE'),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: 'AllroundGothic',
-                                      color: Colors.white,
-                                      fontSize: hideVenue ? 13 : 16,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                                    : _alreadyRequested
+                                        ? Container(
+                                            width: double.infinity,
+                                            height: 60,
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: Colors.green.withValues(alpha: 0.4),
+                                              ),
+                                            ),
+                                            child: const FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: 16.0,
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.check_circle_rounded,
+                                                      color: Colors.green,
+                                                    ),
+                                                    SizedBox(width: 12),
+                                                    Text(
+                                                      'REQUEST SENT — AWAITING HOST APPROVAL',
+                                                      style: TextStyle(
+                                                        fontFamily: 'AllroundGothic',
+                                                        color: Colors.green,
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 12,
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          )
+                                        : Container(
+                                            width: double.infinity,
+                                            height: 60,
+                                            decoration: BoxDecoration(
+                                              gradient: LunaraTheme.purpleGradient,
+                                              borderRadius: BorderRadius.circular(20),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                                                  blurRadius: 16,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
+                                            child: ElevatedButton(
+                                              onPressed: (_alreadyRequested || _isProcessing)
+                                                  ? null
+                                                  : () async {
+                                                      if (_alreadyRequested) return;
+                                                      final planId = widget.post['id']?.toString() ?? '';
+                                                      if (planId.isEmpty) return;
+
+                                                      if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
+
+                                                      final prevAlreadyRequested = _alreadyRequested;
+
+                                                      setState(() {
+                                                        _isProcessing = true;
+                                                      });
+
+                                                      final messenger = ScaffoldMessenger.of(context);
+
+                                                      try {
+                                                        final result = await ApiService.requestToJoinPartyPlanDetailed(planId);
+                                                        if (!mounted) return;
+
+                                                        if (result.alreadyRequested || result.success) {
+                                                          setState(() {
+                                                            _alreadyRequested = true;
+                                                            _isProcessing = false;
+                                                          });
+                                                          if (result.isNewRequest) {
+                                                            messenger.showSnackBar(
+                                                              SnackBar(
+                                                                backgroundColor: Colors.transparent,
+                                                                elevation: 0,
+                                                                behavior: SnackBarBehavior.floating,
+                                                                content: Container(
+                                                                  padding: const EdgeInsets.symmetric(
+                                                                    horizontal: 20,
+                                                                    vertical: 16,
+                                                                  ),
+                                                                  decoration: BoxDecoration(
+                                                                    gradient: LunaraTheme.purpleGradient,
+                                                                    borderRadius: BorderRadius.circular(16),
+                                                                    boxShadow: [
+                                                                      BoxShadow(
+                                                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                                                        blurRadius: 15,
+                                                                        offset: const Offset(0, 8),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                  child: const Row(
+                                                                    children: [
+                                                                      Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                                                                      SizedBox(width: 12),
+                                                                      Expanded(
+                                                                        child: Text(
+                                                                          'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                                                                          style: TextStyle(
+                                                                            color: Colors.white,
+                                                                            fontSize: 12,
+                                                                            fontWeight: FontWeight.bold,
+                                                                            letterSpacing: 0.5,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }
+                                                        } else {
+                                                          if (mounted) {
+                                                            setState(() {
+                                                              _alreadyRequested = prevAlreadyRequested;
+                                                              _isProcessing = false;
+                                                            });
+                                                          }
+                                                          if (TimeLockBlockedDialog.isConflictError(result.message) ||
+                                                              (result.rawData != null && result.rawData!['allowed'] == false)) {
+                                                            TimeLockBlockedDialog.show(
+                                                              context,
+                                                              errorData: result.rawData ?? {'message': result.message},
+                                                            );
+                                                          } else {
+                                                            messenger.showSnackBar(
+                                                              SnackBar(
+                                                                content: Text(TimeLockBlockedDialog.cleanErrorMessage(result.message)),
+                                                                backgroundColor: Colors.red,
+                                                              ),
+                                                            );
+                                                          }
+                                                        }
+                                                      } catch (e) {
+                                                        if (mounted) {
+                                                          setState(() {
+                                                            _alreadyRequested = prevAlreadyRequested;
+                                                            _isProcessing = false;
+                                                          });
+                                                          if (TimeLockBlockedDialog.isConflictError(e)) {
+                                                            TimeLockBlockedDialog.showWithMessage(context, e.toString());
+                                                          } else {
+                                                            messenger.showSnackBar(
+                                                              SnackBar(
+                                                                content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+                                                                backgroundColor: Colors.red,
+                                                              ),
+                                                            );
+                                                          }
+                                                        }
+                                                      } finally {
+                                                        OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
+                                                      }
+                                                    },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.transparent,
+                                                shadowColor: Colors.transparent,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                              ),
+                                              child: Padding(
+                                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    _isProcessing
+                                                        ? const SizedBox(
+                                                            width: 20,
+                                                            height: 20,
+                                                            child: CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                                            ),
+                                                          )
+                                                        : Icon(hideVenue ? Icons.lock_rounded : Icons.bolt, color: Colors.white),
+                                                    const SizedBox(width: 12),
+                                                    Flexible(
+                                                      child: Text(
+                                                        _isProcessing
+                                                            ? 'SENDING REQUEST...'
+                                                            : (hideVenue
+                                                                ? 'SEND REQUEST TO SEE VENUE & DETAILS'
+                                                                : 'JOIN THE VIBE'),
+                                                        textAlign: TextAlign.center,
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontFamily: 'AllroundGothic',
+                                                          color: Colors.white,
+                                                          fontSize: hideVenue ? 13 : 16,
+                                                          fontWeight: FontWeight.bold,
+                                                          letterSpacing: 1,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
               ),
             ),
     );

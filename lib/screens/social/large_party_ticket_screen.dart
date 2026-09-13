@@ -17,6 +17,7 @@ import '../../services/api_service.dart';
 import '../../services/lunara_ticket_capture_service.dart';
 import '../../utils/lunara_date_formatter.dart';
 import '../../dialogs/large_party_cancellation_dialog.dart';
+import '../../widgets/booking_cancellation_dialog.dart';
 
 enum _LargePartyPaymentState { loading, paid, awaitingPayment, expired }
 
@@ -1992,28 +1993,61 @@ class _LargePartyTicketScreenState extends State<LargePartyTicketScreen> {
                         final scheduledTime = _freshStartTime ?? (widget.booking['startTime']?.toString() ?? '20:00');
                         final amountPaid = (_freshTotalAmount ?? (widget.booking['totalAmount'] as num?)?.toDouble() ?? 0.0).toDouble();
 
-                        LargePartyCancellationDialog.show(
-                          context,
-                          bookingId: bookingId,
-                          partySubject: partySubject,
-                          venueName: venueName,
-                          scheduledDate: scheduledDate,
-                          scheduledTime: scheduledTime,
-                          amountPaid: amountPaid,
-                          onSubmitted: () {
-                            Navigator.pop(context);
-                          },
-                        );
+                        final cleanBookingId = ApiService.cleanBookingId(bookingId);
+                        final dynamic rawGc = widget.booking['numberOfGuests'] ?? widget.booking['guestCount'] ?? _freshTotalParticipants ?? 1;
+                        final int guestCount = rawGc is num ? rawGc.toInt() : (int.tryParse(rawGc.toString()) ?? 1);
+                        final bool isLargeParty = (guestCount > 20 ||
+                            widget.booking['isLargePartyRequest'] == true ||
+                            widget.booking['isLargeBooking'] == true ||
+                            widget.booking['type'] == 'large_party_timeline');
+
+                        if (isLargeParty) {
+                          LargePartyCancellationDialog.show(
+                            context,
+                            bookingId: cleanBookingId,
+                            partySubject: partySubject,
+                            venueName: venueName,
+                            scheduledDate: scheduledDate,
+                            scheduledTime: scheduledTime,
+                            amountPaid: amountPaid,
+                            onSubmitted: () {
+                              Navigator.pop(context);
+                            },
+                          );
+                        } else {
+                          BookingCancellationDialog.show(
+                            context,
+                            bookingId: cleanBookingId,
+                            isGroupParty: true,
+                            initialVenueName: venueName,
+                            initialDate: scheduledDate,
+                            initialTime: scheduledTime,
+                            initialAmountPaid: amountPaid,
+                            onCancelled: () {
+                              Navigator.pop(context);
+                            },
+                          );
+                        }
                       },
                       icon: const Icon(Icons.cancel_presentation_rounded, color: Color(0xFFEF4444), size: 18),
-                      label: const Text(
-                        'CANCEL LARGE PARTY',
-                        style: TextStyle(
-                          color: Color(0xFFEF4444),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          letterSpacing: 0.8,
-                        ),
+                      label: Builder(
+                        builder: (ctx) {
+                          final dynamic rawGc = widget.booking['numberOfGuests'] ?? widget.booking['guestCount'] ?? _freshTotalParticipants ?? 1;
+                          final int guestCount = rawGc is num ? rawGc.toInt() : (int.tryParse(rawGc.toString()) ?? 1);
+                          final bool isLargeParty = (guestCount > 20 ||
+                              widget.booking['isLargePartyRequest'] == true ||
+                              widget.booking['isLargeBooking'] == true ||
+                              widget.booking['type'] == 'large_party_timeline');
+                          return Text(
+                            isLargeParty ? 'CANCEL LARGE PARTY' : 'CANCEL GROUP PARTY',
+                            style: const TextStyle(
+                              color: Color(0xFFEF4444),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              letterSpacing: 0.8,
+                            ),
+                          );
+                        },
                       ),
                       style: OutlinedButton.styleFrom(
                         backgroundColor: Colors.white,

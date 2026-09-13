@@ -40,6 +40,14 @@ const defaultGroupPolicy: PolicyFormState = {
   isActive: true,
 };
 
+const defaultStrangerPolicy: PolicyFormState = {
+  minBookingLeadTimeHours: 2.0,
+  cancellationCutoffHours: 2.0,
+  refundEnabled: true,
+  refundPercentage: 100.0,
+  isActive: true,
+};
+
 export const BookingPolicySettings: React.FC = () => {
   const [soloForm, setSoloForm] = useState<PolicyFormState>(defaultSoloPolicy);
   const [soloOriginal, setSoloOriginal] = useState<PolicyFormState>(defaultSoloPolicy);
@@ -47,13 +55,17 @@ export const BookingPolicySettings: React.FC = () => {
   const [groupForm, setGroupForm] = useState<PolicyFormState>(defaultGroupPolicy);
   const [groupOriginal, setGroupOriginal] = useState<PolicyFormState>(defaultGroupPolicy);
 
-  const [activeTab, setActiveTab] = useState<'SOLO_BOOKING' | 'GROUP_PARTY'>('SOLO_BOOKING');
+  const [strangerForm, setStrangerForm] = useState<PolicyFormState>(defaultStrangerPolicy);
+  const [strangerOriginal, setStrangerOriginal] = useState<PolicyFormState>(defaultStrangerPolicy);
+
+  const [activeTab, setActiveTab] = useState<'SOLO_BOOKING' | 'GROUP_PARTY' | 'STRANGERS_MEET'>('SOLO_BOOKING');
   const [loading, setLoading] = useState(true);
   const [savingType, setSavingType] = useState<BookingPolicyType | 'ALL' | null>(null);
 
   // Simulation calculator states
   const [simPriceSolo, setSimPriceSolo] = useState<number>(1000);
   const [simPriceGroup, setSimPriceGroup] = useState<number>(2500);
+  const [simPriceStranger, setSimPriceStranger] = useState<number>(1500);
 
   useEffect(() => {
     fetchPolicies();
@@ -88,6 +100,18 @@ export const BookingPolicySettings: React.FC = () => {
           setGroupForm(gState);
           setGroupOriginal(gState);
         }
+        if (res.data.STRANGERS_MEET) {
+          const sm = res.data.STRANGERS_MEET;
+          const smState: PolicyFormState = {
+            minBookingLeadTimeHours: Number(sm.minBookingLeadTimeHours) || 2.0,
+            cancellationCutoffHours: Number(sm.cancellationCutoffHours) || 2.0,
+            refundEnabled: sm.refundEnabled !== false,
+            refundPercentage: Number(sm.refundPercentage) || 100.0,
+            isActive: sm.isActive !== false,
+          };
+          setStrangerForm(smState);
+          setStrangerOriginal(smState);
+        }
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to load booking & refund policies');
@@ -98,7 +122,9 @@ export const BookingPolicySettings: React.FC = () => {
 
   const handleSavePolicy = async (type: BookingPolicyType) => {
     setSavingType(type);
-    const form = type === 'SOLO_BOOKING' ? soloForm : groupForm;
+    let form = soloForm;
+    if (type === 'GROUP_PARTY') form = groupForm;
+    if (type === 'STRANGERS_MEET') form = strangerForm;
 
     try {
       const res = await bookingPolicyApi.updatePolicy({
@@ -113,11 +139,14 @@ export const BookingPolicySettings: React.FC = () => {
       if (res.success) {
         if (type === 'SOLO_BOOKING') {
           setSoloOriginal(form);
-        } else {
+        } else if (type === 'GROUP_PARTY') {
           setGroupOriginal(form);
+        } else if (type === 'STRANGERS_MEET') {
+          setStrangerOriginal(form);
         }
+        const label = type === 'SOLO_BOOKING' ? 'Solo Booking' : type === 'GROUP_PARTY' ? 'Group Party' : 'Strangers Meet';
         toast.success(
-          `✅ ${type === 'SOLO_BOOKING' ? 'Solo Booking' : 'Group Party'} Refund & Policy Settings updated successfully!`
+          `✅ ${label} Refund & Cancellation Policy Settings updated successfully!`
         );
       }
     } catch (err: any) {
@@ -139,9 +168,14 @@ export const BookingPolicySettings: React.FC = () => {
           bookingType: 'GROUP_PARTY',
           ...groupForm,
         }),
+        bookingPolicyApi.updatePolicy({
+          bookingType: 'STRANGERS_MEET',
+          ...strangerForm,
+        }),
       ]);
       setSoloOriginal(soloForm);
       setGroupOriginal(groupForm);
+      setStrangerOriginal(strangerForm);
       toast.success('🎉 All Refund & Booking Policy Settings updated successfully!');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to save all settings');
@@ -153,8 +187,10 @@ export const BookingPolicySettings: React.FC = () => {
   const handleReset = (type: BookingPolicyType) => {
     if (type === 'SOLO_BOOKING') {
       setSoloForm(soloOriginal);
-    } else {
+    } else if (type === 'GROUP_PARTY') {
       setGroupForm(groupOriginal);
+    } else if (type === 'STRANGERS_MEET') {
+      setStrangerForm(strangerOriginal);
     }
     toast('Settings reset to saved values', { icon: '↩️' });
   };
@@ -173,7 +209,14 @@ export const BookingPolicySettings: React.FC = () => {
     groupForm.refundPercentage !== groupOriginal.refundPercentage ||
     groupForm.isActive !== groupOriginal.isActive;
 
-  const isAnyDirty = isSoloDirty || isGroupDirty;
+  const isStrangerDirty =
+    strangerForm.minBookingLeadTimeHours !== strangerOriginal.minBookingLeadTimeHours ||
+    strangerForm.cancellationCutoffHours !== strangerOriginal.cancellationCutoffHours ||
+    strangerForm.refundEnabled !== strangerOriginal.refundEnabled ||
+    strangerForm.refundPercentage !== strangerOriginal.refundPercentage ||
+    strangerForm.isActive !== strangerOriginal.isActive;
+
+  const isAnyDirty = isSoloDirty || isGroupDirty || isStrangerDirty;
 
   if (loading) {
     return (
@@ -406,6 +449,26 @@ export const BookingPolicySettings: React.FC = () => {
               >
                 <span>Group Parties Policy (≤ 20 Guests)</span>
                 {isGroupDirty && (
+                  <span className="badge bg-warning text-dark" style={{ fontSize: '0.65rem' }}>
+                    Unsaved
+                  </span>
+                )}
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link px-4 py-3 fw-bold d-flex align-items-center gap-2 ${
+                  activeTab === 'STRANGERS_MEET' ? 'active' : ''
+                }`}
+                onClick={() => setActiveTab('STRANGERS_MEET')}
+                style={{
+                  borderRadius: '10px 10px 0 0',
+                  color: activeTab === 'STRANGERS_MEET' ? '#7F00FF' : 'var(--vz-text-muted)',
+                  borderBottom: activeTab === 'STRANGERS_MEET' ? '3px solid #7F00FF' : 'none',
+                }}
+              >
+                <span>Strangers Meet Policy</span>
+                {isStrangerDirty && (
                   <span className="badge bg-warning text-dark" style={{ fontSize: '0.65rem' }}>
                     Unsaved
                   </span>
@@ -933,6 +996,304 @@ export const BookingPolicySettings: React.FC = () => {
                       <BiInfoCircle className="text-info mt-1 flex-shrink-0" />
                       <span>
                         Upon cancellation, venue capacity is released and mutual invites are cancelled automatically.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: STRANGERS MEET POLICY */}
+          {activeTab === 'STRANGERS_MEET' && (
+            <div className="row g-4">
+              <div className="col-12 col-lg-7">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="fw-bold m-0" style={{ color: '#7F00FF' }}>Strangers Meet Cancellation & Refund Policy</h5>
+                  <div className="form-check form-switch d-flex align-items-center gap-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="strangerIsActive"
+                      checked={strangerForm.isActive}
+                      onChange={(e) => setStrangerForm({ ...strangerForm, isActive: e.target.checked })}
+                      style={{ cursor: 'pointer', width: 40, height: 20 }}
+                    />
+                    <label className="form-check-label fw-semibold" htmlFor="strangerIsActive" style={{ cursor: 'pointer' }}>
+                      {strangerForm.isActive ? (
+                        <span className="badge bg-success-subtle text-success">Policy Active</span>
+                      ) : (
+                        <span className="badge bg-danger-subtle text-danger">Policy Inactive</span>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                <p className="text-muted small mb-4">
+                  Governs participant cancellation requests to the host, cutoff lead-time windows (1h, 2h, 5h, 10h, 1 day, 2 days, or custom), automated wallet refunds (&lt; ₹1500), and payout thresholds.
+                </p>
+
+                {/* Refund Enabled Toggle */}
+                <div className="p-3 mb-4 rounded-3 border" style={{ background: 'var(--vz-card-bg)' }}>
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h6 className="fw-bold mb-1">Allow Participant Cancellation Refunds</h6>
+                      <div className="text-muted small">
+                        If enabled, accepted participant cancellations will issue refunds to user wallets (&lt; ₹1500) or external payout (≥ ₹1500).
+                      </div>
+                    </div>
+                    <div className="form-check form-switch">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="strangerRefundEnabled"
+                        checked={strangerForm.refundEnabled}
+                        onChange={(e) => setStrangerForm({ ...strangerForm, refundEnabled: e.target.checked })}
+                        style={{ cursor: 'pointer', width: 44, height: 22 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Refund Percentage Slider */}
+                <div className="mb-4">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <label className="form-label fw-bold mb-0">Default Refund Percentage (%)</label>
+                    <span className="badge fs-6" style={{ background: '#7F00FF', color: '#fff' }}>
+                      {strangerForm.refundPercentage}% Refund
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    className="form-range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={strangerForm.refundPercentage}
+                    disabled={!strangerForm.refundEnabled}
+                    onChange={(e) => setStrangerForm({ ...strangerForm, refundPercentage: Number(e.target.value) })}
+                    style={{ cursor: strangerForm.refundEnabled ? 'pointer' : 'not-allowed' }}
+                  />
+                  <div className="d-flex justify-content-between align-items-center gap-1 mt-2">
+                    {[0, 25, 50, 75, 80, 90, 100].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={`btn btn-sm ${
+                          strangerForm.refundPercentage === preset ? 'btn-primary' : 'btn-outline-secondary'
+                        }`}
+                        disabled={!strangerForm.refundEnabled}
+                        onClick={() => setStrangerForm({ ...strangerForm, refundPercentage: preset })}
+                        style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                      >
+                        {preset}%
+                      </button>
+                    ))}
+                  </div>
+                  <small className="text-muted d-block mt-2">
+                    Standard policy is 100% refund upon host acceptance before event cutoff.
+                  </small>
+                </div>
+
+                <hr className="my-4" />
+
+                {/* Cancellation Cutoff Hours Selection (1, 2, 5, 10, 1 day, 2 days, custom) */}
+                <div className="mb-4">
+                  <label className="form-label fw-bold mb-1">
+                    Cancellation Cutoff Window (Before Meetup Time)
+                  </label>
+                  <p className="text-muted small mb-2">
+                    How much time before the Stranger Meet can participants or the host request cancellation. Select a quick preset or enter custom hours/days.
+                  </p>
+                  
+                  {/* Preset Cutoff Chips */}
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    {[
+                      { label: '1 Hour', hours: 1 },
+                      { label: '2 Hours', hours: 2 },
+                      { label: '5 Hours', hours: 5 },
+                      { label: '10 Hours', hours: 10 },
+                      { label: '1 Day (24h)', hours: 24 },
+                      { label: '2 Days (48h)', hours: 48 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.hours}
+                        type="button"
+                        className={`btn btn-sm px-3 py-2 fw-semibold ${
+                          strangerForm.cancellationCutoffHours === preset.hours
+                            ? 'btn-primary shadow-sm'
+                            : 'btn-outline-secondary'
+                        }`}
+                        onClick={() => setStrangerForm({ ...strangerForm, cancellationCutoffHours: preset.hours })}
+                        style={{
+                          borderRadius: 10,
+                          fontSize: '0.85rem',
+                          background: strangerForm.cancellationCutoffHours === preset.hours ? 'linear-gradient(135deg, #7F00FF, #6B21A8)' : undefined,
+                          borderColor: strangerForm.cancellationCutoffHours === preset.hours ? '#7F00FF' : undefined,
+                        }}
+                      >
+                        ⏱️ {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom Cutoff Input */}
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="720"
+                      className="form-control form-control-lg"
+                      value={strangerForm.cancellationCutoffHours}
+                      onChange={(e) =>
+                        setStrangerForm({ ...strangerForm, cancellationCutoffHours: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                    <span className="input-group-text fw-semibold">
+                      Hours Before Event ({strangerForm.cancellationCutoffHours >= 24 ? `${(strangerForm.cancellationCutoffHours / 24).toFixed(1)} Days` : `${strangerForm.cancellationCutoffHours} Hours`})
+                    </span>
+                  </div>
+                  <small className="text-muted d-block mt-2">
+                    Current Cutoff: <strong>{strangerForm.cancellationCutoffHours >= 24 ? `${(strangerForm.cancellationCutoffHours / 24).toFixed(1)} Day(s) (${strangerForm.cancellationCutoffHours} Hours)` : `${strangerForm.cancellationCutoffHours} Hour(s)`}</strong> prior to meetup time.
+                  </small>
+                </div>
+
+                {/* Minimum Booking Lead Time Hours */}
+                <div className="mb-4">
+                  <label className="form-label fw-bold mb-1">
+                    Minimum Meetup Creation Lead Time (Hours)
+                  </label>
+                  <p className="text-muted small mb-2">
+                    Stranger Meets must be scheduled at least this many hours in advance of the event start date.
+                  </p>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="168"
+                      className="form-control form-control-lg"
+                      value={strangerForm.minBookingLeadTimeHours}
+                      onChange={(e) =>
+                        setStrangerForm({ ...strangerForm, minBookingLeadTimeHours: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                    <span className="input-group-text fw-semibold">Hours Lead Time</span>
+                  </div>
+                  <div className="d-flex gap-2 mt-2">
+                    {[1, 2, 4, 6, 12, 24, 48].map((hrs) => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        className={`btn btn-sm ${
+                          strangerForm.minBookingLeadTimeHours === hrs ? 'btn-primary' : 'btn-outline-secondary'
+                        }`}
+                        onClick={() => setStrangerForm({ ...strangerForm, minBookingLeadTimeHours: hrs })}
+                        style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Form Buttons */}
+                <div className="d-flex align-items-center gap-2 mt-4 pt-2">
+                  <button
+                    type="button"
+                    className="btn btn-primary px-4 py-2 fw-bold d-flex align-items-center gap-2"
+                    onClick={() => handleSavePolicy('STRANGERS_MEET')}
+                    disabled={!isStrangerDirty || savingType !== null}
+                    style={{ background: 'linear-gradient(135deg, #7F00FF, #6B21A8)', borderColor: '#7F00FF' }}
+                  >
+                    {savingType === 'STRANGERS_MEET' ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" /> Saving Strangers Meet Policy...
+                      </>
+                    ) : (
+                      <>
+                        <BiSave size={18} /> Save Strangers Meet Policy
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-light px-3 py-2 fw-semibold d-flex align-items-center gap-1"
+                    onClick={() => handleReset('STRANGERS_MEET')}
+                    disabled={!isStrangerDirty || savingType !== null}
+                  >
+                    <BiReset size={18} /> Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* SIMULATOR & POLICY EXPLANATION */}
+              <div className="col-12 col-lg-5">
+                <div className="card border-0 shadow-sm p-4 mb-4" style={{ background: 'rgba(127, 0, 255, 0.03)', border: '1px solid rgba(127, 0, 255, 0.2)', borderRadius: 16 }}>
+                  <div className="d-flex align-items-center gap-2 mb-3">
+                    <BiCalculator size={22} style={{ color: '#7F00FF' }} />
+                    <h6 className="fw-bold m-0">Live Stranger Meet Refund Simulation</h6>
+                  </div>
+
+                  <label className="form-label small fw-semibold text-muted mb-1">Simulate Per-Head Member Payment (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    className="form-control mb-3"
+                    value={simPriceStranger}
+                    onChange={(e) => setSimPriceStranger(Number(e.target.value) || 0)}
+                  />
+
+                  <div className="p-3 bg-white rounded-3 border mb-3 shadow-sm">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-muted small">Participant Paid Amount:</span>
+                      <span className="fw-bold">₹{simPriceStranger.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-success small fw-semibold">
+                        Refund Amount ({strangerForm.refundPercentage}%):
+                      </span>
+                      <span className="fw-bold text-success fs-5">
+                        {strangerForm.refundEnabled
+                          ? `₹${((simPriceStranger * strangerForm.refundPercentage) / 100).toFixed(0)}`
+                          : '₹0 (Refunds Disabled)'}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-muted small">Refund Routing:</span>
+                      <span className="badge bg-primary-subtle text-primary fw-bold">
+                        {simPriceStranger < 1500 ? 'Direct to Lunara Wallet (< ₹1500)' : 'Choice of Wallet / UPI / Bank (≥ ₹1500)'}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+                      <span className="text-danger small">Cancellation Fee:</span>
+                      <span className="fw-semibold text-danger">
+                        {strangerForm.refundEnabled
+                          ? `₹${(simPriceStranger - (simPriceStranger * strangerForm.refundPercentage) / 100).toFixed(0)}`
+                          : `₹${simPriceStranger.toFixed(0)} (100% Fee)`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="small text-muted">
+                    <div className="d-flex align-items-start gap-2 mb-2">
+                      <BiCheckCircle className="text-success mt-1 flex-shrink-0" />
+                      <span>
+                        Cancellations submitted at least <strong>{strangerForm.cancellationCutoffHours >= 24 ? `${(strangerForm.cancellationCutoffHours / 24).toFixed(0)} day(s)` : `${strangerForm.cancellationCutoffHours} hour(s)`}</strong> before start time are eligible for host review.
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-start gap-2 mb-2">
+                      <BiInfoCircle className="text-primary mt-1 flex-shrink-0" />
+                      <span>
+                        Under ₹1500 refunds are automatically credited to the participant's Lunara Wallet without manual payout steps.
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-start gap-2">
+                      <BiShieldQuarter className="text-warning mt-1 flex-shrink-0" />
+                      <span>
+                        Tickets for cancelled participants are immediately revoked and marked invalid in Ticket Pocket.
                       </span>
                     </div>
                   </div>

@@ -1512,13 +1512,23 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
               final String currentStatus = (widget.status ?? widget.booking?['status']?.toString() ?? '').toUpperCase();
               final bool isCancelled = currentStatus.contains('CANCEL');
               final bool isCompleted = currentStatus.contains('COMPLET');
-              final String? resolvedBookingId = widget.booking?['id']?.toString() ??
+              final String? rawBookingId = widget.booking?['id']?.toString() ??
                   widget.booking?['bookingId']?.toString() ??
                   (widget.ticketId != null && !widget.ticketId!.startsWith('FREE_') ? widget.ticketId : null);
+              final String? resolvedBookingId = (rawBookingId != null && rawBookingId.isNotEmpty)
+                  ? ApiService.cleanBookingId(rawBookingId)
+                  : null;
 
               if (isCancelled || isCompleted || _isTicketExpired() || resolvedBookingId == null || resolvedBookingId.isEmpty) {
                 return const SizedBox.shrink();
               }
+
+              final bool isGroupPartyBooking = widget.booking?['isGroupParty'] == true ||
+                  widget.booking?['goingMode'] == 'group_party' ||
+                  widget.booking?['goingMode'] == 'party_request' ||
+                  widget.booking?['category'] == 'group_party' ||
+                  widget.booking?['type'] == 'group_party_timeline' ||
+                  (widget.table?.toLowerCase().contains('group') ?? false);
 
               return Padding(
                 padding: const EdgeInsets.only(top: 10),
@@ -1543,7 +1553,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                     BookingCancellationDialog.show(
                       context,
                       bookingId: resolvedBookingId,
-                      isGroupParty: false,
+                      isGroupParty: isGroupPartyBooking,
                       initialVenueName: venueName,
                       initialDate: dateStr,
                       initialTime: timeStr,

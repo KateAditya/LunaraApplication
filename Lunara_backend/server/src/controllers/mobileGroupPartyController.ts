@@ -324,9 +324,11 @@ export const getGroupPartyTicket = async (req: Request, res: Response): Promise<
     }
 };
 
+import { sanitizeBookingId } from './mobileBookingController';
+
 export const getSmallPartyCancellationPreview = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const userId = req.user!.id;
 
         const preview = await BookingPolicyService.getSmallGroupPartyCancellationPreview(id, userId);
@@ -339,7 +341,7 @@ export const getSmallPartyCancellationPreview = async (req: Request, res: Respon
 
 export const cancelSmallGroupParty = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { id } = req.params;
+        const id = sanitizeBookingId(req.params.id);
         const userId = req.user!.id;
         const { reason, payoutDetails, upiId, upiNumber, bankAccountNumber, bankIfsc, bankHolderName, payoutType } = req.body;
 

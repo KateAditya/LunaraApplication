@@ -106,31 +106,58 @@ export class NotificationActionController {
                         }
                     }
                 } else if ((notification.entityType === 'StrangersMeetRequest' || notification.entityType === 'StrangersMeetJoiner' || notification.entityType === 'strangers_meet') && notification.entityId) {
-                    const joinerId = notification.metadata?.joinerId || notification.entityId;
-                    let joiner = await StrangersMeetJoiner.findByPk(joinerId);
-                    
-                    if (!joiner && notification.entityId) {
-                        joiner = await StrangersMeetJoiner.findOne({
-                            where: { strangersMeetRequestId: notification.entityId, status: 'pending' },
-                            order: [['createdAt', 'ASC']],
-                        });
-                    }
+                    const isSmCancellation = notification.eventType === 'strangers_meet_cancellation_requested' ||
+                                             Boolean(notification.metadata?.cancellationId) ||
+                                             (notification.title && notification.title.toLowerCase().includes('cancellation')) ||
+                                             upperAction.includes('CANCELLATION');
 
-                    if (joiner) {
-                        const { handleJoinRequest } = await import('./strangersMeetController');
-                        const mockReq: any = {
-                            params: { id: joiner.strangersMeetRequestId, joinerId: joiner.id },
-                            body: { action: action.toLowerCase() === 'accept' ? 'accept' : 'reject' },
-                            user: { id: currentUserId },
-                        };
-                        let mockStatus = 200;
-                        let mockJsonPayload: any = null;
-                        const mockRes: any = {
-                            status: (code: number) => { mockStatus = code; return mockRes; },
-                            json: (data: any) => { mockJsonPayload = data; return mockRes; },
-                        };
-                        await handleJoinRequest(mockReq, mockRes);
-                        actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                    if (isSmCancellation) {
+                        const meetId = notification.entityId || notification.metadata?.meetId;
+                        const cancellationId = notification.metadata?.cancellationId;
+
+                        if (meetId && cancellationId) {
+                            const { StrangersMeetService } = await import('../services/StrangersMeetService');
+                            const actionStr = (upperAction === 'ACCEPT' || upperAction === 'ACCEPT_CANCELLATION') ? 'accept' : 'reject';
+                            try {
+                                const cancelResult = await StrangersMeetService.respondToJoinerCancellation({
+                                    meetId,
+                                    cancellationId,
+                                    hostUserId: currentUserId,
+                                    action: actionStr,
+                                });
+                                actionResult = { status: 'ACTIONED', actionExecuted: action, response: cancelResult };
+                            } catch (cancelErr: any) {
+                                logger.error('[NotificationActionController] Stranger meet cancellation action error: ' + cancelErr.message);
+                                actionResult = { status: 'FAILED', actionExecuted: action, message: cancelErr.message };
+                            }
+                        }
+                    } else {
+                        const joinerId = notification.metadata?.joinerId || notification.entityId;
+                        let joiner = await StrangersMeetJoiner.findByPk(joinerId);
+                        
+                        if (!joiner && notification.entityId) {
+                            joiner = await StrangersMeetJoiner.findOne({
+                                where: { strangersMeetRequestId: notification.entityId, status: 'pending' },
+                                order: [['createdAt', 'ASC']],
+                            });
+                        }
+
+                        if (joiner) {
+                            const { handleJoinRequest } = await import('./strangersMeetController');
+                            const mockReq: any = {
+                                params: { id: joiner.strangersMeetRequestId, joinerId: joiner.id },
+                                body: { action: action.toLowerCase() === 'accept' ? 'accept' : 'reject' },
+                                user: { id: currentUserId },
+                            };
+                            let mockStatus = 200;
+                            let mockJsonPayload: any = null;
+                            const mockRes: any = {
+                                status: (code: number) => { mockStatus = code; return mockRes; },
+                                json: (data: any) => { mockJsonPayload = data; return mockRes; },
+                            };
+                            await handleJoinRequest(mockReq, mockRes);
+                            actionResult = { status: mockStatus === 200 ? 'ACTIONED' : 'FAILED', actionExecuted: action, response: mockJsonPayload };
+                        }
                     }
                 } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch' || notification.eventType === 'PARTNER_REQUEST_SENT' || notification.eventType === 'PARTNER_REQUEST_RECEIVED' || (notification as any).type === 'PARTNER_REQUEST_SENT' || (notification as any).type === 'PARTNER_REQUEST_RECEIVED') && (notification.entityId || notification.metadata?.requestId)) {
                     const cleanEntityId = (notification.metadata?.requestId || notification.entityId || '')

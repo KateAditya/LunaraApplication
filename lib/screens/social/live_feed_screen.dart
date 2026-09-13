@@ -33,6 +33,8 @@ import '../../dialogs/strangers_meet_host_cancellation_dialog.dart';
 import '../../dialogs/strangers_meet_cancellation_dialog.dart';
 import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import '../../utils/lunara_date_formatter.dart';
+import '../profile/vip_membership_screen.dart';
+import 'people_who_liked_you_screen.dart';
 import '../../widgets/party_safety_check_dialog.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -624,6 +626,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       'notifications_read_all',
       _onNotificationsReadAll,
     );
+    ApiService.addSocketListener(
+      'like_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.addSocketListener(
+      'new_match',
+      _onPartyPlanRequestUpdated,
+    );
   }
 
   void _disposeSocketListeners() {
@@ -925,6 +935,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     ApiService.removeSocketListener(
       'notifications_read_all',
       _onNotificationsReadAll,
+    );
+    ApiService.removeSocketListener(
+      'like_received',
+      _onPartyPlanRequestUpdated,
+    );
+    ApiService.removeSocketListener(
+      'new_match',
+      _onPartyPlanRequestUpdated,
     );
   }
 
@@ -3557,6 +3575,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ? Map<String, dynamic>.from(item.rawData['venue'])
                 : null);
 
+      if (status == 'confirmed' || status == 'paid' || item.badgeText == 'CONFIRMED') {
+        try {
+          final reqObj = StrangersMeetRequest.fromJson(postMap);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StrangersMeetTicketScreen(
+                request: reqObj,
+              ),
+            ),
+          ).then((_) => _loadFeed());
+          return;
+        } catch (e) {
+          debugPrint('Error parsing StrangersMeetRequest: $e');
+        }
+      }
+
       try {
         Navigator.push(
           context,
@@ -3568,7 +3603,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         debugPrint('Error opening Strangers Meet detail screen: $e');
       }
       return;
-    } else if (category.contains('booking') || category.contains('group')) {
+    } else if (category.contains('booking') || category.contains('group') || category.contains('large')) {
       final rawDataMap = Map<String, dynamic>.from(item.rawData);
       final bookingData = Map<String, dynamic>.from(
         rawDataMap['booking'] is Map ? rawDataMap['booking'] : rawDataMap,
@@ -3601,22 +3636,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               'name': bookingData['venueName'] ?? 'Venue',
               'id': bookingData['venueId'],
             };
-      final dynamic rawLargeGuests =
-          bookingData['numberOfGuests'] ??
-          bookingData['guestCount'] ??
-          bookingData['numberOfFriends'] ??
-          0;
-      final int gcInt = rawLargeGuests is num
-          ? rawLargeGuests.toInt()
-          : (int.tryParse(rawLargeGuests.toString()) ?? 0);
-      final bool isLarge =
-          gcInt > 20 ||
+      final bool isGroupOrLarge = category.contains('group') ||
+          category.contains('large') ||
+          item.id.startsWith('group_party_') ||
+          item.id.startsWith('large_party_') ||
+          bookingData['isGroupParty'] == true ||
           bookingData['isLargePartyRequest'] == true ||
           bookingData['goingMode'] == 'party_request' ||
-          category.contains('large');
+          bookingData['type'] == 'group_party_timeline' ||
+          bookingData['type'] == 'large_party_timeline' ||
+          bookingData['isGroupBooking'] == true;
 
-      if (status == 'confirmed' || status == 'paid') {
-        if (!isLarge) {
+      if (status == 'confirmed' || status == 'paid' || item.badgeText == 'CONFIRMED') {
+        if (isGroupOrLarge) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  LargePartyTicketScreen(booking: bookingData, venue: venueMap),
+            ),
+          );
+        } else {
           final dynamic rawTicketGuests =
               bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1;
           final int guestsCount = rawTicketGuests is num
@@ -3651,17 +3691,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ),
           );
-        } else {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  LargePartyTicketScreen(booking: bookingData, venue: venueMap),
-            ),
-          );
         }
       } else if (status == 'approved' || status == 'pending') {
-        if (!isLarge || status == 'approved') {
+        if (isGroupOrLarge || status == 'approved') {
           _initiateLargePartyPayment(bookingData);
         }
       }
@@ -3669,6 +3701,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final planData = item.rawData['plan'] is Map
           ? item.rawData['plan']
           : item.rawData;
+      if (status == 'confirmed' || status == 'paid' || item.badgeText == 'CONFIRMED') {
+        final planMap = Map<String, dynamic>.from(planData);
+        final bool isHostUser = (planMap['hostUserId']?.toString() == ApiService.currentUserId ||
+            planMap['userId']?.toString() == ApiService.currentUserId ||
+            planMap['host']?['id']?.toString() == ApiService.currentUserId);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PartyPlanTicketScreen(
+              plan: planMap,
+              request: planMap,
+              isHost: isHostUser,
+            ),
+          ),
+        );
+        return;
+      }
       if (pendingReqs is List && pendingReqs.length > 1) {
         _showReviewPartyPlanRequestsModal(
           Map<String, dynamic>.from(planData),
@@ -3688,6 +3737,64 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         context,
         MaterialPageRoute(builder: (_) => const LunaraWalletScreen()),
       );
+    } else if (category.contains('like') ||
+        category.contains('super_like') ||
+        category.contains('superlike') ||
+        category.contains('match')) {
+      final isMasked = item.rawData['data']?['isMasked'] == true ||
+          item.rawData['isMasked'] == true ||
+          item.rawData['actionType'] == 'open_vip_upgrade' ||
+          (item.senderUser?['id'] == 'masked') ||
+          (item.rawData['sender'] is Map && item.rawData['sender']['id'] == 'masked');
+
+      if (isMasked) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const VIPMembershipScreen(initialTabIndex: 0),
+          ),
+        );
+      } else {
+        final sId = item.senderUser?['id'] ??
+            item.rawData['data']?['senderId'] ??
+            item.rawData['actorUserId'] ??
+            (item.rawData['sender'] is Map ? item.rawData['sender']['id'] : null);
+        if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
+          final sName = item.senderUser?['firstName'] ??
+              item.rawData['data']?['senderName'] ??
+              (item.rawData['sender'] is Map ? item.rawData['sender']['firstName'] : null) ??
+              'Someone';
+          final sPhoto = item.senderUser?['profileImageUrl'] ??
+              item.senderUser?['profilePhotoUrl'] ??
+              item.rawData['data']?['senderImage'] ??
+              (item.rawData['sender'] is Map ? item.rawData['sender']['profileImageUrl'] : null) ??
+              item.avatarUrl;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ProfileScreen(
+                user: User.fromJson({
+                  'id': sId.toString(),
+                  'firstName': sName.toString(),
+                  'photos': sPhoto != null
+                      ? [
+                          {'url': sPhoto.toString()},
+                        ]
+                      : [],
+                }),
+              ),
+            ),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const PeopleWhoLikedYouScreen(),
+            ),
+          );
+        }
+      }
+      return;
     }
   }
 
@@ -4036,8 +4143,79 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return false;
   }
 
+  static bool _isLikeItem(dynamic item) {
+    if (item == null || item is! Map) return false;
+    final map = item is Map<String, dynamic>
+        ? item
+        : Map<String, dynamic>.from(item);
+
+    final cat = (map['category'] ??
+            map['entityType'] ??
+            map['eventType'] ??
+            map['type'] ??
+            map['requestType'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final action = (map['action'] ??
+            map['data']?['action'] ??
+            map['metadata']?['action'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final title = (map['title'] ?? '').toString().toLowerCase();
+    final body = (map['body'] ?? '').toString().toLowerCase();
+    final actionType = (map['actionType'] ??
+            map['data']?['actionType'] ??
+            map['metadata']?['actionType'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final deepLink = (map['deepLink'] ??
+            map['data']?['deepLink'] ??
+            map['metadata']?['deepLink'] ??
+            '')
+        .toString()
+        .toLowerCase();
+
+    if (cat == 'likes' ||
+        cat == 'like' ||
+        cat == 'super_like' ||
+        cat == 'superlike' ||
+        action == 'like' ||
+        action == 'superlike' ||
+        actionType == 'open_vip_upgrade' ||
+        actionType == 'view_profile' ||
+        deepLink == '/vip-membership' ||
+        (map['entityType'] == 'user_match' &&
+            !cat.contains('upcoming_night') &&
+            !cat.contains('night_partner')) ||
+        title.contains('liked your profile') ||
+        title.contains('likes your profile') ||
+        title.contains('super liked you') ||
+        title.contains('super like') ||
+        body.contains('liked your profile') ||
+        body.contains('likes your profile') ||
+        body.contains('someone liked your profile') ||
+        body.contains('someone likes your profile') ||
+        body.contains('sent you a super like') ||
+        body.contains('super like')) {
+      return true;
+    }
+
+    if (map['data'] is Map) {
+      if (_isLikeItem(map['data'])) return true;
+    }
+    if (map['metadata'] is Map) {
+      if (_isLikeItem(map['metadata'])) return true;
+    }
+
+    return false;
+  }
+
   static bool _isUpcomingNightItem(dynamic item) {
     if (item == null || item is! Map) return false;
+    if (_isLikeItem(item)) return false;
     final map = item is Map<String, dynamic>
         ? item
         : Map<String, dynamic>.from(item);
@@ -4091,6 +4269,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractUpcomingNightId(Map<String, dynamic> item) {
+    if (_isLikeItem(item)) return null;
+
     // 1. Authoritative Event Key (ONE EVENT = ONE CARD)
     final eventId = item['eventId'] ??
         item['data']?['eventId'] ??
@@ -4124,11 +4304,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['metadata']['nightId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['data'] is Map && item['data']['matchId'] != null) {
+    if (item['data'] is Map &&
+        item['data']['matchId'] != null &&
+        _isUpcomingNightItem(item)) {
       final id = item['data']['matchId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['metadata'] is Map && item['metadata']['matchId'] != null) {
+    if (item['metadata'] is Map &&
+        item['metadata']['matchId'] != null &&
+        _isUpcomingNightItem(item)) {
       final id = item['metadata']['matchId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
@@ -4144,7 +4328,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final id = item['nightId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
-    if (item['matchId'] != null) {
+    if (item['matchId'] != null && _isUpcomingNightItem(item)) {
       final id = item['matchId'].toString().trim();
       if (id.isNotEmpty) return id;
     }
@@ -4192,6 +4376,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractPartyPlanId(Map<String, dynamic> item) {
+    if (_isLikeItem(item)) return null;
     if (item['data'] is Map && item['data']['partyPlanId'] != null) {
       final id = item['data']['partyPlanId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -4314,6 +4499,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractStrangersMeetId(Map<String, dynamic> item) {
+    if (_isLikeItem(item)) return null;
     if (item['data'] is Map && item['data']['strangersMeetId'] != null) {
       final id = item['data']['strangersMeetId'].toString().trim();
       if (id.isNotEmpty) return id;
@@ -4432,6 +4618,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   String? _extractGroupPartyId(Map<String, dynamic> item) {
+    if (_isLikeItem(item)) return null;
     final String cat =
         (item['requestType'] ??
                 item['type'] ??
@@ -4578,6 +4765,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Helper to extract Solo and standard venue booking ID
   String? _extractSoloBookingId(dynamic item) {
     if (item == null || item is! Map) return null;
+    if (_isLikeItem(item)) return null;
     if (_isPartyPlanItem(item) ||
         _isStrangerMeetItem(item) ||
         item['partyPlanId'] != null ||
@@ -5042,14 +5230,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             (n['sender'] is Map ? n['sender']['id'] : null) ??
             n['data']?['senderId'] ??
             n['actorUserId'];
-        if (sId != null && sId.toString().isNotEmpty) {
+        if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
           final sName =
               (n['sender'] is Map ? n['sender']['firstName'] : null) ??
               n['data']?['senderName'] ??
               'Someone';
           final sPhoto =
               (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ??
-              n['data']?['senderImage'];
+              n['data']?['senderImage'] ??
+              n['imageUrl'];
           actionText = 'View Profile';
           actionTap = () => Navigator.push(
             context,
@@ -5068,10 +5257,68 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           );
         }
-      } else if (category.contains('like')) {
+      } else if (category.contains('like') ||
+          (n['type']?.toString().contains('like') == true) ||
+          (n['data']?['action'] == 'like')) {
         accentColor = const Color(0xFFEC4899);
         icon = Icons.favorite_rounded;
-        badge = 'LIKE';
+
+        final bool isMasked = n['data']?['isMasked'] == true ||
+            n['isMasked'] == true ||
+            n['actionType'] == 'open_vip_upgrade' ||
+            (n['sender'] is Map && n['sender']['id'] == 'masked');
+
+        if (isMasked) {
+          badge = 'NEW LIKE';
+          actionText = 'Upgrade to See';
+          actionTap = () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const VIPMembershipScreen(initialTabIndex: 0),
+            ),
+          );
+        } else {
+          badge = 'LIKED YOU';
+          final sId =
+              (n['sender'] is Map ? n['sender']['id'] : null) ??
+              n['data']?['senderId'] ??
+              n['actorUserId'];
+          if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
+            final sName =
+                (n['sender'] is Map ? n['sender']['firstName'] : null) ??
+                n['data']?['senderName'] ??
+                'Someone';
+            final sPhoto =
+                (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ??
+                n['data']?['senderImage'] ??
+                n['imageUrl'];
+            actionText = 'View Profile';
+            actionTap = () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProfileScreen(
+                  user: User.fromJson({
+                    'id': sId.toString(),
+                    'firstName': sName.toString(),
+                    'photos': sPhoto != null
+                        ? [
+                            {'url': sPhoto.toString()},
+                          ]
+                        : [],
+                  }),
+                ),
+              ),
+            );
+          } else {
+            actionText = 'See Who Liked You';
+            actionTap = () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PeopleWhoLikedYouScreen(),
+              ),
+            );
+          }
+        }
       } else if (category.contains('promo') || category.contains('offer')) {
         accentColor = const Color(0xFFF59E0B);
         icon = Icons.card_giftcard_rounded;
@@ -5122,11 +5369,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           notifReason.contains('no_longer_available') ||
           notifReason.contains('partner_already_selected') ||
           currentTitleLower.contains('no longer available') ||
+          currentTitleLower.contains('no longer request') ||
+          currentTitleLower.contains('no longer') ||
           currentTitleLower.contains('unavailable') ||
           currentTitleLower.contains('declined') ||
           currentTitleLower.contains('cancelled') ||
           currentTitleLower.contains('expired') ||
           currentBodyLower.contains('no longer available') ||
+          currentBodyLower.contains('no longer request') ||
+          currentBodyLower.contains('no longer') ||
           currentBodyLower.contains('another partner') ||
           badge == 'NO LONGER AVAILABLE' ||
           badge == 'EXPIRED' ||
@@ -5960,6 +6211,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String? venuePhoto =
         _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);
 
+    final bool finalIsExpired = isExpired ||
+        overallStatus == 'cancelled' ||
+        cancelStatus == 'COMPLETED' ||
+        cancelStatus == 'APPROVED' ||
+        cancelStatus == 'REFUND_PAID' ||
+        badgeText == 'CANCELLED' ||
+        badgeText == 'REFUND COMPLETED' ||
+        badgeText == 'REFUNDED TO WALLET' ||
+        badgeText == 'EXPIRED';
+
     return UnifiedNotificationItem(
       id: 'group_party_timeline_$partyId',
       category: 'booking',
@@ -5971,14 +6232,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           (badgeText == 'ACTION REQUIRED' || badgeText == 'PAYMENT REQUIRED')
           ? false
           : !hasUnread,
-      isExpired: isExpired,
+      isExpired: finalIsExpired,
       badgeText: badgeText,
-      accentColor: accentColor,
+      accentColor: finalIsExpired && badgeText != 'CANCELLED' && badgeText != 'REFUND COMPLETED' && badgeText != 'REFUNDED TO WALLET' ? const Color(0xFF9CA3AF) : accentColor,
       categoryIcon: Icons.groups_rounded,
       avatarUrl: venuePhoto,
-      actionButtonText: actionButtonText,
-      onActionTap: onActionTap,
-      actions: isExpired ? null : actions,
+      actionButtonText: finalIsExpired ? null : actionButtonText,
+      onActionTap: finalIsExpired ? null : onActionTap,
+      actions: finalIsExpired ? null : actions,
       rawData: partyMap,
     );
   }
@@ -6428,6 +6689,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (badge == 'ACTION REQUIRED' || badge == 'PAYMENT PENDING') {
       hasUnread = true;
     }
+    final parsedBookingDate = _parseEventDateTime(dateStr, timeStr);
+    bool isExpired = false;
+    if (parsedBookingDate != null &&
+        DateTime.now().isAfter(parsedBookingDate.add(const Duration(hours: 4)))) {
+      isExpired = true;
+    }
+    if (isCancelled || isCompleted || isRefunded || badge == 'CANCELLED' || badge == 'COMPLETED' || badge == 'EXPIRED') {
+      isExpired = true;
+    }
+    for (final e in entries) {
+      final s = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '').toString().toLowerCase();
+      if (s == 'expired' || s == 'cancelled' || s == 'completed' || s == 'refunded' || e['isExpired'] == true) {
+        isExpired = true;
+        break;
+      }
+    }
+
     final timeAgo = _formatTimeAgo(latestCreatedAt);
 
     return UnifiedNotificationItem(
@@ -6438,9 +6716,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       createdAt: latestCreatedAt,
       timeAgo: timeAgo,
       isRead: !hasUnread,
-      isExpired: false,
-      badgeText: badge,
-      accentColor: accentColor,
+      isExpired: isExpired,
+      badgeText: isExpired && badge != 'CANCELLED' && badge != 'COMPLETED' ? 'EXPIRED' : badge,
+      accentColor: isExpired && badge != 'CANCELLED' ? const Color(0xFF9CA3AF) : accentColor,
       categoryIcon: icon,
       avatarUrl:
           _extractVenuePhoto(bookingMap['venue']) ??
@@ -7222,6 +7500,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    final parsedNightDate = _parseEventDateTime(dateStr, timeStr);
+    bool isExpired = false;
+    if (parsedNightDate != null &&
+        DateTime.now().isAfter(parsedNightDate.add(const Duration(hours: 4)))) {
+      isExpired = true;
+    }
+    if (status == 'CANCELLED' || stage == 'CANCELLED' || status == 'EXPIRED' || stage == 'EXPIRED' || badgeText == 'CANCELLED' || badgeText == 'EXPIRED') {
+      isExpired = true;
+    }
+    for (final e in entries) {
+      final s = (e['status'] ?? e['stage'] ?? e['metadata']?['status'] ?? e['data']?['status'] ?? '').toString().toUpperCase();
+      if (s == 'EXPIRED' || s == 'CANCELLED' || s == 'DECLINED' || e['isExpired'] == true) {
+        isExpired = true;
+        break;
+      }
+    }
+
     return UnifiedNotificationItem(
       id: 'upcoming_night_timeline_$nightId',
       category: 'upcoming_night',
@@ -7232,12 +7527,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isRead: (badgeText == 'ACTION REQUIRED' || badgeText == 'INVITE')
           ? false
           : true,
-      isExpired: false,
+      isExpired: isExpired,
       badgeText: badgeText,
-      accentColor: accentColor,
+      accentColor: isExpired && badgeText != 'CANCELLED' ? const Color(0xFF9CA3AF) : accentColor,
       categoryIcon: Icons.nightlife_rounded,
       avatarUrl: partnerPhoto ?? venuePhoto,
-      actions: actionsList.isNotEmpty ? actionsList : null,
+      actions: isExpired ? null : (actionsList.isNotEmpty ? actionsList : null),
       rawData: {
         ...rawItem,
         ...metadata,
@@ -9174,6 +9469,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       allRead = false;
     }
 
+    final bool finalIsExpired = isExpired ||
+        isCancelled ||
+        badge == 'NO LONGER AVAILABLE' ||
+        badge == 'EXPIRED' ||
+        badge == 'DECLINED' ||
+        badge == 'CANCELLED';
+
     return UnifiedNotificationItem(
       id: 'pp_$planId',
       category: 'party_plan',
@@ -9182,17 +9484,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       createdAt: latestCreatedAt,
       timeAgo: _formatTimeAgo(latestCreatedAt),
       isRead: allRead,
-      isExpired: isExpired ||
-          badge == 'NO LONGER AVAILABLE' ||
-          badge == 'EXPIRED' ||
-          badge == 'DECLINED' ||
-          badge == 'CANCELLED',
+      isExpired: finalIsExpired,
       badgeText: badge,
-      accentColor: accent,
+      accentColor: finalIsExpired && badge != 'CANCELLED' ? const Color(0xFF9CA3AF) : accent,
       categoryIcon: Icons.celebration_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: isExpired ? null : actionsList,
+      actions: finalIsExpired ? null : actionsList,
       rawData: {
         'id': planId,
         'plan': planMap,
@@ -9613,22 +9911,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   DateTime.now(),
             )
           : '';
-      title = '🟢 Stranger Meet In Progress';
-      badge = 'LIVE / IN PROGRESS';
-      accent = const Color(0xFF3B82F6);
-      body = startedFormatted.isNotEmpty
-          ? 'Started at $startedFormatted • Expected end: ${endFormatted.isNotEmpty ? endFormatted : 'TBD'}'
-          : 'Meetup is live at $venueName!';
-      statusSummary = 'Started • In Progress';
+      final rawStarted = meetMap['startedAt'] ?? meetMap['started_at'];
+      final DateTime? startedTime = rawStarted != null
+          ? DateTime.tryParse(rawStarted.toString())?.toLocal()
+          : null;
+      final bool isPast3Hours = startedTime != null &&
+          DateTime.now().difference(startedTime).inMinutes >= 180;
+      final bool isPastExpectedEnd =
+          expectedEnd != null && DateTime.now().isAfter(expectedEnd);
+      final bool isAwaitingEndConfirmation = isPast3Hours || isPastExpectedEnd;
 
-      if (isHost) {
+      if (isHost && isAwaitingEndConfirmation) {
+        title = '🏁 Has your Meetup Ended?';
+        badge = 'CONFIRMATION REQUIRED';
+        accent = const Color(0xFFF59E0B);
+        body = startedFormatted.isNotEmpty
+            ? 'Your Stranger Meet at $venueName started over 3 hours ago ($startedFormatted). Please confirm if it has ended to initiate your host payout settlement.'
+            : 'Your Stranger Meet at $venueName has reached its expected end time. Please confirm completion to initiate your host settlement.';
+        statusSummary = 'Awaiting End Confirmation';
         userRoleLabel = '👑 Your Stranger Meet';
+
         actionsList = [
           NotificationAction(
-            label: 'End Meet',
-            icon: Icons.timer_outlined,
+            label: 'Yes, Ended',
+            icon: Icons.check_circle_rounded,
             isPrimary: true,
-            color: const Color(0xFFF59E0B),
+            color: const Color(0xFF10B981),
+            onTap: () {
+              StrangersMeetEndDialog.show(
+                context,
+                meetId: meetId,
+                subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                venueName: venueName,
+                expectedEndAt: expectedEnd,
+                onEnded: () => _loadFeed(),
+                onExtended: () => _loadFeed(),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'Extend Time',
+            icon: Icons.more_time_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
             onTap: () {
               StrangersMeetEndDialog.show(
                 context,
@@ -9662,61 +9987,138 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else {
-        userRoleLabel = 'Hosted by';
-        partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
-        partnerRoleLabel = 'Host:';
-        final otherId = meetHostId.isNotEmpty
-            ? meetHostId
-            : (hostCreator['id'] ?? '');
+        title = '🟢 Stranger Meet In Progress';
+        badge = 'LIVE / IN PROGRESS';
+        accent = const Color(0xFF3B82F6);
+        body = startedFormatted.isNotEmpty
+            ? 'Started at $startedFormatted • Expected end: ${endFormatted.isNotEmpty ? endFormatted : 'TBD'}'
+            : 'Meetup is live at $venueName!';
+        statusSummary = 'Started • In Progress';
 
-        actionsList = [
-          NotificationAction(
-            label: 'Chat',
-            icon: Icons.chat_bubble_rounded,
-            isPrimary: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatScreen(
-                  user: {
-                    'id': otherId,
-                    'firstName': hostCreator['firstName'] ?? hostName,
-                    'lastName': hostCreator['lastName'] ?? '',
-                    'profilePhotoUrl': hostPhoto,
-                  },
+        if (isHost) {
+          userRoleLabel = '👑 Your Stranger Meet';
+          actionsList = [
+            NotificationAction(
+              label: 'End Meet',
+              icon: Icons.timer_outlined,
+              isPrimary: true,
+              color: const Color(0xFFF59E0B),
+              onTap: () {
+                StrangersMeetEndDialog.show(
+                  context,
+                  meetId: meetId,
+                  subject: meetMap['subject']?.toString() ?? 'Strangers Meet',
+                  venueName: venueName,
+                  expectedEndAt: expectedEnd,
+                  onEnded: () => _loadFeed(),
+                  onExtended: () => _loadFeed(),
+                );
+              },
+            ),
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error parsing SM ticket: $e');
+                }
+              },
+            ),
+          ];
+        } else {
+          userRoleLabel = 'Hosted by';
+          partnerUser = hostCreator.isNotEmpty ? hostCreator : null;
+          partnerRoleLabel = 'Host:';
+          final otherId = meetHostId.isNotEmpty
+              ? meetHostId
+              : (hostCreator['id'] ?? '');
+
+          actionsList = [
+            NotificationAction(
+              label: 'Chat',
+              icon: Icons.chat_bubble_rounded,
+              isPrimary: true,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(
+                    user: {
+                      'id': otherId,
+                      'firstName': hostCreator['firstName'] ?? hostName,
+                      'lastName': hostCreator['lastName'] ?? '',
+                      'profilePhotoUrl': hostPhoto,
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-          NotificationAction(
-            label: 'View Ticket',
-            icon: Icons.confirmation_number_rounded,
-            isPrimary: false,
-            color: Colors.grey[200],
-            onTap: () {
-              try {
-                final req = StrangersMeetRequest.fromJson(meetMap);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => StrangersMeetTicketScreen(request: req),
-                  ),
-                );
-              } catch (e) {
-                debugPrint('Error parsing SM ticket: $e');
-              }
-            },
-          ),
-        ];
+            NotificationAction(
+              label: 'View Ticket',
+              icon: Icons.confirmation_number_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () {
+                try {
+                  final req = StrangersMeetRequest.fromJson(meetMap);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StrangersMeetTicketScreen(request: req),
+                    ),
+                  );
+                } catch (e) {
+                  debugPrint('Error parsing SM ticket: $e');
+                }
+              },
+            ),
+          ];
+        }
       }
     } else if (meetStatus == 'host_confirmed_ended') {
+      final int actualPaidCount = int.tryParse(
+            (meetMap['paidJoinersCount'] ??
+                    meetMap['slotsFilled'] ??
+                    meetMap['joinedCount'] ??
+                    0)
+                .toString(),
+          ) ??
+          0;
+      final int totalCapacity = int.tryParse(
+            (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString(),
+          ) ??
+          0;
+      final double hostDeposit = double.tryParse(
+            (meetMap['paymentAmount'] ?? 0).toString(),
+          ) ??
+          0.0;
+      final double hostRevenue = actualPaidCount * chargesPerHead;
+      final int unfilled = (totalCapacity > actualPaidCount && totalCapacity > 0)
+          ? (totalCapacity - actualPaidCount)
+          : 0;
+      final double depositPerSeat =
+          (totalCapacity > 0) ? (hostDeposit / totalCapacity) : 0.0;
+      final double unfilledRefund = unfilled * depositPerSeat;
+      final double totalSettlement = hostRevenue + unfilledRefund;
+
       title = '🏁 Stranger Meet Ended';
       badge = 'AWAITING ADMIN VERIFICATION';
       accent = const Color(0xFFF59E0B);
       body = isHost
-          ? 'You marked this meet as ended. Admin will verify and process host payout within 24 hours.'
+          ? 'You marked this meet as ended.\n• Participant Revenue: ₹${hostRevenue.toStringAsFixed(0)} ($actualPaidCount paid)\n• Unfilled Deposit Refund: ₹${unfilledRefund.toStringAsFixed(0)} ($unfilled slots)\n• Expected Settlement: ₹${totalSettlement.toStringAsFixed(0)}\nAdmin will verify and process payout within 24 hours.'
           : 'This Stranger Meet has ended. Hope you had a great time!';
-      statusSummary = isHost ? 'Awaiting Admin Verification' : 'Ended';
+      statusSummary = isHost
+          ? '₹${totalSettlement.toStringAsFixed(0)} Payout Pending'
+          : 'Ended';
       userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
       actionsList = [
         NotificationAction(
@@ -9739,11 +10141,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       ];
     } else if (meetStatus == 'admin_confirmed_ended') {
+      final int actualPaidCount = int.tryParse(
+            (meetMap['paidJoinersCount'] ??
+                    meetMap['slotsFilled'] ??
+                    meetMap['joinedCount'] ??
+                    0)
+                .toString(),
+          ) ??
+          0;
+      final int totalCapacity = int.tryParse(
+            (meetMap['numberOfPersons'] ?? meetMap['capacity'] ?? 0).toString(),
+          ) ??
+          0;
+      final double hostDeposit = double.tryParse(
+            (meetMap['paymentAmount'] ?? 0).toString(),
+          ) ??
+          0.0;
+      final double hostRevenue = actualPaidCount * chargesPerHead;
+      final int unfilled = (totalCapacity > actualPaidCount && totalCapacity > 0)
+          ? (totalCapacity - actualPaidCount)
+          : 0;
+      final double depositPerSeat =
+          (totalCapacity > 0) ? (hostDeposit / totalCapacity) : 0.0;
+      final double unfilledRefund = unfilled * depositPerSeat;
+      final double totalSettlement = hostRevenue + unfilledRefund;
+
       title = '⏳ Meetup Verified';
       badge = 'SETTLEMENT IN 24H';
       accent = const Color(0xFF8B5CF6);
       body = isHost
-          ? 'Admin verified meetup completion. Your payout will be settled to your account within 24 hours.'
+          ? 'Admin verified meetup completion.\n• Settlement Amount: ₹${totalSettlement.toStringAsFixed(0)}\nPayout will be settled to your account within 24 hours.'
           : 'This Stranger Meet has concluded.';
       statusSummary = isHost ? 'Settlement in 24 Hours' : 'Concluded';
       userRoleLabel = isHost ? '👑 Your Stranger Meet' : 'Hosted by';
@@ -10764,6 +11191,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       allRead = false;
     }
 
+    final bool finalIsExpired = isExpired ||
+        badge == 'NO LONGER AVAILABLE' ||
+        badge == 'EXPIRED' ||
+        badge == 'DECLINED' ||
+        badge == 'CANCELLED';
+
     return UnifiedNotificationItem(
       id: 'sm_$meetId',
       category: 'stranger_meet',
@@ -10772,23 +11205,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       createdAt: latestCreatedAt,
       timeAgo: _formatTimeAgo(latestCreatedAt),
       isRead: allRead,
-      isExpired: isExpired ||
-          badge == 'NO LONGER AVAILABLE' ||
-          badge == 'EXPIRED' ||
-          badge == 'DECLINED' ||
-          badge == 'CANCELLED',
+      isExpired: finalIsExpired,
       badgeText: badge,
-      accentColor: accent,
+      accentColor: finalIsExpired && badge != 'CANCELLED' ? const Color(0xFF9CA3AF) : accent,
       categoryIcon: Icons.people_alt_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: (isExpired ||
-              badge == 'NO LONGER AVAILABLE' ||
-              badge == 'EXPIRED' ||
-              badge == 'DECLINED' ||
-              badge == 'CANCELLED')
-          ? null
-          : actionsList,
+      actions: finalIsExpired ? null : actionsList,
       rawData: {
         'id': meetId,
         'plan': meetMap,
@@ -11155,9 +11578,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
+            title.contains('like') ||
+            title.contains('liked') ||
             badge.contains('REQUEST') ||
             badge.contains('INVITE') ||
+            badge.contains('LIKE') ||
             category.contains('request') ||
+            category.contains('like') ||
+            category.contains('super_like') ||
             category.contains('upcoming_night') ||
             category.contains('night_partner'));
       } else if (pillId == 'PENDING') {
@@ -11383,12 +11811,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
+            title.contains('like') ||
+            title.contains('liked') ||
             body.contains('request') ||
             body.contains('invite') ||
             body.contains('partner') ||
+            body.contains('like') ||
+            body.contains('liked') ||
             badge.contains('REQUEST') ||
             badge.contains('INVITE') ||
+            badge.contains('LIKE') ||
             category.contains('request') ||
+            category.contains('like') ||
+            category.contains('super_like') ||
             category.contains('upcoming_night') ||
             category.contains('night_partner')
         );

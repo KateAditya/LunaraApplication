@@ -447,7 +447,10 @@ async function getUserNotifications(
                 const { SubscriptionService } = await import('../services/subscriptionService');
                 const [matches, canSeeWhoLiked] = await Promise.all([
                     UserMatch.findAll({
-                        where: { user2Id: uId },
+                        where: {
+                            user2Id: uId,
+                            status: { [Op.ne]: 'declined' },
+                        },
                         include: [{ model: User, as: 'user1', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] }],
                         order: [['createdAt', 'DESC']],
                         limit: 20
@@ -512,11 +515,19 @@ async function getUserNotifications(
                             body: `${senderName} sent you a Super Like! 💜`,
                             category: 'super_like',
                             type: 'super_like',
+                            eventType: 'super_like',
                             actionType: 'view_profile',
                             deepLink: firstUser ? `/profile/${firstUser.id}` : undefined,
                             createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
                             read: isRead,
                             isRead: isRead,
+                            imageUrl: firstUser?.profileImageUrl || null,
+                            actor: firstUser ? {
+                                id: firstUser.id,
+                                firstName: firstUser.firstName,
+                                lastName: firstUser.lastName,
+                                profileImageUrl: firstUser.profileImageUrl,
+                            } : null,
                             sender: firstUser ? {
                                 id: firstUser.id,
                                 firstName: firstUser.firstName,
@@ -542,11 +553,19 @@ async function getUserNotifications(
                             body: `${senderName} liked your profile ❤️`,
                             category: 'likes',
                             type: 'like',
+                            eventType: 'like',
                             actionType: 'view_profile',
                             deepLink: firstUser ? `/profile/${firstUser.id}` : undefined,
                             createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
                             read: isRead,
                             isRead: isRead,
+                            imageUrl: firstUser?.profileImageUrl || null,
+                            actor: firstUser ? {
+                                id: firstUser.id,
+                                firstName: firstUser.firstName,
+                                lastName: firstUser.lastName,
+                                profileImageUrl: firstUser.profileImageUrl,
+                            } : null,
                             sender: firstUser ? {
                                 id: firstUser.id,
                                 firstName: firstUser.firstName,
@@ -569,11 +588,19 @@ async function getUserNotifications(
                             body: 'Someone liked your profile! Upgrade to VIP to see who!',
                             category: 'likes',
                             type: 'like',
+                            eventType: 'like',
                             actionType: 'open_vip_upgrade',
                             deepLink: '/vip-membership',
                             createdAt: match.createdAt ? match.createdAt.toISOString() : new Date().toISOString(),
                             read: isRead,
                             isRead: isRead,
+                            imageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                            actor: {
+                                id: 'masked',
+                                firstName: 'Someone',
+                                lastName: '',
+                                profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                            },
                             sender: {
                                 id: 'masked',
                                 firstName: 'Someone',
@@ -994,12 +1021,18 @@ async function getUserNotifications(
             (n.metadata ? (n.metadata.nightId || n.metadata.matchId || n.metadata.requestId) : null) ||
             (isUn ? n.entityId?.toString() : null);
 
+        const matchId = data.matchId?.toString() ||
+            (n.entityType === 'user_match' ? n.entityId?.toString() : null) ||
+            (n.id?.startsWith('match_') ? n.id.replace(/^match_/, '') : null) ||
+            (n.metadata ? n.metadata.matchId?.toString() : null);
+
         let key: string | null = null;
         if (strangerMeetId) key = `sm_${strangerMeetId}`;
         else if (groupPartyId) key = `gp_${groupPartyId}`;
         else if (partyPlanId) key = `pp_${partyPlanId}`;
         else if (bookingId) key = `bk_${bookingId}`;
         else if (upcomingNightId) key = `un_${upcomingNightId}`;
+        else if (matchId) key = `match_${matchId}`;
 
         if (key) {
             if (!entityKeys.has(key)) {
