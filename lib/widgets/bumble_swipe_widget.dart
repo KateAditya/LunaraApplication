@@ -20,6 +20,7 @@ class BumbleSwipeWidget extends StatefulWidget {
   final VoidCallback onSwipeLeft;
   final VoidCallback onSwipeRight;
   final VoidCallback onSwipePrev;
+  final bool Function()? canSwipeRight;
   final BumbleSwipeController? controller;
 
   const BumbleSwipeWidget({
@@ -29,6 +30,7 @@ class BumbleSwipeWidget extends StatefulWidget {
     required this.onSwipeLeft,
     required this.onSwipeRight,
     required this.onSwipePrev,
+    this.canSwipeRight,
     this.controller,
   });
 
@@ -138,6 +140,11 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
     final double swipeThreshold = width * 0.35;
 
     if (_dragX > swipeThreshold || velocity > velocityThreshold) {
+      if (widget.canSwipeRight != null && !widget.canSwipeRight!()) {
+        _animateSnapBack();
+        widget.onSwipeRight();
+        return;
+      }
       _animateSwipe(true);
     } else if (_dragX < -swipeThreshold || velocity < -velocityThreshold) {
       _animateSwipe(false);
@@ -283,7 +290,82 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
                 alignment: Alignment.center,
                 child: Stack(
                   fit: StackFit.expand,
-                  children: [widget.currentWidget],
+                  children: [
+                    widget.currentWidget,
+                    // BACKTRACK overlay hint when dragging right
+                    if (_dragX > 30)
+                      Positioned(
+                        top: 50,
+                        left: 20,
+                        child: Transform.rotate(
+                          angle: -0.2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFFB703), width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFFB703).withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.replay_rounded, color: Color(0xFFFFB703), size: 18),
+                                SizedBox(width: 6),
+                                Text(
+                                  'BACKTRACK',
+                                  style: TextStyle(
+                                    color: Color(0xFFFFB703),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    // NOPE overlay hint when dragging left
+                    if (_dragX < -30)
+                      Positioned(
+                        top: 50,
+                        right: 20,
+                        child: Transform.rotate(
+                          angle: 0.2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFF3366), width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFF3366).withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const Text(
+                              'NOPE',
+                              style: TextStyle(
+                                color: Color(0xFFFF3366),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),

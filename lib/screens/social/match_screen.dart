@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../widgets/match_card.dart';
-import 'match_settings_screen.dart';
 import 'matched_profiles_screen.dart';
 import 'people_who_liked_you_screen.dart';
 import '../../models/user.dart';
@@ -9,9 +8,13 @@ import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../profile/vip_membership_screen.dart';
+import '../profile/profile_screen.dart';
+import 'chat_screen.dart';
 
 class MatchScreen extends StatefulWidget {
-  const MatchScreen({super.key});
+  final bool isMatchesOnly;
+
+  const MatchScreen({super.key, this.isMatchesOnly = false});
 
   @override
   State<MatchScreen> createState() => _MatchScreenState();
@@ -25,6 +28,8 @@ class _MatchScreenState extends State<MatchScreen>
   final List<Map<String, dynamic>> _matchedProfiles = [];
   final List<Map<String, dynamic>> _swipedHistory = [];
   bool _isLoading = true;
+  String _selectedView = 'DISCOVER'; // 'DISCOVER' | 'MATCHES'
+  int _matchedDeckIndex = 0;
   String _swipeAction = 'like';
   int _whoLikedCount = 0;
   int _whoLikedSuperCount = 0;
@@ -38,9 +43,13 @@ class _MatchScreenState extends State<MatchScreen>
   late AnimationController _swipeAnimController;
   bool _isAnimating = false;
 
+  List<Map<String, dynamic>> get _currentDeck =>
+      _selectedView == 'MATCHES' ? _matchedProfiles : _profiles;
+
   @override
   void initState() {
     super.initState();
+    _selectedView = widget.isMatchesOnly ? 'MATCHES' : 'DISCOVER';
     _swipeAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -51,6 +60,38 @@ class _MatchScreenState extends State<MatchScreen>
       }
     });
     _loadData();
+  }
+
+  User _mapToUser(Map<String, dynamic> profile) {
+    final rawInterests = profile['interests'];
+    List<String> parsedInterests = [];
+    if (rawInterests is List) {
+      parsedInterests = rawInterests.map((e) => e.toString()).toList();
+    }
+
+    final rawName = profile['name']?.toString() ?? profile['fullName']?.toString() ?? 'LUNARA MEMBER';
+    final parts = rawName.split(' ');
+    final firstName = profile['firstName']?.toString() ?? (parts.isNotEmpty ? parts.first : 'User');
+    final lastName = profile['lastName']?.toString() ?? (parts.length > 1 ? parts.sublist(1).join(' ') : '');
+    final photo = profile['image']?.toString() ?? profile['profilePhoto']?.toString() ?? profile['profileImageUrl']?.toString();
+
+    return User(
+      id: (profile['id'] ?? profile['_id'] ?? '').toString(),
+      firstName: firstName,
+      lastName: lastName,
+      email: profile['email']?.toString() ?? '',
+      phone: profile['phone']?.toString() ?? '',
+      profilePhoto: photo,
+      photos: photo != null ? [photo] : [],
+      city: profile['city']?.toString() ?? '',
+      occupation: profile['occupation']?.toString() ?? profile['vibe']?.toString(),
+      bio: profile['bio']?.toString() ?? '',
+      interests: parsedInterests,
+      isVerified: profile['verified'] == true || profile['isVerified'] == true,
+      age: profile['age'] is int ? profile['age'] as int : int.tryParse(profile['age']?.toString() ?? '') ?? 25,
+      isLiked: profile['isLiked'] == true,
+      isSuperLiked: profile['isSuperLiked'] == true,
+    );
   }
 
   Future<void> _loadData() async {
@@ -206,7 +247,10 @@ class _MatchScreenState extends State<MatchScreen>
           };
 
           if (isMatched) {
-            if (!resolvedMatched.any((p) => p['id'] == u.id)) {
+            final existingIdx = resolvedMatched.indexWhere((p) => p['id'] == u.id);
+            if (existingIdx >= 0) {
+              resolvedMatched[existingIdx] = profileMap;
+            } else {
               resolvedMatched.add(profileMap);
             }
           } else if (isSuperLiked) {
@@ -409,20 +453,17 @@ class _MatchScreenState extends State<MatchScreen>
           }
         }
 
-        // Sync actual quota counts from the server after every swipe
-        // (background, no await — keeps UI snappy while keeping badges accurate)
         SubscriptionProvider.instance.refresh();
       }
     });
   }
-
 
   void _swipeCard(bool liked, {String? customAction}) {
     if (_profiles.isEmpty || _isAnimating) return;
 
     final action = customAction ?? (liked ? _swipeAction : 'nope');
 
-    // ── Instant O(1) in-memory quota guard ──
+    // Instant O(1) in-memory quota guard
     if (action == 'like') {
       final validation = SubscriptionProvider.instance.validateAction(VipAction.like);
       if (!validation.allowed) {
@@ -499,7 +540,6 @@ class _MatchScreenState extends State<MatchScreen>
     final restored = _swipedHistory.removeLast();
     final targetUserId = (restored['id'] ?? restored['_id'])?.toString() ?? '';
 
-    // Optimistically restore to UI and reset swipe status
     setState(() {
       _likedProfiles.removeWhere((p) => (p['id'] ?? p['_id'])?.toString() == targetUserId);
       _superLikedProfiles.removeWhere((p) => (p['id'] ?? p['_id'])?.toString() == targetUserId);
@@ -609,6 +649,9 @@ class _MatchScreenState extends State<MatchScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isMatches = _selectedView == 'MATCHES';
+    final deck = _currentDeck;
+
     return Scaffold(
       body: Container(
         padding: const EdgeInsets.only(top: 60, bottom: 120),
@@ -619,8 +662,10 @@ class _MatchScreenState extends State<MatchScreen>
             // Match stats & Who Liked Teaser
             _buildMatchStats(),
             const SizedBox(height: 10),
-            _buildDailyLikesQuota(),
-            const SizedBox(height: 8),
+            if (!isMatches) ...[
+              _buildDailyLikesQuota(),
+              const SizedBox(height: 8),
+            ],
             Expanded(
               child: _isLoading
                   ? const Center(
@@ -628,11 +673,11 @@ class _MatchScreenState extends State<MatchScreen>
                         color: LunaraTheme.accentVivid,
                       ),
                     )
-                  : _profiles.isEmpty
-                  ? _buildEmptyState()
-                  : _buildSwipeableCards(),
+                  : deck.isEmpty
+                      ? _buildEmptyState()
+                      : _buildSwipeableCards(),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             _buildActionButtons(),
           ],
         ),
@@ -838,15 +883,13 @@ class _MatchScreenState extends State<MatchScreen>
           _statChip(
             icon: Icons.bolt,
             label: '${_matchedProfiles.length} Matches',
-            color: LunaraTheme.accentVivid,
+            color: const Color(0xFF9333EA),
+            isSelected: _selectedView == 'MATCHES',
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      MatchedProfilesScreen(matchedProfiles: _matchedProfiles),
-                ),
-              );
+              setState(() {
+                _selectedView = 'MATCHES';
+                _matchedDeckIndex = 0;
+              });
             },
           ),
         ],
@@ -858,6 +901,7 @@ class _MatchScreenState extends State<MatchScreen>
     required IconData icon,
     required String label,
     required Color color,
+    bool isSelected = false,
     VoidCallback? onTap,
   }) {
     return GestureDetector(
@@ -865,9 +909,14 @@ class _MatchScreenState extends State<MatchScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
+          color: isSelected
+              ? color.withValues(alpha: 0.3)
+              : color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: isSelected ? color : color.withValues(alpha: 0.3),
+            width: isSelected ? 1.5 : 1,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -889,6 +938,114 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Widget _buildSwipeableCards() {
+    final isMatches = _selectedView == 'MATCHES';
+
+    if (isMatches) {
+      final total = _matchedProfiles.length;
+      if (total == 0) return _buildEmptyState();
+
+      final activeIndex = _matchedDeckIndex.clamp(0, total - 1);
+      final currentMatched = _matchedProfiles[activeIndex];
+      final nextMatched = total > 1 ? _matchedProfiles[(activeIndex + 1) % total] : null;
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (nextMatched != null)
+              Positioned.fill(
+                child: Transform.scale(
+                  scale: 0.95,
+                  child: Transform.translate(
+                    offset: const Offset(0, 10),
+                    child: Opacity(
+                      opacity: 0.6,
+                      child: MatchCard(profile: nextMatched),
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () {
+                  final userObj = _mapToUser(currentMatched);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProfileScreen(user: userObj),
+                    ),
+                  );
+                },
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity != null && total > 1) {
+                    if (details.primaryVelocity! < -100) {
+                      // Swipe Left -> Next Match
+                      setState(() {
+                        _matchedDeckIndex = (_matchedDeckIndex + 1) % total;
+                      });
+                    } else if (details.primaryVelocity! > 100) {
+                      // Swipe Right -> Prev Match
+                      setState(() {
+                        _matchedDeckIndex = (_matchedDeckIndex - 1 + total) % total;
+                      });
+                    }
+                  }
+                },
+                child: Stack(
+                  children: [
+                    MatchCard(profile: currentMatched),
+                    // Mutual match neon badge in top corner
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF7C3AED).withValues(alpha: 0.6),
+                              blurRadius: 12,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bolt, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'MUTUAL MATCH',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Discover Mode Stack
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Stack(
@@ -922,10 +1079,19 @@ class _MatchScreenState extends State<MatchScreen>
               ),
             ),
 
-          // Top card (swipeable)
+          // Top card (swipeable & clickable to view profile)
           if (_profiles.isNotEmpty)
             Positioned.fill(
               child: GestureDetector(
+                onTap: () {
+                  final userObj = _mapToUser(_profiles.first);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProfileScreen(user: userObj),
+                    ),
+                  );
+                },
                 onPanStart: (_) {
                   setState(() => _isDragging = true);
                 },
@@ -1035,22 +1201,135 @@ class _MatchScreenState extends State<MatchScreen>
   }
 
   Widget _buildEmptyState() {
+    final isMatches = _selectedView == 'MATCHES';
+
+    if (isMatches) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C3AED).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  color: Color(0xFF9333EA),
+                  size: 56,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No Mutual Matches Yet',
+                style: LunaraTheme.headingStyle.copyWith(fontSize: 20),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'When you and another member both like each other, they will appear right here with full profile access and direct chat!',
+                textAlign: TextAlign.center,
+                style: LunaraTheme.bodyStyle.copyWith(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: () {
+                  setState(() => _selectedView = 'DISCOVER');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF7C3AED).withValues(alpha: 0.5),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.explore_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'DISCOVER PROFILES',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, color: Colors.white24, size: 80),
+          const Icon(Icons.search_off, color: Colors.white24, size: 80),
           const SizedBox(height: 16),
           Text(
             'No more profiles nearby',
             style: LunaraTheme.headingStyle.copyWith(fontSize: 18),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Loading more...',
-            style: LunaraTheme.bodyStyle.copyWith(
-              color: LunaraTheme.accentVivid,
-              fontSize: 12,
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _loadData,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color: LunaraTheme.accentVivid.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: LunaraTheme.accentVivid.withValues(alpha: 0.5)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.refresh, color: LunaraTheme.accentVivid, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Refresh Feed',
+                    style: TextStyle(
+                      color: LunaraTheme.accentVivid,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1060,6 +1339,8 @@ class _MatchScreenState extends State<MatchScreen>
 
   Widget _buildHeader() {
     final canPop = Navigator.canPop(context);
+    final isMatches = _selectedView == 'MATCHES';
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
@@ -1085,34 +1366,95 @@ class _MatchScreenState extends State<MatchScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'DISCOVER',
+                    isMatches ? 'CONNECTED' : 'DISCOVER',
                     style: LunaraTheme.bodyStyle.copyWith(
-                      fontSize: 12,
+                      fontSize: 11,
                       letterSpacing: 2,
+                      fontWeight: FontWeight.w700,
+                      color: isMatches ? const Color(0xFF9333EA) : LunaraTheme.accentVivid,
                     ),
                   ),
                   Text(
-                    'NIGHT MATCH',
-                    style: LunaraTheme.headingStyle.copyWith(fontSize: 22),
+                    isMatches ? 'YOUR MATCHES' : 'NIGHT MATCH',
+                    style: LunaraTheme.headingStyle.copyWith(fontSize: 20),
                   ),
                 ],
               ),
             ],
           ),
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const MatchSettingsScreen(),
-              ),
+          // View Switcher (Discover vs Matches)
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
             ),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.tune, color: LunaraTheme.accentVivid),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() => _selectedView = 'DISCOVER'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: !isMatches ? LunaraTheme.accentVivid.withValues(alpha: 0.25) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      border: !isMatches ? Border.all(color: LunaraTheme.accentVivid) : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.local_fire_department_rounded,
+                          size: 14,
+                          color: !isMatches ? LunaraTheme.accentVivid : Colors.white54,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'DISCOVER',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: !isMatches ? Colors.white : Colors.white54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _selectedView = 'MATCHES';
+                    _matchedDeckIndex = 0;
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isMatches ? const Color(0xFF7C3AED).withValues(alpha: 0.35) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      border: isMatches ? Border.all(color: const Color(0xFF9333EA)) : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.favorite_rounded,
+                          size: 14,
+                          color: isMatches ? const Color(0xFF9333EA) : Colors.white54,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'MATCHES (${_matchedProfiles.length})',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: isMatches ? Colors.white : Colors.white54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1120,7 +1462,173 @@ class _MatchScreenState extends State<MatchScreen>
     );
   }
 
+  Widget _buildMatchedProfileActions(Map<String, dynamic> profile) {
+    final hasMultiple = _matchedProfiles.length > 1;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              if (hasMultiple) ...[
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_matchedDeckIndex > 0) {
+                        _matchedDeckIndex--;
+                      } else {
+                        _matchedDeckIndex = _matchedProfiles.length - 1;
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              // 💜 VIEW PROFILE (Primary Purple Button of the Application Theme)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    final userObj = _mapToUser(profile);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(user: userObj),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.55),
+                          blurRadius: 18,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person_rounded, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'VIEW PROFILE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // 💬 CHAT Button
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(user: profile),
+                    ),
+                  );
+                },
+                child: Container(
+                  height: 54,
+                  width: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: LunaraTheme.accentVivid,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: LunaraTheme.accentVivid.withValues(alpha: 0.4),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.chat_bubble_rounded, color: LunaraTheme.accentVivid, size: 22),
+                  ),
+                ),
+              ),
+              if (hasMultiple) ...[
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_matchedDeckIndex < _matchedProfiles.length - 1) {
+                        _matchedDeckIndex++;
+                      } else {
+                        _matchedDeckIndex = 0;
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (hasMultiple) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Match ${_matchedDeckIndex + 1} of ${_matchedProfiles.length} • Tap button or card to view profile',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildActionButtons() {
+    if (_selectedView == 'MATCHES') {
+      if (_matchedProfiles.isEmpty) return const SizedBox.shrink();
+      final currentMatched = _matchedProfiles[_matchedDeckIndex.clamp(0, _matchedProfiles.length - 1)];
+      return _buildMatchedProfileActions(currentMatched);
+    }
+
     return AnimatedBuilder(
       animation: SubscriptionProvider.instance,
       builder: (context, _) {

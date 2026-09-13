@@ -503,7 +503,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
             'MATCHES',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const MatchScreen()),
+              MaterialPageRoute(builder: (_) => const MatchScreen(isMatchesOnly: true)),
             ).then((_) => _loadProfile()),
           ),
           _buildVerticalDivider(),

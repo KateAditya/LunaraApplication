@@ -541,22 +541,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // Called by BumbleSwipeWidget when physical card swipe completes
-  void _handleSwipe(bool liked) {
+  void _handleSwipe(bool isRightSwipe) {
     if (_displayUser == null) return;
     final targetUser = _displayUser!;
 
-    if (liked) {
-      // Swiped right from gesture — navigate to next profile without auto-liking
-      final targetId = targetUser.id;
-      setState(() {
-        _swipedActions[targetId] = 'passed';
-        _swipeHistory.add(targetUser);
-        _swipeDirections.add(true);
-        _allProfiles.removeWhere((u) => u.id == targetUser.id);
-      });
-      _showNextProfile();
+    if (isRightSwipe) {
+      // Swiping left-to-right -> BACKTRACK to previous profile (like Tinder/Bumble)
+      _undoLastSwipe();
     } else {
-      // Card swiped left → Nope: go next
+      // Swiping right-to-left -> Next profile (Nope)
       final targetId = targetUser.id;
       setState(() {
         _swipedActions[targetId] = 'noped';
@@ -687,49 +680,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-
-
-
-
   void _showBacktrackUpgradePrompt() {
     if (!mounted) return;
-    showSubscriptionLimitDialog(context, feature: SubLimitFeature.backtrack).then((_) {
+    showSubscriptionLimitDialog(
+      context,
+      feature: SubLimitFeature.backtrack,
+      customMessage: 'You have reached your backtrack limit. Upgrade to VIP or get a Backtrack add-on to rewind profiles anytime!',
+    ).then((_) {
       _loadPlanLimits();
     });
   }
 
   void _undoLastSwipe() {
-    if (_swipeHistory.isEmpty) return;
+    if (_swipeHistory.isEmpty) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No previous profile to backtrack to'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     final subProvider = SubscriptionProvider.instance;
-    final canBacktrack = subProvider.canBacktrack || _dailyBacktracksRemaining > 0 || _dailyBacktracksLimit == 999999;
-    if (!canBacktrack) {
+    final validation = subProvider.validateAction(VipAction.backtrack);
+    if (!validation.allowed) {
       _showBacktrackUpgradePrompt();
       return;
     }
 
     final prevUser = _swipeHistory.last;
 
+    // Optimistically consume backtrack entitlement (from plan or add-on)
+    subProvider.optimisticConsume(VipAction.backtrack);
+
     ApiService.backtrackSwipe(prevUser.id).then((res) {
       if (res != null && res['limitReached'] == true) {
+        subProvider.rollbackConsume(VipAction.backtrack);
         _showBacktrackUpgradePrompt();
         return;
       }
 
       if (mounted) {
         setState(() {
-          if (_dailyBacktracksLimit != 999999) {
-            _dailyBacktracksRemaining = res?['remaining'] ?? (_dailyBacktracksRemaining - 1);
-            _dailyBacktracksUsed = res?['used'] ?? (_dailyBacktracksUsed + 1);
-          }
-
           _swipeHistory.removeLast();
-          _swipeDirections.removeLast();
+          if (_swipeDirections.isNotEmpty) _swipeDirections.removeLast();
           _backtrackedUser = prevUser;
           _swipedActions.remove(prevUser.id);
           if (!_allProfiles.any((u) => u.id == prevUser.id)) {
             _allProfiles.insert(0, prevUser);
           }
+          _displayUser = prevUser;
+          _currentProfileIndex = _allProfiles.indexWhere((u) => u.id == prevUser.id);
+          if (_currentProfileIndex == -1) _currentProfileIndex = 0;
           _outOfProfiles = false;
         });
 
@@ -962,6 +967,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           controller: _swipeController,
           currentWidget: currentProfileWidget,
           nextWidget: nextProfileWidget,
+          canSwipeRight: () => _swipeHistory.isNotEmpty && SubscriptionProvider.instance.canBacktrack,
           onSwipeLeft: () => _handleSwipe(false),
           onSwipeRight: () => _handleSwipe(true),
           onSwipePrev: _handleBacktrackComplete,
