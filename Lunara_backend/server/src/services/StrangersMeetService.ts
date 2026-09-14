@@ -1395,18 +1395,77 @@ export class StrangersMeetService {
             upiNumber: request.upiNumber || null,
         };
 
+        const hasFinancialObligations = totalMembersCount > 0 || hostDepositAmount > 0;
+        const initialStatus = hasFinancialObligations
+            ? HostCancellationStatus.PENDING_ADMIN_REVIEW
+            : HostCancellationStatus.COMPLETED;
+
         const cancellation = await StrangersMeetHostCancellationRequest.create({
             meetId,
             hostUserId,
             reason: reason.trim(),
             reasonText: reasonText?.trim() || null,
-            status: HostCancellationStatus.PENDING_ADMIN_REVIEW,
+            status: initialStatus,
             totalCollectedAmount,
             totalMembersCount,
             hostDepositAmount,
             hostPayoutDetails,
             hostRefundStatus: HostRefundStatus.NONE,
+            adminReviewedAt: hasFinancialObligations ? undefined : new Date(),
         });
+
+        if (!hasFinancialObligations) {
+            // Immediately cancel the meet since no members paid and no host deposit to settle
+            request.status = StrangersMeetStatus.CANCELLED;
+            await request.save();
+
+            // Invalidate tickets if any exist
+            try {
+                const Ticket = (await import('../models/Ticket')).default;
+                const { TicketStatus } = await import('../models/Ticket');
+                await Ticket.update(
+                    { ticketStatus: TicketStatus.CANCELLED, cancelledAt: new Date() },
+                    {
+                        where: {
+                            bookingType: 'strangers_meet',
+                            [Op.or]: [
+                                { bookingId: meetId },
+                            ],
+                        },
+                    }
+                );
+            } catch (ticketErr: any) {
+                logger.warn('[StrangersMeetService] Ticket invalidation warning: ' + ticketErr.message);
+            }
+
+            // Realtime updates
+            try {
+                const { io } = require('../server');
+                if (io) {
+                    io.to(`meet_${meetId}`).emit('strangers_meet_status_update', {
+                        meetId,
+                        status: StrangersMeetStatus.CANCELLED,
+                        reason,
+                        reasonText,
+                        cancelledBy: 'host',
+                        hostName,
+                    });
+                    io.to('live_feed').emit('live_feed_update', {
+                        type: 'strangers_meet_cancelled',
+                        meetId,
+                        status: 'cancelled',
+                        title: request.subject,
+                        hostUserId,
+                        timestamp: new Date().toISOString(),
+                    });
+                }
+            } catch (sockErr) {}
+
+            return {
+                cancellation,
+                message: 'Stranger Meet cancelled successfully.',
+            };
+        }
 
         // Notify Admins (Consolidated notification per Section 5)
         try {

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
-import '../../widgets/glass_card.dart';
-import 'chat_screen.dart';
-import '../../widgets/profile_share_sheet.dart';
+import '../../models/user.dart';
+import '../../services/api_service.dart';
 import '../../widgets/lunara_cached_image.dart';
+import '../profile/profile_screen.dart';
 
-/// Screen showing matched or liked profiles. Accessible by tapping match/like count.
+/// Screen showing matched, liked, or super-liked profiles. Accessible by tapping match/like stats.
 class MatchedProfilesScreen extends StatelessWidget {
   final List<Map<String, dynamic>> matchedProfiles;
   final String title;
@@ -18,536 +18,403 @@ class MatchedProfilesScreen extends StatelessWidget {
     this.subtitle = 'people matched with you',
   });
 
+  static User mapToUser(Map<String, dynamic> profile) {
+    final rawInterests = profile['interests'];
+    List<String> parsedInterests = [];
+    if (rawInterests is List) {
+      parsedInterests = rawInterests.map((e) => e.toString()).toList();
+    }
+
+    final rawName = profile['name']?.toString() ??
+        profile['fullName']?.toString() ??
+        'LUNARA MEMBER';
+    final parts = rawName.split(' ');
+    final firstName = profile['firstName']?.toString() ??
+        (parts.isNotEmpty ? parts.first : 'User');
+    final lastName = profile['lastName']?.toString() ??
+        (parts.length > 1 ? parts.sublist(1).join(' ') : '');
+    final rawPhoto = profile['image']?.toString() ??
+        profile['profilePhoto']?.toString() ??
+        profile['profileImageUrl']?.toString();
+    final photo = rawPhoto != null && rawPhoto.isNotEmpty
+        ? ApiService.formatImageUrl(rawPhoto)
+        : null;
+
+    return User(
+      id: (profile['id'] ?? profile['_id'] ?? '').toString(),
+      firstName: firstName,
+      lastName: lastName,
+      email: profile['email']?.toString() ?? '',
+      phone: profile['phone']?.toString() ?? '',
+      profilePhoto: photo,
+      photos: photo != null ? [photo] : [],
+      city: profile['city']?.toString() ?? profile['distance']?.toString() ?? '',
+      occupation: profile['occupation']?.toString() ?? profile['vibe']?.toString(),
+      bio: profile['bio']?.toString() ?? '',
+      interests: parsedInterests,
+      isVerified: profile['verified'] == true || profile['isVerified'] == true,
+      age: profile['age'] is int
+          ? profile['age'] as int
+          : int.tryParse(profile['age']?.toString() ?? '') ?? 25,
+      isLiked: profile['isLiked'] == true,
+      isSuperLiked: profile['isSuperLiked'] == true,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.05),
-                          shape: BoxShape.circle,
-                        ),
+      backgroundColor: const Color(0xFFF8F9FE),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Responsive Light Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Center(
                         child: Icon(
-                          Icons.arrow_back_ios_new,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          size: 18,
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Color(0xFF0F172A),
+                          size: 16,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Column(
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           title,
-                          style: LunaraTheme.headingStyle.copyWith(
-                            fontSize: 22,
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.3,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           '${matchedProfiles.length} $subtitle',
-                          style: LunaraTheme.bodyStyle.copyWith(
+                          style: const TextStyle(
                             fontSize: 12,
-                            color: LunaraTheme.accentVivid,
+                            color: LunaraTheme.electricViolet,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-
-              // Matches Grid
-              Expanded(
-                child: matchedProfiles.isEmpty
-                    ? _buildEmptyState(context)
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: matchedProfiles.length,
-                        itemBuilder: (context, index) {
-                          return _buildMatchTile(
-                            context,
-                            matchedProfiles[index],
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.favorite_border,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.24),
-            size: 64,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No matches yet',
-            style: LunaraTheme.headingStyle.copyWith(fontSize: 18),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Keep swiping to find your match!',
-            style: LunaraTheme.bodyStyle.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.54),
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMatchTile(BuildContext context, Map<String, dynamic> profile) {
-    final matchChance =
-        ((profile['matchChance'] as num?)?.toDouble() ?? 0.5) * 100;
-
-    return GestureDetector(
-      onTap: () {
-        // Navigate to profile detail
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => _MatchedProfileDetailScreen(profile: profile),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(
-            context,
-          ).colorScheme.onSurface.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-          ),
-        ),
-        child: Row(
-          children: [
-            // Avatar
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: LunaraTheme.accentVivid.withValues(alpha: 0.5),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: LunaraTheme.accentVivid.withValues(alpha: 0.15),
-                    blurRadius: 10,
                   ),
                 ],
               ),
-              child: CircleAvatar(
-                radius: 30,
-                backgroundImage: profile['isAsset'] == true
-                    ? AssetImage(profile['image'] ?? '') as ImageProvider
-                    : NetworkImage(profile['image'] ?? ''),
-              ),
             ),
-            const SizedBox(width: 14),
-            // Info
+
+            // Matches List
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        profile['name'] ?? 'Unknown',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurface,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
+              child: matchedProfiles.isEmpty
+                  ? _buildEmptyState(context)
+                  : ListView.builder(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                      if (LunaraTheme.getPlanBadgeColor(profile) != null) ...[
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.verified,
-                          color: LunaraTheme.getPlanBadgeColor(profile),
-                          size: 16,
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    profile['vibe'] ?? '',
-                    style: TextStyle(
-                      color: LunaraTheme.accentVivid.withValues(alpha: 0.7),
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.bold,
+                      itemCount: matchedProfiles.length,
+                      itemBuilder: (context, index) {
+                        return _buildMatchTile(
+                          context,
+                          matchedProfiles[index],
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    profile['distance'] ?? '',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            // Match percentage
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: matchChance >= 70
-                    ? Color(0xFF10B981).withValues(alpha: 0.15)
-                    : matchChance >= 40
-                    ? Color(0xFFFFD700).withValues(alpha: 0.15)
-                    : Color(0xFFFF6B6B).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: matchChance >= 70
-                      ? Color(0xFF10B981).withValues(alpha: 0.3)
-                      : matchChance >= 40
-                      ? Color(0xFFFFD700).withValues(alpha: 0.3)
-                      : Color(0xFFFF6B6B).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Text(
-                '${matchChance.toInt()}%',
-                style: TextStyle(
-                  color: matchChance >= 70
-                      ? const Color(0xFF10B981)
-                      : matchChance >= 40
-                      ? const Color(0xFFFFD700)
-                      : const Color(0xFFFF6B6B),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.arrow_forward_ios,
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurface.withValues(alpha: 0.24),
-              size: 14,
             ),
           ],
         ),
       ),
     );
   }
-}
 
-/// Full-screen profile detail for a matched user.
-class _MatchedProfileDetailScreen extends StatelessWidget {
-  final Map<String, dynamic> profile;
+  Widget _buildEmptyState(BuildContext context) {
+    final isSuper = title.contains('SUPER');
+    final isLiked = title.contains('LIKED');
 
-  const _MatchedProfileDetailScreen({required this.profile});
-
-  @override
-  Widget build(BuildContext context) {
-    final matchChance =
-        ((profile['matchChance'] as num?)?.toDouble() ?? 0.5) * 100;
-
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Full-screen profile image
-          Positioned.fill(
-            child: profile['isAsset'] == true
-                ? Image.asset(
-                    profile['image'] ?? '',
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
-                      color: Colors.grey[900],
-                      child: const Center(
-                        child: Icon(
-                          Icons.person,
-                          color: Colors.white54,
-                          size: 64,
-                        ),
-                      ),
-                    ),
-                  )
-                : LunaraCachedImage(profile['image'] ?? '', fit: BoxFit.cover),
-          ),
-
-          // Gradient overlay
-          Positioned.fill(
-            child: Container(
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0.0, 0.4, 1.0],
-                  colors: [
-                    Colors.black.withValues(alpha: 0.4),
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.95),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Back button
-          Positioned(
-            top: 50,
-            left: 20,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.4),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.arrow_back_ios_new,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-            ),
-          ),
-
-          // Match badge (top-right)
-          Positioned(
-            top: 50,
-            right: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: matchChance >= 70
-                      ? [const Color(0xFF10B981), const Color(0xFF059669)]
-                      : [const Color(0xFFFFD700), const Color(0xFFFF8C00)],
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.favorite, color: Colors.white, size: 14),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${matchChance.toInt()}% MATCH',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
+                color: (isSuper
+                        ? const Color(0xFFFEF3C7)
+                        : isLiked
+                            ? const Color(0xFFFCE7F3)
+                            : const Color(0xFFEDE9FE)),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
-            ),
-          ),
-
-          // Profile Info at bottom
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Name & Age
-                  Row(
-                    children: [
-                      Text(
-                        '${profile['name']}, ${profile['age']}',
-                        style: LunaraTheme.headingStyle.copyWith(fontSize: 32),
-                      ),
-                      if (LunaraTheme.getPlanBadgeColor(profile) != null) ...[
-                        const SizedBox(width: 10),
-                        Icon(
-                          Icons.verified,
-                          color: LunaraTheme.getPlanBadgeColor(profile),
-                          size: 28,
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Vibe
-                  Text(
-                    profile['vibe'] ?? '',
-                    style: LunaraTheme.bodyStyle.copyWith(
-                      color: LunaraTheme.accentVivid,
-                      letterSpacing: 2,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Distance
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.white54,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        profile['distance'] ?? '',
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Interests
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: (profile['interests'] as List<String>? ?? [])
-                        .map(
-                          (interest) => GlassCard(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            opacity: 0.2,
-                            child: Text(
-                              interest,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Action buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _actionBtn(
-                        icon: Icons.chat_bubble_outline,
-                        label: 'MESSAGE',
-                        color: LunaraTheme.accentVivid,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ChatScreen(
-                                user: {
-                                  'name': profile['name'] ?? 'User',
-                                  'image': profile['image'] ?? '',
-                                  'isAsset': profile['isAsset'] ?? false,
-                                  'online': true,
-                                },
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      _actionBtn(
-                        icon: Icons.person_add_alt_1,
-                        label: 'ADD FRIEND',
-                        color: LunaraTheme.primaryRich,
-                        onTap: () {},
-                      ),
-                      _actionBtn(
-                        icon: Icons.share,
-                        label: 'SHARE',
-                        color: LunaraTheme.primaryDeep,
-                        onTap: () {
-                          ProfileShareSheet.show(
-                            context,
-                            profileId: profile['id']?.toString() ?? '',
-                            name: profile['name'] ?? 'User',
-                            age: profile['age']?.toString(),
-                            city: profile['city'] ?? profile['distance'],
-                            profilePhotoUrl: profile['image'],
-                            isAsset: profile['isAsset'] == true,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
+              child: Icon(
+                isSuper
+                    ? Icons.star_rounded
+                    : isLiked
+                        ? Icons.favorite_rounded
+                        : Icons.bolt_rounded,
+                color: isSuper
+                    ? const Color(0xFFD97706)
+                    : isLiked
+                        ? const Color(0xFFE100FF)
+                        : const Color(0xFF7F00FF),
+                size: 52,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            Text(
+              isSuper
+                  ? 'No Super Liked Profiles Yet'
+                  : isLiked
+                      ? 'No Liked Profiles Yet'
+                      : 'No Matches Yet',
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isSuper
+                  ? 'Send a Super Like to standout and get noticed instantly!'
+                  : isLiked
+                      ? 'Profiles you like will appear here for easy viewing.'
+                      : 'When you and another member like each other, they will appear here!',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _actionBtn({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildMatchTile(BuildContext context, Map<String, dynamic> profile) {
+    final isSuper = profile['isSuperLiked'] == true || title.contains('SUPER');
+    final isMatch = profile['isMatched'] == true;
+    final userObj = mapToUser(profile);
+
     return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.3)),
-            ),
-            child: Icon(icon, color: color, size: 22),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProfileScreen(user: userObj),
           ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1,
-            ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSuper
+                ? const Color(0xFFFDE68A)
+                : isMatch
+                    ? const Color(0xFFDDD6FE)
+                    : const Color(0xFFE2E8F0),
+            width: isSuper || isMatch ? 1.5 : 1,
           ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Avatar with Gradient Ring
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: isSuper
+                      ? [const Color(0xFFFFD700), const Color(0xFFFF8C00)]
+                      : isMatch
+                          ? [const Color(0xFF7C3AED), const Color(0xFF9333EA)]
+                          : [LunaraTheme.electricViolet, LunaraTheme.hotPink],
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: SizedBox(
+                  width: 54,
+                  height: 54,
+                  child: profile['isAsset'] == true
+                      ? Image.asset(
+                          profile['image'] ?? 'assets/images/placeholder.jpg',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: const Color(0xFFF1F5F9),
+                            child: const Icon(Icons.person, color: Color(0xFF94A3B8), size: 28),
+                          ),
+                        )
+                      : LunaraCachedImage(
+                          profile['image'] ?? 'https://picsum.photos/400/600',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: const Color(0xFFF1F5F9),
+                            child: const Icon(Icons.person, color: Color(0xFF94A3B8), size: 28),
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+
+            // Info Section
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          profile['name'] ?? 'Lunara Member',
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (LunaraTheme.getPlanBadgeColor(profile) != null) ...[
+                        const SizedBox(width: 5),
+                        Icon(
+                          Icons.verified,
+                          color: LunaraTheme.getPlanBadgeColor(profile),
+                          size: 15,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    profile['vibe'] ?? profile['occupation'] ?? 'NIGHT OWL',
+                    style: TextStyle(
+                      color: isSuper
+                          ? const Color(0xFFD97706)
+                          : LunaraTheme.electricViolet,
+                      fontSize: 11,
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    profile['distance'] ?? profile['city'] ?? 'Nearby',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // View Profile Button
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfileScreen(user: userObj),
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7F00FF), Color(0xFF9333EA)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7F00FF).withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person, color: Colors.white, size: 14),
+                    SizedBox(width: 4),
+                    Text(
+                      'VIEW',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

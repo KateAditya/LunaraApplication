@@ -375,6 +375,26 @@ router.get(
     getJoinerCancellationStatus
 );
 
+router.get(
+    '/:id/joiner-cancel-request',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    getJoinerCancellationStatus
+);
+
+router.get(
+    '/:id/host-cancel-request',
+    [
+        authenticate,
+        param('id').isUUID().withMessage('id must be a valid UUID'),
+        validate,
+    ],
+    getJoinerCancellationStatus
+);
+
 // POST /api/mobile/strangers-meet/:id/host-cancel-request
 // Host submits cancellation request for Admin review
 router.post(
@@ -390,3 +410,4 @@ router.post(
 );
 
 export default router;
+

@@ -3,6 +3,9 @@ import User from '../models/User';
 import { UserProfile, UserPreference, UserPhoto } from '../models';
 import sequelize from '../config/database';
 import { logger } from '../config/logger';
+import { SubscriptionService } from '../services/subscriptionService';
+import { RealtimeEventBroker } from '../services/RealtimeEventBroker';
+import apiCache from '../utils/apiCache';
 
 export const updateProfile = async (req: Request, res: Response): Promise<Response> => {
     const transaction = await sequelize.transaction();
@@ -20,6 +23,20 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
             if (existingPhone && existingPhone.id !== userId) {
                 await transaction.rollback();
                 return res.status(400).json({ success: false, message: 'Phone number is already in use' });
+            }
+        }
+
+        // Check Hide Profile Entitlement if user is requesting to hide their profile
+        const wantsToHide = data.invisibleMode === true || data.showMeInMatching === false;
+        if (wantsToHide) {
+            const canHide = await SubscriptionService.hasAccess(userId, 'hide_profile');
+            if (!canHide) {
+                await transaction.rollback();
+                return res.status(403).json({
+                    success: false,
+                    code: 'UPGRADE_REQUIRED',
+                    message: 'Hiding your profile from matching requires a PLUS, PRO, or ELITE subscription tier.'
+                });
             }
         }
 
@@ -73,6 +90,10 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
             }
         }
 
+        const newShowMeInMatching = data.invisibleMode !== undefined
+            ? !data.invisibleMode
+            : (data.showMeInMatching !== undefined ? data.showMeInMatching : preference.showMeInMatching);
+
         await preference.update(
             {
                 musicPreference: data.musicPreference ?? preference.musicPreference,
@@ -84,7 +105,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
                 minBudget: data.minBudget !== undefined ? data.minBudget : preference.minBudget,
                 maxBudget: data.maxBudget !== undefined ? data.maxBudget : preference.maxBudget,
                 budgetRange: computedBudgetRange ?? preference.budgetRange,
-                showMeInMatching: data.invisibleMode !== undefined ? !data.invisibleMode : (data.showMeInMatching !== undefined ? data.showMeInMatching : preference.showMeInMatching),
+                showMeInMatching: newShowMeInMatching,
                 matchDistanceKm: data.matchDistanceKm !== undefined ? data.matchDistanceKm : preference.matchDistanceKm,
                 bookingAlertsEnabled: data.bookingAlertsEnabled !== undefined ? data.bookingAlertsEnabled : preference.bookingAlertsEnabled,
             },
@@ -92,6 +113,19 @@ export const updateProfile = async (req: Request, res: Response): Promise<Respon
         );
 
         await transaction.commit();
+
+        // Invalidate cache and emit realtime events
+        apiCache.invalidatePrefix(userId);
+        apiCache.invalidatePrefix('customers');
+        apiCache.invalidatePrefix('rankings');
+        RealtimeEventBroker.emitToUser(userId, 'profile_updated', 'user', userId, {
+            userId,
+            profile,
+            preferences: preference,
+        });
+        RealtimeEventBroker.emitToLiveFeed('profile_updated', 'user', userId, {
+            userId,
+        });
 
         return res.status(200).json({
             success: true,

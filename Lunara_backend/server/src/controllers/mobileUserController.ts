@@ -241,9 +241,10 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
             return res.status(401).json({ success: false, message: 'Unauthorized: userId is required in body' });
         }
 
-        const data = req.body as ProfileSetupBody;
+        const data = req.body as ProfileSetupBody & { invisibleMode?: boolean };
 
-        if (data.showMeInMatching === false) {
+        const wantsToHide = data.showMeInMatching === false || data.invisibleMode === true;
+        if (wantsToHide) {
             const canHide = await SubscriptionService.hasAccess(userId, 'hide_profile');
             if (!canHide) {
                 return res.status(403).json({
@@ -253,6 +254,10 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
                 });
             }
         }
+
+        const resolvedShowMeInMatching = data.invisibleMode !== undefined
+            ? !data.invisibleMode
+            : data.showMeInMatching;
 
         // Parallel update of Profile and Preferences
         await Promise.all([
@@ -278,7 +283,7 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
                     preferredGenders: data.preferredGenders,
                     minAgePreference: data.minAgePreference,
                     maxAgePreference: data.maxAgePreference,
-                    showMeInMatching: data.showMeInMatching,
+                    showMeInMatching: resolvedShowMeInMatching !== undefined ? resolvedShowMeInMatching : undefined,
                     matchDistanceKm: data.matchDistanceKm,
                     bookingAlertsEnabled: data.bookingAlertsEnabled,
                 },
@@ -291,6 +296,11 @@ export const completeProfileSetup = async (req: Request, res: Response): Promise
             UserProfile.findOne({ where: { userId } }),
             UserPreference.findOne({ where: { userId } }),
         ]);
+
+        // Invalidate user, discovery, and ranking caches
+        apiCache.invalidatePrefix(userId);
+        apiCache.invalidatePrefix('customers');
+        apiCache.invalidatePrefix('rankings');
 
         RealtimeEventBroker.emitToUser(userId, 'profile_updated', 'user', userId, {
             userId,
@@ -662,6 +672,7 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                     groupSizePreference: preferences.groupSizePreference ?? null,
                     matchDistanceKm: preferences.matchDistanceKm,
                     showMeInMatching: preferences.showMeInMatching,
+                    invisibleMode: !preferences.showMeInMatching,
                     bookingAlertsEnabled: preferences.bookingAlertsEnabled,
                     isConfigured: typeof preferences.isConfigured === 'function' ? preferences.isConfigured() : false,
                     createdAt: preferences.createdAt,
@@ -2044,12 +2055,28 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                 {
                     model: User,
                     as: 'user1',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role'],
+                    include: [
+                        {
+                            model: UserProfile,
+                            as: 'profile',
+                            attributes: ['city', 'occupation', 'bio', 'interests', 'photos', 'profilePhoto', 'dateOfBirth'],
+                            required: false
+                        }
+                    ]
                 },
                 {
                     model: User,
                     as: 'user2',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl']
+                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role'],
+                    include: [
+                        {
+                            model: UserProfile,
+                            as: 'profile',
+                            attributes: ['city', 'occupation', 'bio', 'interests', 'photos', 'profilePhoto', 'dateOfBirth'],
+                            required: false
+                        }
+                    ]
                 }
             ],
             order: [['createdAt', 'DESC']],
