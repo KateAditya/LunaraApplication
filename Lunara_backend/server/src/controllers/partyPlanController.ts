@@ -5186,6 +5186,8 @@ function buildUserData(plan: PartyPlan, currentUserId?: string, isAcceptedJoiner
         occupation: creator.profile?.occupation ?? null,
         gender: creator.profile?.gender ?? null,
         city: creator.profile?.city ?? null,
+        subscriptionTier: (creator as any).subscriptionTier ?? creator.profile?.subscriptionTier ?? 'FREE',
+        tier: (creator as any).subscriptionTier ?? creator.profile?.subscriptionTier ?? 'FREE',
         isSecretHost: isSecretName || isSecretPhoto,
     };
 }

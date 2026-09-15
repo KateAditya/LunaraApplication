@@ -89,17 +89,69 @@ class LunaraProfileImage extends StatelessWidget {
   String get _effectiveTier {
     if (overrideTier != null && overrideTier!.isNotEmpty) return overrideTier!.toUpperCase();
     final resolved = _resolvedUser;
-    if (resolved != null && resolved.subscriptionTier.trim().isNotEmpty && resolved.subscriptionTier.toUpperCase() != 'FREE') {
+    if (resolved != null &&
+        resolved.subscriptionTier.trim().isNotEmpty &&
+        resolved.subscriptionTier.toUpperCase() != 'FREE') {
       return resolved.subscriptionTier.toUpperCase();
     }
     if (userData != null) {
       final t = (userData!['subscriptionTier'] ??
-                 userData!['tier'] ??
-                 userData!['packageTier'] ??
-                 userData!['planTier'] ??
-                 userData!['user']?['subscriptionTier'] ??
-                 userData!['user']?['tier'])?.toString().toUpperCase();
-      if (t != null && t.isNotEmpty && t != 'FREE' && t != 'NULL' && t != 'UNDEFINED') return t;
+              userData!['tier'] ??
+              userData!['packageTier'] ??
+              userData!['planTier'] ??
+              userData!['vipTier'] ??
+              userData!['vipPlan'] ??
+              userData!['subscription']?['tier'] ??
+              userData!['subscription']?['package']?['tier'] ??
+              userData!['user']?['subscriptionTier'] ??
+              userData!['user']?['tier'] ??
+              userData!['user']?['packageTier'] ??
+              userData!['user']?['vipTier'])
+          ?.toString()
+          .toUpperCase();
+      if (t != null &&
+          t.isNotEmpty &&
+          t != 'FREE' &&
+          t != 'NULL' &&
+          t != 'UNDEFINED') {
+        return t;
+      }
+
+      final uid = (userData!['id'] ??
+              userData!['userId'] ??
+              userData!['user']?['id'] ??
+              userData!['hostId'])
+          ?.toString();
+      if (uid != null && uid.isNotEmpty) {
+        final cachedTier = ApiService.getUserTier(uid);
+        if (cachedTier != null &&
+            cachedTier.isNotEmpty &&
+            cachedTier != 'FREE') {
+          return cachedTier.toUpperCase();
+        }
+      }
+    }
+    if (user != null && user!.id.isNotEmpty) {
+      final cachedTier = ApiService.getUserTier(user!.id);
+      if (cachedTier != null &&
+          cachedTier.isNotEmpty &&
+          cachedTier != 'FREE') {
+        return cachedTier.toUpperCase();
+      }
+    }
+    if (ApiService.cachedCurrentUser != null) {
+      final cur = ApiService.cachedCurrentUser!;
+      final uid = userData != null
+          ? (userData!['id'] ??
+                  userData!['userId'] ??
+                  userData!['user']?['id'])
+              ?.toString()
+          : user?.id;
+      if (uid == cur.id &&
+          cur.subscriptionTier.isNotEmpty &&
+          cur.subscriptionTier.toUpperCase() != 'FREE') {
+        return cur.subscriptionTier.toUpperCase();
+      }
     }
     return 'FREE';
   }

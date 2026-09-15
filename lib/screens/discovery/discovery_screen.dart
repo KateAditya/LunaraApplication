@@ -504,15 +504,35 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       final rawPartyPlans = socialResults[1];
       final rawStrangersMeet = socialResults[2];
 
+      final Map<String, Map<String, dynamic>> userLookup = {};
+      for (final u in allUsersData) {
+        final uid = u['id']?.toString();
+        if (uid != null && uid.isNotEmpty) {
+          userLookup[uid] = u;
+        }
+      }
+
       List<Map<String, dynamic>> combinedPosts = [];
 
       if (rawPartyPlans.isNotEmpty) {
         combinedPosts.addAll(
           rawPartyPlans.map((plan) {
-            final user =
+            final rawUser =
                 (plan['user'] ?? plan['creator'] ?? plan['host'])
                     as Map<String, dynamic>? ??
                 {};
+            final String rawUserId =
+                (rawUser['id'] ?? plan['userId'] ?? '').toString();
+            final Map<String, dynamic> user = userLookup.containsKey(rawUserId)
+                ? {...userLookup[rawUserId]!, ...rawUser}
+                : Map<String, dynamic>.from(rawUser);
+
+            if (userLookup.containsKey(rawUserId)) {
+              final cachedU = userLookup[rawUserId]!;
+              user['subscriptionTier'] ??= cachedU['subscriptionTier'] ?? cachedU['tier'] ?? cachedU['packageTier'];
+              user['tier'] ??= cachedU['tier'] ?? cachedU['subscriptionTier'];
+              user['packageTier'] ??= cachedU['packageTier'] ?? cachedU['subscriptionTier'];
+            }
             final venue =
                 (plan['venue'] ?? plan['venueMap'])
                     as Map<String, dynamic>? ??
@@ -529,16 +549,18 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
             final targetVenueId =
                 (plan['venueId'] ?? venue['id'])?.toString() ?? '';
+            final String venueNameStr = (venue['name'] ?? plan['venue'] ?? '').toString();
             final bool isSecretVenuePost = venue['isSecret'] == true ||
                 plan['showVenueDetails'] == false ||
                 plan['isSecret'] == true ||
-                venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+                venueNameStr.toUpperCase().contains('SECRET VENUE') == true;
 
             // Resolve venue cover image from multiple possible fields
             dynamic rawImg =
                 venue['coverImageUrl'] ??
                 venue['imageUrl'] ??
                 venue['image'] ??
+                venue['bannerUrl'] ??
                 (venue['coverImage'] is Map
                     ? venue['coverImage']['url'] ??
                           venue['coverImage']['filePath']
@@ -549,16 +571,55 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                           ? (venue['images'] as List).first['url'] ??
                                 (venue['images'] as List).first['filePath']
                           : (venue['images'] as List).first)
+                    : null) ??
+                (venue['gallery'] is List &&
+                        (venue['gallery'] as List).isNotEmpty
+                    ? ((venue['gallery'] as List).first is Map
+                          ? (venue['gallery'] as List).first['url'] ??
+                                (venue['gallery'] as List).first['filePath']
+                          : (venue['gallery'] as List).first)
                     : null);
 
+            // Lookup venue in _allVenues if rawImg is still empty
             if ((rawImg == null ||
                     rawImg.toString().isEmpty ||
                     rawImg.toString().startsWith('Instance of')) &&
-                targetVenueId.isNotEmpty &&
                 !isSecretVenuePost) {
-              final matchedV = _venueMapById[targetVenueId];
+              Venue? matchedV;
+              if (targetVenueId.isNotEmpty) {
+                matchedV = _venueMapById[targetVenueId];
+              }
+              if (matchedV == null && venueNameStr.isNotEmpty) {
+                final vLower = venueNameStr.toLowerCase().trim();
+                matchedV = _venueMapByNameLower[vLower];
+                if (matchedV == null) {
+                  for (final v in _allVenues) {
+                    final n = v.name.toLowerCase().trim();
+                    if (n == vLower || n.contains(vLower) || vLower.contains(n)) {
+                      matchedV = v;
+                      break;
+                    }
+                  }
+                }
+              }
               if (matchedV != null) {
                 rawImg = matchedV.imageUrl;
+                if ((rawImg == null || rawImg.toString().isEmpty) &&
+                    matchedV.images != null &&
+                    matchedV.images!.isNotEmpty) {
+                  final first = matchedV.images!.first;
+                  rawImg = first is Map ? (first['url'] ?? first['filePath']) : first?.toString();
+                }
+              }
+            }
+
+            // Fallback: If still empty, use first available venue image (NEVER user avatar)
+            if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && !isSecretVenuePost) {
+              for (final v in _allVenues) {
+                if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
+                  rawImg = v.imageUrl;
+                  break;
+                }
               }
             }
 
@@ -636,9 +697,21 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
         combinedPosts.addAll(
           activeStrangersMeets.map((meet) {
-            final user =
+            final rawUser =
                 (meet['user'] ?? meet['host']) as Map<String, dynamic>? ??
                 {};
+            final String rawUserId =
+                (rawUser['id'] ?? meet['userId'] ?? '').toString();
+            final Map<String, dynamic> user = userLookup.containsKey(rawUserId)
+                ? {...userLookup[rawUserId]!, ...rawUser}
+                : Map<String, dynamic>.from(rawUser);
+
+            if (userLookup.containsKey(rawUserId)) {
+              final cachedU = userLookup[rawUserId]!;
+              user['subscriptionTier'] ??= cachedU['subscriptionTier'] ?? cachedU['tier'] ?? cachedU['packageTier'];
+              user['tier'] ??= cachedU['tier'] ?? cachedU['subscriptionTier'];
+              user['packageTier'] ??= cachedU['packageTier'] ?? cachedU['subscriptionTier'];
+            }
             final venue =
                 (meet['venue'] ?? meet['venueMap'])
                     as Map<String, dynamic>? ??
@@ -691,14 +764,50 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                 venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true ||
                 meet['venueName']?.toString().toUpperCase().contains('SECRET VENUE') == true;
 
+            final String meetVenueNameStr = (venue['name'] ??
+                meet['venueName'] ??
+                (meet['venue'] is String ? meet['venue'] : null) ??
+                '').toString();
+
             if ((rawImg == null ||
                     rawImg.toString().isEmpty ||
                     rawImg.toString().startsWith('Instance of')) &&
-                extractedVenueId.isNotEmpty &&
                 !isSecretMeet) {
-              final matchedV = _venueMapById[extractedVenueId];
+              Venue? matchedV;
+              if (extractedVenueId.isNotEmpty) {
+                matchedV = _venueMapById[extractedVenueId];
+              }
+              if (matchedV == null && meetVenueNameStr.isNotEmpty) {
+                final vLower = meetVenueNameStr.toLowerCase().trim();
+                matchedV = _venueMapByNameLower[vLower];
+                if (matchedV == null) {
+                  for (final v in _allVenues) {
+                    final n = v.name.toLowerCase().trim();
+                    if (n == vLower || n.contains(vLower) || vLower.contains(n)) {
+                      matchedV = v;
+                      break;
+                    }
+                  }
+                }
+              }
               if (matchedV != null) {
                 rawImg = matchedV.imageUrl;
+                if ((rawImg == null || rawImg.toString().isEmpty) &&
+                    matchedV.images != null &&
+                    matchedV.images!.isNotEmpty) {
+                  final first = matchedV.images!.first;
+                  rawImg = first is Map ? (first['url'] ?? first['filePath']) : first?.toString();
+                }
+              }
+            }
+
+            // Fallback: If still empty, use first available venue image (NEVER user avatar)
+            if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && !isSecretMeet) {
+              for (final v in _allVenues) {
+                if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
+                  rawImg = v.imageUrl;
+                  break;
+                }
               }
             }
 
@@ -2792,14 +2901,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
 
           // Handle nested user object or flat structure
           final userObj = feed['user'] is Map ? feed['user'] as Map : feed;
-          final String? userPhotoRaw =
-              (userObj['profilePhotoUrl'] ??
-                      userObj['photoUrl'] ??
-                      userObj['profilePhoto'] ??
-                      feed['profilePhotoUrl'] ??
-                      feed['profilePhoto'])
-                  ?.toString();
-          final String? avatarUrl = ApiService.formatImageUrl(userPhotoRaw);
 
           // Resolve venue name & ID
           String venueName = '';
@@ -2888,12 +2989,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
             }
           }
 
-          // Fall back to host/user avatar URL if venue image not found
-          if (rawCover == null || rawCover.toString().isEmpty) {
-            rawCover = userPhotoRaw;
-          }
-
-          // Fall back to first available venue image in _allVenues if still empty
+          // Fall back to first available venue image in _allVenues if still empty (NEVER user avatar)
           if (rawCover == null || rawCover.toString().isEmpty) {
             for (final v in _allVenues) {
               if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
@@ -2908,7 +3004,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
           }
 
           final String? coverImageUrl =
-              ApiService.formatImageUrl(rawCover?.toString()) ?? avatarUrl;
+              ApiService.formatImageUrl(rawCover?.toString());
 
           final bool isSecretVenue = (feed['venueMap'] is Map &&
                   ((feed['venueMap'] as Map)['isSecret'] == true ||

@@ -90,6 +90,25 @@ class ApiService {
   _cachedStrangersMeetFeed = {};
   static final Map<String, DateTime> _strangersMeetFeedCacheTimestamps = {};
 
+  static final Map<String, String> _userTierMap = {};
+
+  /// Register a user's subscription tier in the global cache for instant ring resolution across the app
+  static void registerUserTier(String? userId, String? tier) {
+    if (userId != null &&
+        userId.isNotEmpty &&
+        tier != null &&
+        tier.isNotEmpty &&
+        tier.toUpperCase() != 'FREE') {
+      _userTierMap[userId] = tier.toUpperCase();
+    }
+  }
+
+  /// Synchronously get cached subscription tier for any user ID
+  static String? getUserTier(String? userId) {
+    if (userId == null || userId.isEmpty) return null;
+    return _userTierMap[userId];
+  }
+
   static Map<String, dynamic>? _cachedWalletBalance;
   static DateTime? _walletBalanceCacheTime;
 
@@ -790,6 +809,16 @@ class ApiService {
           final result = List<Map<String, dynamic>>.from(
             list.where((item) => item is Map && item['id'] != null),
           );
+          for (final item in result) {
+            final uid = item['id']?.toString();
+            final tier = (item['subscriptionTier'] ??
+                    item['tier'] ??
+                    item['packageTier'] ??
+                    item['planTier'] ??
+                    item['vipTier'])
+                ?.toString();
+            registerUserTier(uid, tier);
+          }
           _cachedCustomers[cacheKey] = result;
           _customersCacheTimestamps[cacheKey] = DateTime.now();
           return result;
@@ -797,6 +826,16 @@ class ApiService {
           final result = List<Map<String, dynamic>>.from(
             data.where((item) => item is Map && item['id'] != null),
           );
+          for (final item in result) {
+            final uid = item['id']?.toString();
+            final tier = (item['subscriptionTier'] ??
+                    item['tier'] ??
+                    item['packageTier'] ??
+                    item['planTier'] ??
+                    item['vipTier'])
+                ?.toString();
+            registerUserTier(uid, tier);
+          }
           _cachedCustomers[cacheKey] = result;
           _customersCacheTimestamps[cacheKey] = DateTime.now();
           return result;

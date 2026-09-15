@@ -156,17 +156,6 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
   }
 
   Widget _buildPostCard(BuildContext context, Map<String, dynamic> post) {
-    // Resolve user avatar
-    final String? avatarUrl = ApiService.formatImageUrl(
-      post['profilePhotoUrl'] ??
-      post['profileImageUrl'] ??
-      post['photoUrl'] ??
-      post['profilePhoto'] ??
-      (post['user'] is Map ? post['user']['photoUrl'] : null) ??
-      (post['user'] is Map ? post['user']['profilePhotoUrl'] : null) ??
-      post['image'],
-    );
-
     final String venueName = post['venue']?.toString() ?? '';
 
     final String targetVenueId = (post['venueId'] ?? (post['venue'] is Map ? post['venue']['id'] : null))?.toString() ?? '';
@@ -240,8 +229,8 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
              (post['venue'] as Map)['showVenueDetails'] == false)) ||
         venueName.toUpperCase().contains('SECRET VENUE');
 
-    // Use venue cover image as background; fall back to user avatar
-    final String? coverImageUrl = ApiService.formatImageUrl(rawCover) ?? avatarUrl;
+    // Strictly use venue cover image as background (never user avatar)
+    final String? coverImageUrl = ApiService.formatImageUrl(rawCover);
 
     ImageProvider? bgImage;
     if (isSecretVenue) {

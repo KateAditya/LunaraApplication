@@ -187,6 +187,8 @@ function formatRequest(r: StrangersMeetRequest) {
             profileImageUrl: userPhotoUrl,
             bio: user.profile?.bio ?? null,
             city: user.profile?.city ?? null,
+            subscriptionTier: (user as any).subscriptionTier ?? user.profile?.subscriptionTier ?? 'FREE',
+            tier: (user as any).subscriptionTier ?? user.profile?.subscriptionTier ?? 'FREE',
         } : null,
         venue: venue ? {
             id: venue.id,
