@@ -158,6 +158,9 @@ class SubscriptionProvider extends ChangeNotifier {
   bool get canLike => _status.hasUnlimitedLikes || dailyLikesRemaining > 0;
   bool get canSuperLike => isElite || _status.isUnlimitedSuperlikes || superlikesRemaining > 0;
   bool get canBoost => isElite || _status.isUnlimitedBoosts || boostsRemaining > 0;
+  bool get isBoostActive => _status.hasActiveBoost;
+  DateTime? get boostExpiresAt => _status.boostExpiresAt != null ? DateTime.tryParse(_status.boostExpiresAt!)?.toLocal() : null;
+  int get boostRemainingSeconds => _status.boostRemainingSeconds;
   bool get canBacktrack => _status.hasUnlimitedBacktracks || backtracksRemaining > 0;
   bool get canCreatePartyPlan => isElite || _status.isUnlimitedPartyPlans || partyPlansRemaining > 0;
 
@@ -578,6 +581,31 @@ class SubscriptionProvider extends ChangeNotifier {
         fetchEntitlementsSummary(force: true),
         fetchAvailableAddons(force: true),
       ]);
+    }
+    return result;
+  }
+
+  /// Activates a 30-minute Profile Boost with quota validation and state refresh.
+  Future<Map<String, dynamic>> activateBoost() async {
+    final validation = validateAction(VipAction.boost);
+    if (!validation.allowed) {
+      return {
+        'success': false,
+        'code': validation.code ?? 'BOOST_LIMIT_REACHED',
+        'message': validation.message ?? 'No boost credits remaining. Upgrade or get a Boost pack!',
+      };
+    }
+
+    optimisticConsume(VipAction.boost);
+    final result = await ApiService.useBoost();
+    if (result['success'] == true) {
+      _lastFetched = null;
+      await Future.wait([
+        refresh(),
+        fetchEntitlementsSummary(force: true),
+      ]);
+    } else {
+      rollbackConsume(VipAction.boost);
     }
     return result;
   }

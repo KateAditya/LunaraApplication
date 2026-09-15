@@ -307,6 +307,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _silentReloadThrottle?.cancel();
+    _silentReloadThrottle = null;
     ApiService.planPostedNotifier.removeListener(_onPlanPostedNotify);
     ApiService.profileUpdateNotifier.removeListener(_onProfileUpdateNotify);
     ApiService.authSessionNotifier.removeListener(_onAuthSessionChanged);
@@ -1025,9 +1027,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         _cachedTimeline = _buildUnifiedTimeline();
       });
     } else {
-      // New entity created or not in current timeline — fetch silently
-      _loadFeed(showLoader: false);
+      // New entity created, or not in the current timeline — fetch silently.
+      _scheduleSilentReload();
     }
+  }
+
+  Timer? _silentReloadThrottle;
+
+  /// Coalesces the "I couldn't patch this locally, refetch" path.
+  ///
+  /// `_onPartyPlanRequestUpdated` is wired to five socket events — including
+  /// `live_feed_update` and `badge_updated`, whose payloads frequently carry no
+  /// id that matches anything on screen — so a single user action could miss the
+  /// patch several times over and queue a full five-call reload for each miss.
+  /// `_loadFeed`'s own `_hasPendingRefetch` guard then chains another reload
+  /// after the one in flight, so the bursts compounded instead of collapsing.
+  /// That is what made cards update late and out of order.
+  ///
+  /// A short throttle turns a burst into one refetch. It is a trailing-edge
+  /// throttle rather than a debounce: the timer is never rescheduled while
+  /// pending, so a steady stream of events still refreshes on a fixed cadence
+  /// instead of being starved.
+  void _scheduleSilentReload() {
+    if (_silentReloadThrottle != null) return;
+    _silentReloadThrottle = Timer(const Duration(milliseconds: 400), () {
+      _silentReloadThrottle = null;
+      if (mounted) _loadFeed(showLoader: false);
+    });
   }
 
   void _onPartyPlanRequestUpdated(dynamic data) {
@@ -1221,7 +1247,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ApiService.fetchNotifications(forceRefresh: forceRefresh),
         ApiService.fetchMyLargePartyBookings(forceRefresh: forceRefresh),
         ApiService.fetchBookings(forceRefresh: forceRefresh),
-        ApiService.fetchPendingSafetyCheck(),
+        ApiService.fetchPendingSafetyCheck(forceRefresh: forceRefresh),
       ]);
 
       final data = responses[0] as Map<String, dynamic>;

@@ -65,6 +65,7 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
+    _hydrateFromCache();
     _loadBookings();
     _initListeners();
   }
@@ -117,7 +118,22 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     });
   }
 
+  /// Paints the last known tickets synchronously, before any network call.
+  ///
+  /// This screen is a pushed route, so its State is recreated on every open and
+  /// `_allBookings` always started empty — meaning a spinner and a full round
+  /// trip each time, which is why it felt fast on one visit and slow on the
+  /// next. Seeding from the retained cache makes the first frame instant;
+  /// `_loadBookings` then refreshes underneath and swaps in the fresh list.
+  void _hydrateFromCache() {
+    final cached = ApiService.cachedTickets;
+    if (cached == null || cached.isEmpty) return;
+    _applyTickets(cached);
+    _isLoading = false;
+  }
+
   Future<void> _loadBookings({bool forceRefresh = false}) async {
+    // Only block on a spinner when there is genuinely nothing to show.
     if (_allBookings.isEmpty) {
       setState(() {
         _isLoading = true;
@@ -125,41 +141,54 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     }
     final tickets = await ApiService.fetchAllUserTickets(forceRefresh: forceRefresh);
     if (mounted) {
-      final active = <Map<String, dynamic>>[];
-      final past = <Map<String, dynamic>>[];
-      final cancelled = <Map<String, dynamic>>[];
-      final activeCounts = <String, int>{};
-      final pastCounts = <String, int>{};
-      final cancelledCounts = <String, int>{};
-
-      for (final t in tickets) {
-        final cat = _getTicketCategory(t);
-        if (_isCancelledBooking(t)) {
-          cancelled.add(t);
-          cancelledCounts[cat] = (cancelledCounts[cat] ?? 0) + 1;
-        } else if (_isActiveBooking(t)) {
-          active.add(t);
-          activeCounts[cat] = (activeCounts[cat] ?? 0) + 1;
-        } else {
-          past.add(t);
-          pastCounts[cat] = (pastCounts[cat] ?? 0) + 1;
-        }
-      }
-
       setState(() {
-        _allBookings = tickets;
-        _activeBookings = active;
-        _pastBookings = past;
-        _cancelledBookings = cancelled;
-        _activeCategoryCounts.clear();
-        _activeCategoryCounts.addAll(activeCounts);
-        _pastCategoryCounts.clear();
-        _pastCategoryCounts.addAll(pastCounts);
-        _cancelledCategoryCounts.clear();
-        _cancelledCategoryCounts.addAll(cancelledCounts);
+        _applyTickets(tickets);
         _isLoading = false;
       });
     }
+  }
+
+  /// Sorts tickets into the three tabs and their per-category counts.
+  ///
+  /// Shared by the synchronous cache hydration and the async refresh so both
+  /// produce identical state. Assigns fields directly rather than calling
+  /// `setState` itself — `_hydrateFromCache` runs before the first build, where
+  /// `setState` is not allowed.
+  void _applyTickets(List<Map<String, dynamic>> tickets) {
+    final active = <Map<String, dynamic>>[];
+    final past = <Map<String, dynamic>>[];
+    final cancelled = <Map<String, dynamic>>[];
+    final activeCounts = <String, int>{};
+    final pastCounts = <String, int>{};
+    final cancelledCounts = <String, int>{};
+
+    for (final t in tickets) {
+      final cat = _getTicketCategory(t);
+      if (_isCancelledBooking(t)) {
+        cancelled.add(t);
+        cancelledCounts[cat] = (cancelledCounts[cat] ?? 0) + 1;
+      } else if (_isActiveBooking(t)) {
+        active.add(t);
+        activeCounts[cat] = (activeCounts[cat] ?? 0) + 1;
+      } else {
+        past.add(t);
+        pastCounts[cat] = (pastCounts[cat] ?? 0) + 1;
+      }
+    }
+
+    _allBookings = tickets;
+    _activeBookings = active;
+    _pastBookings = past;
+    _cancelledBookings = cancelled;
+    _activeCategoryCounts
+      ..clear()
+      ..addAll(activeCounts);
+    _pastCategoryCounts
+      ..clear()
+      ..addAll(pastCounts);
+    _cancelledCategoryCounts
+      ..clear()
+      ..addAll(cancelledCounts);
   }
 
   String _getTicketCategory(Map<String, dynamic> booking) {
@@ -378,6 +407,13 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
     final isCancelledFlag = booking['isCancelled'] == true;
     final cancelStatus = (booking['cancellationStatus'] ?? booking['cancellation_status'] ?? '').toString().toLowerCase().trim();
 
+    final innerBooking = booking['booking'] is Map ? booking['booking'] as Map : null;
+    final innerBookingStatus = (innerBooking?['status'] ?? innerBooking?['bookingStatus'] ?? '').toString().toLowerCase().trim();
+    final innerPaymentStatus = (innerBooking?['paymentStatus'] ?? '').toString().toLowerCase().trim();
+
+    final innerPlan = booking['plan'] is Map ? booking['plan'] as Map : null;
+    final innerPlanStatus = (innerPlan?['status'] ?? innerPlan?['lifecycleStatus'] ?? '').toString().toLowerCase().trim();
+
     return isCancelledFlag ||
         status == 'cancelled' ||
         status == 'rejected' ||
@@ -386,7 +422,11 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         cancelStatus == 'approved' ||
         cancelStatus == 'refunded' ||
         cancelStatus == 'cancelled' ||
-        paymentStatus == 'refunded';
+        paymentStatus == 'refunded' ||
+        innerBookingStatus == 'cancelled' ||
+        innerBookingStatus == 'rejected' ||
+        innerPaymentStatus == 'refunded' ||
+        innerPlanStatus == 'cancelled';
   }
 
   bool _isActiveBooking(Map<String, dynamic> booking) {

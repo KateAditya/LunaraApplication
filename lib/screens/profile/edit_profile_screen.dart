@@ -6,6 +6,7 @@ import '../../models/user.dart';
 import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
+import '../../widgets/profile_boost_modal.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final User user;
@@ -709,6 +710,146 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  Widget _buildBoostBanner() {
+    return ListenableBuilder(
+      listenable: SubscriptionProvider.instance,
+      builder: (context, _) {
+        final provider = SubscriptionProvider.instance;
+        final isBoostActive = provider.isBoostActive;
+        final expiresAt = provider.boostExpiresAt;
+        final isCurrentlySpotlighted = isBoostActive && expiresAt != null && expiresAt.isAfter(DateTime.now());
+
+        String timeRemaining = '';
+        if (isCurrentlySpotlighted) {
+          final diff = expiresAt.difference(DateTime.now());
+          final mins = diff.inMinutes.remainder(60).toString().padLeft(2, '0');
+          final secs = diff.inSeconds.remainder(60).toString().padLeft(2, '0');
+          timeRemaining = diff.inHours > 0 ? '${diff.inHours}h ${mins}m' : '$mins:$secs';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: isCurrentlySpotlighted
+                ? const LinearGradient(
+                    colors: [Color(0xFFFFFBEB), Color(0xFFFEF3C7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : const LinearGradient(
+                    colors: [Color(0xFF1E1B4B), Color(0xFF312E81)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+            boxShadow: [
+              BoxShadow(
+                color: (isCurrentlySpotlighted ? const Color(0xFFFFB703) : const Color(0xFF7C3AED)).withValues(alpha: 0.2),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(
+              color: isCurrentlySpotlighted ? const Color(0xFFFDE68A) : const Color(0xFF6366F1).withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => ProfileBoostModal.show(context),
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFB703), Color(0xFFFB8500)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFFB703).withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 26),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                isCurrentlySpotlighted ? 'SPOTLIGHT ACTIVE' : 'BOOST PROFILE',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13.5,
+                                  letterSpacing: 0.8,
+                                  color: isCurrentlySpotlighted ? const Color(0xFF92400E) : Colors.white,
+                                ),
+                              ),
+                              if (isCurrentlySpotlighted) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    timeRemaining,
+                                    style: const TextStyle(
+                                      color: Color(0xFF065F46),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            isCurrentlySpotlighted
+                                ? 'Tap to view live spotlight stats & feed status'
+                                : 'Get 10x more profile views • Jump to feed top',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: isCurrentlySpotlighted
+                                  ? const Color(0xFFB45309)
+                                  : Colors.white.withValues(alpha: 0.75),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 14,
+                      color: isCurrentlySpotlighted ? const Color(0xFFB45309) : Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildChipSelector(List<String> options, Set<String> selectedSet) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Wrap(
@@ -1343,7 +1484,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                _buildBoostBanner(),
                 
                 _buildSection('PHOTOS', [
                   _buildOtherPhotosGrid(),

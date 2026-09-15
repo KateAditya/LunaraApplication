@@ -6,7 +6,7 @@ import User from '../models/User';
 import GroupParty, { GroupPartyStatus, GroupPartyPaymentStatus } from '../models/GroupParty';
 import PartyPlan, { PartyPlanPaymentStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
-import StrangersMeetRequest from '../models/StrangersMeetRequest';
+import StrangersMeetRequest, { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import StrangersMeetJoiner from '../models/StrangersMeetJoiner';
 import BookingTablePackage, { TablePackageName } from '../models/BookingTablePackage';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
@@ -1200,6 +1200,19 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 profileImageUrl: ((plan as any).creator || (plan as any).user).profileImageUrl || null,
             } : null;
 
+            let planStatus: string = (plan.status as any) || 'confirmed';
+            if ((plan.status as any) === 'cancelled') {
+                planStatus = 'cancelled';
+            } else if ((plan.status as any) === 'completed') {
+                planStatus = 'completed';
+            } else if ((plan.status as any) === 'expired') {
+                planStatus = 'expired';
+            } else if ((plan.hostPaymentStatus as any) === 'unpaid' || !plan.matchedRequestId) {
+                planStatus = 'pending';
+            } else {
+                planStatus = 'confirmed';
+            }
+
             synthesized.push({
                 id: `party_plan_host_${plan.id}`,
                 bookingId: plan.id,
@@ -1207,7 +1220,8 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 ticketCode,
                 bookingType: 'party_plan',
                 category: 'party_plan',
-                status: plan.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                status: planStatus,
+                paymentStatus: plan.hostPaymentStatus,
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: planDateTime.toISOString(),
@@ -1294,11 +1308,27 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 profilePhotoUrl: (gp as any).user.profileImageUrl || null,
             } : null;
 
+            let gpStatus: string = (gp.status as string) || 'confirmed';
+            if (gp.status === GroupPartyStatus.CANCELLED) {
+                gpStatus = 'cancelled';
+            } else if (gp.status === GroupPartyStatus.EXPIRED) {
+                gpStatus = 'expired';
+            } else if (gp.status === GroupPartyStatus.COMPLETED) {
+                gpStatus = 'completed';
+            } else if (gp.status === GroupPartyStatus.REJECTED) {
+                gpStatus = 'rejected';
+            } else if (gp.status === GroupPartyStatus.PENDING || gp.paymentStatus === GroupPartyPaymentStatus.PENDING) {
+                gpStatus = 'pending';
+            } else {
+                gpStatus = 'confirmed';
+            }
+
             synthesized.push({
                 id: `group_party_${gp.id}`,
                 bookingId: gp.id,
                 bookingType: 'group_party',
-                status: gp.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                status: gpStatus,
+                paymentStatus: gp.paymentStatus,
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: partyDate.toISOString(),
@@ -1333,13 +1363,41 @@ export const listMyBookings = async (req: Request, res: Response) => {
             const expDt = new Date(eventDt.getTime() + 2 * 60 * 60 * 1000);
             const formattedStartTime = formatTime12Hour(eventDt);
 
+            let smStatus: string = (sm.status as string) || 'pending';
+            if (sm.status === StrangersMeetStatus.CANCELLED) {
+                smStatus = 'cancelled';
+            } else if (sm.status === StrangersMeetStatus.REJECTED) {
+                smStatus = 'rejected';
+            } else if (
+                sm.status === StrangersMeetStatus.PENDING ||
+                sm.status === StrangersMeetStatus.START_CONFIRMATION_PENDING ||
+                (sm.paymentStatus as string) === 'unpaid'
+            ) {
+                smStatus = 'pending';
+            } else if (
+                sm.status === StrangersMeetStatus.COMPLETED ||
+                sm.status === StrangersMeetStatus.SETTLED ||
+                sm.status === StrangersMeetStatus.HOST_CONFIRMED_ENDED ||
+                sm.status === StrangersMeetStatus.ADMIN_CONFIRMED_ENDED
+            ) {
+                smStatus = 'completed';
+            } else if (sm.status === StrangersMeetStatus.IN_PROGRESS) {
+                smStatus = 'in_progress';
+            } else if (sm.status === StrangersMeetStatus.APPROVED) {
+                smStatus = 'confirmed';
+            } else {
+                smStatus = sm.status || 'pending';
+            }
+
             synthesized.push({
                 id: `strangers_meet_host_${sm.id}`,
                 bookingId: sm.id,
                 bookingType: 'strangers_meet',
                 type: 'strangers_meet',
                 isStrangersMeet: true,
-                status: sm.status === 'cancelled' ? 'cancelled' : 'confirmed',
+                status: smStatus,
+                adminApprovalStatus: sm.status === StrangersMeetStatus.PENDING ? 'pending' : (sm.status === StrangersMeetStatus.APPROVED ? 'approved' : sm.status),
+                paymentStatus: sm.paymentStatus,
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: eventDt.toISOString(),
@@ -1379,13 +1437,27 @@ export const listMyBookings = async (req: Request, res: Response) => {
                 profilePhotoUrl: (joiner as any).user.profileImageUrl || null,
             } : null;
 
+            let jStatus: string = (joiner.status as string) || 'pending';
+            if ((joiner.status as string) === 'cancelled') {
+                jStatus = 'cancelled';
+            } else if ((joiner.status as string) === 'rejected') {
+                jStatus = 'rejected';
+            } else if ((joiner.status as string) === 'pending' || (joiner as any).paymentStatus === 'pending' || (joiner as any).paymentStatus === 'unpaid') {
+                jStatus = 'pending';
+            } else if (sm.status === StrangersMeetStatus.COMPLETED || sm.status === StrangersMeetStatus.SETTLED) {
+                jStatus = 'completed';
+            } else {
+                jStatus = 'confirmed';
+            }
+
             synthesized.push({
                 id: `strangers_meet_joiner_${joiner.id}`,
                 bookingId: sm.id,
                 bookingType: 'strangers_meet',
                 type: 'strangers_meet',
                 isStrangersMeet: true,
-                status: (joiner.status as string) === 'cancelled' || (joiner.status as string) === 'rejected' ? 'cancelled' : 'confirmed',
+                status: jStatus,
+                paymentStatus: (joiner as any).paymentStatus,
                 createdAt: bookedDate,
                 bookedAt: bookedDate,
                 bookingDate: eventDt.toISOString(),
@@ -1420,6 +1492,9 @@ export const listMyBookings = async (req: Request, res: Response) => {
         const normalizedBookings = bookings.map(b => {
             const json: any = b.toJSON();
             json.bookedAt = json.createdAt ? new Date(json.createdAt).toISOString() : json.bookingDate;
+            if (json.status === 'pending' || json.adminApprovalStatus === 'pending' || (json.goingMode === 'party_request' && json.adminApprovalStatus !== 'approved' && json.adminApprovalStatus !== 'payment_done')) {
+                json.status = 'pending';
+            }
             const bUser = (b as any).user;
             if (bUser) {
                 json.user = {
@@ -1615,6 +1690,74 @@ export const getBookingDetail = async (req: Request, res: Response) => {
                 type: 'group_party',
                 createdAt: groupParty.createdAt,
                 updatedAt: groupParty.updatedAt,
+            };
+
+            return res.json({ success: true, data: mappedData });
+        }
+
+        // 3. Try finding StrangersMeetRequest (by ID or ticketId)
+        const smReq: any = await StrangersMeetRequest.findOne({
+            where: {
+                [Op.or]: [
+                    { id },
+                    { ticketId: id }
+                ]
+            },
+            include: [
+                {
+                    model: Venue,
+                    as: 'venue',
+                    include: [
+                        {
+                            model: VenueImage,
+                            as: 'images',
+                            required: false,
+                        },
+                    ],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'],
+                },
+            ],
+        });
+
+        if (smReq) {
+            let smDetailStatus: string = (smReq.status as string) || 'pending';
+            if (smReq.status === StrangersMeetStatus.CANCELLED) smDetailStatus = 'cancelled';
+            else if (smReq.status === StrangersMeetStatus.REJECTED) smDetailStatus = 'rejected';
+            else if (smReq.status === StrangersMeetStatus.PENDING || smReq.paymentStatus === 'unpaid') smDetailStatus = 'pending';
+            else if (smReq.status === StrangersMeetStatus.COMPLETED || smReq.status === StrangersMeetStatus.SETTLED) smDetailStatus = 'completed';
+            else smDetailStatus = 'confirmed';
+
+            const mappedData = {
+                id: smReq.id,
+                bookingId: smReq.id,
+                bookingNumber: smReq.ticketId || `SM-${smReq.id.substring(0, 8).toUpperCase()}`,
+                ticketCode: smReq.ticketId || `SM-${smReq.id.substring(0, 8).toUpperCase()}`,
+                userId: smReq.userId,
+                venueId: smReq.venueId,
+                bookingDate: smReq.eventDateTime,
+                eventDateTime: smReq.eventDateTime,
+                partyDate: smReq.eventDateTime,
+                startTime: smReq.eventDateTime ? formatTime12Hour(new Date(smReq.eventDateTime)) : '21:00',
+                timeSlot: smReq.eventDateTime ? formatTime12Hour(new Date(smReq.eventDateTime)) : '21:00',
+                guestsCount: smReq.numberOfPersons || 2,
+                numberOfGuests: smReq.numberOfPersons || 2,
+                totalAmount: Number(smReq.paymentAmount || 0),
+                totalPrice: Number(smReq.paymentAmount || 0),
+                status: smDetailStatus,
+                adminApprovalStatus: smReq.status,
+                paymentStatus: smReq.paymentStatus,
+                venue: smReq.venue,
+                user: smReq.user,
+                isStrangersMeet: true,
+                type: 'strangers_meet',
+                bookingType: 'strangers_meet',
+                tablePackage: 'STRANGER MEET',
+                createdAt: smReq.createdAt,
+                updatedAt: smReq.updatedAt,
             };
 
             return res.json({ success: true, data: mappedData });

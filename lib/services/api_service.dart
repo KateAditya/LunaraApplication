@@ -108,6 +108,22 @@ class ApiService {
   static List<dynamic>? _cachedSubscriptionPackages;
   static DateTime? _subscriptionPackagesCacheTime;
 
+  /// Last known tickets, regardless of age.
+  ///
+  /// Ticket Pocket is a pushed route, so its State is rebuilt from scratch every
+  /// time it is opened. Waiting for the network on each visit is what made it
+  /// "fast one time, slow the next" — a hit inside the 30s window painted
+  /// instantly, anything later showed a spinner. Screens hydrate from this
+  /// first and let [fetchAllUserTickets] refresh underneath.
+  static List<Map<String, dynamic>>? get cachedTickets => _cachedTickets;
+
+  /// Last known conversations, regardless of age. See [cachedTickets].
+  static List<Map<String, dynamic>>? get cachedConversations =>
+      _cachedConversations;
+
+  static List<Map<String, dynamic>>? _cachedConversations;
+  static DateTime? _conversationsCacheTime;
+
   static Map<String, dynamic>? get cachedLiveFeedData => _cachedLiveFeedData;
   static List<Map<String, dynamic>>? get cachedNotifications =>
       _cachedNotifications;
@@ -139,23 +155,28 @@ class ApiService {
     RealtimeSyncManager.instance.triggerStrangerMeetSync();
   }
 
-  /// Clears in-memory caches for bookings, notifications, and badges to ensure instant fresh fetch.
+  /// Marks bookings, notifications and badge caches stale so the next read
+  /// refetches from the server.
+  ///
+  /// Only the *timestamps* are cleared, never the payloads. Every `fetch*`
+  /// helper treats a missing timestamp as expired, so freshness is unchanged —
+  /// the very next call still goes to the network. What the retained payload
+  /// buys is the first frame: a screen re-entered after this call can paint the
+  /// last known content immediately through the `cached*` getters and swap in
+  /// fresh data when it lands, instead of showing an empty spinner while it
+  /// waits. Discarding the payload here is what made the Live Feed blank out
+  /// after every plan action.
   static void clearBookingCache() {
-    _cachedLiveFeedData = null;
     _liveFeedCacheTime = null;
-    _cachedNotifications = null;
     _notificationsCacheTime = null;
-    _cachedBookings = null;
     _bookingsCacheTime = null;
-    _cachedBadgeCounts = null;
     _badgeCountsCacheTime = null;
-    _cachedAddonPackages = null;
     _addonPackagesCacheTime = null;
-    _cachedSubscriptionPackages = null;
     _subscriptionPackagesCacheTime = null;
-    _cachedStrangersMeetFeed.clear();
+    _ticketsCacheTime = null;
+    _conversationsCacheTime = null;
+    _safetyCheckCacheTime = null;
     _strangersMeetFeedCacheTimestamps.clear();
-    _cachedPartyPlans.clear();
     _partyPlansCacheTimestamps.clear();
   }
 
@@ -3568,24 +3589,42 @@ class ApiService {
 
   /// Step 2 â€” GET /api/mobile/chat/conversations?userId=
   static Future<List<Map<String, dynamic>>> fetchConversations(
-    String userId,
-  ) async {
+    String userId, {
+    bool forceRefresh = false,
+  }) async {
+    // The chat list had no cache at all, so every visit — and the dashboard's
+    // background prewarm, and the 45s poll — paid a full round trip before
+    // anything could render. A short window is enough to make re-entering the
+    // tab instant without ever showing a stale conversation for long; sockets
+    // (`new_message`, `messages_read`) still update the list in real time.
+    final now = DateTime.now();
+    if (!forceRefresh &&
+        _cachedConversations != null &&
+        _conversationsCacheTime != null &&
+        now.difference(_conversationsCacheTime!).inSeconds < 30) {
+      return _cachedConversations!;
+    }
+
     try {
       final response = await get(
         '/api/mobile/chat/conversations',
         queryParameters: {'userId': userId},
       );
-      // debugPrint('fetchConversations ${response.statusCode}: ${response.body}');
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['data'] is List) {
-          return List<Map<String, dynamic>>.from(data['data']);
+          final list = List<Map<String, dynamic>>.from(data['data']);
+          _cachedConversations = list;
+          _conversationsCacheTime = DateTime.now();
+          return list;
         }
       }
     } catch (e) {
       debugPrint('fetchConversations error: $e');
+      // A transient failure should not wipe the list the user is looking at.
+      if (_cachedConversations != null) return _cachedConversations!;
     }
-    return [];
+    return _cachedConversations ?? [];
   }
 
   /// Step 1 â€” GET /api/mobile/chat/icebreakers
@@ -5579,6 +5618,24 @@ class ApiService {
     ];
   }
 
+  /// Activates a 30-minute Profile Boost
+  static Future<Map<String, dynamic>> useBoost() async {
+    try {
+      final response = await post('/api/mobile/subscriptions/use-boost', body: {});
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+      return {
+        'success': response.statusCode == 200 || response.statusCode == 201,
+        'message': 'Profile boost processed',
+      };
+    } catch (e) {
+      debugPrint('useBoost error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Purchases an Add-on using Smart Credit Wallet
   static Future<Map<String, dynamic>> purchaseAddonWithWallet(
     String addonPackageId, {
@@ -6028,21 +6085,6 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>?> useBoost() async {
-    try {
-      final response = await post('/api/mobile/subscriptions/use-boost');
-      if (response.body.isNotEmpty) {
-        final data = jsonDecode(response.body);
-        if (data is Map<String, dynamic>) {
-          return data;
-        }
-      }
-    } catch (e) {
-      debugPrint('useBoost error: $e');
-    }
-    return null;
-  }
-
   /// Fetches all subscription transactions for the current user
   static Future<List<Map<String, dynamic>>> fetchSubscriptionHistory({
     int page = 1,
@@ -6472,24 +6514,54 @@ class ApiService {
     }
   }
 
-  /// Fetch pending/unanswered safety check for current user
-  static Future<Map<String, dynamic>?> fetchPendingSafetyCheck() async {
+  static Map<String, dynamic>? _cachedSafetyCheck;
+  static DateTime? _safetyCheckCacheTime;
+
+  /// Fetch pending/unanswered safety check for current user.
+  ///
+  /// This is one of the five calls the Live Feed awaits together, and it was the
+  /// only one with no cache at all — so however well the other four were cached,
+  /// `Future.wait` could never finish faster than a full round trip and the feed
+  /// could never render quickly. Worse, every socket event that failed to match
+  /// an entity fell back to a full feed reload, paying this round trip again,
+  /// which is what made notification cards update late.
+  ///
+  /// The window matches the notifications cache so the two stay in step. A
+  /// pending safety check also arrives over the socket, so this being briefly
+  /// stale never hides one from the user.
+  static Future<Map<String, dynamic>?> fetchPendingSafetyCheck({
+    bool forceRefresh = false,
+  }) async {
+    final userId = currentUserId;
+    if (userId == null) return null;
+
+    final now = DateTime.now();
+    if (!forceRefresh &&
+        _safetyCheckCacheTime != null &&
+        now.difference(_safetyCheckCacheTime!).inSeconds < 20) {
+      return _cachedSafetyCheck;
+    }
+
     try {
-      final userId = currentUserId;
-      if (userId == null) return null;
       final response = await _get(
         '/api/mobile/party-plans/safety-checks/pending?userId=$userId',
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        _safetyCheckCacheTime = DateTime.now();
         if (data['success'] == true && data['data'] != null) {
-          return Map<String, dynamic>.from(data['data']);
+          _cachedSafetyCheck = Map<String, dynamic>.from(data['data']);
+          return _cachedSafetyCheck;
         }
+        // A successful "nothing pending" is a real answer worth caching, or the
+        // feed would keep asking on every single refresh.
+        _cachedSafetyCheck = null;
+        return null;
       }
     } catch (e) {
       debugPrint('fetchPendingSafetyCheck error: $e');
     }
-    return null;
+    return _cachedSafetyCheck;
   }
 
   // â”€â”€ Current User Helper (async) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

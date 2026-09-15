@@ -873,7 +873,7 @@ export class SubscriptionService {
                 const userAddons = await UserAddon.findAll({
                     where: {
                         userId,
-                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active'] },
+                        status: UserAddonStatus.ACTIVE,
                         remainingQuantity: { [Op.gt]: 0 },
                     },
                 });
@@ -899,6 +899,21 @@ export class SubscriptionService {
                 ? 'unlimited'
                 : (Number(baseLikesLimit) + addonLikes);
 
+            let activeBoostRecord: any = null;
+            try {
+                const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
+                activeBoostRecord = await ProfileBoostModel.findOne({
+                    where: {
+                        userId,
+                        status: 'ACTIVE',
+                        expiresAt: { [Op.gt]: new Date() },
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+            } catch (err) {
+                logger.warn('[subscriptionService.getFullStatus] Could not fetch active profile boost:', err);
+            }
+
             return {
                 isActive: !!subscription,
                 tier,
@@ -915,6 +930,17 @@ export class SubscriptionService {
                 superlikesPerCycle: (tier === 'ELITE') ? 9999 : (planSuperlikesPerCycle + addonSuperlikes),
                 boostsRemaining: (tier === 'ELITE') ? 9999 : (planBoosts + addonBoosts),
                 boostsPerCycle: (tier === 'ELITE') ? 9999 : (planBoostsPerCycle + addonBoosts),
+                isBoostActive: !!activeBoostRecord,
+                hasActiveBoost: !!activeBoostRecord,
+                boostExpiresAt: activeBoostRecord?.expiresAt ? activeBoostRecord.expiresAt.toISOString() : null,
+                boostRemainingSeconds: activeBoostRecord ? Math.max(0, Math.ceil((new Date(activeBoostRecord.expiresAt).getTime() - Date.now()) / 1000)) : 0,
+                activeBoost: activeBoostRecord ? {
+                    id: activeBoostRecord.id,
+                    startedAt: activeBoostRecord.startedAt,
+                    expiresAt: activeBoostRecord.expiresAt,
+                    durationMinutes: activeBoostRecord.durationMinutes || 30,
+                    remainingSeconds: Math.max(0, Math.ceil((new Date(activeBoostRecord.expiresAt).getTime() - Date.now()) / 1000)),
+                } : null,
                 hasPriorityVisibility: plan?.hasPriorityVisibility ?? (['PRO', 'ELITE'].includes(tier)),
                 hasTrustBadge: plan?.hasTrustBadge ?? (['PRO', 'ELITE'].includes(tier)),
                 hasEliteBadge: plan?.hasEliteBadge ?? (tier === 'ELITE'),

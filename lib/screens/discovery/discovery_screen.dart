@@ -3542,7 +3542,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          '$name, ${22 + (index % 10)}',
+                                          () {
+                                            final age = user['age'];
+                                            if (age != null && age.toString().isNotEmpty && age.toString() != 'null') {
+                                              return '$name, $age';
+                                            }
+                                            return name;
+                                          }(),
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 14,

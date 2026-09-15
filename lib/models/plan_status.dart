@@ -15,6 +15,10 @@ class PlanStatus {
   final int superlikesPerCycle;
   final int boostsRemaining;
   final int boostsPerCycle;
+  final bool isBoostActive;
+  final String? boostExpiresAt;
+  final int boostRemainingSeconds;
+  final Map<String, dynamic>? activeBoost;
 
   // Daily feature limits
   final dynamic dailyLikesLimit; // int or 'unlimited'
@@ -59,6 +63,10 @@ class PlanStatus {
     this.superlikesPerCycle = 0,
     this.boostsRemaining = 0,
     this.boostsPerCycle = 0,
+    this.isBoostActive = false,
+    this.boostExpiresAt,
+    this.boostRemainingSeconds = 0,
+    this.activeBoost,
     this.dailyLikesLimit = 7,
     this.dailyLikesUsed = 0,
     this.dailyMatchRequestsLimit = 3,
@@ -99,6 +107,8 @@ class PlanStatus {
   bool get canSuperLike => isElite || isUnlimitedSuperlikes || superlikesRemaining > 0;
   bool get isUnlimitedBoosts => isElite || boostsRemaining >= 9999 || boostsPerCycle >= 9999 || boostsPerCycle == -1;
   bool get canBoost => isElite || isUnlimitedBoosts || boostsRemaining > 0;
+  DateTime? get boostExpiresAtDateTime => boostExpiresAt != null ? DateTime.tryParse(boostExpiresAt!) : null;
+  bool get hasActiveBoost => isBoostActive && (boostRemainingSeconds > 0 || (boostExpiresAtDateTime != null && boostExpiresAtDateTime!.isAfter(DateTime.now())));
   bool get isUnlimitedPartyPlans => isElite;
 
   int get dailyBacktrackLimitInt {
@@ -152,6 +162,11 @@ class PlanStatus {
     final isEliteTier = rawTier == 'ELITE';
     final isVip = isEliteTier || rawTier == 'PRO' || rawTier == 'PLUS' || rawTier == 'CORE' || json['isActive'] == true;
 
+    final rawActiveBoost = json['activeBoost'] is Map ? Map<String, dynamic>.from(json['activeBoost']) : null;
+    final isBoostActiveFlag = json['isBoostActive'] == true || rawActiveBoost != null;
+    final boostExp = json['boostExpiresAt']?.toString() ?? rawActiveBoost?['expiresAt']?.toString();
+    final boostRemSecs = _parseInt(json['boostRemainingSeconds'] ?? rawActiveBoost?['remainingSeconds'], 0);
+
     return PlanStatus(
       isActive: isVip,
       tier: rawTier,
@@ -168,6 +183,10 @@ class PlanStatus {
       superlikesPerCycle: isEliteTier ? 9999 : _parseInt(json['superlikesPerCycle'], 0),
       boostsRemaining: isEliteTier ? 9999 : _parseInt(json['boostsRemaining'], 0),
       boostsPerCycle: isEliteTier ? 9999 : _parseInt(json['boostsPerCycle'], 0),
+      isBoostActive: isBoostActiveFlag,
+      boostExpiresAt: boostExp,
+      boostRemainingSeconds: boostRemSecs,
+      activeBoost: rawActiveBoost,
       dailyLikesLimit: isVip ? 'unlimited' : _parseLimit(json['dailyLikesLimit'], 7),
       dailyLikesUsed: _parseInt(json['dailyLikesUsed'], 0),
       dailyMatchRequestsLimit: isVip ? 'unlimited' : _parseLimit(json['dailyMatchRequestsLimit'], 3),

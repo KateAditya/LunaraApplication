@@ -22,10 +22,25 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
+    _hydrateFromCache();
     _loadConversations();
     _initSocketListeners();
     _initLocalStreamListener();
     _startConversationPolling();
+  }
+
+  /// Paints the last known conversation list synchronously, before the network
+  /// call in `_loadConversations` completes.
+  ///
+  /// The chat list previously had no cache at all, so every entry waited on a
+  /// full round trip behind a spinner. Seeding from the retained list makes the
+  /// first frame instant; the refresh below swaps in fresh data, and the socket
+  /// listeners keep it live from then on.
+  void _hydrateFromCache() {
+    final cached = ApiService.cachedConversations;
+    if (cached == null || cached.isEmpty) return;
+    _conversations = cached;
+    _isLoading = false;
   }
 
   void _startConversationPolling() {

@@ -237,18 +237,87 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }).toList();
   }
 
+  Map<String, dynamic> _getStatusInfo(Map<String, dynamic> booking, DateTime? eventDt) {
+    String rawStatus = (booking['status'] ??
+        booking['adminApprovalStatus'] ??
+        booking['rawRequest']?['status'] ??
+        booking['plan']?['status'] ??
+        booking['request']?['status'] ??
+        'pending').toString().toUpperCase();
+
+    final adminApprovalStatus = booking['adminApprovalStatus']?.toString().toUpperCase();
+    final paymentStatus = (booking['paymentStatus'] ?? booking['rawRequest']?['paymentStatus'])?.toString().toUpperCase();
+
+    final bool isCancelled = rawStatus.contains('CANCEL');
+    final bool isRejected = rawStatus == 'REJECTED';
+    final bool isCompleted = rawStatus == 'COMPLETED' || rawStatus == 'SETTLED' || rawStatus == 'HOST_CONFIRMED_ENDED' || rawStatus == 'ADMIN_CONFIRMED_ENDED';
+
+    final bool isPending = !isCancelled && !isRejected && !isCompleted && (
+        rawStatus == 'PENDING' ||
+        rawStatus == 'PENDING_APPROVAL' ||
+        rawStatus == 'WAITING_FOR_ADMIN_APPROVAL' ||
+        rawStatus == 'AWAITING_APPROVAL' ||
+        rawStatus == 'START_CONFIRMATION_PENDING' ||
+        rawStatus == 'UNPAID' ||
+        adminApprovalStatus == 'PENDING' ||
+        adminApprovalStatus == 'PAYMENT_SENT' ||
+        paymentStatus == 'PENDING' ||
+        paymentStatus == 'UNPAID'
+    );
+
+    final bool isExpired = !isCancelled && !isRejected && !isPending && (rawStatus == 'EXPIRED' || (eventDt != null && eventDt.isBefore(DateTime.now())));
+    final bool isConfirmed = !isCancelled && !isRejected && !isPending && !isExpired && !isCompleted;
+
+    String displayStatus;
+    Color statusColor;
+
+    if (isCancelled) {
+      displayStatus = 'CANCELLED';
+      statusColor = const Color(0xFFEF4444);
+    } else if (isRejected) {
+      displayStatus = 'REJECTED';
+      statusColor = const Color(0xFFEF4444);
+    } else if (isPending) {
+      displayStatus = 'PENDING APPROVAL';
+      statusColor = const Color(0xFFD97706);
+    } else if (isExpired) {
+      displayStatus = 'EXPIRED';
+      statusColor = Colors.red.shade600;
+    } else if (isCompleted) {
+      displayStatus = 'COMPLETED';
+      statusColor = const Color(0xFF10B981);
+    } else {
+      displayStatus = 'CONFIRMED';
+      statusColor = LunaraTheme.electricViolet;
+    }
+
+    return {
+      'rawStatus': rawStatus,
+      'displayStatus': displayStatus,
+      'statusColor': statusColor,
+      'isCancelled': isCancelled,
+      'isPending': isPending,
+      'isExpired': isExpired,
+      'isRejected': isRejected,
+      'isCompleted': isCompleted,
+      'isConfirmed': isConfirmed,
+    };
+  }
+
   int get _nightsOut {
     return _filteredBookings.where((b) {
-      final status = b['status']?.toString().toLowerCase();
-      return status != 'cancelled';
+      if (b is! Map<String, dynamic>) return false;
+      final info = _getStatusInfo(b, _getEventDateTime(b));
+      return info['isConfirmed'] == true || info['isCompleted'] == true;
     }).length;
   }
 
   String get _totalSpent {
     double total = 0;
     for (final b in _filteredBookings) {
-      final status = b['status']?.toString().toLowerCase();
-      if (status != 'cancelled') {
+      if (b is! Map<String, dynamic>) continue;
+      final info = _getStatusInfo(b, _getEventDateTime(b));
+      if (info['isConfirmed'] == true || info['isCompleted'] == true) {
         final amt = double.tryParse(b['totalAmount']?.toString() ?? '0') ?? 0.0;
         total += amt;
       }
@@ -262,8 +331,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   String get _avgRating {
     final validBookings = _filteredBookings.where((b) {
-      final status = b['status']?.toString().toLowerCase();
-      return status != 'cancelled';
+      if (b is! Map<String, dynamic>) return false;
+      final info = _getStatusInfo(b, _getEventDateTime(b));
+      return info['isConfirmed'] == true || info['isCompleted'] == true;
     }).toList();
 
     if (validBookings.isEmpty) return '0.0★';
@@ -783,10 +853,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
         final id = booking['id']?.toString() ?? '';
         final rating = (id.hashCode.abs() % 3) + 3; // 3, 4, or 5 stars
-        final rawStatus = booking['status']?.toString().toUpperCase() ?? 'CONFIRMED';
-        final isCancelled = rawStatus.contains('CANCEL');
-        final bool isExpired = !isCancelled && (rawStatus == 'EXPIRED' || (eventDt != null && eventDt.isBefore(DateTime.now())));
-        final displayStatus = isCancelled ? 'CANCELLED' : (isExpired ? 'EXPIRED' : rawStatus);
+        final statusInfo = _getStatusInfo(booking, eventDt);
+        final displayStatus = statusInfo['displayStatus'] as String;
+        final statusColor = statusInfo['statusColor'] as Color;
+        final isCancelled = statusInfo['isCancelled'] as bool;
+        final isPending = statusInfo['isPending'] as bool;
+        final isExpired = statusInfo['isExpired'] as bool;
+        final isCompleted = statusInfo['isCompleted'] as bool;
 
         return IntrinsicHeight(
           child: Row(
@@ -801,11 +874,23 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       width: 12,
                       height: 12,
                       decoration: BoxDecoration(
-                        color: isCancelled || isExpired ? Colors.grey : LunaraTheme.electricViolet,
+                        color: isCancelled || isExpired
+                            ? Colors.grey
+                            : (isPending
+                                ? const Color(0xFFD97706)
+                                : (isCompleted
+                                    ? const Color(0xFF10B981)
+                                    : LunaraTheme.electricViolet)),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: (isCancelled || isExpired ? Colors.grey : LunaraTheme.electricViolet)
+                            color: (isCancelled || isExpired
+                                    ? Colors.grey
+                                    : (isPending
+                                        ? const Color(0xFFD97706)
+                                        : (isCompleted
+                                            ? const Color(0xFF10B981)
+                                            : LunaraTheme.electricViolet)))
                                 .withValues(alpha: 0.35),
                             blurRadius: 8,
                           ),
@@ -860,7 +945,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if ((isSolo || (isGroupParty && booking['isLargePartyRequest'] != true)) && !isCancelled && !isExpired && rawStatus != 'COMPLETED') ...[
+                                  if ((isSolo || (isGroupParty && booking['isLargePartyRequest'] != true)) && !isCancelled && !isExpired && !isCompleted) ...[
                                     GestureDetector(
                                       onTap: () {
                                         final bId = booking['id']?.toString() ?? booking['bookingId']?.toString();
@@ -910,27 +995,17 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                       vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: isCancelled
-                                          ? const Color(0xFFEF4444).withValues(alpha: 0.1)
-                                          : (isExpired
-                                              ? Colors.red.withValues(alpha: 0.1)
-                                              : LunaraTheme.electricViolet.withValues(alpha: 0.1)),
+                                      color: statusColor.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
-                                        color: isCancelled
-                                            ? const Color(0xFFEF4444).withValues(alpha: 0.3)
-                                            : (isExpired
-                                                ? Colors.red.withValues(alpha: 0.3)
-                                                : LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                                        color: statusColor.withValues(alpha: 0.3),
                                         width: 0.8,
                                       ),
                                     ),
                                     child: Text(
                                       displayStatus,
                                       style: TextStyle(
-                                        color: isCancelled
-                                            ? const Color(0xFFEF4444)
-                                            : (isExpired ? Colors.red.shade600 : LunaraTheme.electricViolet),
+                                        color: statusColor,
                                         fontSize: 9,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 0.8,
@@ -1113,14 +1188,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         booking['bookingId'] ??
         (booking['id'] != null ? booking['id'].toString().substring(0, 8).toUpperCase() : 'TICKET')).toString().toUpperCase();
 
-    final rawStatus = booking['status']?.toString().toUpperCase() ?? 'CONFIRMED';
-    final isCancelled = rawStatus.contains('CANCEL');
-    final bool isExpired = !isCancelled && (rawStatus == 'EXPIRED' || (eventDt != null && eventDt.isBefore(DateTime.now())));
-    final displayStatus = isCancelled ? 'CANCELLED' : (isExpired ? 'EXPIRED' : rawStatus);
-
-    final statusColor = isCancelled
-        ? const Color(0xFFEF4444)
-        : (isExpired ? Colors.red.shade600 : LunaraTheme.electricViolet);
+    final statusInfo = _getStatusInfo(booking, eventDt);
+    final displayStatus = statusInfo['displayStatus'] as String;
+    final statusColor = statusInfo['statusColor'] as Color;
+    final isCancelled = statusInfo['isCancelled'] as bool;
+    final isPending = statusInfo['isPending'] as bool;
+    final isExpired = statusInfo['isExpired'] as bool;
+    final isRejected = statusInfo['isRejected'] as bool;
 
     final guests = booking['numberOfGuests'] ?? (isStrangersMeet ? 2 : (isPartyPlan ? 2 : 1));
 
@@ -1319,6 +1393,58 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     Expanded(
                       child: Text(
                         'This booking was cancelled.',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (isPending)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This booking is waiting for admin approval.',
+                        style: TextStyle(
+                          color: Color(0xFFB45309),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (isRejected)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This booking request was declined.',
                         style: TextStyle(
                           color: Color(0xFFDC2626),
                           fontSize: 12,

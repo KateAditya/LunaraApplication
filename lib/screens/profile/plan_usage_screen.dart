@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../models/vip_entitlement_model.dart';
 import '../../services/subscription_provider.dart';
+import '../../widgets/profile_boost_modal.dart';
 import 'vip_membership_screen.dart';
 
 class PlanUsageScreen extends StatelessWidget {
@@ -484,17 +485,32 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
       progressColor = LunaraTheme.electricViolet;
     }
 
+    final isBoost = item.featureKey == 'profile_boost' ||
+        item.featureKey == 'boost' ||
+        item.name.toLowerCase().contains('boost');
+    final provider = SubscriptionProvider.instance;
+    final isBoostActive = provider.isBoostActive &&
+        provider.boostExpiresAt != null &&
+        provider.boostExpiresAt!.isAfter(DateTime.now());
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(
+          color: isBoost && isBoostActive
+              ? const Color(0xFFFDE68A)
+              : Colors.grey[200]!,
+          width: isBoost && isBoostActive ? 1.5 : 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
+            color: isBoost && isBoostActive
+                ? const Color(0xFFFFB703).withValues(alpha: 0.12)
+                : Colors.black.withValues(alpha: 0.03),
+            blurRadius: isBoost && isBoostActive ? 12 : 8,
             offset: const Offset(0, 3),
           ),
         ],
@@ -536,13 +552,18 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: progressColor.withValues(alpha: 0.12),
+                  color: (isBoost && isBoostActive
+                          ? const Color(0xFF10B981)
+                          : progressColor)
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  statusText,
+                  isBoost && isBoostActive ? 'ACTIVE' : statusText,
                   style: TextStyle(
-                    color: progressColor,
+                    color: isBoost && isBoostActive
+                        ? const Color(0xFF10B981)
+                        : progressColor,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -555,10 +576,18 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: isUnlimited ? 1.0 : (combinedTotal > 0 ? (combinedRemaining / combinedTotal).clamp(0.0, 1.0) : (1.0 - progress)),
+              value: isUnlimited
+                  ? 1.0
+                  : (combinedTotal > 0
+                      ? (combinedRemaining / combinedTotal).clamp(0.0, 1.0)
+                      : (1.0 - progress)),
               minHeight: 7,
               backgroundColor: Colors.grey[200],
-              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isBoost && isBoostActive
+                    ? const Color(0xFF10B981)
+                    : progressColor,
+              ),
             ),
           ),
           if (!isUnlimited) ...[
@@ -588,10 +617,47 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: (item.isLow && !hasAddon) ? Colors.orange[800] : Colors.grey[800],
+                    color: (item.isLow && !hasAddon)
+                        ? Colors.orange[800]
+                        : Colors.grey[800],
                   ),
                 ),
               ],
+            ),
+          ],
+          if (isBoost) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => ProfileBoostModal.show(context),
+                icon: Icon(
+                  Icons.bolt_rounded,
+                  color: isBoostActive ? Colors.white : Colors.black,
+                  size: 18,
+                ),
+                label: Text(
+                  isBoostActive
+                      ? '⚡ SPOTLIGHT ACTIVE • VIEW STATUS'
+                      : '⚡ BOOST PROFILE NOW (30 MIN)',
+                  style: TextStyle(
+                    color: isBoostActive ? Colors.white : Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isBoostActive
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFFFFB703),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
             ),
           ],
         ],

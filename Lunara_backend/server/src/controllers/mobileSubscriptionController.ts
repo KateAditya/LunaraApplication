@@ -795,7 +795,40 @@ export const purchaseBoost = async (req: Request, res: Response): Promise<void> 
 // @route POST /api/mobile/subscriptions/use-boost
 export const useBoost = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.userId || (req as any).user?.id || req.body?.userId;
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
+
+        const now = new Date();
+        const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
+        const existingActiveBoost = await ProfileBoostModel.findOne({
+            where: {
+                userId,
+                status: 'ACTIVE',
+                expiresAt: { [Op.gt]: now },
+            },
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (existingActiveBoost) {
+            const remSecs = Math.max(0, Math.ceil((new Date(existingActiveBoost.expiresAt).getTime() - now.getTime()) / 1000));
+            const remMins = Math.ceil(remSecs / 60);
+            res.status(200).json({
+                success: true,
+                code: 'ALREADY_ACTIVE',
+                message: `Your profile is already boosted! Spotlight is active for another ${remMins} minute${remMins === 1 ? '' : 's'}.`,
+                data: {
+                    boostId: existingActiveBoost.id,
+                    startedAt: existingActiveBoost.startedAt,
+                    expiresAt: existingActiveBoost.expiresAt,
+                    remainingSeconds: remSecs,
+                    isAlreadyActive: true,
+                },
+            });
+            return;
+        }
 
         // Consume boost entitlement via EntitlementService (Priority: Plan -> Add-on -> ADDON_REQUIRED)
         const consumption = await EntitlementService.consumeFeatureEntitlement(userId, 'profile_boost', 1, {
@@ -812,10 +845,8 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const now = new Date();
         const expiresAt = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes duration
 
-        const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
         const boost = await ProfileBoostModel.create({
             userId,
             startedAt: now,

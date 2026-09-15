@@ -14,6 +14,7 @@ import '../../services/subscription_provider.dart';
 import '../social/match_screen.dart';
 import '../../models/user.dart';
 import '../../widgets/lunara_profile_image.dart';
+import '../../widgets/profile_boost_modal.dart';
 
 class ProfileHubScreen extends StatefulWidget {
   const ProfileHubScreen({super.key});
@@ -438,7 +439,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                   const SizedBox(height: 4),
                   Text(
                     isPaid
-                        ? '⭐ Super Likes: $superlikes  •  ⚡ Boosts: $boosts'
+                        ? '⭐ Super Likes: $superlikes  •  ⚡ Boosts: ${subscription.isBoostActive ? "ACTIVE" : boosts}'
                         : 'Unlock Unlimited Likes, Super Likes & Priority Boosts',
                     style: TextStyle(
                       color: subTextColor,
@@ -574,6 +575,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   Widget _buildMenuSection(BuildContext context) {
     return Column(
       children: [
+        _boostMenuTile(context),
         _menuTile(
           Icons.confirmation_num_rounded,
           'My Tickets',
@@ -633,6 +635,158 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _boostMenuTile(BuildContext context) {
+    final subscription = SubscriptionScope.of(context).status;
+    final isBoostActive = subscription.isBoostActive &&
+        subscription.boostExpiresAtDateTime != null &&
+        subscription.boostExpiresAtDateTime!.isAfter(DateTime.now());
+
+    final boostsRemaining = subscription.boostsRemaining;
+    final isUnlimited = subscription.isUnlimitedBoosts || subscription.isElite;
+
+    String subtitle;
+    if (isBoostActive) {
+      final diff = subscription.boostExpiresAtDateTime!.difference(DateTime.now());
+      final mins = diff.inMinutes;
+      final secs = (diff.inSeconds % 60).toString().padLeft(2, '0');
+      subtitle = '⚡ Spotlight Active • ${mins}m ${secs}s remaining';
+    } else if (isUnlimited) {
+      subtitle = 'Unlimited 30m Spotlights • Top rank in discovery';
+    } else if (boostsRemaining > 0) {
+      subtitle = '$boostsRemaining boost${boostsRemaining > 1 ? "s" : ""} left • Spotlight for 30 min';
+    } else {
+      subtitle = 'Get 10x more profile views • Jump to feed top';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFFB703).withValues(alpha: isBoostActive ? 0.25 : 0.08),
+              blurRadius: isBoostActive ? 20 : 15,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: isBoostActive ? const Color(0xFFFFFBEB) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          child: ListTile(
+            onTap: () => ProfileBoostModal.show(context),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(
+                color: isBoostActive ? const Color(0xFFFDE68A) : Colors.grey[100]!,
+                width: isBoostActive ? 1.5 : 1.0,
+              ),
+            ),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFB703), Color(0xFFFB8500)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: isBoostActive
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFFFFB703).withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+            ),
+            title: Row(
+              children: [
+                const Text(
+                  'Profile Boost',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (isBoostActive)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  )
+                else if (isUnlimited || boostsRemaining > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      isUnlimited ? 'UNLIMITED' : '$boostsRemaining READY',
+                      style: const TextStyle(
+                        color: Color(0xFFD97706),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            subtitle: Text(
+              subtitle,
+              style: TextStyle(
+                color: isBoostActive ? const Color(0xFFB45309) : Colors.black54,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: isBoostActive
+                    ? const Color(0xFFFFB703).withValues(alpha: 0.15)
+                    : LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                isBoostActive ? 'STATUS' : 'BOOST',
+                style: TextStyle(
+                  color: isBoostActive ? const Color(0xFFD97706) : LunaraTheme.electricViolet,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

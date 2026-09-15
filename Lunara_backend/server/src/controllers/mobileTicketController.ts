@@ -365,7 +365,16 @@ export class MobileTicketController {
                     ? partyPlanDt
                     : (t.eventStartAt ? new Date(t.eventStartAt) : new Date());
                 const actualExpiresAt = getActualExpiration(startDate, t.eventEndAt ? new Date(t.eventEndAt) : null, t.expiresAt ? new Date(t.expiresAt) : null);
-                const isExpired = t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now;
+                const isSourceCancelled =
+                    t.ticketStatus === TicketStatus.CANCELLED ||
+                    (t.ticketStatus as string)?.toUpperCase() === 'CANCELLED' ||
+                    (sourceBooking as any)?.bookingStatus?.toUpperCase() === 'CANCELLED' ||
+                    sourceBooking?.status?.toUpperCase() === 'CANCELLED' ||
+                    sourceBooking?.paymentStatus?.toLowerCase() === 'refunded' ||
+                    sourceGroupParty?.status?.toUpperCase() === 'CANCELLED' ||
+                    sourcePartyPlan?.status?.toUpperCase() === 'CANCELLED' ||
+                    sourceStrangersMeet?.status?.toUpperCase() === 'CANCELLED';
+                const isExpired = !isSourceCancelled && (t.ticketStatus === TicketStatus.EXPIRED || actualExpiresAt < now);
                 const sourceStartTime = sourceGroupParty?.startTime || sourceBooking?.startTime;
                 let startTimeStr = '08:00 PM';
                 if (isPartyPlan && partyPlanDt && !isNaN(partyPlanDt.getTime())) {
@@ -514,7 +523,11 @@ export class MobileTicketController {
                     bookingId: t.bookingId,
                     bookingType: isPartyPlan ? 'party_plan' : t.bookingType,
                     category: isPartyPlan ? 'party_plan' : category,
-                    status: isExpired && t.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : t.ticketStatus,
+                    status: isSourceCancelled ? TicketStatus.CANCELLED : (isExpired ? TicketStatus.EXPIRED : t.ticketStatus),
+                    ticketStatus: isSourceCancelled ? TicketStatus.CANCELLED : (isExpired ? TicketStatus.EXPIRED : t.ticketStatus),
+                    bookingStatus: (sourceBooking as any)?.bookingStatus || (isSourceCancelled ? 'cancelled' : sourceBooking?.status),
+                    paymentStatus: sourceBooking?.paymentStatus || (isSourceCancelled ? 'refunded' : undefined),
+                    isCancelled: isSourceCancelled,
                     bookingDate: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     planDateTime: (isPartyPlan && partyPlanDt) ? partyPlanDt : t.eventStartAt,
                     startTime: startTimeStr,
@@ -523,9 +536,9 @@ export class MobileTicketController {
                     issuedAt: t.issuedAt,
                     expiresAt: actualExpiresAt,
                     usedAt: t.usedAt,
-                    pdfUrl: isExpired ? null : t.pdfUrl,
-                    qrToken: isExpired ? null : t.qrToken,
-                    ticketUrl: isExpired ? null : t.pdfUrl,
+                    pdfUrl: (isExpired || isSourceCancelled) ? null : t.pdfUrl,
+                    qrToken: (isExpired || isSourceCancelled) ? null : t.qrToken,
+                    ticketUrl: (isExpired || isSourceCancelled) ? null : t.pdfUrl,
                     totalAmount: amountVal,
                     paymentAmount: amountVal,
                     chargesPerHead: isStrangersMeet && smMeet ? Number(smMeet.chargesPerHead || 0) : undefined,
@@ -665,9 +678,10 @@ export class MobileTicketController {
                 const startAt = planStartAt || parseEventStartDateTime(b.bookingDate, sTime);
                 const expAt = getActualExpiration(startAt);
                 const bStatus = (b.status || '').toLowerCase();
-                const isCancelled = bStatus === 'cancelled';
-                const isCompleted = bStatus === 'completed';
-                const isExpired = bStatus === 'expired' || isCompleted || expAt < now;
+                const bBookingStatus = ((b as any).bookingStatus || '').toLowerCase();
+                const isCancelled = bStatus === 'cancelled' || bBookingStatus === 'cancelled' || b.paymentStatus === 'refunded';
+                const isCompleted = bStatus === 'completed' || bBookingStatus === 'completed';
+                const isExpired = !isCancelled && (bStatus === 'expired' || isCompleted || expAt < now);
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
                 const isUpcomingNight = Boolean(b.isUpcomingNight || b.partyEventId || (b as any).partyEvent);
@@ -714,6 +728,10 @@ export class MobileTicketController {
                     bookingType: isPartyPlan ? 'party_plan' : (isEventBooking ? 'event_booking' : (isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : 'venue_booking')))),
                     category,
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    bookingStatus: (b as any).bookingStatus || (isCancelled ? 'cancelled' : b.status),
+                    paymentStatus: b.paymentStatus,
+                    isCancelled,
                     bookingDate: planStartAt || b.bookingDate,
                     startTime: planStartAt ? formatTime12Hour(planStartAt) : formatTimeTo12Hour(sTime),
                     eventStartAt: startAt,
@@ -721,9 +739,9 @@ export class MobileTicketController {
                     issuedAt: b.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (bAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (bAny.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (bAny.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (bAny.ticketUrl || null),
                     totalAmount: totalAmt,
                     isFree: isFreeBooking,
                     numberOfGuests: b.numberOfGuests || 1,
@@ -785,7 +803,7 @@ export class MobileTicketController {
                 const gpStatus = (gp.status || '').toLowerCase();
                 const isCancelled = gpStatus === 'cancelled' || gpStatus === 'rejected';
                 const isCompleted = gpStatus === 'completed';
-                const isExpired = gpStatus === 'expired' || isCompleted || expAt < now;
+                const isExpired = !isCancelled && (gpStatus === 'expired' || isCompleted || expAt < now);
                 const ticketCode = gpAny.ticketCode || `LUN-${startAt.getFullYear()}-GP-${gp.id.substring(0, 6).toUpperCase()}`;
 
                 const gpAmount = Number(gp.totalAmount || 0);
@@ -811,6 +829,8 @@ export class MobileTicketController {
                     bookingType: 'group_party',
                     category: 'group_party',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: gp.partyDate,
                     startTime: formatTimeTo12Hour(sTime),
                     eventStartAt: startAt,
@@ -818,9 +838,9 @@ export class MobileTicketController {
                     issuedAt: gp.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (gpAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (gpAny.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (gpAny.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (gpAny.ticketUrl || null),
                     totalAmount: gpAmount,
                     isFree: isFreeGp,
                     numberOfGuests: gp.numberOfFriends || 5,
@@ -919,9 +939,9 @@ export class MobileTicketController {
 
                 const startAt = parseEventStartDateTime(plan.planDateTime, null);
                 const expAt = authTicket?.expiresAt ? new Date(authTicket.expiresAt) : getActualExpiration(startAt);
-                const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected' || pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
+                const isCancelled = isCancelledReq || sStatus === 'cancelled' || sStatus === 'rejected' || pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
                 const isCompleted = pLife === 'plan_completed' || authTicket?.ticketStatus === TicketStatus.USED;
-                const isExpired = sStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED;
+                const isExpired = !isCancelled && (sStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED);
                 const ticketPdfUrl = authTicket?.pdfUrl || authBooking?.ticketUrl || reqAny.ticketUrl || null;
                 const ticketQrToken = authTicket?.qrToken || ticketCode;
 
@@ -957,6 +977,8 @@ export class MobileTicketController {
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: plan.planDateTime,
                     startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
@@ -964,9 +986,9 @@ export class MobileTicketController {
                     issuedAt: req.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : ticketPdfUrl,
-                    qrToken: isExpired ? null : ticketQrToken,
-                    ticketUrl: isExpired ? null : ticketPdfUrl,
+                    pdfUrl: (isExpired || isCancelled) ? null : ticketPdfUrl,
+                    qrToken: (isExpired || isCancelled) ? null : ticketQrToken,
+                    ticketUrl: (isExpired || isCancelled) ? null : ticketPdfUrl,
                     totalAmount: Number(plan.depositAmount || 99),
                     isFree: false,
                     numberOfGuests: 2,
@@ -1070,9 +1092,9 @@ export class MobileTicketController {
                 const startAt = parseEventStartDateTime(plan.planDateTime, null);
                 const expAt = authTicket?.expiresAt ? new Date(authTicket.expiresAt) : getActualExpiration(startAt);
                 const pStatus = (plan.status || '').toLowerCase();
-                const isCancelled = pStatus === 'cancelled' || pLife === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
+                const isCancelled = isCancelledPlan || pStatus === 'cancelled' || pLife === 'cancelled' || authTicket?.ticketStatus === TicketStatus.CANCELLED;
                 const isCompleted = pLife === 'plan_completed' || authTicket?.ticketStatus === TicketStatus.USED;
-                const isExpired = pStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED;
+                const isExpired = !isCancelled && (pStatus === 'expired' || isCompleted || expAt < now || authTicket?.ticketStatus === TicketStatus.EXPIRED);
                 const ticketPdfUrl = authTicket?.pdfUrl || authBooking?.ticketUrl || planAny.ticketUrl || null;
                 const ticketQrToken = authTicket?.qrToken || ticketCode;
 
@@ -1132,6 +1154,8 @@ export class MobileTicketController {
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: plan.planDateTime,
                     startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
@@ -1139,9 +1163,9 @@ export class MobileTicketController {
                     issuedAt: plan.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : ticketPdfUrl,
-                    qrToken: isExpired ? null : ticketQrToken,
-                    ticketUrl: isExpired ? null : ticketPdfUrl,
+                    pdfUrl: (isExpired || isCancelled) ? null : ticketPdfUrl,
+                    qrToken: (isExpired || isCancelled) ? null : ticketQrToken,
+                    ticketUrl: (isExpired || isCancelled) ? null : ticketPdfUrl,
                     totalAmount: Number(plan.depositAmount || 99),
                     isFree: false,
                     numberOfGuests: 2,
@@ -1199,7 +1223,7 @@ export class MobileTicketController {
                 const jStatus = (j.status || '').toLowerCase();
                 const isCancelled = jStatus === 'cancelled' || jStatus === 'rejected' || meet.status === 'cancelled' || jPayStatus === 'refunded';
                 const isCompleted = meet.status === 'completed' || meet.status === 'settled';
-                const isExpired = meet.status === 'expired' || isCompleted || expAt < now;
+                const isExpired = !isCancelled && (meet.status === 'expired' || isCompleted || expAt < now);
                 const ticketCode = jAny.ticketCode || `LUN-${startAt.getFullYear()}-SM-${j.id.substring(0, 6).toUpperCase()}`;
 
                 const jUser = jAny.user ? {
@@ -1222,6 +1246,8 @@ export class MobileTicketController {
                     bookingType: 'strangers_meet',
                     category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: meet.eventDateTime,
                     startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
@@ -1229,9 +1255,9 @@ export class MobileTicketController {
                     issuedAt: j.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (jAny.ticketUrl || meet.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (jAny.ticketUrl || meet.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (jAny.ticketUrl || meet.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (jAny.ticketUrl || meet.ticketUrl || null),
                     totalAmount: Number(meet.chargesPerHead || jAny.paymentAmount || 0),
                     paymentAmount: Number(meet.chargesPerHead || jAny.paymentAmount || 0),
                     chargesPerHead: Number(meet.chargesPerHead || 0),
@@ -1296,7 +1322,7 @@ export class MobileTicketController {
                 const sStatus = (sm.status || '').toLowerCase();
                 const isCancelled = sStatus === 'cancelled' || sStatus === 'rejected' || smPayStatus === 'refunded';
                 const isCompleted = sStatus === 'completed' || sStatus === 'settled';
-                const isExpired = sStatus === 'expired' || isCompleted || expAt < now;
+                const isExpired = !isCancelled && (sStatus === 'expired' || isCompleted || expAt < now);
                 const ticketCode = smAny.ticketCode || sm.ticketId || `LUN-${startAt.getFullYear()}-SM-${sm.id.substring(0, 6).toUpperCase()}`;
 
                 const smUser = smAny.user ? {
@@ -1319,6 +1345,8 @@ export class MobileTicketController {
                     bookingType: 'strangers_meet',
                     category: 'strangers_meet',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: sm.eventDateTime,
                     startTime: formatTime12Hour(startAt),
                     eventStartAt: startAt,
@@ -1326,9 +1354,9 @@ export class MobileTicketController {
                     issuedAt: sm.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (sm.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (sm.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (sm.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (sm.ticketUrl || null),
                     totalAmount: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99),
                     paymentAmount: Number(sm.paymentAmount ?? sm.chargesPerHead ?? 99),
                     chargesPerHead: Number(sm.chargesPerHead || 0),
@@ -1390,7 +1418,7 @@ export class MobileTicketController {
                 const pStatus = (plan.status || '').toLowerCase();
                 const isCancelled = pStatus === 'cancelled';
                 const isCompleted = pStatus === 'completed' || pStatus === 'secured';
-                const isExpired = pStatus === 'expired' || isCompleted || expAt < now;
+                const isExpired = !isCancelled && (pStatus === 'expired' || isCompleted || expAt < now);
                 const ticketCode = planAny.ticketCode || `LUN-${startAt.getFullYear()}-TP-${plan.id.substring(0, 6).toUpperCase()}`;
 
                 const planUser = planAny.user ? {
@@ -1413,6 +1441,8 @@ export class MobileTicketController {
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: plan.planDate || planAny.partyDate,
                     startTime: formatTime12Hour(plan.startTime ? parseEventDateTimeToUTC(plan.planDate || planAny.partyDate, plan.startTime) : startAt),
                     eventStartAt: startAt,
@@ -1420,9 +1450,9 @@ export class MobileTicketController {
                     issuedAt: plan.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (planAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (planAny.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (planAny.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (planAny.ticketUrl || null),
                     totalAmount: Number(plan.totalAmount || 0),
                     isFree: Number(plan.totalAmount || 0) <= 0,
                     numberOfGuests: 2,
@@ -1470,7 +1500,7 @@ export class MobileTicketController {
                 const rStatus = (req.status || '').toLowerCase();
                 const isCancelled = rStatus === 'cancelled' || rStatus === 'rejected';
                 const isCompleted = plan.status === 'completed' || plan.status === 'secured';
-                const isExpired = rStatus === 'expired' || isCompleted || expAt < now;
+                const isExpired = !isCancelled && (rStatus === 'expired' || isCompleted || expAt < now);
                 const ticketCode = reqAny.ticketCode || `LUN-${startAt.getFullYear()}-TP-${req.id.substring(0, 6).toUpperCase()}`;
 
                 const reqUser = reqAny.user ? {
@@ -1505,6 +1535,8 @@ export class MobileTicketController {
                     bookingType: 'party_plan',
                     category: 'party_plan',
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    ticketStatus: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
+                    isCancelled,
                     bookingDate: plan.planDate || plan.partyDate,
                     startTime: formatTime12Hour(plan.startTime ? parseEventDateTimeToUTC(plan.planDate || plan.partyDate, plan.startTime) : startAt),
                     eventStartAt: startAt,
@@ -1512,9 +1544,9 @@ export class MobileTicketController {
                     issuedAt: req.createdAt,
                     expiresAt: expAt,
                     usedAt: isCompleted ? expAt : null,
-                    pdfUrl: isExpired ? null : (reqAny.ticketUrl || null),
-                    qrToken: isExpired ? null : ticketCode,
-                    ticketUrl: isExpired ? null : (reqAny.ticketUrl || null),
+                    pdfUrl: (isExpired || isCancelled) ? null : (reqAny.ticketUrl || null),
+                    qrToken: (isExpired || isCancelled) ? null : ticketCode,
+                    ticketUrl: (isExpired || isCancelled) ? null : (reqAny.ticketUrl || null),
                     totalAmount: Number(req.shareAmount || reqAny.splitAmount || 0),
                     isFree: Number(req.shareAmount || reqAny.splitAmount || 0) <= 0,
                     numberOfGuests: 2,
@@ -1672,8 +1704,9 @@ export class MobileTicketController {
                 return res.status(403).json({ success: false, message: 'Unauthorized ticket access' });
             }
 
+            const isCancelled = ticket.ticketStatus === TicketStatus.CANCELLED || (ticket.ticketStatus as string)?.toLowerCase() === 'cancelled';
             const now = new Date();
-            const isExpired = ticket.ticketStatus === TicketStatus.EXPIRED || new Date(ticket.expiresAt) < now;
+            const isExpired = !isCancelled && (ticket.ticketStatus === TicketStatus.EXPIRED || new Date(ticket.expiresAt) < now);
             const vCoverUrl = extractVenueCoverImageUrl(ticket.venue);
 
             return res.status(200).json({
@@ -1683,14 +1716,16 @@ export class MobileTicketController {
                     ticketId: ticket.ticketId,
                     bookingId: ticket.bookingId,
                     bookingType: ticket.bookingType,
-                    status: isExpired && ticket.ticketStatus !== TicketStatus.CANCELLED ? TicketStatus.EXPIRED : ticket.ticketStatus,
+                    status: isCancelled ? TicketStatus.CANCELLED : (isExpired ? TicketStatus.EXPIRED : ticket.ticketStatus),
+                    ticketStatus: isCancelled ? TicketStatus.CANCELLED : (isExpired ? TicketStatus.EXPIRED : ticket.ticketStatus),
+                    isCancelled,
                     eventStartAt: ticket.eventStartAt,
                     eventEndAt: ticket.eventEndAt,
                     issuedAt: ticket.issuedAt,
                     expiresAt: ticket.expiresAt,
                     usedAt: ticket.usedAt,
-                    pdfUrl: isExpired ? null : ticket.pdfUrl,
-                    qrToken: isExpired ? null : ticket.qrToken,
+                    pdfUrl: (isExpired || isCancelled) ? null : ticket.pdfUrl,
+                    qrToken: (isExpired || isCancelled) ? null : ticket.qrToken,
                     venueName: ticket.venue?.name || 'Lunara Venue',
                     venueAddress: ticket.venue?.addressLine1 || '',
                     venue: ticket.venue ? {

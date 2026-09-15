@@ -816,36 +816,101 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const count = allUserIds.length;
         const totalPages = Math.ceil(count / limit) || 1;
 
-        // Fast path for invite list / large lookups / direct target search: bypass heavy 8-table ranking scan
-        const shouldComputeRanking = req.query.ranking !== 'false' && limit <= 60 && !targetUserId;
+        // Always compute VIP-aware ranking so boosted/subscribed profiles surface to the top and show
+        // their correct ring/badge in the UI. RankingService internally caps at 50 candidates for
+        // performance; the remaining paginated users get their subscription tier via a lightweight
+        // single query so the VIP ring is always accurate regardless of page size.
 
         let paginatedUserIds: string[] = [];
         let scoredUsersMap = new Map<string, any>();
 
-        if (shouldComputeRanking) {
-            // Rank across candidate pool (up to 250 items) so active boosts and top tiers rank directly on top
+        if (!targetUserId && req.query.ranking !== 'false') {
+            // ── Step 1: Rank the first 50 candidates (scoring bounded by RankingService) ────────
             const candidatePool = allUserIds.slice(0, 250);
             const rankingExplanations = await RankingService.computeRankings(candidatePool);
-            const scoredUsers = rankingExplanations.map((exp) => ({
-                id: exp.userId,
-                rankScore: exp.finalRankScore,
-                priorityTier: exp.priorityTier,
-                likes: exp.rawMetrics.likesCount,
-                superlikes: exp.rawMetrics.superlikesCount,
-                plans: exp.rawMetrics.plansCount,
-                boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
-                isBoosted: exp.rawMetrics.hasActiveBoost,
-                vipTier: exp.rawMetrics.vipTier || 'FREE',
-                explainScore: exp.breakdown,
-            }));
-            const paginatedScoredUsers = scoredUsers.slice(offset, offset + limit);
-            paginatedUserIds = paginatedScoredUsers.map(u => u.id);
-            paginatedScoredUsers.forEach(u => scoredUsersMap.set(u.id, u));
+
+            // Build a lookup map for ranked users
+            const rankedScoreMap = new Map<string, any>();
+            rankingExplanations.forEach((exp) => {
+                rankedScoreMap.set(exp.userId, {
+                    id: exp.userId,
+                    rankScore: exp.finalRankScore,
+                    priorityTier: exp.priorityTier,
+                    likes: exp.rawMetrics.likesCount,
+                    superlikes: exp.rawMetrics.superlikesCount,
+                    plans: exp.rawMetrics.plansCount,
+                    boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
+                    isBoosted: exp.rawMetrics.hasActiveBoost,
+                    vipTier: exp.rawMetrics.vipTier || 'FREE',
+                    explainScore: exp.breakdown,
+                });
+            });
+
+            // ── Step 2: Sort all candidates — ranked IDs first (by score desc), then the rest ──
+            const rankedIds = rankingExplanations.map(e => e.userId);
+            const rankedIdSet = new Set(rankedIds);
+            const unrankedIds = allUserIds.filter(id => !rankedIdSet.has(id));
+            const fullySortedIds = [...rankedIds, ...unrankedIds];
+
+            // ── Step 3: Paginate from the fully-sorted list ────────────────────────────────────
+            paginatedUserIds = fullySortedIds.slice(offset, offset + limit);
+
+            // Populate scoredUsersMap; unranked users start with a FREE/default entry
+            for (const uid of paginatedUserIds) {
+                if (rankedScoreMap.has(uid)) {
+                    scoredUsersMap.set(uid, rankedScoreMap.get(uid));
+                } else {
+                    scoredUsersMap.set(uid, {
+                        id: uid,
+                        rankScore: 100,
+                        priorityTier: 5,
+                        likes: 0,
+                        superlikes: 0,
+                        plans: 0,
+                        boosts: 0,
+                        isBoosted: false,
+                        vipTier: 'FREE',
+                        explainScore: {},
+                    });
+                }
+            }
+
+            // ── Step 4: Fetch subscriptions for unranked users in this page so VIP ring shows ──
+            const unrankedInPage = paginatedUserIds.filter(id => !rankedIdSet.has(id));
+            if (unrankedInPage.length > 0) {
+                try {
+                    const nowTs = new Date();
+                    const unrankedSubs = await UserSubscription.findAll({
+                        where: {
+                            userId: { [Op.in]: unrankedInPage },
+                            status: SubscriptionStatus.ACTIVE,
+                            endDate: { [Op.gt]: nowTs },
+                        },
+                        include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                        order: [['createdAt', 'DESC']],
+                    });
+                    const seenSubU = new Set<string>();
+                    const tierScores: Record<string, number> = { CORE: 250000, PLUS: 500000, PRO: 750000, ELITE: 1000000 };
+                    for (const sub of unrankedSubs) {
+                        if (!seenSubU.has(sub.userId)) {
+                            seenSubU.add(sub.userId);
+                            const vipTier = (sub as any).package?.tier || 'FREE';
+                            const entry = scoredUsersMap.get(sub.userId);
+                            if (entry && vipTier !== 'FREE') {
+                                entry.vipTier = vipTier;
+                                entry.rankScore = tierScores[vipTier] ?? entry.rankScore;
+                            }
+                        }
+                    }
+                } catch (_) { /* non-fatal — VIP display degrades gracefully to FREE ring */ }
+            }
         } else {
+            // Direct target-user lookup or ranking explicitly disabled — still fetch subscriptions
             paginatedUserIds = targetUserId
                 ? allUserIds
                 : allUserIds.slice(offset, offset + limit);
 
+            // Initialise with FREE defaults
             for (const uid of paginatedUserIds) {
                 scoredUsersMap.set(uid, {
                     id: uid,
@@ -855,9 +920,35 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                     superlikes: 0,
                     plans: 0,
                     boosts: 0,
+                    isBoosted: false,
                     vipTier: 'FREE',
                     explainScore: {},
                 });
+            }
+
+            // Fetch active subscriptions so VIP ring always shows correctly
+            if (paginatedUserIds.length > 0) {
+                try {
+                    const nowTs = new Date();
+                    const fallbackSubs = await UserSubscription.findAll({
+                        where: {
+                            userId: { [Op.in]: paginatedUserIds },
+                            status: SubscriptionStatus.ACTIVE,
+                            endDate: { [Op.gt]: nowTs },
+                        },
+                        include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
+                        order: [['createdAt', 'DESC']],
+                    });
+                    const seenFbU = new Set<string>();
+                    for (const sub of fallbackSubs) {
+                        if (!seenFbU.has(sub.userId)) {
+                            seenFbU.add(sub.userId);
+                            const vipTier = (sub as any).package?.tier || 'FREE';
+                            const entry = scoredUsersMap.get(sub.userId);
+                            if (entry) entry.vipTier = vipTier;
+                        }
+                    }
+                } catch (_) { /* non-fatal */ }
             }
         }
 
