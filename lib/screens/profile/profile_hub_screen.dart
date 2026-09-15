@@ -213,6 +213,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                       color: Colors.black,
                       letterSpacing: 0.5,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -223,13 +225,17 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                         size: 16,
                       ),
                       const SizedBox(width: 6),
-                      const Text(
-                        'SOCIALLY VERIFIED',
-                        style: TextStyle(
-                          color: LunaraTheme.electricViolet,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
+                      const Flexible(
+                        child: Text(
+                          'SOCIALLY VERIFIED',
+                          style: TextStyle(
+                            color: LunaraTheme.electricViolet,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -291,6 +297,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.bold,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ],
@@ -399,7 +407,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 children: [
                   Row(
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
                           isPaid
                               ? 'LUNARA $planName • $tier'
@@ -411,6 +419,7 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                             letterSpacing: 0.8,
                           ),
                           overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
                       if (isPaid && remainingDays > 0) ...[
@@ -446,6 +455,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -527,23 +538,32 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
 
   Widget _statItem(String value, String label, {VoidCallback? onTap}) {
     final content = Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 22,
-            color: Colors.black,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              color: Colors.black,
+            ),
+            maxLines: 1,
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 10,
-            letterSpacing: 2,
-            fontWeight: FontWeight.w900,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 10,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w900,
+            ),
+            maxLines: 1,
           ),
         ),
       ],
@@ -677,111 +697,131 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
         child: Material(
           color: isBoostActive ? const Color(0xFFFFFBEB) : Colors.white,
           borderRadius: BorderRadius.circular(24),
-          child: ListTile(
+          child: InkWell(
             onTap: () => ProfileBoostModal.show(context),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-              side: BorderSide(
-                color: isBoostActive ? const Color(0xFFFDE68A) : Colors.grey[100]!,
-                width: isBoostActive ? 1.5 : 1.0,
-              ),
-            ),
-            leading: Container(
-              padding: const EdgeInsets.all(10),
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFB703), Color(0xFFFB8500)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isBoostActive ? const Color(0xFFFDE68A) : Colors.grey[100]!,
+                  width: isBoostActive ? 1.5 : 1.0,
                 ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: isBoostActive
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFFFFB703).withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
               ),
-              child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
-            ),
-            title: Row(
-              children: [
-                const Text(
-                  'Profile Boost',
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (isBoostActive)
+              child: Row(
+                children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'ACTIVE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFB703), Color(0xFFFB8500)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: isBoostActive
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFFFFB703).withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
                     ),
-                  )
-                else if (isUnlimited || boostsRemaining > 0)
+                    child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          runSpacing: 2,
+                          children: [
+                            const Text(
+                              'Profile Boost',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                            if (isBoostActive)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'ACTIVE',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              )
+                            else if (isUnlimited || boostsRemaining > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  isUnlimited ? 'UNLIMITED' : '$boostsRemaining READY',
+                                  style: const TextStyle(
+                                    color: Color(0xFFD97706),
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: isBoostActive ? const Color(0xFFB45309) : Colors.black54,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(8),
+                      color: isBoostActive
+                          ? const Color(0xFFFFB703).withValues(alpha: 0.15)
+                          : LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(9),
                     ),
                     child: Text(
-                      isUnlimited ? 'UNLIMITED' : '$boostsRemaining READY',
-                      style: const TextStyle(
-                        color: Color(0xFFD97706),
-                        fontSize: 9,
+                      isBoostActive ? 'STATUS' : 'BOOST',
+                      style: TextStyle(
+                        color: isBoostActive ? const Color(0xFFD97706) : LunaraTheme.electricViolet,
+                        fontSize: 10,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.4,
                       ),
                     ),
                   ),
-              ],
-            ),
-            subtitle: Text(
-              subtitle,
-              style: TextStyle(
-                color: isBoostActive ? const Color(0xFFB45309) : Colors.black54,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: isBoostActive
-                    ? const Color(0xFFFFB703).withValues(alpha: 0.15)
-                    : LunaraTheme.electricViolet.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                isBoostActive ? 'STATUS' : 'BOOST',
-                style: TextStyle(
-                  color: isBoostActive ? const Color(0xFFD97706) : LunaraTheme.electricViolet,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
-                ),
+                ],
               ),
             ),
           ),
@@ -837,6 +877,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 fontWeight: FontWeight.w900,
                 fontSize: 14,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
               subtitle,
@@ -845,6 +887,8 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             trailing: const Icon(
               Icons.chevron_right_rounded,

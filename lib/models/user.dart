@@ -10,6 +10,7 @@ class User {
   final String? bio;
   final String? city;
   final String? gender;
+  final String? dateOfBirth;
 
   // New properties from user profile and preferences response
   final List<String> photos;
@@ -35,14 +36,17 @@ class User {
   final bool invisibleMode;
   final bool showMeInMatching;
   final bool bookingAlertsEnabled;
-  final String? dateOfBirth;
   final bool isVerified;
+  final int likesCount;
   final int superLikesCount;
+  final int boostCount;
+  final bool isBoosted;
   final int plansCount;
   final String subscriptionTier; // FREE, CORE, PLUS, PRO, ELITE
   final int bookingsCount;
   final int matchesCount;
   final int pointsCount;
+  final int rankScore;
   final bool isLiked;
   final bool isSuperLiked;
 
@@ -81,12 +85,16 @@ class User {
     this.bookingAlertsEnabled = true,
     this.dateOfBirth,
     this.isVerified = false,
+    this.likesCount = 0,
     this.superLikesCount = 0,
+    this.boostCount = 0,
+    this.isBoosted = false,
     this.plansCount = 0,
     this.subscriptionTier = 'FREE',
     this.bookingsCount = 0,
     this.matchesCount = 0,
     this.pointsCount = 0,
+    this.rankScore = 100,
     this.isLiked = false,
     this.isSuperLiked = false,
   });
@@ -346,18 +354,52 @@ class User {
           true,
       dateOfBirth:
           profile['dateOfBirth']?.toString() ?? data['dateOfBirth']?.toString(),
-      isVerified: data['isVerified'] == true,
+      isVerified: data['isVerified'] == true || json['isVerified'] == true,
+      likesCount: json['likesCount'] != null
+          ? (int.tryParse(json['likesCount'].toString()) ?? 0)
+          : (data['likesCount'] != null
+              ? (int.tryParse(data['likesCount'].toString()) ?? 0)
+              : (data['likeCount'] != null
+                  ? (int.tryParse(data['likeCount'].toString()) ?? 0)
+                  : (json['likeCount'] != null
+                      ? (int.tryParse(json['likeCount'].toString()) ?? 0)
+                      : 0))),
       superLikesCount: json['superLikesCount'] != null
-          ? int.tryParse(json['superLikesCount'].toString()) ?? 0
+          ? (int.tryParse(json['superLikesCount'].toString()) ?? 0)
           : (data['superLikesCount'] != null
-              ? int.tryParse(data['superLikesCount'].toString()) ?? 0
-              : 0),
+              ? (int.tryParse(data['superLikesCount'].toString()) ?? 0)
+              : (data['superLikeCount'] != null
+                  ? (int.tryParse(data['superLikeCount'].toString()) ?? 0)
+                  : (json['superLikeCount'] != null
+                      ? (int.tryParse(json['superLikeCount'].toString()) ?? 0)
+                      : 0))),
+      boostCount: json['boostCount'] != null
+          ? (int.tryParse(json['boostCount'].toString()) ?? 0)
+          : (data['boostCount'] != null
+              ? (int.tryParse(data['boostCount'].toString()) ?? 0)
+              : (data['boostsRemaining'] != null
+                  ? (int.tryParse(data['boostsRemaining'].toString()) ?? 0)
+                  : (json['boostsRemaining'] != null
+                      ? (int.tryParse(json['boostsRemaining'].toString()) ?? 0)
+                      : 0))),
+      isBoosted: data['isBoosted'] == true ||
+          json['isBoosted'] == true ||
+          (data['boostCount'] != null && (int.tryParse(data['boostCount'].toString()) ?? 0) > 0) ||
+          (json['boostCount'] != null && (int.tryParse(json['boostCount'].toString()) ?? 0) > 0),
       plansCount: json['plansCount'] != null
           ? int.tryParse(json['plansCount'].toString()) ?? 0
           : (data['plansCount'] != null
               ? int.tryParse(data['plansCount'].toString()) ?? 0
               : 0),
-      subscriptionTier: (data['subscriptionTier'] ?? json['subscriptionTier'] ?? 'FREE').toString(),
+      subscriptionTier: (data['subscriptionTier'] ??
+              json['subscriptionTier'] ??
+              data['tier'] ??
+              json['tier'] ??
+              data['packageTier'] ??
+              json['packageTier'] ??
+              'FREE')
+          .toString()
+          .toUpperCase(),
       bookingsCount: json['bookingsCount'] != null
           ? int.tryParse(json['bookingsCount'].toString()) ?? 0
           : (data['bookingsCount'] != null
@@ -379,6 +421,11 @@ class User {
                       : (data['reward_points'] != null
                           ? int.tryParse(data['reward_points'].toString()) ?? 0
                           : 0)))),
+      rankScore: json['rankScore'] != null
+          ? (int.tryParse(json['rankScore'].toString()) ?? 100)
+          : (data['rankScore'] != null
+              ? (int.tryParse(data['rankScore'].toString()) ?? 100)
+              : 100),
       isLiked: _parseBool(json['isLiked']) ||
           _parseBool(data['isLiked']) ||
           _parseBool(data['liked']) ||
@@ -503,12 +550,16 @@ class User {
     bool? bookingAlertsEnabled,
     String? dateOfBirth,
     bool? isVerified,
+    int? likesCount,
     int? superLikesCount,
+    int? boostCount,
+    bool? isBoosted,
     int? plansCount,
     String? subscriptionTier,
     int? bookingsCount,
     int? matchesCount,
     int? pointsCount,
+    int? rankScore,
     bool? isLiked,
     bool? isSuperLiked,
   }) {
@@ -547,12 +598,16 @@ class User {
       bookingAlertsEnabled: bookingAlertsEnabled ?? this.bookingAlertsEnabled,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       isVerified: isVerified ?? this.isVerified,
+      likesCount: likesCount ?? this.likesCount,
       superLikesCount: superLikesCount ?? this.superLikesCount,
+      boostCount: boostCount ?? this.boostCount,
+      isBoosted: isBoosted ?? this.isBoosted,
       plansCount: plansCount ?? this.plansCount,
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       bookingsCount: bookingsCount ?? this.bookingsCount,
       matchesCount: matchesCount ?? this.matchesCount,
       pointsCount: pointsCount ?? this.pointsCount,
+      rankScore: rankScore ?? this.rankScore,
       isLiked: isLiked ?? this.isLiked,
       isSuperLiked: isSuperLiked ?? this.isSuperLiked,
     );

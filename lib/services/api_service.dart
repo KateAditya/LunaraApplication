@@ -769,6 +769,7 @@ class ApiService {
         'page': page.toString(),
       };
       if (userId != null) params['currentUserId'] = userId;
+      if (forceRefresh) params['refresh'] = 'true';
       if (includeAllCities) {
         params['allCities'] = 'true';
       } else {

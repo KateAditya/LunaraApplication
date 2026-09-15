@@ -23,8 +23,9 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
   String _selectedGender = 'All';
   String _selectedAgeRange = 'All Ages';
+  String _selectedSortFilter = 'Top Ranked'; // 'Top Ranked', 'Boosted', 'VIP Plans', 'Most Liked'
 
-  final List<String> _genders = ['All', 'Male', 'Female', 'Other'];
+  final List<String> _genders = ['All', 'Female', 'Male', 'Other'];
   final List<String> _ageRanges = [
     'All Ages',
     '18-24',
@@ -32,15 +33,21 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     '35-44',
     '45+',
   ];
+  final List<String> _sortFilters = [
+    'Top Ranked',
+    'Boosted ⚡',
+    'VIP Plans 👑',
+    'Most Liked ❤️',
+  ];
 
   @override
   void initState() {
     super.initState();
     if (widget.users != null && widget.users!.isNotEmpty) {
       _allUsers = List<dynamic>.from(widget.users!);
-      _filteredUsers = List<dynamic>.from(widget.users!);
+      _applyFilters();
     }
-    _loadAllUsers();
+    _loadAllUsers(forceRefresh: true);
   }
 
   @override
@@ -49,15 +56,16 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     super.dispose();
   }
 
-  Future<void> _loadAllUsers() async {
+  Future<void> _loadAllUsers({bool forceRefresh = true}) async {
     if (!mounted) return;
     if (_allUsers.isEmpty) {
       setState(() => _isLoading = true);
     }
     try {
       final fetched = await ApiService.fetchCustomers(
-        limit: 100,
+        limit: 500,
         includeAllCities: true,
+        forceRefresh: forceRefresh,
       );
       if (fetched.isNotEmpty && mounted) {
         setState(() {
@@ -77,14 +85,14 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
   void _applyFilters() {
     final currentUserId = ApiService.currentUserId;
     setState(() {
-      _filteredUsers = _allUsers.where((user) {
+      final filtered = _allUsers.where((user) {
         // Exclude self if logged in
         if (currentUserId != null && currentUserId.isNotEmpty) {
           final uId = user['id']?.toString();
           if (uId == currentUserId) return false;
         }
 
-        // Search
+        // Search query
         final String name =
             (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User')
                 .toString()
@@ -95,9 +103,12 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
         final String email = (user['email'] ?? '')
             .toString()
             .toLowerCase();
+        final String city = (user['city'] ?? (user['profile'] is Map ? user['profile']['city'] : '') ?? '')
+            .toString()
+            .toLowerCase();
         final q = _searchQuery.toLowerCase().trim();
         final bool matchesSearch =
-            q.isEmpty || name.contains(q) || userName.contains(q) || email.contains(q);
+            q.isEmpty || name.contains(q) || userName.contains(q) || email.contains(q) || city.contains(q);
         if (!matchesSearch) return false;
 
         // Gender filter
@@ -146,15 +157,68 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
           if (_selectedAgeRange == '45+' && age < 45) return false;
         }
 
+        // Quick sort/filter mode filtering
+        if (_selectedSortFilter == 'Boosted ⚡') {
+          final isBoosted = user['isBoosted'] == true ||
+              (user['boostCount'] != null && (int.tryParse(user['boostCount'].toString()) ?? 0) > 0) ||
+              (user['boostsRemaining'] != null && (int.tryParse(user['boostsRemaining'].toString()) ?? 0) > 0);
+          if (!isBoosted) return false;
+        } else if (_selectedSortFilter == 'VIP Plans 👑') {
+          final tier = (user['subscriptionTier'] ?? user['tier'] ?? user['packageTier'] ?? 'FREE').toString().toUpperCase();
+          if (tier.isEmpty || tier == 'FREE') return false;
+        }
+
         return true;
       }).toList();
+
+      // Advanced Ranking & Sorting Engine
+      filtered.sort((a, b) {
+        if (_selectedSortFilter == 'Most Liked ❤️') {
+          final likesA = (a['likesCount'] is num ? a['likesCount'] : int.tryParse(a['likesCount']?.toString() ?? '0') ?? 0).toInt() +
+              ((a['superLikesCount'] is num ? a['superLikesCount'] : int.tryParse(a['superLikesCount']?.toString() ?? '0') ?? 0).toInt() * 2);
+          final likesB = (b['likesCount'] is num ? b['likesCount'] : int.tryParse(b['likesCount']?.toString() ?? '0') ?? 0).toInt() +
+              ((b['superLikesCount'] is num ? b['superLikesCount'] : int.tryParse(b['superLikesCount']?.toString() ?? '0') ?? 0).toInt() * 2);
+          return likesB.compareTo(likesA);
+        }
+
+        // Default: Top Ranked (Boost (5M) > VIP Tier (1M/750k/500k/250k) > Superlikes > Likes > Recency)
+        final scoreA = (a['rankScore'] is num
+            ? a['rankScore']
+            : double.tryParse(a['rankScore']?.toString() ?? '0') ?? 0);
+        final scoreB = (b['rankScore'] is num
+            ? b['rankScore']
+            : double.tryParse(b['rankScore']?.toString() ?? '0') ?? 0);
+
+        final cmp = scoreB.compareTo(scoreA);
+        if (cmp != 0) return cmp;
+
+        // Tie-breaker 1: Boosted status
+        final bool isBoostedA = a['isBoosted'] == true;
+        final bool isBoostedB = b['isBoosted'] == true;
+        if (isBoostedA != isBoostedB) return isBoostedB ? 1 : -1;
+
+        // Tie-breaker 2: VIP Tier rank
+        final int tierRankA = (a['tierRank'] is num ? a['tierRank'] : int.tryParse(a['tierRank']?.toString() ?? '0') ?? 0).toInt();
+        final int tierRankB = (b['tierRank'] is num ? b['tierRank'] : int.tryParse(b['tierRank']?.toString() ?? '0') ?? 0).toInt();
+        if (tierRankA != tierRankB) return tierRankB.compareTo(tierRankA);
+
+        // Tie-breaker 3: Likes and Superlikes
+        final totalLikesA = (a['likesCount'] is num ? a['likesCount'] : int.tryParse(a['likesCount']?.toString() ?? '0') ?? 0).toInt() +
+            (a['superLikesCount'] is num ? a['superLikesCount'] : int.tryParse(a['superLikesCount']?.toString() ?? '0') ?? 0).toInt();
+        final totalLikesB = (b['likesCount'] is num ? b['likesCount'] : int.tryParse(b['likesCount']?.toString() ?? '0') ?? 0).toInt() +
+            (b['superLikesCount'] is num ? b['superLikesCount'] : int.tryParse(b['superLikesCount']?.toString() ?? '0') ?? 0).toInt();
+        return totalLikesB.compareTo(totalLikesA);
+      });
+
+      _filteredUsers = filtered;
     });
   }
 
   bool get _hasActiveFilters =>
       _searchQuery.isNotEmpty ||
       _selectedGender != 'All' ||
-      _selectedAgeRange != 'All Ages';
+      _selectedAgeRange != 'All Ages' ||
+      _selectedSortFilter != 'Top Ranked';
 
   void _onSearchChanged(String query) {
     _searchQuery = query;
@@ -163,11 +227,15 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isTablet = MediaQuery.of(context).size.width > 600;
+    final crossAxisCount = isTablet ? 3 : 2;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -176,7 +244,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
-                letterSpacing: 0.5,
+                letterSpacing: 0.8,
                 color: Colors.black,
               ),
             ),
@@ -184,8 +252,8 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
             if (_allUsers.isNotEmpty)
               Text(
                 _hasActiveFilters
-                    ? '${_filteredUsers.length} of ${_allUsers.length} profiles'
-                    : '${_allUsers.length} profiles',
+                    ? '${_filteredUsers.length} of ${_allUsers.length} ranked profiles'
+                    : '${_allUsers.length} ranked profiles',
                 style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF64748B),
@@ -200,150 +268,212 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
           icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: LunaraTheme.electricViolet, size: 22),
+            tooltip: 'Refresh Profiles',
+            onPressed: () => _loadAllUsers(forceRefresh: true),
+          ),
+        ],
       ),
       body: Column(
         children: [
+          // Search Input Bar
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(30),
-                boxShadow: LunaraTheme.premiumCardShadow,
-                border: Border.all(color: Colors.grey[100]!),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(color: Colors.grey[200]!),
               ),
               child: TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
                 style: const TextStyle(
                   color: Colors.black,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Search users by name, username...',
+                  hintText: 'Search by name, city, username...',
                   hintStyle: TextStyle(
                     color: Colors.grey[400],
-                    fontSize: 14,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w500,
                   ),
                   border: InputBorder.none,
+                  prefixIcon: const Icon(
+                    Icons.search_rounded,
+                    color: LunaraTheme.electricViolet,
+                    size: 22,
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, color: Colors.black54),
+                          icon: const Icon(Icons.clear, color: Colors.black54, size: 18),
                           onPressed: () {
                             _searchController.clear();
                             _onSearchChanged('');
                           },
                         )
-                      : const Icon(
-                          Icons.search,
-                          color: LunaraTheme.electricViolet,
-                        ),
+                      : null,
                 ),
               ),
             ),
           ),
 
-          // Filters UI
+          // Sort Filters Row
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: Row(
-                    children: _genders.map((gender) {
-                      final isSelected = _selectedGender == gender;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ChoiceChip(
-                          label: Text(gender),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              _selectedGender = gender;
-                              _applyFilters();
-                            }
-                          },
-                          selectedColor: LunaraTheme.electricViolet.withValues(
-                            alpha: 0.2,
-                          ),
-                          backgroundColor: Colors.grey[100],
-                          labelStyle: TextStyle(
-                            color: isSelected
-                                ? LunaraTheme.electricViolet
-                                : Colors.black87,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+            padding: const EdgeInsets.only(left: 20, right: 20, bottom: 6),
+            child: SizedBox(
+              height: 34,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: _sortFilters.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final filter = _sortFilters[index];
+                  final isSelected = _selectedSortFilter == filter;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () {
+                      setState(() {
+                        _selectedSortFilter = filter;
+                        _applyFilters();
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: isSelected ? LunaraTheme.primaryGradient : null,
+                        color: isSelected ? null : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? Colors.transparent
+                              : Colors.grey[200]!,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: Center(
+                        child: Text(
+                          filter,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : const Color(0xFF475569),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                             fontSize: 12,
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            side: BorderSide(
-                              color: isSelected
-                                  ? LunaraTheme.electricViolet
-                                  : Colors.transparent,
-                            ),
-                          ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  child: Row(
-                    children: _ageRanges.map((ageRange) {
-                      final isSelected = _selectedAgeRange == ageRange;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ChoiceChip(
-                          label: Text(ageRange),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              _selectedAgeRange = ageRange;
-                              _applyFilters();
-                            }
-                          },
-                          selectedColor: LunaraTheme.electricViolet.withValues(
-                            alpha: 0.2,
-                          ),
-                          backgroundColor: Colors.grey[100],
-                          labelStyle: TextStyle(
-                            color: isSelected
-                                ? LunaraTheme.electricViolet
-                                : Colors.black87,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            fontSize: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            side: BorderSide(
-                              color: isSelected
-                                  ? LunaraTheme.electricViolet
-                                  : Colors.transparent,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
 
+          // Secondary Filter Chips (Gender & Age)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  // Gender Chips
+                  ..._genders.map((gender) {
+                    final isSelected = _selectedGender == gender;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6.0),
+                      child: FilterChip(
+                        label: Text(gender),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedGender = gender;
+                            _applyFilters();
+                          });
+                        },
+                        selectedColor: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                        backgroundColor: Colors.white,
+                        labelStyle: TextStyle(
+                          color: isSelected ? LunaraTheme.electricViolet : const Color(0xFF64748B),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 11.5,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(width: 8),
+                  Container(height: 18, width: 1, color: Colors.grey[300]),
+                  const SizedBox(width: 8),
+                  // Age Chips
+                  ..._ageRanges.map((ageRange) {
+                    final isSelected = _selectedAgeRange == ageRange;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6.0),
+                      child: FilterChip(
+                        label: Text(ageRange),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedAgeRange = ageRange;
+                            _applyFilters();
+                          });
+                        },
+                        selectedColor: LunaraTheme.cyberCyan.withValues(alpha: 0.15),
+                        backgroundColor: Colors.white,
+                        labelStyle: TextStyle(
+                          color: isSelected ? const Color(0xFF0088CC) : const Color(0xFF64748B),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 11.5,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isSelected ? const Color(0xFF0088CC) : Colors.grey[200]!,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          // Main User Grid
           Expanded(
             child: _isLoading && _filteredUsers.isEmpty
                 ? const Center(
@@ -353,19 +483,46 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                   )
                 : RefreshIndicator(
                     color: LunaraTheme.electricViolet,
-                    onRefresh: _loadAllUsers,
+                    onRefresh: () => _loadAllUsers(forceRefresh: true),
                     child: _filteredUsers.isEmpty
-                        ? const SingleChildScrollView(
-                            physics: AlwaysScrollableScrollPhysics(),
+                        ? SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
                             child: SizedBox(
-                              height: 300,
+                              height: MediaQuery.of(context).size.height * 0.5,
                               child: Center(
-                                child: Text(
-                                  'No users found.',
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                                      ),
+                                      child: const Icon(
+                                        Icons.person_search_rounded,
+                                        size: 40,
+                                        color: LunaraTheme.electricViolet,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'No profiles found matching criteria',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Try adjusting your search or filters',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -374,76 +531,316 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
-                            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 24,
-                                  childAspectRatio: 0.65,
-                                ),
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 16,
+                              childAspectRatio: 0.72,
+                            ),
                             itemCount: _filteredUsers.length,
                             itemBuilder: (context, index) {
                               final user = _filteredUsers[index];
-                              final String name =
-                                  (user['firstName'] ??
-                                          user['fullName'] ??
-                                          user['name'] ??
-                                          'User')
-                                      .toString();
-
-                              return GestureDetector(
-                                onTap: () {
-                                  try {
-                                    final resolvedUser = User.fromJson(user);
-                                    final List<User> resolvedAllProfiles = [];
-                                    for (var u in _filteredUsers) {
-                                      try {
-                                        resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
-                                      } catch (_) {}
-                                    }
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            ProfileScreen(
-                                              user: resolvedUser,
-                                              allProfiles: resolvedAllProfiles,
-                                            ),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    debugPrint('Error navigating to user profile: $e');
-                                  }
-                                },
-                                child: Column(
-                                  children: [
-                                    LunaraProfileImage(
-                                      userData: user,
-                                      radius: 40,
-                                      isInteractive: false,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      name,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black,
-                                        letterSpacing: 0.2,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              );
+                              return _buildUserCard(user);
                             },
                           ),
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserCard(dynamic user) {
+    final String name = (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User').toString();
+    final String? age = user['age']?.toString();
+    final String city = (user['city'] ?? (user['profile'] is Map ? user['profile']['city'] : null) ?? 'Discovery').toString();
+
+    final int likes = (user['likesCount'] is num
+            ? user['likesCount']
+            : int.tryParse(user['likesCount']?.toString() ?? '0') ?? 0)
+        .toInt();
+    final int superLikes = (user['superLikesCount'] is num
+            ? user['superLikesCount']
+            : int.tryParse(user['superLikesCount']?.toString() ?? '0') ?? 0)
+        .toInt();
+
+    final dynamic bRaw = user['boostCount'] ?? user['boostsRemaining'];
+    final int boosts = (bRaw is num ? bRaw : int.tryParse(bRaw?.toString() ?? '0') ?? 0).toInt();
+    final bool isBoosted = user['isBoosted'] == true || boosts > 0;
+
+    final String rawTier = (user['subscriptionTier'] ?? user['tier'] ?? user['packageTier'] ?? 'FREE').toString().toUpperCase();
+    final String tier = (rawTier == 'NULL' || rawTier == 'UNDEFINED') ? 'FREE' : rawTier;
+    final bool hasPlan = tier != 'FREE';
+    final Color? planColor = LunaraTheme.getPlanBadgeColor(user);
+
+    // Glowing border styling based on VIP status and Boost spotlight
+    final Color cardBorderColor = isBoosted
+        ? Colors.amber.withValues(alpha: 0.8)
+        : (hasPlan && planColor != null
+            ? planColor.withValues(alpha: 0.6)
+            : Colors.grey[200]!);
+    final double cardBorderWidth = (isBoosted || hasPlan) ? 1.6 : 1.0;
+
+    return GestureDetector(
+      onTap: () {
+        try {
+          final resolvedUser = User.fromJson(Map<String, dynamic>.from(user));
+          final List<User> resolvedAllProfiles = [];
+          for (var u in _filteredUsers) {
+            try {
+              resolvedAllProfiles.add(User.fromJson(Map<String, dynamic>.from(u)));
+            } catch (_) {}
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProfileScreen(
+                user: resolvedUser,
+                allProfiles: resolvedAllProfiles,
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('Error navigating to user profile: $e');
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          gradient: LunaraTheme.cardGradient,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: cardBorderColor,
+            width: cardBorderWidth,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isBoosted
+                  ? Colors.amber.withValues(alpha: 0.15)
+                  : (hasPlan && planColor != null
+                      ? planColor.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.04)),
+              blurRadius: (isBoosted || hasPlan) ? 12 : 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Top Badge Row (Boosted / VIP Tier Pill)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (hasPlan)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: tier == 'ELITE'
+                            ? [const Color(0xFFFFD700), const Color(0xFFFFB703)]
+                            : tier == 'PRO'
+                                ? [const Color(0xFFE100FF), const Color(0xFF7F00FF)]
+                                : tier == 'PLUS'
+                                    ? [const Color(0xFF7F00FF), const Color(0xFFAA44FF)]
+                                    : [const Color(0xFF00A9FF), const Color(0xFF0066FF)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (planColor ?? LunaraTheme.electricViolet).withValues(alpha: 0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          tier == 'ELITE' ? Icons.star_rounded : Icons.verified_rounded,
+                          color: Colors.white,
+                          size: 10,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          tier,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const SizedBox(width: 1),
+
+                if (isBoosted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFB703), Color(0xFFFF8800)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withValues(alpha: 0.4),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.bolt_rounded, color: Colors.white, size: 10),
+                        SizedBox(width: 2),
+                        Text(
+                          'BOOSTED',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const SizedBox(width: 1),
+              ],
+            ),
+
+            // Profile Avatar with dynamic VIP ring
+            LunaraProfileImage(
+              userData: user,
+              radius: 34,
+              isInteractive: false,
+              showGradientBorder: true,
+              overrideTier: tier,
+            ),
+
+            // Name and Verified Checkmark
+            Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        age != null && age.isNotEmpty && age != 'null' ? '$name, $age' : name,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                          letterSpacing: 0.1,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    if (planColor != null) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.verified_rounded,
+                        color: planColor,
+                        size: 14,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  city,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+
+            // Metrics Row: Superlikes & Likes Badges
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Superlikes chip
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF9333EA).withValues(alpha: 0.2),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.star_rounded,
+                        color: Color(0xFF9333EA),
+                        size: 12,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$superLikes',
+                        style: const TextStyle(
+                          color: Color(0xFF9333EA),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Likes chip
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4899).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFEC4899).withValues(alpha: 0.2),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.favorite_rounded,
+                        color: Color(0xFFEC4899),
+                        size: 12,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$likes',
+                        style: const TextStyle(
+                          color: Color(0xFFEC4899),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

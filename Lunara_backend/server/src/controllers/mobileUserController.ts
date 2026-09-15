@@ -715,9 +715,10 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         const targetUserId = (req.query.userId as string)?.trim();
 
         // High-speed in-memory cache check
+        const isForceRefresh = req.query.refresh === 'true' || req.query.forceRefresh === 'true';
         const cacheKey = `customers:${currentUserId || 'guest'}:${page}:${limit}:${city || 'all'}:${isAllCities}:${search || ''}:${targetUserId || ''}`;
         const cached = apiCache.get(cacheKey);
-        if (cached) {
+        if (cached && !isForceRefresh) {
             return res.status(200).json(cached);
         }
 
@@ -825,8 +826,8 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         let scoredUsersMap = new Map<string, any>();
 
         if (!targetUserId && req.query.ranking !== 'false') {
-            // ── Step 1: Rank the first 50 candidates (scoring bounded by RankingService) ────────
-            const candidatePool = allUserIds.slice(0, 250);
+            // ── Step 1: Rank candidates using the advanced RankingService (supports full discovery lists) ────────
+            const candidatePool = allUserIds.slice(0, 500);
             const rankingExplanations = await RankingService.computeRankings(candidatePool);
 
             // Build a lookup map for ranked users
@@ -2137,8 +2138,12 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
 
-        const { SubscriptionService } = require('../services/subscriptionService');
-        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        let canSeeWhoLiked = false;
+        try {
+            canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        } catch (subErr) {
+            logger.warn('[MobileUser] Error checking hasAccess in getMyLikesAndMatches:', subErr);
+        }
 
         const [matches, sentLikes, receivedLikes] = await Promise.all([
             UserMatch.findAll({
@@ -2146,7 +2151,8 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                     [Op.or]: [
                         { user1Id: userId },
                         { user2Id: userId }
-                    ]
+                    ],
+                    status: { [Op.in]: ['pending', 'connected'] }
                 },
                 include: [
                     {
@@ -2177,6 +2183,9 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                     }
                 ],
                 order: [['createdAt', 'DESC']],
+            }).catch(err => {
+                logger.warn('[getMyLikesAndMatches] UserMatch.findAll error:', err);
+                return [];
             }),
             UserLike.findAll({
                 where: { userId },
@@ -2195,6 +2204,9 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                         ]
                     }
                 ]
+            }).catch(err => {
+                logger.warn('[getMyLikesAndMatches] UserLike.findAll sentLikes error:', err);
+                return [];
             }),
             UserLike.findAll({
                 where: { targetUserId: userId },
@@ -2213,6 +2225,9 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                         ]
                     }
                 ]
+            }).catch(err => {
+                logger.warn('[getMyLikesAndMatches] UserLike.findAll receivedLikes error:', err);
+                return [];
             })
         ]);
 
@@ -2326,8 +2341,12 @@ export const getWhoLikedSummary = async (req: Request, res: Response): Promise<R
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
 
-        const { SubscriptionService } = require('../services/subscriptionService');
-        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        let canSeeWhoLiked = false;
+        try {
+            canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        } catch (subErr) {
+            logger.warn('[MobileUser] Error checking hasAccess in getWhoLikedSummary:', subErr);
+        }
 
         // Count incoming likes from UserLike and UserMatch tables concurrently
         const [likeRows, matchRows] = await Promise.all([
@@ -2337,13 +2356,19 @@ export const getWhoLikedSummary = async (req: Request, res: Response): Promise<R
                     actionType: { [Op.in]: ['like', 'superlike'] },
                 },
                 attributes: ['userId', 'actionType', 'createdAt'],
+            }).catch(err => {
+                logger.warn('[getWhoLikedSummary] UserLike query failed:', err);
+                return [];
             }),
             UserMatch.findAll({
                 where: {
                     user2Id: userId,
-                    status: { [Op.in]: ['pending', 'connected', 'matched'] },
+                    status: { [Op.in]: ['pending', 'connected'] },
                 },
                 attributes: ['user1Id', 'matchReason', 'status', 'createdAt'],
+            }).catch(err => {
+                logger.warn('[getWhoLikedSummary] UserMatch query failed:', err);
+                return [];
             }),
         ]);
 
@@ -2399,8 +2424,12 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
             return res.status(400).json({ success: false, message: 'userId is required' });
         }
 
-        const { SubscriptionService } = require('../services/subscriptionService');
-        const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        let canSeeWhoLiked = false;
+        try {
+            canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
+        } catch (subErr) {
+            logger.warn('[MobileUser] Error checking hasAccess in getPeopleWhoLikedMe:', subErr);
+        }
 
         // Check total received likes across UserLike and UserMatch
         const [likeRows, matchRows] = await Promise.all([
@@ -2410,13 +2439,19 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
                     actionType: { [Op.in]: ['like', 'superlike'] },
                 },
                 attributes: ['userId', 'actionType', 'createdAt'],
+            }).catch(err => {
+                logger.warn('[getPeopleWhoLikedMe] UserLike query failed:', err);
+                return [];
             }),
             UserMatch.findAll({
                 where: {
                     user2Id: userId,
-                    status: { [Op.in]: ['pending', 'connected', 'matched'] },
+                    status: { [Op.in]: ['pending', 'connected'] },
                 },
                 attributes: ['user1Id', 'matchReason', 'status', 'createdAt'],
+            }).catch(err => {
+                logger.warn('[getPeopleWhoLikedMe] UserMatch query failed:', err);
+                return [];
             }),
         ]);
 
@@ -2449,6 +2484,22 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
         const senderIdsArray = Array.from(allSenderIds);
         const paginatedSenderIds = senderIdsArray.slice(offset, offset + limit);
 
+        if (paginatedSenderIds.length === 0) {
+            return res.status(200).json({
+                success: true,
+                locked: false,
+                canSeeWhoLiked: true,
+                data: [],
+                users: [],
+                pagination: {
+                    page,
+                    limit,
+                    total: totalCount,
+                    totalPages: Math.ceil(totalCount / limit) || 1,
+                },
+            });
+        }
+
         const [senderUsers, myLikes] = await Promise.all([
             User.findAll({
                 where: { id: { [Op.in]: paginatedSenderIds } },
@@ -2461,12 +2512,18 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
                         required: false,
                     }
                 ]
+            }).catch(err => {
+                logger.warn('[getPeopleWhoLikedMe] User.findAll failed:', err);
+                return [];
             }),
             UserLike.findAll({
                 where: {
                     userId,
                     targetUserId: { [Op.in]: paginatedSenderIds },
                 },
+            }).catch(err => {
+                logger.warn('[getPeopleWhoLikedMe] UserLike myLikes failed:', err);
+                return [];
             }),
         ]);
 

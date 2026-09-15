@@ -60,8 +60,8 @@ export class RankingService {
             return [];
         }
 
-        // Bound candidate scoring window to max 50 to prevent blocking the event loop or database pool
-        const targetIds = candidateUserIds.length > 50 ? candidateUserIds.slice(0, 50) : candidateUserIds;
+        // Bound candidate scoring window to max 500 to support full "View All" and discovery lists
+        const targetIds = candidateUserIds.length > 500 ? candidateUserIds.slice(0, 500) : candidateUserIds;
 
         const cacheKey = `rankings:${targetIds.length}:${targetIds.slice(0, 10).join('_')}`;
         const cached = apiCache.get<ScoreExplanation[]>(cacheKey);
@@ -70,13 +70,12 @@ export class RankingService {
         }
 
         const now = new Date();
-        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         try {
-            // 1. Fetch recent likes & superlikes (with 30-day recency window)
+            // 1. Fetch likes & superlikes from both UserLike and UserMatch tables, party plans, subscriptions, and boosts
             const [
-                likesAgg,
-                superlikesAgg,
+                userLikesAgg,
+                userMatchesAgg,
                 plansAgg,
                 strangersMeetAgg,
                 groupPartyAgg,
@@ -84,23 +83,25 @@ export class RankingService {
                 activeBoosts,
                 usersWithProfiles
             ] = await Promise.all([
+                UserLike.findAll({
+                    attributes: ['userId', 'targetUserId', 'actionType'],
+                    where: {
+                        targetUserId: { [Op.in]: targetIds },
+                        actionType: { [Op.in]: ['like', 'superlike'] },
+                    },
+                }).catch(err => {
+                    logger.warn('[RankingService] UserLike query error:', err);
+                    return [];
+                }),
                 UserMatch.findAll({
-                    attributes: ['user2Id', [UserMatch.sequelize!.fn('COUNT', UserMatch.sequelize!.col('id')), 'count']],
+                    attributes: ['user1Id', 'user2Id', 'matchReason', 'status'],
                     where: {
                         user2Id: { [Op.in]: targetIds },
                         status: { [Op.in]: ['pending', 'connected'] },
-                        createdAt: { [Op.gte]: thirtyDaysAgo },
                     },
-                    group: ['user2Id'],
-                }),
-                UserLike.findAll({
-                    attributes: ['targetUserId', [UserLike.sequelize!.fn('COUNT', UserLike.sequelize!.col('id')), 'count']],
-                    where: {
-                        targetUserId: { [Op.in]: targetIds },
-                        actionType: 'superlike',
-                        createdAt: { [Op.gte]: thirtyDaysAgo },
-                    },
-                    group: ['targetUserId'],
+                }).catch(err => {
+                    logger.warn('[RankingService] UserMatch query error:', err);
+                    return [];
                 }),
                 PartyPlan.findAll({
                     attributes: ['userId', [PartyPlan.sequelize!.fn('COUNT', PartyPlan.sequelize!.col('id')), 'count']],
@@ -109,7 +110,7 @@ export class RankingService {
                         status: { [Op.ne]: PartyPlanStatus.CANCELLED },
                     },
                     group: ['userId'],
-                }),
+                }).catch(() => []),
                 StrangersMeetRequest.findAll({
                     attributes: ['userId', [StrangersMeetRequest.sequelize!.fn('COUNT', StrangersMeetRequest.sequelize!.col('id')), 'count']],
                     where: {
@@ -117,7 +118,7 @@ export class RankingService {
                         status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
                     },
                     group: ['userId'],
-                }),
+                }).catch(() => []),
                 GroupParty.findAll({
                     attributes: ['userId', [GroupParty.sequelize!.fn('COUNT', GroupParty.sequelize!.col('id')), 'count']],
                     where: {
@@ -125,7 +126,7 @@ export class RankingService {
                         status: { [Op.notIn]: [GroupPartyStatus.CANCELLED, GroupPartyStatus.REJECTED, GroupPartyStatus.EXPIRED] },
                     },
                     group: ['userId'],
-                }),
+                }).catch(() => []),
                 UserSubscription.findAll({
                     where: {
                         userId: { [Op.in]: targetIds },
@@ -134,6 +135,9 @@ export class RankingService {
                     },
                     include: [{ model: SubscriptionPackage, as: 'package', attributes: ['tier'] }],
                     order: [['createdAt', 'DESC']],
+                }).catch(err => {
+                    logger.warn('[RankingService] UserSubscription query error:', err);
+                    return [];
                 }),
                 ProfileBoost.findAll({
                     where: {
@@ -141,6 +145,9 @@ export class RankingService {
                         status: ProfileBoostStatus.ACTIVE,
                         expiresAt: { [Op.gt]: now },
                     },
+                }).catch(err => {
+                    logger.warn('[RankingService] ProfileBoost query error:', err);
+                    return [];
                 }),
                 User.findAll({
                     where: { id: { [Op.in]: targetIds } },
@@ -149,32 +156,76 @@ export class RankingService {
                         { model: UserProfile, as: 'profile', attributes: ['bio', 'occupation', 'city'] },
                         { model: UserPhoto, as: 'photos', where: { isPrimary: true }, required: false, attributes: ['id'] },
                     ],
-                }),
+                }).catch(() => []),
             ]);
 
-            // Map data
-            const likesMap = new Map<string, number>();
-            likesAgg.forEach((r: any) => likesMap.set(r.getDataValue('user2Id'), parseInt(r.getDataValue('count')) || 0));
+            // Build distinct sender sets per target user to prevent double counting
+            const targetLikesSetMap = new Map<string, Set<string>>();
+            const targetSuperLikesSetMap = new Map<string, Set<string>>();
 
-            const superlikesMap = new Map<string, number>();
-            superlikesAgg.forEach((r: any) => superlikesMap.set(r.getDataValue('targetUserId'), parseInt(r.getDataValue('count')) || 0));
+            userLikesAgg.forEach((l: any) => {
+                const targetId = l.targetUserId || l.getDataValue?.('targetUserId');
+                const senderId = l.userId || l.getDataValue?.('userId');
+                const actionType = (l.actionType || l.getDataValue?.('actionType') || 'like').toString().toLowerCase();
+                if (targetId && senderId && targetId !== senderId) {
+                    if (!targetLikesSetMap.has(targetId)) targetLikesSetMap.set(targetId, new Set<string>());
+                    targetLikesSetMap.get(targetId)!.add(senderId);
+
+                    if (actionType === 'superlike') {
+                        if (!targetSuperLikesSetMap.has(targetId)) targetSuperLikesSetMap.set(targetId, new Set<string>());
+                        targetSuperLikesSetMap.get(targetId)!.add(senderId);
+                    }
+                }
+            });
+
+            userMatchesAgg.forEach((m: any) => {
+                const targetId = m.user2Id || m.getDataValue?.('user2Id');
+                const senderId = m.user1Id || m.getDataValue?.('user1Id');
+                const matchReason = (m.matchReason || m.getDataValue?.('matchReason') || 'like').toString().toLowerCase();
+                if (targetId && senderId && targetId !== senderId) {
+                    if (!targetLikesSetMap.has(targetId)) targetLikesSetMap.set(targetId, new Set<string>());
+                    targetLikesSetMap.get(targetId)!.add(senderId);
+
+                    if (matchReason === 'superlike') {
+                        if (!targetSuperLikesSetMap.has(targetId)) targetSuperLikesSetMap.set(targetId, new Set<string>());
+                        targetSuperLikesSetMap.get(targetId)!.add(senderId);
+                    }
+                }
+            });
 
             const plansMap = new Map<string, number>();
-            plansAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
-            strangersMeetAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
-            groupPartyAgg.forEach((r: any) => plansMap.set(r.getDataValue('userId'), (plansMap.get(r.getDataValue('userId')) || 0) + (parseInt(r.getDataValue('count')) || 0)));
+            plansAgg.forEach((r: any) => {
+                const uId = r.userId || r.getDataValue?.('userId');
+                const count = parseInt(r.getDataValue?.('count') || r.count) || 0;
+                if (uId) plansMap.set(uId, (plansMap.get(uId) || 0) + count);
+            });
+            strangersMeetAgg.forEach((r: any) => {
+                const uId = r.userId || r.getDataValue?.('userId');
+                const count = parseInt(r.getDataValue?.('count') || r.count) || 0;
+                if (uId) plansMap.set(uId, (plansMap.get(uId) || 0) + count);
+            });
+            groupPartyAgg.forEach((r: any) => {
+                const uId = r.userId || r.getDataValue?.('userId');
+                const count = parseInt(r.getDataValue?.('count') || r.count) || 0;
+                if (uId) plansMap.set(uId, (plansMap.get(uId) || 0) + count);
+            });
 
             const vipTierMap = new Map<string, string>();
             const seenSubUsers = new Set<string>();
             for (const sub of activeSubs) {
-                if (!seenSubUsers.has(sub.userId)) {
-                    seenSubUsers.add(sub.userId);
-                    vipTierMap.set(sub.userId, (sub as any).package?.tier || 'FREE');
+                const uId = sub.userId;
+                if (uId && !seenSubUsers.has(uId)) {
+                    seenSubUsers.add(uId);
+                    const tier = ((sub as any).package?.tier || 'FREE').toString().toUpperCase();
+                    vipTierMap.set(uId, tier);
                 }
             }
 
             const activeBoostUsers = new Set<string>();
-            activeBoosts.forEach((b: any) => activeBoostUsers.add(b.userId));
+            activeBoosts.forEach((b: any) => {
+                const uId = b.userId;
+                if (uId) activeBoostUsers.add(uId);
+            });
 
             const userMap = new Map<string, any>();
             usersWithProfiles.forEach((u: any) => userMap.set(u.id, u));
@@ -182,10 +233,10 @@ export class RankingService {
             // Calculate score per user
             const rankings: ScoreExplanation[] = targetIds.map((userId) => {
                 const u = userMap.get(userId);
-                const likes = likesMap.get(userId) || 0;
-                const superlikes = superlikesMap.get(userId) || 0;
+                const likes = targetLikesSetMap.get(userId)?.size || 0;
+                const superlikes = targetSuperLikesSetMap.get(userId)?.size || 0;
                 const plans = plansMap.get(userId) || 0;
-                const vipTier = vipTierMap.get(userId) || 'FREE';
+                const vipTier = vipTierMap.get(userId) || (u?.subscriptionTier || u?.profile?.subscriptionTier || 'FREE').toString().toUpperCase();
                 const tierRank = this.tierRankMap[vipTier] || 0;
                 const hasActiveBoost = activeBoostUsers.has(userId);
 
@@ -207,7 +258,7 @@ export class RankingService {
                 const vipTierScore = tierRank * 250000;
 
                 // 3rd Priority: Likes, Superlikes, and Plans
-                const engagementScore = (likes * 1000) + (superlikes * 500) + (plans * 250);
+                const engagementScore = (superlikes * 2000) + (likes * 1000) + (plans * 250);
 
                 // Reliability tie-breakers
                 const reliabilityTieBreaker = reliabilityScore * 5;
@@ -221,7 +272,7 @@ export class RankingService {
                 else if (tierRank === 1) priorityTier = 4;
                 else if (engagementScore > 1000) priorityTier = 4;
 
-                // Balanced Final Ranking Score: Boost 1st (5M), Plan tier 2nd (0-1M), then likes, superlikes, plans
+                // Balanced Final Ranking Score: Boost 1st (5M), Plan tier 2nd (0-1M), then superlikes (2k), likes (1k), plans
                 const finalRankScore =
                     activeBoostScore +
                     vipTierScore +

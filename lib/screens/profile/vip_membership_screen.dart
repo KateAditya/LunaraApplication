@@ -1858,7 +1858,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     final balance = _currentBalance(normKey);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -1866,36 +1866,63 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
         boxShadow: [BoxShadow(color: color.withValues(alpha: isDark ? 0.12 : 0.05), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 52, height: 52,
+            width: 46, height: 46,
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: [color.withValues(alpha: 0.75), color], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: Colors.white, size: 26),
+            child: Icon(icon, color: Colors.white, size: 24),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    Flexible(child: Text(addon.name, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+                    Flexible(
+                      child: Text(
+                        addon.name,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     if (addon.badge != null && addon.badge!.isNotEmpty) ...[
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
-                        child: Text(addon.badge!, style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          addon.badge!,
+                          style: const TextStyle(color: Colors.amber, fontSize: 8.5, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ],
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(addon.description ?? '+${addon.quantity} $unit', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12), overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 5),
+                const SizedBox(height: 2),
+                Text(
+                  addon.description ?? '+${addon.quantity} $unit',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    fontSize: 11.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Icon(
@@ -1906,14 +1933,18 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                       color: isUnlimitedForUser ? const Color(0xFFFFB703) : color.withValues(alpha: 0.7),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      isUnlimitedForUser
-                          ? 'Included in Elite VIP'
-                          : 'Balance: $balance $unit',
-                      style: TextStyle(
-                        color: isUnlimitedForUser ? const Color(0xFFFFB703) : color,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Text(
+                        isUnlimitedForUser
+                            ? 'Included in Elite VIP'
+                            : 'Balance: $balance $unit',
+                        style: TextStyle(
+                          color: isUnlimitedForUser ? const Color(0xFFFFB703) : color,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -1921,41 +1952,42 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
               ],
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 isUnlimitedForUser ? 'INCLUDED' : '₹${addon.price.toStringAsFixed(0)}',
                 style: TextStyle(
                   color: isUnlimitedForUser ? const Color(0xFFFFB703) : color,
-                  fontSize: isUnlimitedForUser ? 11 : 16,
+                  fontSize: isUnlimitedForUser ? 10.5 : 15,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 5),
               SizedBox(
-                height: 34,
+                height: 32,
                 child: isUnlimitedForUser
                     ? Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFB703).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(9),
                           border: Border.all(color: const Color(0xFFFFB703).withValues(alpha: 0.5), width: 1),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle_rounded, color: Color(0xFFFFB703), size: 14),
-                            SizedBox(width: 4),
+                            Icon(Icons.check_circle_rounded, color: Color(0xFFFFB703), size: 13),
+                            SizedBox(width: 3),
                             Text(
                               'UNLIMITED',
                               style: TextStyle(
                                 color: Color(0xFFFFB703),
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ],
@@ -1966,13 +1998,13 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: color,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           elevation: 0,
                         ),
                         child: (_isProcessing && _pendingAddonPackageId == addon.id)
                             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('BUY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            : const Text('BUY', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
                       ),
               ),
             ],

@@ -493,7 +493,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     if (!mounted) return;
     try {
       final socialResults = await Future.wait([
-        ApiService.fetchCustomers(),
+        ApiService.fetchCustomers(forceRefresh: true),
         ApiService.fetchPartyPlans(status: 'active', page: 1, limit: 20),
         ApiService.fetchStrangersMeetFeed(page: 1, limit: 20),
       ]);
@@ -3371,11 +3371,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
       return scoreB.compareTo(scoreA);
     });
 
-    final List<dynamic> allUsers = _filteredUsers.where((u) {
-      return u['id']?.toString() != _currentUser?.id;
-    }).toList();
-
-    final displayUsers = users.take(10).toList();
+    final displayUsers = users.take(20).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3395,13 +3391,13 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   fontSize: 15,
                 ),
               ),
-              if (displayUsers.isNotEmpty)
+              if (users.isNotEmpty)
                 GestureDetector(
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => AllUsersScreen(users: allUsers),
+                        builder: (_) => AllUsersScreen(users: users),
                       ),
                     );
                   },
