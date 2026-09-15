@@ -148,6 +148,18 @@ router.post(
 );
 
 /**
+ * GET /api/mobile/nights/requests/:id
+ * Fetch request or booking detail
+ */
+router.get(
+    '/requests/:id',
+    [
+        authenticate,
+    ],
+    ctrl.getRequestById
+);
+
+/**
  * PATCH /api/mobile/nights/requests/:id
  * Partner accepts or declines a partner request
  */

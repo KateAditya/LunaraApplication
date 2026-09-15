@@ -1,5 +1,10 @@
 import { Request, Response } from 'express';
 import NightPartnerService from '../services/NightPartnerService';
+import NightPartnerRequest from '../models/NightPartnerRequest';
+import NightPartnerMatch from '../models/NightPartnerMatch';
+import Booking from '../models/Booking';
+import Venue from '../models/Venue';
+import User from '../models/User';
 import { logger } from '../config/logger';
 
 export const checkUserInterest = async (req: Request, res: Response): Promise<void> => {
@@ -260,17 +265,15 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
 export const respondToRequest = async (req: Request, res: Response): Promise<void> => {
     try {
         let { id } = req.params;
-        if (id) {
-            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
-        }
+        const cleanId = NightPartnerService.cleanEntityId(id);
         const action = (req.body.action || '').toString().toLowerCase();
         const partnerId = req.user!.id;
-        if (!id || !['accept', 'decline'].includes(action)) {
+        if (!cleanId || !['accept', 'decline'].includes(action)) {
             res.status(400).json({ success: false, message: 'requestId and valid action (accept/decline) are required' });
             return;
         }
 
-        const result = await NightPartnerService.respondToRequest(id, partnerId, action as 'accept' | 'decline');
+        const result = await NightPartnerService.respondToRequest(cleanId, partnerId, action as 'accept' | 'decline');
         res.json({ success: true, message: `Request ${action}ed successfully`, data: result });
     } catch (err: any) {
         logger.error('respondToRequest error:', err);
@@ -297,19 +300,61 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
     }
 };
 
-export const cancelRequest = async (req: Request, res: Response): Promise<void> => {
+export const getRequestById = async (req: Request, res: Response): Promise<void> => {
     try {
         let { id } = req.params;
-        if (id) {
-            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
-        }
-        const hostId = req.user!.id;
-        if (!id) {
+        const cleanId = NightPartnerService.cleanEntityId(id);
+        if (!cleanId) {
             res.status(400).json({ success: false, message: 'requestId is required' });
             return;
         }
 
-        await NightPartnerService.cancelRequest(id, hostId);
+        const request = await NightPartnerRequest.findByPk(cleanId, {
+            include: [
+                { model: Venue, as: 'venue' },
+                { model: User, as: 'host', attributes: ['id', 'firstName', 'lastName'] },
+                { model: User, as: 'partner', attributes: ['id', 'firstName', 'lastName'] },
+            ]
+        });
+        if (request) {
+            res.json({ success: true, data: request });
+            return;
+        }
+
+        const match = await NightPartnerMatch.findByPk(cleanId, {
+            include: [{ model: Venue, as: 'venue' }]
+        });
+        if (match) {
+            res.json({ success: true, data: match });
+            return;
+        }
+
+        const booking = await Booking.findByPk(cleanId, {
+            include: [{ model: Venue, as: 'venue' }]
+        });
+        if (booking) {
+            res.json({ success: true, data: booking });
+            return;
+        }
+
+        res.status(404).json({ success: false, message: 'Request not found' });
+    } catch (err: any) {
+        logger.error('getRequestById error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Internal server error' });
+    }
+};
+
+export const cancelRequest = async (req: Request, res: Response): Promise<void> => {
+    try {
+        let { id } = req.params;
+        const cleanId = NightPartnerService.cleanEntityId(id);
+        const hostId = req.user!.id;
+        if (!cleanId) {
+            res.status(400).json({ success: false, message: 'requestId is required' });
+            return;
+        }
+
+        await NightPartnerService.cancelRequest(cleanId, hostId);
         res.json({ success: true, message: 'Request cancelled successfully' });
     } catch (err: any) {
         logger.error('cancelRequest error:', err);
@@ -320,18 +365,16 @@ export const cancelRequest = async (req: Request, res: Response): Promise<void> 
 export const initiateMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         let { id } = req.params;
-        if (id) {
-            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
-        }
+        const cleanId = NightPartnerService.cleanEntityId(id);
         const { paymentMode } = req.body;
         const hostId = req.user!.id;
-        if (!id) {
+        if (!cleanId) {
             res.status(400).json({ success: false, message: 'matchId is required' });
             return;
         }
 
         const { match, razorpayOrder, amountToPay } = await NightPartnerService.initiateMatchPayment(
-            id,
+            cleanId,
             hostId,
             paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
         );
@@ -353,19 +396,17 @@ export const initiateMatchPayment = async (req: Request, res: Response): Promise
 export const verifyMatchPayment = async (req: Request, res: Response): Promise<void> => {
     try {
         let { id } = req.params;
-        if (id) {
-            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
-        }
+        const cleanId = NightPartnerService.cleanEntityId(id);
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature, paymentMethod } = req.body;
         const isWallet = paymentMethod?.toString().toLowerCase().includes('wallet');
 
-        if (!isWallet && (!id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
+        if (!isWallet && (!cleanId || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature)) {
             res.status(400).json({ success: false, message: 'matchId and all Razorpay verification params are required' });
             return;
         }
 
         const result = await NightPartnerService.verifyMatchPayment(
-            id,
+            cleanId,
             razorpay_order_id || 'wallet_payment',
             razorpay_payment_id || 'wallet_payment',
             razorpay_signature || 'mock_signature',
@@ -389,17 +430,15 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
 export const cancelUpcomingNight = async (req: Request, res: Response): Promise<void> => {
     try {
         let { id } = req.params;
-        if (id) {
-            id = id.replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '').trim();
-        }
+        const cleanId = NightPartnerService.cleanEntityId(id);
         const { reason, action } = req.body;
         const userId = req.user!.id;
-        if (!id) {
+        if (!cleanId) {
             res.status(400).json({ success: false, message: 'id is required' });
             return;
         }
 
-        const result = await NightPartnerService.cancelUpcomingNight(id, userId, reason, action);
+        const result = await NightPartnerService.cancelUpcomingNight(cleanId, userId, reason, action);
         res.json(result);
     } catch (err: any) {
         logger.error('cancelUpcomingNight error:', err);
@@ -429,6 +468,7 @@ export default {
     verifyInvitePaymentAndSend,
     sendPartnerRequest,
     respondToRequest,
+    getRequestById,
     cancelRequest,
     initiateMatchPayment,
     verifyMatchPayment,

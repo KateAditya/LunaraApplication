@@ -1436,6 +1436,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final reqs = List<Map<String, dynamic>>.from(
             updated['pendingIncomingRequests'],
           );
+          Map<String, dynamic>? acceptedReq;
+          for (final r in reqs) {
+            final rStr = r['id']?.toString() ?? '';
+            if (rStr == reqId || ApiService.cleanBookingId(rStr) == cleanReq) {
+              acceptedReq = Map<String, dynamic>.from(r);
+              break;
+            }
+          }
           reqs.removeWhere(
             (r) =>
                 (r['id']?.toString() == reqId ||
@@ -1443,8 +1451,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     cleanReq),
           );
           updated['pendingIncomingRequests'] = reqs;
+          if (newStatus == 'accepted' && acceptedReq != null) {
+            acceptedReq['status'] = 'accepted';
+            acceptedReq['joinerPaymentStatus'] = 'pending';
+            updated['acceptedJoinerRequest'] = acceptedReq;
+            updated['acceptedJoinRequest'] = acceptedReq;
+          }
         }
         _feedItems[i] = updated;
+      }
+    }
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final nId = (n['id'] ?? n['entityId'] ?? n['data']?['requestId'] ?? n['metadata']?['requestId'] ?? '').toString();
+      final nPId = (n['partyPlanId'] ?? n['planId'] ?? n['data']?['partyPlanId'] ?? n['data']?['planId'] ?? '').toString();
+      final cleanNId = ApiService.cleanBookingId(nId);
+      final cleanNPId = ApiService.cleanBookingId(nPId);
+      if (nId == reqId || cleanNId == cleanReq || nPId == reqId || cleanNPId == cleanReq) {
+        final updatedN = Map<String, dynamic>.from(n);
+        updatedN['status'] = newStatus;
+        updatedN['requestStatus'] = newStatus;
+        if (newStatus == 'accepted') {
+          updatedN['lifecycleStatus'] = 'payment_pending';
+        } else if (newStatus == 'cancelled') {
+          updatedN['lifecycleStatus'] = 'cancelled';
+        }
+        if (updatedN['data'] is Map) {
+          updatedN['data'] = {
+            ...Map<String, dynamic>.from(updatedN['data'] as Map),
+            'status': newStatus,
+          };
+        }
+        _notifications[i] = updatedN;
       }
     }
     _cachedTimeline = _buildUnifiedTimeline();
@@ -1476,6 +1514,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           };
         }
         _feedItems[i] = updated;
+      }
+    }
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final rId = (n['id'] ?? n['entityId'] ?? n['data']?['requestId'] ?? '').toString();
+      final cleanNId = ApiService.cleanBookingId(rId);
+      if (rId == reqId || cleanNId == cleanReq) {
+        final updatedN = Map<String, dynamic>.from(n);
+        updatedN['status'] = newStatus;
+        updatedN['inviteStatus'] = newStatus;
+        _notifications[i] = updatedN;
       }
     }
     _cachedTimeline = _buildUnifiedTimeline();
@@ -1517,14 +1566,55 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           final list = List<Map<String, dynamic>>.from(
             updated['pendingIncomingRequests'],
           );
+          Map<String, dynamic>? acceptedJoiner;
+          for (final r in list) {
+            final rIdStr = (r['id'] ?? r['joinerId'] ?? '').toString();
+            if (rIdStr == joinerId || ApiService.cleanBookingId(rIdStr) == cleanJoiner) {
+              acceptedJoiner = Map<String, dynamic>.from(r);
+              break;
+            }
+          }
           list.removeWhere(
             (r) =>
                 r['id']?.toString() == joinerId ||
-                r['joinerId']?.toString() == joinerId,
+                r['joinerId']?.toString() == joinerId ||
+                ApiService.cleanBookingId(r['id']?.toString() ?? '') == cleanJoiner,
           );
           updated['pendingIncomingRequests'] = list;
+          if (newStatus == 'accepted' && acceptedJoiner != null) {
+            acceptedJoiner['status'] = 'accepted';
+            acceptedJoiner['joinStatus'] = 'accepted';
+            acceptedJoiner['paymentStatus'] = 'pending';
+            final acceptedList = List<Map<String, dynamic>>.from(
+              updated['acceptedJoinRequests'] ?? updated['acceptedJoiners'] ?? [],
+            );
+            acceptedList.add(acceptedJoiner);
+            updated['acceptedJoinRequests'] = acceptedList;
+            updated['acceptedJoiners'] = acceptedList;
+            updated['acceptedJoinerRecord'] = acceptedJoiner;
+          }
         }
         _feedItems[i] = updated;
+      }
+    }
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final mId = (n['meetId'] ?? n['strangersMeetId'] ?? n['data']?['meetId'] ?? n['data']?['strangersMeetId'] ?? n['entityId'] ?? '').toString();
+      final jId = (n['joinerId'] ?? n['id'] ?? n['data']?['joinerId'] ?? n['data']?['userId'] ?? '').toString();
+      final cleanM = ApiService.cleanBookingId(mId);
+      final cleanJ = ApiService.cleanBookingId(jId);
+      if ((cleanM == cleanMeet || mId == meetId) && (cleanJ == cleanJoiner || jId == joinerId || cleanJoiner.isEmpty)) {
+        final updatedN = Map<String, dynamic>.from(n);
+        updatedN['status'] = newStatus;
+        updatedN['joinStatus'] = newStatus;
+        if (updatedN['data'] is Map) {
+          updatedN['data'] = {
+            ...Map<String, dynamic>.from(updatedN['data'] as Map),
+            'status': newStatus,
+            'joinStatus': newStatus,
+          };
+        }
+        _notifications[i] = updatedN;
       }
     }
     _cachedTimeline = _buildUnifiedTimeline();
@@ -2507,21 +2597,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
+    // Optimistically update status to accepted immediately
+    _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
+
     try {
       final res = await ApiService.acceptPartyPlanRequest(reqId);
       if (res != null) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request accepted successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request accepted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadFeed(showLoader: false, forceRefresh: true);
+        }
       } else {
         if (!mounted) return;
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept request.'),
@@ -2533,6 +2628,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error accepting request: $e');
       if (mounted) {
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
@@ -2549,10 +2645,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
+    // Optimistically update status to rejected immediately
+    _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+
     try {
       final success = await ApiService.rejectPartyPlanRequest(cleanReqId);
       if (success) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
         if (mounted) {
@@ -2566,6 +2664,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       } else {
         if (!mounted) return;
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to decline request.'),
@@ -2577,6 +2676,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error rejecting request: $e');
       if (mounted) {
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
@@ -2593,13 +2693,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
+    // Optimistically revoke/reject immediately
+    _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+
     try {
       bool success = await ApiService.revokePartyPlanAcceptance(cleanReqId);
       if (!success) {
         success = await ApiService.rejectPartyPlanRequest(cleanReqId);
       }
       if (success) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
         if (mounted) {
@@ -2613,6 +2715,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       } else {
         if (!mounted) return;
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to revoke invitation.'),
@@ -2624,6 +2727,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error revoking party plan invite: $e');
       if (mounted) {
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
@@ -3306,19 +3410,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
+    // Optimistically update invite to accepted immediately
+    _optimisticallyUpdatePartyPlanInvite(reqId, 'accepted');
+
     try {
       final res = await ApiService.acceptPartyPlanInvite(reqId);
       if (res != null) {
-        _optimisticallyUpdatePartyPlanInvite(reqId, 'accepted');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invite accepted! Proceed to pay deposit.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invite accepted! Proceed to pay deposit.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadFeed(showLoader: false, forceRefresh: true);
+        }
       } else {
         if (!mounted) return;
+        _optimisticallyUpdatePartyPlanInvite(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept invite. Try again.'),
@@ -3330,6 +3439,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } catch (e) {
       debugPrint('Error accepting invite: $e');
       if (mounted) {
+        _optimisticallyUpdatePartyPlanInvite(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
@@ -3378,6 +3488,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       } else {
         if (!mounted) return;
+        _optimisticallyUpdateStrangersMeetJoinRequest(
+          meetId,
+          joinerId,
+          'pending',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to update join request.'),
@@ -3388,6 +3503,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (e) {
       if (mounted) {
+        _optimisticallyUpdateStrangersMeetJoinRequest(
+          meetId,
+          joinerId,
+          'pending',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString().replaceAll('Exception: ', '')),
@@ -3407,7 +3527,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String action, {
     String? rejectReason,
   }) async {
+    final actionKey = 'sm_cancel_${action}_$cancellationId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
+
     if (!OptimisticActionGuard.start('FEED_SM_CANCEL:$meetId:$cancellationId')) {
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
       return;
     }
 
@@ -3451,11 +3576,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               );
               updated['pendingCancellationRequests'] = list;
             }
+            if (action == 'accept') {
+              updated['status'] = 'cancelled';
+            }
             _feedItems[i] = updated;
+          }
+        }
+        for (int i = 0; i < _notifications.length; i++) {
+          final n = _notifications[i];
+          final mId =
+              (n['id'] ?? n['meetId'] ?? n['strangersMeetId'] ?? n['data']?['meetId'] ?? n['entityId'] ?? '')
+                  .toString();
+          if (mId == meetId || ApiService.cleanBookingId(mId) == cleanMeet) {
+            final updated = Map<String, dynamic>.from(n);
+            if (action == 'accept') {
+              updated['status'] = 'cancelled';
+            }
+            _notifications[i] = updated;
           }
         }
         _cachedTimeline = _buildUnifiedTimeline();
         if (mounted) setState(() {});
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
         _loadFeed(showLoader: false, forceRefresh: true);
       } else {
         if (!mounted) return;
@@ -3473,13 +3616,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
+            content: Text('Error: $e'),
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
       }
     } finally {
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
       OptimisticActionGuard.end('FEED_SM_CANCEL:$meetId:$cancellationId');
     }
   }
@@ -8031,6 +8174,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
+    if (acceptedJoinerRequest == null && planMap['acceptedJoinerRequest'] is Map) {
+      acceptedJoinerRequest = Map<String, dynamic>.from(planMap['acceptedJoinerRequest'] as Map);
+    }
+    if (acceptedJoinerRequest == null && planMap['acceptedJoinRequest'] is Map) {
+      acceptedJoinerRequest = Map<String, dynamic>.from(planMap['acceptedJoinRequest'] as Map);
+    }
+    if (acceptedJoinerRequest == null && planMap['matchedRequest'] is Map) {
+      acceptedJoinerRequest = Map<String, dynamic>.from(planMap['matchedRequest'] as Map);
+    }
+    if (acceptedJoinerRequest == null && planMap['matchedJoiner'] is Map) {
+      acceptedJoinerRequest = Map<String, dynamic>.from(planMap['matchedJoiner'] as Map);
+    }
+
     // 4. Format plan date & time
     String formattedDateTime = '';
     final rawDateTime =
@@ -9746,6 +9902,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic>? myRequest;
     final List<Map<String, dynamic>> pendingIncomingRequests = [];
     Map<String, dynamic>? paidJoinerRecord;
+    Map<String, dynamic>? acceptedJoinerRecord;
 
     for (final e in entries) {
       final reqType = (e['type'] ?? e['requestType'] ?? '').toString();
@@ -9780,11 +9937,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           pendingIncomingRequests.add(e);
         } else if (status == 'paid' || pStatus == 'paid') {
           paidJoinerRecord = e;
+        } else if (status == 'accepted' || status == 'payment_pending') {
+          acceptedJoinerRecord = e;
         }
       }
       if (status == 'paid' || pStatus == 'paid') {
         paidJoinerRecord = e;
+      } else if (status == 'accepted' || status == 'payment_pending') {
+        acceptedJoinerRecord = e;
       }
+    }
+
+    if (acceptedJoinerRecord == null && meetMap['acceptedJoinerRecord'] is Map) {
+      acceptedJoinerRecord = Map<String, dynamic>.from(meetMap['acceptedJoinerRecord'] as Map);
+    }
+    if (acceptedJoinerRecord == null && meetMap['acceptedJoinRequests'] is List && (meetMap['acceptedJoinRequests'] as List).isNotEmpty) {
+      acceptedJoinerRecord = Map<String, dynamic>.from((meetMap['acceptedJoinRequests'] as List).first as Map);
     }
 
     String formattedDateTime = '';
@@ -10832,6 +11000,60 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ),
               ),
             ),
+          ),
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {
+              try {
+                final req = StrangersMeetRequest.fromJson(meetMap);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(request: req),
+                  ),
+                );
+              } catch (e) {
+                debugPrint('Error parsing SM ticket: $e');
+              }
+            },
+          ),
+        ];
+      } else if (acceptedJoinerRecord != null) {
+        final joiner = (acceptedJoinerRecord['requester'] is Map)
+            ? acceptedJoinerRecord['requester'] as Map<String, dynamic>
+            : (acceptedJoinerRecord['user'] is Map
+                ? acceptedJoinerRecord['user'] as Map<String, dynamic>
+                : <String, dynamic>{});
+        final joinerName =
+            '${joiner["firstName"] ?? acceptedJoinerRecord["requesterName"] ?? "Participant"} ${joiner["lastName"] ?? ""}'
+                .trim();
+        final joinerPhoto =
+            joiner['profileImageUrl']?.toString() ??
+            joiner['profilePhotoUrl']?.toString() ??
+            acceptedJoinerRecord['requesterPhotoUrl']?.toString();
+
+        title = '⏳ Payment Pending';
+        badge = 'ACCEPTED';
+        accent = Colors.orangeAccent;
+        body =
+            'You accepted $joinerName for your Stranger Meet at $venueName. Waiting for deposit payment.';
+        senderUser = joiner.isNotEmpty ? joiner : hostCreator;
+        avatarUrl = joinerPhoto ?? hostPhoto;
+
+        partnerUser = joiner.isNotEmpty ? joiner : null;
+        partnerRoleLabel = 'Participant:';
+        statusSummary = 'Accepted • Awaiting Payment';
+
+        actionsList = [
+          NotificationAction(
+            label: 'Awaiting Payment...',
+            icon: Icons.hourglass_top_rounded,
+            isPrimary: false,
+            color: Colors.grey[200],
+            onTap: () {},
           ),
           NotificationAction(
             label: 'View Ticket',

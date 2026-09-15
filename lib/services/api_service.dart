@@ -5239,8 +5239,9 @@ class ApiService {
     required String action, // 'accept' | 'decline'
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not logged in'};
+    }
     try {
       final cleanId = requestId
           .replaceAll('upcoming_night_timeline_', '')
@@ -5250,6 +5251,16 @@ class ApiService {
           .replaceAll('match_', '')
           .replaceAll('request_', '')
           .replaceAll('req_', '')
+          .replaceAll('pending_bk_', '')
+          .replaceAll('pending_pp_join_', '')
+          .replaceAll('pending_pp_', '')
+          .replaceAll('pending_gp_', '')
+          .replaceAll('pending_sm_', '')
+          .replaceAll('pending_', '')
+          .replaceAll('solo_booking_', '')
+          .replaceAll('bk_', '')
+          .replaceAll('sm_', '')
+          .replaceAll('gp_', '')
           .replaceAll('pp_', '')
           .trim();
       final response = await patch(

@@ -8,7 +8,7 @@ import Booking, { BookingStatus, PaymentStatus } from '../models/Booking';
 import BookingMember, { MemberPaymentStatus } from '../models/BookingMember';
 import GroupBooking from '../models/GroupBooking';
 import Venue from '../models/Venue';
-import { parseEventDateTimeToUTC, formatTime12Hour } from '../utils/dateTimeUtils';
+import { parseEventDateTimeToUTC, formatTime12Hour, extractDateParts, DEFAULT_TIMEZONE } from '../utils/dateTimeUtils';
 
 export interface TimeLockConflict {
     allowed: false;
@@ -78,8 +78,10 @@ export class EventTimeLockService {
         // Calculate search window: proposedTime +/- 5 hours to leverage DB indexes and avoid table scans
         const windowStart = new Date(proposedTime.getTime() - 5 * 60 * 60 * 1000);
         const windowEnd = new Date(proposedTime.getTime() + 5 * 60 * 60 * 1000);
-        const windowStartDateStr = windowStart.toISOString().split('T')[0];
-        const windowEndDateStr = windowEnd.toISOString().split('T')[0];
+        const [startY, startM, startD] = extractDateParts(windowStart, DEFAULT_TIMEZONE);
+        const [endY, endM, endD] = extractDateParts(windowEnd, DEFAULT_TIMEZONE);
+        const windowStartDateStr = `${startY}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`;
+        const windowEndDateStr = `${endY}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`;
 
         // Parallelize fetching across all event categories (Party Plans, Group Parties, Stranger Meets, Bookings)
         await Promise.all([
@@ -475,8 +477,10 @@ export class EventTimeLockService {
         const transaction = options?.transaction;
         const windowStart = new Date(proposedTime.getTime() - 5 * 60 * 60 * 1000);
         const windowEnd = new Date(proposedTime.getTime() + 5 * 60 * 60 * 1000);
-        const windowStartDateStr = windowStart.toISOString().split('T')[0];
-        const windowEndDateStr = windowEnd.toISOString().split('T')[0];
+        const [startY, startM, startD] = extractDateParts(windowStart, DEFAULT_TIMEZONE);
+        const [endY, endM, endD] = extractDateParts(windowEnd, DEFAULT_TIMEZONE);
+        const windowStartDateStr = `${startY}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`;
+        const windowEndDateStr = `${endY}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`;
 
         const userEventsMap = new Map<string, Array<{
             id: string;

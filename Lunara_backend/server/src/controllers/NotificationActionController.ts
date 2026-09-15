@@ -160,13 +160,11 @@ export class NotificationActionController {
                         }
                     }
                 } else if ((notification.entityType === 'night_partner' || notification.entityType === 'NightPartnerRequest' || notification.entityType === 'NightPartnerMatch' || notification.eventType === 'PARTNER_REQUEST_SENT' || notification.eventType === 'PARTNER_REQUEST_RECEIVED' || (notification as any).type === 'PARTNER_REQUEST_SENT' || (notification as any).type === 'PARTNER_REQUEST_RECEIVED') && (notification.entityId || notification.metadata?.requestId)) {
-                    const cleanEntityId = (notification.metadata?.requestId || notification.entityId || '')
-                        .replace(/^(upcoming_night_timeline_|party_plan_timeline_|night_partner_|party_plan_|match_|req_|request_|pp_)/i, '')
-                        .trim();
+                    const rawEntityId = (notification.metadata?.requestId || notification.entityId || '').trim();
                     if (upperAction === 'ACCEPT_CANCELLATION' || upperAction === 'REJECT_CANCELLATION') {
                         try {
                             const result = await NightPartnerService.cancelUpcomingNight(
-                                cleanEntityId,
+                                rawEntityId,
                                 currentUserId,
                                 upperAction === 'ACCEPT_CANCELLATION' ? 'Cancellation confirmed by partner' : 'Cancellation declined by partner',
                                 upperAction === 'ACCEPT_CANCELLATION' ? 'approve' : 'reject'
@@ -179,7 +177,7 @@ export class NotificationActionController {
                     } else {
                         const act = (upperAction === 'ACCEPT' || upperAction === 'ACCEPT_REQUEST') ? 'accept' : 'decline';
                         try {
-                            const result = await NightPartnerService.respondToRequest(cleanEntityId, currentUserId, act);
+                            const result = await NightPartnerService.respondToRequest(rawEntityId, currentUserId, act);
                             actionResult = { status: 'ACTIONED', actionExecuted: action, result };
                         } catch (partnerErr: any) {
                             logger.error('[NotificationActionController] NightPartner action error:', partnerErr);
