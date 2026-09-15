@@ -140,6 +140,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   bool _isSafetyActionLoading = false;
   bool _isLoading = true;
   bool _isFetchingFeed = false;
+  bool _isMarkingAllRead = false;
   Timer? _pollingTimer;
   String? _sessionUserId;
 
@@ -1297,66 +1298,71 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> markAllNotificationsAsRead() async {
-    final allItems = _cachedTimeline.isNotEmpty
-        ? _cachedTimeline
-        : _buildUnifiedTimeline();
-    for (final item in allItems) {
-      if (item.badgeText == 'ACTION REQUIRED' ||
-          item.badgeText == 'INVITE' ||
-          item.badgeText == 'NEW REQUEST' ||
-          item.priority == 'CRITICAL') {
-        continue; // Active action required items keep their action badge
-      }
-      final rawId =
-          item.rawData['id']?.toString() ??
-          item.id.replaceAll(
-            RegExp(r'^(gp_|pp_|sm_|venue_booking_timeline_)'),
-            '',
-          );
-      if (rawId.isNotEmpty) {
-        ApiService.localReadRequestIds.add(rawId);
-        ApiService.localReadRequestIds.add(item.id);
-        ApiService.localReadNotificationIds.add(rawId);
-        ApiService.localReadNotificationIds.add(item.id);
-      }
-    }
-    for (final n in _notifications) {
-      final nId = n['id']?.toString() ?? '';
-      if (nId.isNotEmpty) {
-        ApiService.localReadNotificationIds.add(nId);
-      }
-    }
+    if (_isMarkingAllRead) return;
+    setState(() => _isMarkingAllRead = true);
 
-    // ── Instant optimistic local update (0ms UI delay!) ──────────────
-    if (mounted) {
-      _notifications = _notifications.map((n) {
-        return {...n, 'read': true, 'isRead': true};
-      }).toList();
-      _cachedTimeline = _buildUnifiedTimeline();
-      setState(() {});
-      widget.onCountChanged?.call();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notifications marked as read ✓'),
-          backgroundColor: LunaraTheme.electricViolet,
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-
-    // ── Persist to storage & server asynchronously in background ──────
-    unawaited(() async {
-      try {
-        await Future.wait([
-          ApiService.saveLocalReadRequestIds(),
-          ApiService.saveLocalReadNotificationIds(),
-          ApiService.markAllNotificationsAsRead(),
-          ApiService.clearAllNotifications(),
-        ]);
-      } catch (e) {
-        debugPrint('Background markAllNotificationsAsRead error: $e');
+    try {
+      final allItems = _cachedTimeline.isNotEmpty
+          ? _cachedTimeline
+          : _buildUnifiedTimeline();
+      for (final item in allItems) {
+        if (item.badgeText == 'ACTION REQUIRED' ||
+            item.badgeText == 'INVITE' ||
+            item.badgeText == 'NEW REQUEST' ||
+            item.priority == 'CRITICAL') {
+          continue; // Active action required items keep their action badge
+        }
+        final rawId =
+            item.rawData['id']?.toString() ??
+            item.id.replaceAll(
+              RegExp(r'^(gp_|pp_|sm_|venue_booking_timeline_)'),
+              '',
+            );
+        if (rawId.isNotEmpty) {
+          ApiService.localReadRequestIds.add(rawId);
+          ApiService.localReadRequestIds.add(item.id);
+          ApiService.localReadNotificationIds.add(rawId);
+          ApiService.localReadNotificationIds.add(item.id);
+        }
       }
-    }());
+      for (final n in _notifications) {
+        final nId = n['id']?.toString() ?? '';
+        if (nId.isNotEmpty) {
+          ApiService.localReadNotificationIds.add(nId);
+        }
+      }
+
+      // ── Instant optimistic local update (0ms UI delay!) ──────────────
+      if (mounted) {
+        _notifications = _notifications.map((n) {
+          return {...n, 'read': true, 'isRead': true};
+        }).toList();
+        _cachedTimeline = _buildUnifiedTimeline();
+        setState(() {});
+        widget.onCountChanged?.call();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Notifications marked as read ✓'),
+            backgroundColor: LunaraTheme.electricViolet,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // ── Persist to storage & server asynchronously in background ──────
+      await Future.wait([
+        ApiService.saveLocalReadRequestIds(),
+        ApiService.saveLocalReadNotificationIds(),
+        ApiService.markAllNotificationsAsRead(),
+        ApiService.clearAllNotifications(),
+      ]);
+    } catch (e) {
+      debugPrint('Background markAllNotificationsAsRead error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isMarkingAllRead = false);
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -3740,12 +3746,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     } else if (category.contains('like') ||
         category.contains('super_like') ||
         category.contains('superlike') ||
-        category.contains('match')) {
+        category.contains('match') ||
+        _isLikeItem(item.rawData)) {
       final isMasked = item.rawData['data']?['isMasked'] == true ||
           item.rawData['isMasked'] == true ||
           item.rawData['actionType'] == 'open_vip_upgrade' ||
+          item.rawData['data']?['actionType'] == 'open_vip_upgrade' ||
           (item.senderUser?['id'] == 'masked') ||
-          (item.rawData['sender'] is Map && item.rawData['sender']['id'] == 'masked');
+          (item.rawData['sender'] is Map && item.rawData['sender']['id'] == 'masked') ||
+          (item.rawData['actor'] is Map && item.rawData['actor']['id'] == 'masked');
 
       if (isMasked) {
         Navigator.push(
@@ -3758,16 +3767,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final sId = item.senderUser?['id'] ??
             item.rawData['data']?['senderId'] ??
             item.rawData['actorUserId'] ??
-            (item.rawData['sender'] is Map ? item.rawData['sender']['id'] : null);
+            (item.rawData['sender'] is Map ? item.rawData['sender']['id'] : null) ??
+            (item.rawData['actor'] is Map ? item.rawData['actor']['id'] : null);
         if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
           final sName = item.senderUser?['firstName'] ??
               item.rawData['data']?['senderName'] ??
-              (item.rawData['sender'] is Map ? item.rawData['sender']['firstName'] : null) ??
+              (item.rawData['sender'] is Map ? (item.rawData['sender']['firstName'] ?? item.rawData['sender']['name']) : null) ??
+              (item.rawData['actor'] is Map ? (item.rawData['actor']['firstName'] ?? item.rawData['actor']['name']) : null) ??
               'Someone';
           final sPhoto = item.senderUser?['profileImageUrl'] ??
               item.senderUser?['profilePhotoUrl'] ??
               item.rawData['data']?['senderImage'] ??
-              (item.rawData['sender'] is Map ? item.rawData['sender']['profileImageUrl'] : null) ??
+              (item.rawData['sender'] is Map ? (item.rawData['sender']['profileImageUrl'] ?? item.rawData['sender']['profilePhotoUrl']) : null) ??
+              (item.rawData['actor'] is Map ? (item.rawData['actor']['profileImageUrl'] ?? item.rawData['actor']['profilePhotoUrl']) : null) ??
               item.avatarUrl;
           Navigator.push(
             context,
@@ -4178,28 +4190,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         .toString()
         .toLowerCase();
 
-    if (cat == 'likes' ||
-        cat == 'like' ||
-        cat == 'super_like' ||
+    final isSuper = cat == 'super_like' ||
         cat == 'superlike' ||
-        action == 'like' ||
         action == 'superlike' ||
-        actionType == 'open_vip_upgrade' ||
-        actionType == 'view_profile' ||
-        deepLink == '/vip-membership' ||
-        (map['entityType'] == 'user_match' &&
-            !cat.contains('upcoming_night') &&
-            !cat.contains('night_partner')) ||
+        title.contains('super like') ||
+        title.contains('super liked') ||
+        body.contains('super like') ||
+        body.contains('super liked');
+
+    final isLike = cat == 'likes' ||
+        cat == 'like' ||
+        action == 'like' ||
         title.contains('liked your profile') ||
         title.contains('likes your profile') ||
-        title.contains('super liked you') ||
-        title.contains('super like') ||
+        title.contains('someone liked') ||
         body.contains('liked your profile') ||
         body.contains('likes your profile') ||
-        body.contains('someone liked your profile') ||
-        body.contains('someone likes your profile') ||
-        body.contains('sent you a super like') ||
-        body.contains('super like')) {
+        body.contains('someone liked');
+
+    final isMatchEntity = (map['entityType'] == 'user_match' ||
+            map['entityType'] == 'user_like') &&
+        !cat.contains('upcoming_night') &&
+        !cat.contains('night_partner') &&
+        !cat.contains('party_plan') &&
+        !cat.contains('stranger');
+
+    final isVipLikeAction = (actionType == 'open_vip_upgrade' ||
+            deepLink == '/vip-membership') &&
+        (isLike || isSuper || cat.contains('like') || title.contains('like') || body.contains('like'));
+
+    if (isSuper || isLike || isMatchEntity || isVipLikeAction) {
       return true;
     }
 
@@ -5167,9 +5187,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       final id = n['id']?.toString() ?? '';
-      final category = (n['category'] ?? n['entityType'] ?? 'system')
-          .toString()
-          .toLowerCase();
+      final bool isLikeNotif = _isLikeItem(n);
+      final bool isSuperNotif = (n['category']?.toString().toLowerCase().contains('super') == true) ||
+          (n['type']?.toString().toLowerCase().contains('super') == true) ||
+          (n['eventType']?.toString().toLowerCase().contains('super') == true) ||
+          (n['data']?['action'] == 'superlike') ||
+          (n['metadata']?['action'] == 'superlike') ||
+          (n['title']?.toString().toLowerCase().contains('super like') == true) ||
+          (n['title']?.toString().toLowerCase().contains('super liked') == true) ||
+          (n['body']?.toString().toLowerCase().contains('super like') == true);
+
+      final category = isLikeNotif
+          ? (isSuperNotif ? 'super_like' : 'likes')
+          : (n['category'] ?? n['entityType'] ?? 'system').toString().toLowerCase();
       final title = n['title']?.toString() ?? 'Notification';
       final body = n['body']?.toString() ?? '';
       final isRead =
@@ -5219,7 +5249,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         accentColor = const Color(0xFFEF4444);
         icon = Icons.cancel_rounded;
         badge = 'CANCELLED';
-      } else if (category.contains('super_like') ||
+      } else if (isSuperNotif ||
+          category.contains('super_like') ||
           category.contains('superlike') ||
           (n['type']?.toString().contains('super_like') == true) ||
           (n['data']?['action'] == 'superlike')) {
@@ -5228,15 +5259,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         badge = 'SUPER LIKE';
         final sId =
             (n['sender'] is Map ? n['sender']['id'] : null) ??
+            (n['actor'] is Map ? n['actor']['id'] : null) ??
             n['data']?['senderId'] ??
             n['actorUserId'];
         if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
           final sName =
-              (n['sender'] is Map ? n['sender']['firstName'] : null) ??
+              (n['sender'] is Map ? (n['sender']['firstName'] ?? n['sender']['name']) : null) ??
+              (n['actor'] is Map ? (n['actor']['firstName'] ?? n['actor']['name']) : null) ??
               n['data']?['senderName'] ??
               'Someone';
           final sPhoto =
-              (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ??
+              (n['sender'] is Map ? (n['sender']['profileImageUrl'] ?? n['sender']['profilePhotoUrl']) : null) ??
+              (n['actor'] is Map ? (n['actor']['profileImageUrl'] ?? n['actor']['profilePhotoUrl']) : null) ??
               n['data']?['senderImage'] ??
               n['imageUrl'];
           actionText = 'View Profile';
@@ -5256,8 +5290,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               ),
             ),
           );
+        } else {
+          actionText = 'See Who Liked You';
+          actionTap = () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const PeopleWhoLikedYouScreen(),
+            ),
+          );
         }
-      } else if (category.contains('like') ||
+      } else if (isLikeNotif ||
+          category.contains('like') ||
           (n['type']?.toString().contains('like') == true) ||
           (n['data']?['action'] == 'like')) {
         accentColor = const Color(0xFFEC4899);
@@ -5266,7 +5309,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final bool isMasked = n['data']?['isMasked'] == true ||
             n['isMasked'] == true ||
             n['actionType'] == 'open_vip_upgrade' ||
-            (n['sender'] is Map && n['sender']['id'] == 'masked');
+            n['data']?['actionType'] == 'open_vip_upgrade' ||
+            (n['sender'] is Map && n['sender']['id'] == 'masked') ||
+            (n['actor'] is Map && n['actor']['id'] == 'masked');
 
         if (isMasked) {
           badge = 'NEW LIKE';
@@ -5281,15 +5326,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           badge = 'LIKED YOU';
           final sId =
               (n['sender'] is Map ? n['sender']['id'] : null) ??
+              (n['actor'] is Map ? n['actor']['id'] : null) ??
               n['data']?['senderId'] ??
               n['actorUserId'];
           if (sId != null && sId.toString().isNotEmpty && sId.toString() != 'masked') {
             final sName =
-                (n['sender'] is Map ? n['sender']['firstName'] : null) ??
+                (n['sender'] is Map ? (n['sender']['firstName'] ?? n['sender']['name']) : null) ??
+                (n['actor'] is Map ? (n['actor']['firstName'] ?? n['actor']['name']) : null) ??
                 n['data']?['senderName'] ??
                 'Someone';
             final sPhoto =
-                (n['sender'] is Map ? n['sender']['profileImageUrl'] : null) ??
+                (n['sender'] is Map ? (n['sender']['profileImageUrl'] ?? n['sender']['profilePhotoUrl']) : null) ??
+                (n['actor'] is Map ? (n['actor']['profileImageUrl'] ?? n['actor']['profilePhotoUrl']) : null) ??
                 n['data']?['senderImage'] ??
                 n['imageUrl'];
             actionText = 'View Profile';
@@ -11273,6 +11321,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             'icon': Icons.chat_bubble_rounded,
           },
           {
+            'id': 'CANCELLED',
+            'label': 'Cancelled Plans & Bookings',
+            'icon': Icons.cancel_outlined,
+          },
+          {
             'id': 'EXPIRED',
             'label': 'Expired Plans & Events',
             'icon': Icons.history_rounded,
@@ -11473,30 +11526,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               // Mark all as read button
-              TextButton.icon(
-                onPressed: markAllNotificationsAsRead,
-                icon: const Icon(
-                  Icons.done_all_rounded,
-                  size: 15,
-                  color: LunaraTheme.electricViolet,
-                ),
-                label: const Text(
-                  'Read All',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+              if (_isMarkingAllRead)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: LunaraTheme.electricViolet,
+                    ),
+                  ),
+                )
+              else
+                TextButton.icon(
+                  onPressed: markAllNotificationsAsRead,
+                  icon: const Icon(
+                    Icons.done_all_rounded,
+                    size: 15,
                     color: LunaraTheme.electricViolet,
                   ),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
+                  label: const Text(
+                    'Read All',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: LunaraTheme.electricViolet,
+                    ),
                   ),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
-              ),
               const SizedBox(width: 4),
               // Filter Bottom Sheet Button
               InkWell(
@@ -11536,13 +11602,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final category = i.category.toLowerCase();
         final title = i.title.toLowerCase();
         final badge = i.badgeText?.toUpperCase() ?? '';
-        final isSystem = category == 'system' ||
+        final isLike = category.contains('like') ||
+            badge.contains('LIKE') ||
+            title.contains('liked') ||
+            _isLikeItem(i.rawData);
+        final isSystem = !isLike && (category == 'system' ||
             category == 'promotion' ||
             category == 'promo' ||
             badge.contains('SYSTEM') ||
             badge.contains('PROMO') ||
             title.contains('vip plan') ||
-            title.contains('super likes usage');
+            title.contains('super likes usage'));
         return !isSystem;
       }).length;
     }
@@ -11554,13 +11624,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
-      final isSystem = category == 'system' ||
+      final body = item.body.toLowerCase();
+      final isLike = category.contains('like') ||
+          badge.contains('LIKE') ||
+          title.contains('liked') ||
+          _isLikeItem(item.rawData);
+      final isSystem = !isLike && (category == 'system' ||
           category == 'promotion' ||
           category == 'promo' ||
           badge.contains('SYSTEM') ||
           badge.contains('PROMO') ||
           title.contains('vip plan') ||
-          title.contains('super likes usage');
+          title.contains('super likes usage'));
 
       final rawStatus =
           (item.rawData['status'] ??
@@ -11572,9 +11647,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final cancellationStatus = (item.rawData['cancellationStatus'] ?? '')
           .toString()
           .toLowerCase();
+
+      final bool isCancelled = category == 'cancelled' ||
+          category == 'cancellation' ||
+          rawStatus.contains('cancel') ||
+          cancellationStatus.contains('cancel') ||
+          cancellationStatus == 'approved' ||
+          badge.contains('CANCEL') ||
+          title.contains('cancel') ||
+          body.contains('cancel') ||
+          item.rawData['isCancelled'] == true;
+
       bool matches = false;
-      if (pillId == 'REQUESTS') {
-        matches = !isSystem && (
+      if (pillId == 'CANCELLED') {
+        matches = isCancelled;
+      } else if (pillId == 'REQUESTS') {
+        matches = !isCancelled && !isSystem && (
+            isLike ||
             title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
@@ -11589,7 +11678,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             category.contains('upcoming_night') ||
             category.contains('night_partner'));
       } else if (pillId == 'PENDING') {
-        matches = !isSystem && (
+        matches = !isCancelled && !isSystem && (
             rawStatus.contains('pending') ||
             rawStatus.contains('invite_sent') ||
             rawStatus.contains('waiting_for_payment') ||
@@ -11600,7 +11689,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('INVITE') ||
             badge.contains('WAITING'));
       } else if (pillId == 'PAYMENT') {
-        matches =
+        matches = !isCancelled && (
             category.contains('pay') ||
             category.contains('wallet') ||
             category.contains('deposit') ||
@@ -11609,13 +11698,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             badge.contains('PAYMENT') ||
             badge.contains('ACTION REQUIRED') ||
             title.contains('payment') ||
-            title.contains('paid');
+            title.contains('paid'));
       } else if (pillId == 'CONFIRMED') {
-        matches =
+        matches = !isCancelled && (
             rawStatus.contains('confirmed') ||
             rawStatus.contains('paid') ||
             badge.contains('CONFIRMED') ||
-            title.contains('confirmed');
+            title.contains('confirmed'));
       } else if (pillId == 'SYSTEM') {
         matches = isSystem;
       }
@@ -11631,6 +11720,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       {'id': 'ALL', 'label': 'All'},
       {'id': 'REQUESTS', 'label': 'Requests'},
       {'id': 'PENDING', 'label': 'Pending'},
+      {'id': 'CANCELLED', 'label': 'Cancelled'},
       {'id': 'PAYMENT', 'label': 'Payment'},
       {'id': 'CONFIRMED', 'label': 'Confirmed'},
       {'id': 'EXPIRED', 'label': 'Expired'},
@@ -11731,6 +11821,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // Apply category filter
     final categoryFilteredItems = allTimelineItems.where((item) {
       if (_selectedCategoryFilter == 'ALL') return true;
+      if (_selectedCategoryFilter == 'CANCELLED') {
+        final rawStatus = (item.rawData['status'] ?? item.rawData['paymentStatus'] ?? item.rawData['stage'] ?? '').toString().toLowerCase();
+        final cancellationStatus = (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
+        final badge = item.badgeText?.toUpperCase() ?? '';
+        final title = item.title.toLowerCase();
+        final body = item.body.toLowerCase();
+        return item.category == 'cancelled' ||
+            item.category == 'cancellation' ||
+            rawStatus.contains('cancel') ||
+            cancellationStatus.contains('cancel') ||
+            cancellationStatus == 'approved' ||
+            badge.contains('CANCEL') ||
+            title.contains('cancel') ||
+            body.contains('cancel') ||
+            item.rawData['isCancelled'] == true;
+      }
       if (_selectedCategoryFilter == 'EXPIRED') {
         return item.isExpired;
       }
@@ -11764,7 +11870,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return true;
     }).toList();
 
-    // Apply status pill filter (All, Requests, Pending, Payment, Confirmed, Expired, System)
+    // Apply status pill filter (All, Requests, Pending, Cancelled, Payment, Confirmed, Expired, System)
     final filteredItems = categoryFilteredItems.where((item) {
       if (_selectedStatusPill == 'EXPIRED' ||
           _selectedCategoryFilter == 'EXPIRED') {
@@ -11780,20 +11886,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
-      final isSystemNotif = category.contains('system') ||
+      final isLike = category.contains('like') ||
+          badge.contains('LIKE') ||
+          title.contains('liked') ||
+          _isLikeItem(item.rawData);
+
+      final isSystemNotif = !isLike && (category.contains('system') ||
           category.contains('promo') ||
           category.contains('promotion') ||
           badge.contains('SYSTEM') ||
           badge.contains('PROMO') ||
           title.contains('vip plan') ||
           title.contains('super likes usage') ||
-          body.contains('subscription will expire') ||
-          body.contains('super likes');
-
-      if (_selectedStatusPill == 'ALL') {
-        // Exclude system notifications from ALL tab so they only appear in SYSTEM
-        return !isSystemNotif;
-      }
+          body.contains('subscription will expire'));
 
       final rawStatus =
           (item.rawData['status'] ??
@@ -11806,8 +11911,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           .toString()
           .toLowerCase();
 
+      final bool isCancelled = category == 'cancelled' ||
+          category == 'cancellation' ||
+          rawStatus.contains('cancel') ||
+          cancellationStatus.contains('cancel') ||
+          cancellationStatus == 'approved' ||
+          badge.contains('CANCEL') ||
+          title.contains('cancel') ||
+          body.contains('cancel') ||
+          item.rawData['isCancelled'] == true;
+
+      if (_selectedStatusPill == 'CANCELLED' ||
+          _selectedCategoryFilter == 'CANCELLED') {
+        return isCancelled;
+      }
+
+      if (_selectedStatusPill == 'ALL') {
+        // Exclude system notifications from ALL tab so they only appear in SYSTEM
+        return !isSystemNotif;
+      }
+
       if (_selectedStatusPill == 'REQUESTS') {
-        return !isSystemNotif && (
+        return !isCancelled && !isSystemNotif && (
+            isLike ||
             title.contains('request') ||
             title.contains('invite') ||
             title.contains('partner') ||
@@ -11829,7 +11955,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         );
       }
       if (_selectedStatusPill == 'PENDING') {
-        return !isSystemNotif && (
+        return !isCancelled && !isSystemNotif && (
             rawStatus.contains('pending') ||
             rawStatus.contains('invite_sent') ||
             rawStatus.contains('waiting_for_payment') ||
@@ -11847,7 +11973,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               (act) => act.label.toLowerCase().contains('pay'),
             ) ??
             false;
-        return category.contains('pay') ||
+        return !isCancelled && (category.contains('pay') ||
             category.contains('wallet') ||
             category.contains('deposit') ||
             rawStatus.contains('pay') ||
@@ -11863,13 +11989,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             body.contains('payment') ||
             body.contains('pay') ||
             body.contains('deposit') ||
-            hasPayAction;
+            hasPayAction);
       }
       if (_selectedStatusPill == 'CONFIRMED') {
-        return rawStatus.contains('confirmed') ||
+        return !isCancelled && (rawStatus.contains('confirmed') ||
             rawStatus.contains('paid') ||
             badge.contains('CONFIRMED') ||
-            title.contains('confirmed');
+            title.contains('confirmed'));
       }
       if (_selectedStatusPill == 'SYSTEM') {
         return isSystemNotif;
@@ -13264,6 +13390,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final venueName = (checkData['venueName'] ?? checkData['venue']?['name'] ?? 'the venue').toString();
     final checkId = (checkData['id'] ?? checkData['_id'] ?? checkData['checkId'] ?? '').toString();
 
+    // Calculate dynamic elapsed party time and auto-dismiss if > 12 hours
+    final rawDate = checkData['partyDate'] ?? checkData['eventDateTime'] ?? checkData['createdAt'];
+    String elapsedText = (checkData['hoursText'] ?? '').toString();
+    if (rawDate != null) {
+      try {
+        final dt = DateTime.parse(rawDate.toString()).toLocal();
+        final diff = DateTime.now().difference(dt);
+        if (diff.inHours >= 12) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _pendingSafetyCheck = null);
+          });
+          return const SizedBox.shrink();
+        }
+        if (elapsedText.isEmpty) {
+          final hours = diff.inHours;
+          if (hours >= 1) {
+            elapsedText = '$hours ${hours == 1 ? "hour" : "hours"} ago';
+          } else if (diff.inMinutes > 0) {
+            elapsedText = '${diff.inMinutes} mins ago';
+          }
+        }
+      } catch (_) {}
+    }
+    if (elapsedText.isEmpty) {
+      final pTime = checkData['partyTime']?.toString();
+      elapsedText = pTime != null && pTime.isNotEmpty ? 'at $pTime' : 'recently';
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(14),
@@ -13308,7 +13462,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     const Text(
                       'POST-PARTY SAFETY CHECK',
                       style: TextStyle(
-                        fontFamily: 'AllroundGothic',
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.0,
@@ -13317,7 +13470,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Your party at $venueName started 3 hours ago. Please confirm you are safe & sound.',
+                      'Your party at $venueName started $elapsedText. Please confirm you are safe & sound.',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF475569),

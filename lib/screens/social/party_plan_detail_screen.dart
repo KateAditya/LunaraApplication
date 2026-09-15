@@ -708,8 +708,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
   void _showHostCancellationChoiceDialog(String selectedReason, String? otherText) {
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
-    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
-    final venueName = venue['name'] as String? ?? 'the venue';
+    final venue = _extractVenue(widget.plan);
+    final venueName = venue['name'] as String? ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : 'the venue');
     final vis = widget.plan['visibility']?.toString().toLowerCase() ?? 'public';
     final isPrivateOrBoth = vis == 'private' || vis == 'both';
 
@@ -1172,7 +1172,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       final bool isRecipient = _currentUserId != null &&
           ((requestedById.isNotEmpty && requestedById != _currentUserId) ||
            (recipientUserId.isNotEmpty && recipientUserId == _currentUserId));
-      final requesterObj = _cancellationRequest!['requester'] as Map<String, dynamic>?;
+      final requesterObj = _cancellationRequest!['requester'] is Map ? Map<String, dynamic>.from(_cancellationRequest!['requester']) : null;
       final requesterName = requesterObj?['firstName'] ?? 'The other participant';
       final reasonKey = _cancellationRequest!['reason']?.toString() ?? '';
 
@@ -1350,14 +1350,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
   Future<void> _loadVenueDetailsIfNeeded() async {
     final bool isMyPost = _isHostPlan(widget.plan);
+    final venue = _extractVenue(widget.plan);
+    final venueName = venue['name']?.toString() ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : '');
     final bool isSecretVenue = widget.plan['showVenueDetails'] == false ||
         widget.plan['isSecret'] == true ||
         widget.plan['isSecretVenue'] == true ||
-        (widget.plan['venue'] is Map &&
-            ((widget.plan['venue'] as Map)['showVenueDetails'] == false ||
-             (widget.plan['venue'] as Map)['isSecret'] == true ||
-             (widget.plan['venue'] as Map)['isSecretVenue'] == true)) ||
-        widget.plan['venue']?['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+        venue['showVenueDetails'] == false ||
+        venue['isSecret'] == true ||
+        venue['isSecretVenue'] == true ||
+        venueName.toUpperCase().contains('SECRET VENUE');
     final bool hide = isSecretVenue && !isMyPost && widget.plan['canSeeVenue'] != true;
     if (hide) return;
 
@@ -1365,7 +1366,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (initialUrl != null && initialUrl.isNotEmpty) return;
 
     final venueId = widget.plan['venueId']?.toString() ??
-        widget.plan['venue']?['id']?.toString() ??
+        venue['id']?.toString() ??
         '';
     if (venueId.isEmpty) return;
 
@@ -1399,7 +1400,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (_fetchedVenueImageUrl != null && _fetchedVenueImageUrl!.isNotEmpty) {
       return _fetchedVenueImageUrl;
     }
-    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
+    final venue = _extractVenue(widget.plan);
     final plan = widget.plan;
 
     dynamic rawCandidate = venue['coverImage'] ??
@@ -1932,7 +1933,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         widget.plan['activeRequestId']?.toString() ??
         widget.plan['matchedRequestId']?.toString() ??
         (widget.plan['myRequest'] is Map ? widget.plan['myRequest']['id']?.toString() : null) ??
-        (widget.plan['acceptedJoinerRequest'] is Map ? widget.plan['acceptedJoinerRequest']['id']?.toString() : null);
+        (widget.plan['acceptedJoinerRequest'] is Map ? widget.plan['acceptedJoinerRequest']['id']?.toString() : null) ??
+        (widget.plan['request'] is Map ? widget.plan['request']['id']?.toString() : null);
     if (reqId == null || reqId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1943,8 +1945,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return;
     }
 
-    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
-    final venueName = venue['name'] as String? ?? 'Venue';
+    final venue = _extractVenue(widget.plan);
+    final venueName = venue['name']?.toString() ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : 'Venue');
 
     final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
@@ -2037,8 +2039,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return;
     }
     final cleanPlanId = widget.plan['id']?.toString() ?? '';
-    final venue = widget.plan['venue'] as Map<String, dynamic>? ?? {};
-    final venueName = venue['name'] as String? ?? 'Venue';
+    final venue = _extractVenue(widget.plan);
+    final venueName = venue['name']?.toString() ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : 'Venue');
 
     final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
@@ -2410,6 +2412,21 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     );
   }
 
+  static Map<String, dynamic> _extractVenue(Map<String, dynamic> plan) {
+    final raw = plan['venue'] ?? plan['venueMap'] ?? plan['venueDetails'];
+    if (raw is Map) {
+      return Map<String, dynamic>.from(raw);
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return {'name': raw.trim()};
+    }
+    final venueName = plan['venueName']?.toString().trim();
+    if (venueName != null && venueName.isNotEmpty) {
+      return {'name': venueName};
+    }
+    return <String, dynamic>{};
+  }
+
   Map<String, dynamic> _extractHost(Map<String, dynamic> plan) {
     if (plan['host'] is Map && (plan['host'] as Map).isNotEmpty) {
       return Map<String, dynamic>.from(plan['host']);
@@ -2531,11 +2548,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   Widget build(BuildContext context) {
     final plan = widget.plan;
     final host = _extractHost(plan);
-    final venue = plan['venue'] as Map<String, dynamic>? ?? {};
+    final venue = _extractVenue(plan);
 
     // `requesterId` is deliberately not treated as host ownership. It belongs
     // to a participant request and previously made role inference ambiguous.
     final isMyPost = _isHostPlan(plan);
+    final venueName = venue['name']?.toString() ?? (plan['venue'] is String ? plan['venue'] as String : 'Venue');
 
     // canSeeVenue is the backend-authoritative flag (host, or a joiner the
     // host has accepted). Hosts always see their own venue regardless.
@@ -2545,7 +2563,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         venue['showVenueDetails'] == false ||
         venue['isSecret'] == true ||
         venue['isSecretVenue'] == true ||
-        venue['name']?.toString().toUpperCase().contains('SECRET VENUE') == true;
+        venueName.toUpperCase().contains('SECRET VENUE');
     final bool hideVenueDetails = isSecretVenue && !isMyPost && plan['canSeeVenue'] != true;
 
     final hostName = _extractHostName(host, plan);
@@ -2553,7 +2571,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final hostOccupation = host['occupation'] as String? ?? plan['hostOccupation'] as String? ?? '';
     final hostBio = host['bio'] as String? ?? plan['hostBio'] as String? ?? '';
 
-    final venueName = venue['name'] as String? ?? 'Venue';
     final venueAddress =
         [venue['addressLine1'], venue['area'], venue['city']]
             .where((e) => e != null && e.toString().isNotEmpty)
@@ -3788,8 +3805,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             itemBuilder: (context, index) {
               final req = _pendingRequests[index];
               final reqUser = (req['requester'] is Map)
-                  ? req['requester'] as Map<String, dynamic>
-                  : (req['user'] is Map ? req['user'] as Map<String, dynamic> : <String, dynamic>{});
+                  ? Map<String, dynamic>.from(req['requester'])
+                  : (req['user'] is Map ? Map<String, dynamic>.from(req['user']) : <String, dynamic>{});
               final reqUserName = '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'.trim();
               final reqId = req['id']?.toString() ?? '';
               final userBio = reqUser['profile']?['bio']?.toString() ?? reqUser['bio']?.toString() ?? '';

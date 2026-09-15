@@ -293,34 +293,64 @@ async function getUserNotifications(
             let body = sn.body;
             let deepLink = sn.deepLink;
             let actionType = sn.actionType;
+            let resolvedCategory = sn.category || 'system';
+            let resolvedType = sn.eventType || 'system_notice';
 
-            if (isNormalLike && !canSeeWhoLiked) {
-                title = '❤️ Someone liked your profile';
-                body = 'Someone liked your profile! Upgrade to VIP to see who!';
-                deepLink = '/vip-membership';
-                actionType = 'open_vip_upgrade';
-                metadata = {
-                    ...metadata,
-                    isMasked: true,
-                    action: 'like',
-                };
+            let actor = metadata?.actor || null;
+            let sender = metadata?.actor || metadata?.sender || null;
+            let imageUrl = sn.imageUrl || metadata?.actor?.profilePhotoUrl || metadata?.senderImage || null;
+
+            if (isSuper) {
+                resolvedCategory = 'super_like';
+                resolvedType = 'super_like';
+                actionType = 'view_profile';
+                if (!deepLink && (metadata?.senderId || sn.actorUserId)) {
+                    deepLink = `/profile/${metadata?.senderId || sn.actorUserId}`;
+                }
+            } else if (isNormalLike) {
+                resolvedCategory = 'likes';
+                resolvedType = 'like';
+                if (!canSeeWhoLiked) {
+                    title = '❤️ Someone liked your profile';
+                    body = 'Someone liked your profile! Upgrade to VIP to see who!';
+                    deepLink = '/vip-membership';
+                    actionType = 'open_vip_upgrade';
+                    metadata = {
+                        ...metadata,
+                        isMasked: true,
+                        action: 'like',
+                    };
+                    actor = {
+                        id: 'masked',
+                        firstName: 'Someone',
+                        lastName: '',
+                        profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                    };
+                    sender = actor;
+                    imageUrl = 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See';
+                } else {
+                    actionType = 'view_profile';
+                    if (!deepLink && (metadata?.senderId || sn.actorUserId)) {
+                        deepLink = `/profile/${metadata?.senderId || sn.actorUserId}`;
+                    }
+                }
             }
 
             notifications.push({
                 id: notificationId,
                 title,
                 body,
-                category: sn.category || 'system',
-                type: sn.eventType || 'system_notice',
-                eventType: sn.eventType || 'system_notice',
+                category: resolvedCategory,
+                type: resolvedType,
+                eventType: resolvedType,
                 createdAt: sn.createdAt ? sn.createdAt.toISOString() : new Date().toISOString(),
                 read: isRead,
                 isRead: isRead,
                 data: metadata,
                 metadata: metadata,
-                actor: metadata?.actor || null,
-                sender: metadata?.actor || null,
-                imageUrl: sn.imageUrl || metadata?.actor?.profilePhotoUrl || null,
+                actor,
+                sender,
+                imageUrl,
                 deepLink,
                 actionType,
                 entityType: sn.entityType,
@@ -1488,29 +1518,29 @@ router.get('/badge-counts', authenticate, async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch badge counts' });
     }
 });
-router.post('/swipe', authenticate, mobileUserController.swipeUser);
-router.post('/unlike', authenticate, mobileUserController.unlikeUser);
+router.post('/swipe', optionalAuth, mobileUserController.swipeUser);
+router.post('/unlike', optionalAuth, mobileUserController.unlikeUser);
 
 /**
  * GET /api/mobile/user/likes-matches
  * Fetch all likes/matches for a user
  */
-router.get('/likes-matches', authenticate, mobileUserController.getMyLikesAndMatches);
-router.get('/who-liked-summary', authenticate, mobileUserController.getWhoLikedSummary);
-router.get('/who-liked-me', authenticate, mobileUserController.getPeopleWhoLikedMe);
+router.get('/likes-matches', optionalAuth, mobileUserController.getMyLikesAndMatches);
+router.get('/who-liked-summary', optionalAuth, mobileUserController.getWhoLikedSummary);
+router.get('/who-liked-me', optionalAuth, mobileUserController.getPeopleWhoLikedMe);
 
 /**
  * GET /api/mobile/user/swipe-status
  * Check if current user already liked/superliked a target today, and get plan limits.
  * Query: userId, targetUserId
  */
-router.get('/swipe-status', authenticate, mobileUserController.getSwipeStatus);
+router.get('/swipe-status', optionalAuth, mobileUserController.getSwipeStatus);
 
 /**
  * POST /api/mobile/user/backtrack
  * Backtrack the last swipe action on a target user, subject to subscription limit.
  */
-router.post('/backtrack', authenticate, mobileUserController.backtrackSwipe);
+router.post('/backtrack', optionalAuth, mobileUserController.backtrackSwipe);
 
 // ── Chat Subscription Routes ──────────────────────────────────────────────────
 import * as chatSubCtrl from '../controllers/chatSubscriptionController';

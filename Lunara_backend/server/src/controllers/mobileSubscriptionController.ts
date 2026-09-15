@@ -850,6 +850,11 @@ export const useBoost = async (req: Request, res: Response): Promise<void> => {
         await EngagementService.logBoostStarted(userId, boost.id, 30);
 
         SubscriptionService.invalidateCache(userId);
+        try {
+            const apiCache = (await import('../utils/apiCache')).default;
+            apiCache.invalidatePrefix('customers:');
+            apiCache.invalidatePrefix('ranking:');
+        } catch (_) {}
 
         try {
             const { io } = require('../server');

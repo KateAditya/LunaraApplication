@@ -655,29 +655,33 @@ export const getMyProfile = async (req: Request, res: Response): Promise<Respons
                 } : null,
 
                 // ── Preferences ───────────────────────────────────────────────
-                preferences: preferences ? {
-                    id: preferences.id,
-                    preferredVenues: preferences.preferredVenues ?? [],
-                    preferredCrowdSize: preferences.preferredCrowdSize ?? null,
-                    musicPreference: preferences.musicPreference ?? [],
-                    drinkPreference: preferences.drinkPreference ?? [],
-                    smokingPreference: preferences.smokingPreference ?? null,
-                    preferredGenders: preferences.preferredGenders ?? [],
-                    minAgePreference: preferences.minAgePreference ?? null,
-                    maxAgePreference: preferences.maxAgePreference ?? null,
-                    minBudget: preferences.minBudget ?? null,
-                    maxBudget: preferences.maxBudget ?? null,
-                    budgetRange: preferences.budgetRange ?? null,
-                    partyTimePreference: preferences.partyTimePreference ?? null,
-                    groupSizePreference: preferences.groupSizePreference ?? null,
-                    matchDistanceKm: preferences.matchDistanceKm,
-                    showMeInMatching: preferences.showMeInMatching,
-                    invisibleMode: !preferences.showMeInMatching,
-                    bookingAlertsEnabled: preferences.bookingAlertsEnabled,
-                    isConfigured: typeof preferences.isConfigured === 'function' ? preferences.isConfigured() : false,
-                    createdAt: preferences.createdAt,
-                    updatedAt: preferences.updatedAt,
-                } : null,
+                preferences: preferences ? (() => {
+                    const canHide = subscriptionTier === 'PLUS' || subscriptionTier === 'PRO' || subscriptionTier === 'ELITE';
+                    const effectiveShowMeInMatching = canHide ? preferences.showMeInMatching : true;
+                    return {
+                        id: preferences.id,
+                        preferredVenues: preferences.preferredVenues ?? [],
+                        preferredCrowdSize: preferences.preferredCrowdSize ?? null,
+                        musicPreference: preferences.musicPreference ?? [],
+                        drinkPreference: preferences.drinkPreference ?? [],
+                        smokingPreference: preferences.smokingPreference ?? null,
+                        preferredGenders: preferences.preferredGenders ?? [],
+                        minAgePreference: preferences.minAgePreference ?? null,
+                        maxAgePreference: preferences.maxAgePreference ?? null,
+                        minBudget: preferences.minBudget ?? null,
+                        maxBudget: preferences.maxBudget ?? null,
+                        budgetRange: preferences.budgetRange ?? null,
+                        partyTimePreference: preferences.partyTimePreference ?? null,
+                        groupSizePreference: preferences.groupSizePreference ?? null,
+                        matchDistanceKm: preferences.matchDistanceKm,
+                        showMeInMatching: effectiveShowMeInMatching,
+                        invisibleMode: !effectiveShowMeInMatching,
+                        bookingAlertsEnabled: preferences.bookingAlertsEnabled,
+                        isConfigured: typeof preferences.isConfigured === 'function' ? preferences.isConfigured() : false,
+                        createdAt: preferences.createdAt,
+                        updatedAt: preferences.updatedAt,
+                    };
+                })() : null,
             },
         });
     } catch (error: any) {
@@ -819,9 +823,9 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
         let scoredUsersMap = new Map<string, any>();
 
         if (shouldComputeRanking) {
-            // Bound candidate scoring window to max 50 items
-            const candidateWindow = allUserIds.slice(offset, offset + Math.min(limit, 50));
-            const rankingExplanations = await RankingService.computeRankings(candidateWindow);
+            // Rank across candidate pool (up to 250 items) so active boosts and top tiers rank directly on top
+            const candidatePool = allUserIds.slice(0, 250);
+            const rankingExplanations = await RankingService.computeRankings(candidatePool);
             const scoredUsers = rankingExplanations.map((exp) => ({
                 id: exp.userId,
                 rankScore: exp.finalRankScore,
@@ -830,10 +834,11 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
                 superlikes: exp.rawMetrics.superlikesCount,
                 plans: exp.rawMetrics.plansCount,
                 boosts: exp.rawMetrics.hasActiveBoost ? 1 : 0,
+                isBoosted: exp.rawMetrics.hasActiveBoost,
                 vipTier: exp.rawMetrics.vipTier || 'FREE',
                 explainScore: exp.breakdown,
             }));
-            const paginatedScoredUsers = scoredUsers.slice(0, limit);
+            const paginatedScoredUsers = scoredUsers.slice(offset, offset + limit);
             paginatedUserIds = paginatedScoredUsers.map(u => u.id);
             paginatedScoredUsers.forEach(u => scoredUsersMap.set(u.id, u));
         } else {
@@ -2044,52 +2049,93 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
         const { SubscriptionService } = require('../services/subscriptionService');
         const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
 
-        const matches = await UserMatch.findAll({
-            where: {
-                [Op.or]: [
-                    { user1Id: userId },
-                    { user2Id: userId }
-                ]
-            },
-            include: [
-                {
-                    model: User,
-                    as: 'user1',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role'],
-                    include: [
-                        {
-                            model: UserProfile,
-                            as: 'profile',
-                            attributes: ['city', 'occupation', 'bio', 'interests', 'photos', 'profilePhoto', 'dateOfBirth'],
-                            required: false
-                        }
+        const [matches, sentLikes, receivedLikes] = await Promise.all([
+            UserMatch.findAll({
+                where: {
+                    [Op.or]: [
+                        { user1Id: userId },
+                        { user2Id: userId }
                     ]
                 },
-                {
-                    model: User,
-                    as: 'user2',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role'],
-                    include: [
-                        {
-                            model: UserProfile,
-                            as: 'profile',
-                            attributes: ['city', 'occupation', 'bio', 'interests', 'photos', 'profilePhoto', 'dateOfBirth'],
-                            required: false
-                        }
-                    ]
-                }
-            ],
-            order: [['createdAt', 'DESC']],
-        });
+                include: [
+                    {
+                        model: User,
+                        as: 'user1',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role', 'dateOfBirth'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['city', 'occupation', 'bio', 'interests', 'displayName', 'gender'],
+                                required: false
+                            }
+                        ]
+                    },
+                    {
+                        model: User,
+                        as: 'user2',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role', 'dateOfBirth'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['city', 'occupation', 'bio', 'interests', 'displayName', 'gender'],
+                                required: false
+                            }
+                        ]
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+            }),
+            UserLike.findAll({
+                where: { userId },
+                include: [
+                    {
+                        model: User,
+                        as: 'targetUser',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role', 'dateOfBirth'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['city', 'occupation', 'bio', 'interests', 'displayName', 'gender'],
+                                required: false
+                            }
+                        ]
+                    }
+                ]
+            }),
+            UserLike.findAll({
+                where: { targetUserId: userId },
+                include: [
+                    {
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'isVerified', 'role', 'dateOfBirth'],
+                        include: [
+                            {
+                                model: UserProfile,
+                                as: 'profile',
+                                attributes: ['city', 'occupation', 'bio', 'interests', 'displayName', 'gender'],
+                                required: false
+                            }
+                        ]
+                    }
+                ]
+            })
+        ]);
 
-        // Strictly protect Free users from receiving sender identity for normal Likes (Superlikes are excluded)
-        const processed = matches.map((m: any) => {
+        const processedMap = new Map<string, any>();
+
+        // Process UserMatch entries
+        for (const m of matches) {
             const json = m.toJSON();
+            const pairKey = `${json.user1Id}_${json.user2Id}`;
             const isIncomingPendingLike = json.user2Id === userId && json.status === 'pending';
-            const isSuper = json.matchReason === 'superlike' || json.isSuperLike;
+            const isSuper = json.matchReason === 'superlike' || (json as any).isSuperLike;
 
             if (isIncomingPendingLike && !canSeeWhoLiked && !isSuper) {
-                return {
+                processedMap.set(pairKey, {
                     ...json,
                     user1Id: 'masked',
                     isMasked: true,
@@ -2099,12 +2145,76 @@ export const getMyLikesAndMatches = async (req: Request, res: Response): Promise
                         lastName: '',
                         profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
                     }
-                };
+                });
+            } else {
+                processedMap.set(pairKey, {
+                    ...json,
+                    isMasked: false,
+                });
             }
-            return {
-                ...json,
-                isMasked: false,
-            };
+        }
+
+        // Merge any sent likes from UserLike not yet in UserMatch
+        for (const sl of sentLikes) {
+            const pairKey = `${userId}_${sl.targetUserId}`;
+            if (!processedMap.has(pairKey) && (sl as any).targetUser) {
+                processedMap.set(pairKey, {
+                    id: sl.id,
+                    user1Id: userId,
+                    user2Id: sl.targetUserId,
+                    user2: (sl as any).targetUser,
+                    targetUser: (sl as any).targetUser,
+                    status: 'pending',
+                    matchReason: sl.actionType === 'superlike' ? 'superlike' : undefined,
+                    isSuperLike: sl.actionType === 'superlike',
+                    isMasked: false,
+                    createdAt: sl.createdAt,
+                });
+            }
+        }
+
+        // Merge any received likes from UserLike not yet in UserMatch
+        for (const rl of receivedLikes) {
+            const pairKey = `${rl.userId}_${userId}`;
+            if (!processedMap.has(pairKey) && (rl as any).user) {
+                const isSuper = rl.actionType === 'superlike';
+                if (!canSeeWhoLiked && !isSuper) {
+                    processedMap.set(pairKey, {
+                        id: rl.id,
+                        user1Id: 'masked',
+                        user2Id: userId,
+                        user1: {
+                            id: 'masked',
+                            firstName: 'Someone',
+                            lastName: '',
+                            profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                        },
+                        status: 'pending',
+                        matchReason: isSuper ? 'superlike' : undefined,
+                        isSuperLike: isSuper,
+                        isMasked: true,
+                        createdAt: rl.createdAt,
+                    });
+                } else {
+                    processedMap.set(pairKey, {
+                        id: rl.id,
+                        user1Id: rl.userId,
+                        user2Id: userId,
+                        user1: (rl as any).user,
+                        status: 'pending',
+                        matchReason: isSuper ? 'superlike' : undefined,
+                        isSuperLike: isSuper,
+                        isMasked: false,
+                        createdAt: rl.createdAt,
+                    });
+                }
+            }
+        }
+
+        const processed = Array.from(processedMap.values()).sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
         });
 
         return res.status(200).json({ success: true, data: processed, canSeeWhoLiked });
@@ -2128,31 +2238,53 @@ export const getWhoLikedSummary = async (req: Request, res: Response): Promise<R
         const { SubscriptionService } = require('../services/subscriptionService');
         const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
 
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-        // Count incoming likes from user_likes table within 7 days where receiver is this user concurrently
-        const [count, superlikesCount] = await Promise.all([
-            UserLike.count({
+        // Count incoming likes from UserLike and UserMatch tables concurrently
+        const [likeRows, matchRows] = await Promise.all([
+            UserLike.findAll({
                 where: {
                     targetUserId: userId,
                     actionType: { [Op.in]: ['like', 'superlike'] },
-                    createdAt: { [Op.gte]: sevenDaysAgo },
                 },
+                attributes: ['userId', 'actionType', 'createdAt'],
             }),
-            UserLike.count({
+            UserMatch.findAll({
                 where: {
-                    targetUserId: userId,
-                    actionType: 'superlike',
-                    createdAt: { [Op.gte]: sevenDaysAgo },
+                    user2Id: userId,
+                    status: { [Op.in]: ['pending', 'connected', 'matched'] },
                 },
+                attributes: ['user1Id', 'matchReason', 'status', 'createdAt'],
             }),
         ]);
+
+        const allLikedSenderIds = new Set<string>();
+        const allSuperLikedSenderIds = new Set<string>();
+
+        likeRows.forEach((r: any) => {
+            if (r.userId && r.userId !== userId) {
+                allLikedSenderIds.add(r.userId);
+                if (r.actionType === 'superlike') {
+                    allSuperLikedSenderIds.add(r.userId);
+                }
+            }
+        });
+
+        matchRows.forEach((m: any) => {
+            if (m.user1Id && m.user1Id !== userId) {
+                allLikedSenderIds.add(m.user1Id);
+                if (m.matchReason === 'superlike') {
+                    allSuperLikedSenderIds.add(m.user1Id);
+                }
+            }
+        });
+
+        const totalCount = allLikedSenderIds.size;
+        const superlikesCount = allSuperLikedSenderIds.size;
 
         return res.status(200).json({
             success: true,
             data: {
-                totalCount: count,
-                count,
+                totalCount,
+                count: totalCount,
                 superlikesCount,
                 periodDays: 7,
                 canSeeWhoLiked,
@@ -2179,66 +2311,103 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
         const { SubscriptionService } = require('../services/subscriptionService');
         const canSeeWhoLiked = await SubscriptionService.hasAccess(userId, 'who_liked_me');
 
+        // Check total received likes across UserLike and UserMatch
+        const [likeRows, matchRows] = await Promise.all([
+            UserLike.findAll({
+                where: {
+                    targetUserId: userId,
+                    actionType: { [Op.in]: ['like', 'superlike'] },
+                },
+                attributes: ['userId', 'actionType', 'createdAt'],
+            }),
+            UserMatch.findAll({
+                where: {
+                    user2Id: userId,
+                    status: { [Op.in]: ['pending', 'connected', 'matched'] },
+                },
+                attributes: ['user1Id', 'matchReason', 'status', 'createdAt'],
+            }),
+        ]);
+
+        const allSenderIds = new Set<string>();
+        likeRows.forEach((r: any) => { if (r.userId && r.userId !== userId) allSenderIds.add(r.userId); });
+        matchRows.forEach((m: any) => { if (m.user1Id && m.user1Id !== userId) allSenderIds.add(m.user1Id); });
+
+        const totalCount = allSenderIds.size;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+
         if (!canSeeWhoLiked) {
-            return res.status(403).json({
-                success: false,
-                code: 'VIP_REQUIRED',
+            return res.status(200).json({
+                success: true,
+                locked: true,
+                canSeeWhoLiked: false,
                 message: 'Upgrade to Lunara VIP to see who liked you!',
+                data: [],
+                users: [],
+                pagination: {
+                    total: totalCount,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(totalCount / limit) || 1,
+                },
             });
         }
 
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 20;
         const offset = (page - 1) * limit;
+        const senderIdsArray = Array.from(allSenderIds);
+        const paginatedSenderIds = senderIdsArray.slice(offset, offset + limit);
 
-        const { count, rows } = await UserLike.findAndCountAll({
-            where: {
-                targetUserId: userId,
-                actionType: { [Op.in]: ['like', 'superlike'] },
-            },
-            include: [
-                {
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'dateOfBirth'],
-                    include: [
-                        {
-                            model: UserProfile,
-                            as: 'profile',
-                            attributes: ['city', 'occupation', 'interests', 'bio'],
-                            required: false,
-                        }
-                    ]
+        const [senderUsers, myLikes] = await Promise.all([
+            User.findAll({
+                where: { id: { [Op.in]: paginatedSenderIds } },
+                attributes: ['id', 'firstName', 'lastName', 'profileImageUrl', 'dateOfBirth', 'isVerified'],
+                include: [
+                    {
+                        model: UserProfile,
+                        as: 'profile',
+                        attributes: ['city', 'occupation', 'interests', 'bio', 'displayName', 'gender'],
+                        required: false,
+                    }
+                ]
+            }),
+            UserLike.findAll({
+                where: {
+                    userId,
+                    targetUserId: { [Op.in]: paginatedSenderIds },
                 },
-            ],
-            order: [['createdAt', 'DESC']],
-            limit,
-            offset,
-        });
+            }),
+        ]);
 
-        // Check mutual match state for each profile
-        const senderIds = rows.map((r: any) => r.userId);
-        const myLikes = await UserLike.findAll({
-            where: {
-                userId,
-                targetUserId: { [Op.in]: senderIds },
-            },
-        });
         const myLikedSet = new Set(myLikes.map((l: any) => l.targetUserId));
+        const likeRowMap = new Map<string, any>();
+        likeRows.forEach((r: any) => likeRowMap.set(r.userId, r));
+        const matchRowMap = new Map<string, any>();
+        matchRows.forEach((m: any) => matchRowMap.set(m.user1Id, m));
 
-        const data = rows.map((r: any) => {
-            const senderUser = (r as any).user;
+        const userMap = new Map<string, any>();
+        senderUsers.forEach((u: any) => userMap.set(u.id, u));
+
+        const data = paginatedSenderIds.map((senderId) => {
+            const senderUser = userMap.get(senderId);
             const senderProfile = senderUser?.profile;
-            const senderId = r.userId;
-            const isMutual = myLikedSet.has(senderId);
+            const likeInfo = likeRowMap.get(senderId);
+            const matchInfo = matchRowMap.get(senderId);
+            const isMutual = myLikedSet.has(senderId) || matchInfo?.status === 'connected';
+            const isSuper = likeInfo?.actionType === 'superlike' || matchInfo?.matchReason === 'superlike';
             const fullName = `${senderUser?.firstName || ''} ${senderUser?.lastName || ''}`.trim() || 'LUNARA MEMBER';
-            const photo = senderUser?.profileImageUrl || 'https://picsum.photos/400/600';
+            const photo = senderUser?.profileImageUrl ||
+                (senderProfile?.photos && senderProfile.photos.length > 0 ? senderProfile.photos[0] : null) ||
+                'https://picsum.photos/400/600';
+
             let calculatedAge = 25;
             if (senderUser?.dateOfBirth) {
-                const dob = new Date(senderUser.dateOfBirth);
-                const diff = Date.now() - dob.getTime();
-                const ageDt = new Date(diff);
-                calculatedAge = Math.abs(ageDt.getUTCFullYear() - 1970);
+                try {
+                    const dob = new Date(senderUser.dateOfBirth);
+                    const diff = Date.now() - dob.getTime();
+                    const ageDt = new Date(diff);
+                    calculatedAge = Math.abs(ageDt.getUTCFullYear() - 1970);
+                } catch (_) {}
             }
 
             return {
@@ -2255,21 +2424,24 @@ export const getPeopleWhoLikedMe = async (req: Request, res: Response): Promise<
                 image: photo,
                 interests: senderProfile?.interests || [],
                 bio: senderProfile?.bio || '',
-                actionType: r.actionType,
-                likedAt: r.createdAt,
-                isSuperLike: r.actionType === 'superlike',
+                actionType: isSuper ? 'superlike' : 'like',
+                likedAt: likeInfo?.createdAt || matchInfo?.createdAt || new Date(),
+                isSuperLike: isSuper,
                 isMutualMatch: isMutual,
             };
         });
 
         return res.status(200).json({
             success: true,
+            locked: false,
+            canSeeWhoLiked: true,
             data,
+            users: data,
             pagination: {
                 page,
                 limit,
-                total: count,
-                totalPages: Math.ceil(count / limit),
+                total: totalCount,
+                totalPages: Math.ceil(totalCount / limit) || 1,
             },
         });
     } catch (error: any) {

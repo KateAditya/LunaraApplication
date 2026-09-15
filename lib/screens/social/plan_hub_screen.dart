@@ -219,7 +219,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         List<Map<String, dynamic>> upcoming = [];
         if (dynamicPartyAds.isNotEmpty) {
           upcoming = dynamicPartyAds.map((ad) {
-            final venue = ad['venue'] as Map<String, dynamic>? ?? {};
+            final venue = ad['venue'] is Map ? Map<String, dynamic>.from(ad['venue']) : (ad['venue'] is String ? {'name': ad['venue']} : <String, dynamic>{});
             final imageUrl = ad['imagePath'] != null
                 ? (ad['imagePath'].toString().startsWith('http')
                       ? ad['imagePath'].toString()
@@ -1348,40 +1348,86 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       return isNotMe;
     }).toList();
 
-    // Rank dynamically by active hosted plans (primary weight) and budget preferences/super likes
+    // Rank dynamically with 1st priority = Activated Subscription Plan / Tier, then Likes, Super Likes, and Plans
     final scoredList = filteredList.map((u) {
       final userId = u['id']?.toString() ?? '';
 
-      // Dynamic count of active plans created by the user (Party Plans + Stranger Meets + Group Parties)
-      final rawPlansCount =
-          u['plansCount'] ?? u['plans_count'] ?? u['totalPlans'] ?? u['doostCount'] ?? u['doost'];
+      // 1. Activated Plan / VIP Tier (1st Priority)
+      final rawTier = (u['subscriptionTier'] ??
+              u['tier'] ??
+              u['packageTier'] ??
+              u['membershipTier'] ??
+              u['vipTier'] ??
+              '')
+          .toString()
+          .toUpperCase()
+          .trim();
+      final bool isVip = u['isVipActive'] == true ||
+          u['isVip'] == true ||
+          u['hasActiveSubscription'] == true;
+
+      int tierScore = 0;
+      if (rawTier == 'ELITE' || rawTier.contains('ELITE')) {
+        tierScore = 1000000;
+      } else if (rawTier == 'PRO' || rawTier.contains('PRO')) {
+        tierScore = 750000;
+      } else if (rawTier == 'PLUS' || rawTier.contains('PLUS')) {
+        tierScore = 500000;
+      } else if (rawTier == 'CORE' || rawTier.contains('CORE')) {
+        tierScore = 250000;
+      } else if (isVip) {
+        tierScore = 250000;
+      }
+
+      // 2. Likes count (2nd Priority - A)
+      final rawLikes = u['likesCount'] ??
+          u['likeCount'] ??
+          u['likes'] ??
+          u['totalLikes'];
+      final likes = rawLikes != null
+          ? (int.tryParse(rawLikes.toString()) ?? 0)
+          : 0;
+
+      // 3. Super Likes count (2nd Priority - B)
+      final rawSuperLikes = u['superLikesCount'] ??
+          u['super_likes_count'] ??
+          u['superLikes'] ??
+          u['super_likes'] ??
+          u['superLikeCount'];
+      final superLikes = rawSuperLikes != null
+          ? (int.tryParse(rawSuperLikes.toString()) ?? 0)
+          : 0;
+
+      // 4. Plans count (2nd Priority - C: Party Plans + Stranger Meets + Group Parties)
+      final rawPlansCount = u['plansCount'] ??
+          u['plans_count'] ??
+          u['totalPlans'] ??
+          u['doostCount'] ??
+          u['doost'] ??
+          u['activePartyPlanCount'];
       final apiPlanCount = rawPlansCount != null
           ? (int.tryParse(rawPlansCount.toString()) ?? 0)
           : 0;
 
       final localPartyCount = _partyPlans.where((p) {
-        final creatorId = (p['userId'] ?? p['user']?['id'] ?? p['creatorId'] ?? p['creator']?['id'])?.toString();
+        final creatorId = (p['userId'] ??
+                p['user']?['id'] ??
+                p['creatorId'] ??
+                p['creator']?['id'])
+            ?.toString();
         return creatorId == userId;
       }).length;
 
       final localStrangerCount = _strangersMeets.where((s) {
-        final creatorId = (s.userId ?? s.user?['id'] ?? s.user?['userId'])?.toString();
+        final creatorId =
+            (s.userId ?? s.user?['id'] ?? s.user?['userId'])?.toString();
         return creatorId == userId;
       }).length;
 
-      final planCount = math.max(apiPlanCount, localPartyCount + localStrangerCount);
+      final planCount =
+          math.max(apiPlanCount, localPartyCount + localStrangerCount);
 
-      // Real dynamic super likes count received by the user from server API
-      final rawSuperLikes =
-          u['superLikesCount'] ??
-          u['super_likes_count'] ??
-          u['superLikes'] ??
-          u['super_likes'];
-      final superLikes = rawSuperLikes != null
-          ? (int.tryParse(rawSuperLikes.toString()) ?? 0)
-          : 0;
-
-      // Higher budget adds to their plan score
+      // Higher budget adds slight tie-breaker
       final preferences = u['preferences'] ?? {};
       final budgetRange = (preferences['budgetRange'] ?? '')
           .toString()
@@ -1397,13 +1443,20 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         budgetScore = 10;
       }
 
-      // Total rank score
-      final score = (planCount * 1000) + (budgetScore * 10) + superLikes;
+      // Total rank score: Tier first (1M/750k/500k/250k), then likes (1000), superlikes (500), plans (250)
+      final score = tierScore +
+          (likes * 1000) +
+          (superLikes * 500) +
+          (planCount * 250) +
+          budgetScore;
 
       return {
         'user': u,
-        'planCount': planCount,
+        'tier': rawTier.isNotEmpty ? rawTier : (isVip ? 'CORE' : 'FREE'),
+        'hasActivePlan': tierScore > 0,
+        'likes': likes,
         'superLikes': superLikes,
+        'planCount': planCount,
         'score': score,
       };
     }).toList();
@@ -1468,6 +1521,9 @@ class _PlanHubScreenState extends State<PlanHubScreen>
           final person = item['user'] as Map<String, dynamic>;
           final planCount = item['planCount'] as int;
           final superLikes = item['superLikes'] as int;
+          final likes = item['likes'] as int;
+          final tier = item['tier'] as String;
+          final hasActivePlan = item['hasActivePlan'] as bool;
 
           final name =
               person['name'] ??
@@ -1542,12 +1598,15 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                       children: [
                         Row(
                           children: [
-                            Text(
-                              '$name, $age',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: Colors.black,
+                            Flexible(
+                              child: Text(
+                                '$name, $age',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: Colors.black,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -1556,6 +1615,28 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               color: LunaraTheme.cyberCyan,
                               size: 14,
                             ),
+                            if (hasActivePlan) ...[
+                              const SizedBox(width: 5),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: LunaraTheme.purpleGradient,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  tier != 'FREE' ? tier : 'VIP',
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 3),
@@ -1574,6 +1655,40 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                           alignment: Alignment.centerLeft,
                           child: Row(
                             children: [
+                              if (likes > 0) ...[
+                                const Icon(
+                                  Icons.favorite,
+                                  color: Color(0xFFFF2D55),
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '$likes Likes',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (superLikes > 0 || likes == 0) ...[
+                                Icon(
+                                  Icons.star,
+                                  color: Colors.amber[600],
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '$superLikes Super',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               Icon(
                                 Icons.event_note,
                                 color: Colors.amber[700],
@@ -1582,21 +1697,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                               const SizedBox(width: 3),
                               Text(
                                 '$planCount Plans',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Icon(
-                                Icons.star,
-                                color: Colors.amber[600],
-                                size: 12,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                '$superLikes Super Likes',
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: Colors.grey[600],

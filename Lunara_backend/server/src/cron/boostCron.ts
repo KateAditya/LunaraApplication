@@ -30,6 +30,11 @@ export const startBoostCron = () => {
                         await boost.update({ status: ProfileBoostStatus.EXPIRED });
                         await EngagementService.logBoostExpired(boost.userId, boost.id);
                         SubscriptionService.invalidateCache(boost.userId);
+                        try {
+                            const apiCache = (await import('../utils/apiCache')).default;
+                            apiCache.invalidatePrefix('customers:');
+                            apiCache.invalidatePrefix('ranking:');
+                        } catch (_) {}
 
                         try {
                             const { io } = require('../server');

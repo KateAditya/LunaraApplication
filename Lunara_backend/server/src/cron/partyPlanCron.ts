@@ -2266,11 +2266,54 @@ export const checkAndTriggerPartySafetyChecks = async () => {
     try {
         const now = new Date();
         const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+        const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
-        // 1. Party Plans scheduled 3+ hours ago
+        // 0. Auto-resolve any safety checks older than 12 hours as SAFE
+        try {
+            const expiredChecks = await PartySafetyCheck.findAll({
+                where: {
+                    safetyStatus: SafetyStatus.NO_RESPONSE,
+                    [Op.or]: [
+                        { partyDate: { [Op.lte]: twelveHoursAgo } },
+                        { createdAt: { [Op.lte]: twelveHoursAgo } },
+                    ]
+                }
+            });
+
+            if (expiredChecks.length > 0) {
+                const expiredIds = expiredChecks.map(c => c.id);
+                await PartySafetyCheck.update(
+                    {
+                        safetyStatus: SafetyStatus.SAFE,
+                        notes: 'Auto-resolved safe after 12 hours',
+                        respondedAt: now,
+                    },
+                    {
+                        where: { id: { [Op.in]: expiredIds } }
+                    }
+                );
+
+                try {
+                    const Notification = (await import('../models/Notification')).default;
+                    await Notification.update(
+                        { isRead: true },
+                        {
+                            where: {
+                                entityType: 'PartySafetyCheck',
+                                entityId: { [Op.in]: expiredIds },
+                            }
+                        }
+                    );
+                } catch (_) {}
+            }
+        } catch (autoErr: any) {
+            logger.warn('[checkAndTriggerPartySafetyChecks] Failed to auto-resolve 12h safety checks:', autoErr.message);
+        }
+
+        // 1. Party Plans scheduled 3 to 12 hours ago
         const partyPlans = await PartyPlan.findAll({
             where: {
-                planDateTime: { [Op.lte]: threeHoursAgo },
+                planDateTime: { [Op.between]: [twelveHoursAgo, threeHoursAgo] },
             },
             include: [
                 { model: Venue, as: 'venue', attributes: ['name'] },
@@ -2315,10 +2358,10 @@ export const checkAndTriggerPartySafetyChecks = async () => {
             }
         }
 
-        // 2. Stranger Meets scheduled 3+ hours ago
+        // 2. Stranger Meets scheduled 3 to 12 hours ago
         const strangerMeets = await StrangersMeetRequest.findAll({
             where: {
-                eventDateTime: { [Op.lte]: threeHoursAgo },
+                eventDateTime: { [Op.between]: [twelveHoursAgo, threeHoursAgo] },
             },
             include: [{ model: Venue, as: 'venue', attributes: ['name'] }]
         });
@@ -2387,6 +2430,12 @@ async function dispatchSafetyCheckIfPending(data: {
 
         if (existing) return; // Notification already created
 
+        const now = new Date();
+        const partyStart = data.partyDate ? new Date(data.partyDate) : now;
+        const diffMs = Math.max(0, now.getTime() - partyStart.getTime());
+        const elapsedHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+        const hoursText = `${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`;
+
         const safetyRecord = await PartySafetyCheck.create({
             planId: data.planId,
             planType: data.planType,
@@ -2397,7 +2446,7 @@ async function dispatchSafetyCheckIfPending(data: {
             partyTime: data.partyTime,
             safetyStatus: SafetyStatus.NO_RESPONSE,
             alertTriggered: false,
-            notificationSentAt: new Date(),
+            notificationSentAt: now,
         });
 
         await NotificationService.dispatch({
@@ -2407,11 +2456,19 @@ async function dispatchSafetyCheckIfPending(data: {
             entityType: 'PartySafetyCheck',
             entityId: safetyRecord.id,
             title: 'Safety Check: Has your party ended?',
-            body: `Your party at ${data.venueName} started 3 hours ago. Please confirm you are safe & sound.`,
+            body: `Your party at ${data.venueName} started ${hoursText}. Please confirm you are safe & sound.`,
             priority: 'HIGH',
             idempotencyKey: `safety_check_${safetyRecord.id}_${data.userId}`,
             actionType: 'safety_check',
             deepLink: `/safety-check/${safetyRecord.id}`,
+            metadata: {
+                checkId: safetyRecord.id,
+                planId: data.planId,
+                venueName: data.venueName,
+                partyDate: data.partyDate,
+                partyTime: data.partyTime,
+                elapsedHours,
+            }
         });
     } catch (err: any) {
         logger.error(`Failed to dispatch safety check for plan ${data.planId} and user ${data.userId}:`, err.message || err);

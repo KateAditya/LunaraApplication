@@ -188,7 +188,18 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['strangersMeetRequestId'] != null;
     if (isStrangersMeet) return 'strangers_meet';
 
-    // 3. Check explicit server-provided category if non-generic
+    // 3. Check Event Booking indicators (Upcoming Nights / Party Events)
+    final isUpcomingNight = booking['isUpcomingNight'] == true ||
+        booking['isEventBooking'] == true ||
+        booking['category']?.toString().toLowerCase() == 'event_booking' ||
+        booking['bookingType']?.toString().toLowerCase() == 'upcoming_night' ||
+        booking['bookingType']?.toString().toLowerCase() == 'event_booking' ||
+        booking['partyEventId'] != null ||
+        booking['partyEvent'] != null ||
+        booking['party_event'] != null;
+    if (isUpcomingNight) return 'event_booking';
+
+    // 4. Check explicit server-provided category if non-generic
     if (booking['category'] != null && booking['category'].toString().isNotEmpty) {
       final cat = booking['category'].toString().toLowerCase().trim();
       if (cat == 'group_party' ||
@@ -213,15 +224,12 @@ class _TicketPocketScreenState extends State<TicketPocketScreen>
         booking['goingMode'] == 'party_request';
     if (isGroupParty) return 'group_party';
 
-    final isUpcomingNight = booking['isUpcomingNight'] == true ||
-        booking['isEventBooking'] == true ||
-        booking['bookingType'] == 'upcoming_night' ||
-        booking['bookingType'] == 'event_booking';
-    if (isUpcomingNight) return 'event_booking';
-
-    final isSolo = booking['isSolo'] == true ||
+    final numGuests = booking['numberOfGuests'] is int
+        ? booking['numberOfGuests'] as int
+        : (int.tryParse(booking['numberOfGuests']?.toString() ?? '') ?? 1);
+    final isSolo = (booking['isSolo'] == true ||
         booking['bookingType'] == 'solo' ||
-        booking['goingMode'] == 'solo';
+        booking['goingMode'] == 'solo') && numGuests <= 1;
     if (isSolo) return 'solo';
 
     return 'venue_booking';

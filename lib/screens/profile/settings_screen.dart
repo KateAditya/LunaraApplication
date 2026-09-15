@@ -356,13 +356,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildHideProfileTile() {
     final hasHideProfile = SubscriptionProvider.instance.hasVipFeature(VipFeature.hideProfile);
 
-    return _buildSwitchTile('Hide Profile', _hideProfile, (v) async {
+    return _buildSwitchTile('Hide Profile', hasHideProfile && _hideProfile, (v) async {
       if (!hasHideProfile) {
         showSubscriptionLimitDialog(
           context,
           feature: SubLimitFeature.hideProfile,
         );
-        setState(() {}); // Reset switch visually
+        setState(() => _hideProfile = false); // Ensure switch stays OFF visually
         return;
       }
 

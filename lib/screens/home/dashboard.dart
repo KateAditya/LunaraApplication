@@ -33,7 +33,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   int _liveFeedCount = 0;
   int _chatCount = 0;
 
-  bool _isInitialized = false;
+  /// Tabs the user has opened at least once.
+  ///
+  /// `IndexedStack` builds *every* child regardless of which one it paints, so
+  /// all four tab screens used to run `initState` — and with it their network
+  /// calls, polling timers and socket listeners — the moment the dashboard
+  /// appeared. Building a tab only once it is first selected keeps startup work
+  /// to the visible screen. Once a tab is activated it stays in this set, so its
+  /// state survives every later switch exactly as it did before.
+  final Set<int> _activatedTabs = {0};
   late final List<Widget> _screens;
   final GlobalKey<LiveFeedScreenState> _liveFeedKey = GlobalKey<LiveFeedScreenState>();
 
@@ -50,15 +58,20 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     ];
     WidgetsBinding.instance.addObserver(this);
     _initApp();
-    _badgeTimer = Timer.periodic(
-      const Duration(seconds: 30), // chat count synced from server
-      (_) => _fetchBadges(),
-    );
+    _startBadgeTimer();
     _initSocketListeners();
   }
 
   void _onProfileNotify() {
     _loadProfile(forceRefresh: true);
+  }
+
+  void _startBadgeTimer() {
+    _badgeTimer?.cancel();
+    _badgeTimer = Timer.periodic(
+      const Duration(seconds: 30), // chat count synced from server
+      (_) => _fetchBadges(),
+    );
   }
 
   Future<void> _initApp() async {
@@ -72,9 +85,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       debugPrint('Error during dashboard initialization: $e');
     } finally {
       if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
         PushNotificationService.setAppReady();
         _prewarmBackgroundScreens();
       }
@@ -297,8 +307,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startBadgeTimer();
       _fetchBadges(forceRefresh: true);
       SubscriptionProvider.instance.refresh();
+    } else if (state == AppLifecycleState.paused) {
+      // Polling badge counts every 30s while the app sits in the background
+      // spends battery and requests on a badge nobody can see. Resuming already
+      // force-refreshes below, so no update is missed.
+      _badgeTimer?.cancel();
+      _badgeTimer = null;
     }
   }
 
@@ -319,23 +336,26 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     });
   }
 
+  /// The `IndexedStack` children, with a zero-cost placeholder standing in for
+  /// any tab the user has not opened yet. `_screens` holds stable widget
+  /// instances, so once a tab is activated its element and state persist across
+  /// every later rebuild — switching between tabs behaves as it always did.
+  List<Widget> _buildLazyScreens() {
+    return List<Widget>.generate(
+      _screens.length,
+      (i) => _activatedTabs.contains(i) ? _screens[i] : const SizedBox.shrink(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!_isInitialized) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F001E),
-        body: Center(
-          child: CircularProgressIndicator(color: LunaraTheme.cyberCyan),
-        ),
-      );
-    }
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           IndexedStack(
             index: _currentIndex == 2 ? 0 : _currentIndex,
-            children: _screens,
+            children: _buildLazyScreens(),
           ),
         ],
       ),
@@ -369,7 +389,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             if (index == 1) {
               _liveFeedKey.currentState?.refreshFeed();
             }
-            setState(() => _currentIndex = index);
+            setState(() {
+              _activatedTabs.add(index);
+              _currentIndex = index;
+            });
             if (index == 1) {
               _onLiveFeedRead();
             }

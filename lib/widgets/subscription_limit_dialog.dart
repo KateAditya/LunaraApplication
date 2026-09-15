@@ -469,11 +469,9 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(context);
-                            // For paid users: go to add-ons tab (index 1)
-                            // For free users: go to VIP plans tab (index 0)
-                            final targetTab = showAddonCta
-                                ? 1
-                                : (widget.feature == SubLimitFeature.superLike ? 1 : 0);
+                            // For paid users purchasing add-ons: go to add-ons tab (index 1)
+                            // For VIP features (Hide Profile, Who Liked Me, etc.) or free users: go to VIP plans tab (index 0)
+                            final targetTab = showAddonCta ? 1 : 0;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -492,12 +490,12 @@ class _SubscriptionLimitSheetState extends State<_SubscriptionLimitSheet>
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
-                                showAddonCta ? '⚡' : (provider.isPaid ? '⚡' : '👑'),
+                                showAddonCta ? '⚡' : '👑',
                                 style: const TextStyle(fontSize: 20),
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                showAddonCta ? 'GET ADD-ON PACK' : (provider.isPaid ? 'GET ADD-ON PACK' : 'UPGRADE TO VIP'),
+                                showAddonCta ? 'GET ADD-ON PACK' : 'UPGRADE TO VIP',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,

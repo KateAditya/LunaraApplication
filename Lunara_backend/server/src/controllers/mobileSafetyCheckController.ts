@@ -108,6 +108,8 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
     }
 };
 
+import { Op } from 'sequelize';
+
 /**
  * GET /api/mobile/safety-checks/pending
  * Get pending/unanswered safety check for current user
@@ -115,11 +117,59 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
 export const getPendingSafetyCheck = async (req: Request, res: Response): Promise<Response> => {
     try {
         const userId = req.user!.id;
+        const now = new Date();
+        const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+        // Auto-resolve any safety checks older than 12 hours as SAFE
+        try {
+            const expiredChecks = await PartySafetyCheck.findAll({
+                where: {
+                    userId,
+                    safetyStatus: SafetyStatus.NO_RESPONSE,
+                    [Op.or]: [
+                        { partyDate: { [Op.lte]: twelveHoursAgo } },
+                        { createdAt: { [Op.lte]: twelveHoursAgo } },
+                    ]
+                }
+            });
+
+            if (expiredChecks.length > 0) {
+                const expiredIds = expiredChecks.map(c => c.id);
+                await PartySafetyCheck.update(
+                    {
+                        safetyStatus: SafetyStatus.SAFE,
+                        notes: 'Auto-resolved safe after 12 hours',
+                        respondedAt: now,
+                    },
+                    {
+                        where: { id: { [Op.in]: expiredIds } }
+                    }
+                );
+
+                // Mark associated notifications as read
+                try {
+                    const Notification = (await import('../models/Notification')).default;
+                    await Notification.update(
+                        { isRead: true },
+                        {
+                            where: {
+                                recipientUserId: userId,
+                                entityId: { [Op.in]: expiredIds },
+                            }
+                        }
+                    );
+                } catch (_) {}
+            }
+        } catch (autoErr: any) {
+            logger.warn('[getPendingSafetyCheck] Failed to auto-resolve 12h checks:', autoErr.message);
+        }
 
         const pendingCheck = await PartySafetyCheck.findOne({
             where: {
                 userId,
                 safetyStatus: SafetyStatus.NO_RESPONSE,
+                partyDate: { [Op.gt]: twelveHoursAgo },
+                createdAt: { [Op.gt]: twelveHoursAgo },
             },
             order: [['created_at', 'DESC']],
         });
@@ -144,11 +194,20 @@ export const getPendingSafetyCheck = async (req: Request, res: Response): Promis
             }
         }
 
+        // Calculate dynamic actual elapsed hours from party start
+        const partyStart = pendingCheck.partyDate ? new Date(pendingCheck.partyDate) : (pendingCheck.createdAt ? new Date(pendingCheck.createdAt) : now);
+        const diffMs = Math.max(0, now.getTime() - partyStart.getTime());
+        const elapsedHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+        const hoursText = `${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`;
+
         return res.status(200).json({
             success: true,
             data: {
                 ...pendingCheck.toJSON(),
                 partner: partnerInfo,
+                elapsedHours,
+                hoursText,
+                dynamicMessage: `Your party at ${pendingCheck.venueName} started ${hoursText}. Please confirm you are safe & sound.`,
             }
         });
     } catch (err: any) {

@@ -104,35 +104,61 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     RealtimeSyncManager.instance.globalSyncTick.removeListener(_onGlobalSyncTick);
 
     _autoRefreshTimer?.cancel();
+    _venueReloadThrottle?.cancel();
+    _venueReloadThrottle = null;
   }
 
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       if (mounted && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-        _loadVenues(showLoading: false);
+        _scheduleVenueReload();
       }
+    });
+  }
+
+  Timer? _venueReloadThrottle;
+
+  /// Collapses a burst of realtime notifications into a single venue reload.
+  ///
+  /// One party-plan event sets `partyPlanNotifier` *and* `recentPostsNotifier`
+  /// *and* bumps `globalSyncTick`, and this screen listens to all three — so a
+  /// single event used to run `_loadVenues` three times, and
+  /// `ApiService.notifyFeedNeedsRefresh()` (three triggers) up to nine. Each run
+  /// is four concurrent API calls, a heavy mapping pass inside `setState`, and a
+  /// Google rating plus road-distance fetch for every venue, so the duplicates
+  /// were expensive even though the HTTP layer deduplicates the requests
+  /// themselves.
+  ///
+  /// This is a throttle with a trailing edge, not a debounce: the timer is never
+  /// rescheduled while one is pending, so a continuous stream of events still
+  /// refreshes on a fixed cadence instead of being starved indefinitely.
+  void _scheduleVenueReload() {
+    if (_venueReloadThrottle != null) return;
+    _venueReloadThrottle = Timer(const Duration(milliseconds: 400), () {
+      _venueReloadThrottle = null;
+      if (mounted) _loadVenues(showLoading: false);
     });
   }
 
   void _onRealtimeDataChanged() {
     if (!mounted) return;
-    _loadVenues(showLoading: false);
+    _scheduleVenueReload();
   }
 
   void _onGlobalSyncTick() {
     if (!mounted) return;
-    _loadVenues(showLoading: false);
+    _scheduleVenueReload();
   }
 
   void _onRealtimePartyPlan() {
     if (!mounted) return;
-    _loadVenues(showLoading: false);
+    _scheduleVenueReload();
   }
 
   void _onRealtimeVenue() {
     if (!mounted) return;
-    _loadVenues(showLoading: false);
+    _scheduleVenueReload();
   }
 
   void _onRealtimeProfile() {

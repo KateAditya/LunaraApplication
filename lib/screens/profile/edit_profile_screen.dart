@@ -1019,13 +1019,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _buildHideProfileOption() {
     final hasHideProfile = SubscriptionProvider.instance.hasVipFeature(VipFeature.hideProfile);
 
-    return _buildSwitch('Hide Profile', _invisibleMode, (v) {
+    return _buildSwitch('Hide Profile', hasHideProfile && _invisibleMode, (v) {
       if (!hasHideProfile) {
         showSubscriptionLimitDialog(
           context,
           feature: SubLimitFeature.hideProfile,
         );
-        setState(() {}); // Reset switch visually
+        setState(() => _invisibleMode = false); // Ensure switch stays OFF visually
         return;
       }
       setState(() => _invisibleMode = v);

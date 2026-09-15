@@ -1129,7 +1129,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         maxPersons = int.tryParse(rawMax.toString()) ?? maxPersons;
       }
     }
-    final String rawVenueName = req.venue?['name'] ?? widget.venue?['name'] ?? widget.post['venue']?['name'] ?? 'Unknown Venue';
+    final String rawVenueName = req.venue?['name'] ??
+        widget.venue?['name'] ??
+        (widget.post['venue'] is Map ? widget.post['venue']['name']?.toString() : null) ??
+        (widget.post['venue'] is String ? widget.post['venue']?.toString() : null) ??
+        widget.post['venueName']?.toString() ??
+        'Unknown Venue';
 
     final cachedUser = ApiService.cachedCurrentUser;
     Map<String, dynamic> hostUserMap = req.user != null && req.user!.isNotEmpty
@@ -2937,7 +2942,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildPartyPlanDetails() {
     final String firstName = widget.post['firstName'] ?? 'Lunara';
     final String lastName = widget.post['lastName'] ?? 'User';
-    final String rawVenueName = widget.post['venue'] ?? widget.venue?['name'] ?? 'Unknown Venue';
+    final String rawVenueName = (widget.post['venue'] is String ? widget.post['venue'] as String : null) ??
+        (widget.post['venue'] is Map ? widget.post['venue']['name']?.toString() : null) ??
+        (widget.post['venueMap'] is Map ? widget.post['venueMap']['name']?.toString() : null) ??
+        widget.venue?['name']?.toString() ??
+        widget.post['venueName']?.toString() ??
+        'Unknown Venue';
 
     final bool isMyPost =
         widget.post['userId']?.toString() == ApiService.currentUserId ||
@@ -3810,7 +3820,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     // Determine Event Title
-    final String rawVenueName = widget.venue?['name'] ?? post['venue']?['name'] ?? '';
+    final String rawVenueName = widget.venue?['name']?.toString() ??
+        (post['venue'] is Map ? post['venue']['name']?.toString() : null) ??
+        (post['venue'] is String ? post['venue']?.toString() : null) ??
+        (post['venueMap'] is Map ? post['venueMap']['name']?.toString() : null) ??
+        post['venueName']?.toString() ??
+        '';
     String rawSubject =
         (post['subject'] ??
                 post['title'] ??

@@ -637,7 +637,7 @@ export class EventTimeLockService {
                             include: [
                                 {
                                     model: StrangersMeetRequest,
-                                    as: 'request',
+                                    as: 'strangersMeetRequest',
                                     where: {
                                         eventDateTime: { [Op.between]: [windowStart, windowEnd] },
                                         status: { [Op.notIn]: [StrangersMeetStatus.CANCELLED, StrangersMeetStatus.REJECTED] },
@@ -663,7 +663,7 @@ export class EventTimeLockService {
                     }
 
                     for (const jm of joinerMeets) {
-                        const req = (jm as any).request;
+                        const req = (jm as any).strangersMeetRequest || (jm as any).request;
                         if (req) {
                             const venueName = req.venue?.name;
                             const events = userEventsMap.get(jm.userId);

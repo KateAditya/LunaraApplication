@@ -1,8 +1,9 @@
-import 'dart:io' show Platform;
+import 'dart:io' show HttpClient, Platform, SocketException;
 import 'dart:convert';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:flutter/material.dart';
@@ -26,8 +27,37 @@ class ApiService {
   // Toggle this to true to use your local backend, false for production
   static const bool isLocal = false;
 
-  /// Reusable HTTP client instance for connection pooling & Keep-Alive
-  static final http.Client _httpClient = http.Client();
+  /// Reusable HTTP client instance for connection pooling & Keep-Alive.
+  static final http.Client _httpClient = _createHttpClient();
+
+  /// How long to wait for a TCP connection before giving up on it.
+  ///
+  /// A plain `http.Client()` leaves `connectionTimeout` unset, which hands a
+  /// failed TCP handshake to the operating system's SYN retransmission backoff
+  /// — roughly 1s + 2s + 4s + 8s. Measured against the production backend, ~4%
+  /// of fresh connections lose their SYN and stall for 6-14 seconds while the
+  /// server itself answers in under 100ms. Because the app opens its connection
+  /// at launch and then reuses it, drawing that stall on the first request froze
+  /// startup for the full backoff.
+  ///
+  /// A normal connect to this backend takes ~20ms (slowest healthy sample:
+  /// 153ms), so 4 seconds is orders of magnitude above legitimate latency —
+  /// generous even for a poor mobile network — while cutting a stalled handshake
+  /// to a fraction of the OS default. [get] then retries on a brand-new socket,
+  /// whose SYN almost always gets through immediately.
+  static const Duration _connectTimeout = Duration(seconds: 4);
+
+  static http.Client _createHttpClient() {
+    // dart:io is unavailable in a browser; there the package default is correct.
+    if (kIsWeb) return http.Client();
+    final inner = HttpClient()
+      ..connectionTimeout = _connectTimeout
+      // Hold an established connection open between requests so the handshake
+      // — and the chance of drawing a stalled one — is paid far less often.
+      // The package default drops it after 15s of idle.
+      ..idleTimeout = const Duration(seconds: 60);
+    return IOClient(inner);
+  }
 
   /// Default network timeout to prevent hanging on flaky connections while allowing
   /// cloud services (Azure App Service / Postgres) sufficient time to respond under load.
@@ -1245,6 +1275,9 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchMyLikesAndMatches() async {
     try {
+      if (currentUserId == null) {
+        await fetchProfile();
+      }
       final userId = currentUserId;
       if (userId == null) return [];
 
@@ -1268,6 +1301,9 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> fetchWhoLikedSummary() async {
     try {
+      if (currentUserId == null) {
+        await fetchProfile();
+      }
       final userId = currentUserId;
       if (userId == null) return null;
 
@@ -1298,6 +1334,9 @@ class ApiService {
     int limit = 20,
   }) async {
     try {
+      if (currentUserId == null) {
+        await fetchProfile();
+      }
       final userId = currentUserId;
       if (userId == null) {
         return {'users': [], 'pagination': {}, 'locked': false};
@@ -1322,11 +1361,12 @@ class ApiService {
           final pagination = data['pagination'] is Map
               ? Map<String, dynamic>.from(data['pagination'])
               : <String, dynamic>{};
+          final isLocked = data['locked'] == true;
           return {
             'users': users,
             'pagination': pagination,
-            'locked': false,
-            'canSeeWhoLiked': true,
+            'locked': isLocked,
+            'canSeeWhoLiked': data['canSeeWhoLiked'] ?? !isLocked,
           };
         }
       } else if (response.statusCode == 403) {
@@ -3215,6 +3255,18 @@ class ApiService {
             '[ApiService] GET $uri timed out on attempt $attempts, retrying once...',
           );
           await Future.delayed(const Duration(milliseconds: 500));
+        } on SocketException {
+          // A lost SYN surfaces here once [_connectTimeout] fires. Waiting on
+          // the operating system's retransmission backoff is pointless — a
+          // fresh socket almost always connects immediately — so retry at once
+          // rather than letting the caller see a hang or a failure. Retrying is
+          // safe here because no request bytes ever reached the server, and it
+          // stays confined to GET, which is idempotent by definition.
+          if (attempts >= 2) rethrow;
+          debugPrint(
+            '[ApiService] GET $uri could not connect on attempt $attempts, retrying on a new socket...',
+          );
+          await Future.delayed(const Duration(milliseconds: 200));
         } catch (e) {
           rethrow;
         }
@@ -5966,10 +6018,10 @@ class ApiService {
   static Future<Map<String, dynamic>?> useBoost() async {
     try {
       final response = await post('/api/mobile/subscriptions/use-boost');
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.body.isNotEmpty) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return Map<String, dynamic>.from(data);
+        if (data is Map<String, dynamic>) {
+          return data;
         }
       }
     } catch (e) {
@@ -6256,11 +6308,23 @@ class ApiService {
       return await _inFlightGets[inFlightKey]!;
     }
     final future = () async {
-      final res = await _httpClient
-          .get(uri, headers: _authHeaders)
-          .timeout(timeout ?? defaultTimeout);
-      _checkAutoblockedResponse(res);
-      return res;
+      // Mirrors the connection-stall retry in [get]: a lost SYN fails fast via
+      // [_connectTimeout], and a fresh socket almost always connects at once.
+      for (var attempt = 1; ; attempt++) {
+        try {
+          final res = await _httpClient
+              .get(uri, headers: _authHeaders)
+              .timeout(timeout ?? defaultTimeout);
+          _checkAutoblockedResponse(res);
+          return res;
+        } on SocketException {
+          if (attempt >= 2) rethrow;
+          debugPrint(
+            '[ApiService] GET $uri could not connect on attempt $attempt, retrying on a new socket...',
+          );
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+      }
     }();
     _inFlightGets[inFlightKey] = future;
     try {

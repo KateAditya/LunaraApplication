@@ -376,19 +376,19 @@ export class MobileTicketController {
                     startTimeStr = formatTime12Hour(t.eventStartAt);
                 }
                 const isStrangersMeet = t.bookingType === 'strangers_meet' || Boolean(sourceStrangersMeet) || Boolean(sourceStrangersJoiner);
-                const isSolo = !isPartyPlan && !isStrangersMeet && (t.bookingType === 'solo' || sourceBooking?.goingMode === 'solo');
-                const isLargeParty = !isPartyPlan && !isStrangersMeet && !isSolo && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
-                const isGroupParty = !isPartyPlan && !isStrangersMeet && !isSolo && !isLargeParty && ((t.bookingType === 'group_party') || Boolean(sourceGroupParty));
-                const isEventBooking = Boolean(sourceBooking?.isUpcomingNight);
+                const isEventBooking = Boolean(sourceBooking?.isUpcomingNight || sourceBooking?.partyEventId || (sourceBooking as any)?.partyEvent || (t.bookingType as string) === 'upcoming_night' || (t.bookingType as string) === 'event_booking');
+                const isSolo = !isPartyPlan && !isStrangersMeet && !isEventBooking && (t.bookingType === 'solo' || (sourceBooking?.goingMode === 'solo' && (sourceBooking?.numberOfGuests === 1 || sourceBooking?.numberOfGuests == null)));
+                const isLargeParty = !isPartyPlan && !isStrangersMeet && !isSolo && !isEventBooking && ((t.bookingType === 'group_party' && sourceBooking?.isLargePartyRequest === true) || Boolean((t as any).isLargeParty));
+                const isGroupParty = !isPartyPlan && !isStrangersMeet && !isSolo && !isLargeParty && !isEventBooking && ((t.bookingType === 'group_party') || Boolean(sourceGroupParty));
                 const isVenueBooking = !isPartyPlan && !isStrangersMeet && !isLargeParty && !isGroupParty && !isEventBooking && !isSolo;
 
                 let category = 'venue_booking';
                 if (isPartyPlan) category = 'party_plan';
                 else if (isStrangersMeet) category = 'strangers_meet';
+                else if (isEventBooking) category = 'event_booking';
                 else if (isSolo) category = 'solo';
                 else if (isLargeParty) category = 'large_party';
                 else if (isGroupParty) category = 'group_party';
-                else if (isEventBooking) category = 'event_booking';
                 else category = 'venue_booking';
 
                 const rawUser = (t as any).user;
@@ -670,19 +670,19 @@ export class MobileTicketController {
                 const isExpired = bStatus === 'expired' || isCompleted || expAt < now;
                 const ticketCode = bAny.ticketCode || `LUN-${startAt.getFullYear()}-BK-${b.id.substring(0, 6).toUpperCase()}`;
 
-                const isUpcomingNight = Boolean(b.isUpcomingNight);
-                const isSolo = !isPlanBooking && b.goingMode === 'solo';
-                const isLargeParty = !isPlanBooking && !isSolo && Boolean(b.isLargePartyRequest);
-                const isGroupParty = !isPlanBooking && !isSolo && !isLargeParty && b.goingMode === 'party_request';
+                const isUpcomingNight = Boolean(b.isUpcomingNight || b.partyEventId || (b as any).partyEvent);
                 const isEventBooking = isUpcomingNight;
+                const isSolo = !isPlanBooking && !isEventBooking && b.goingMode === 'solo' && (b.numberOfGuests === 1 || b.numberOfGuests == null);
+                const isLargeParty = !isPlanBooking && !isSolo && !isEventBooking && Boolean(b.isLargePartyRequest);
+                const isGroupParty = !isPlanBooking && !isSolo && !isLargeParty && !isEventBooking && b.goingMode === 'party_request';
                 const isPartyPlan = isPlanBooking;
                 const isVenueBooking = !isLargeParty && !isGroupParty && !isEventBooking && !isSolo && !isPartyPlan;
 
                 let category = 'venue_booking';
                 if (isPartyPlan) category = 'party_plan';
+                else if (isEventBooking) category = 'event_booking';
                 else if (isSolo) category = 'solo';
                 else if (isLargeParty) category = 'large_party';
-                else if (isEventBooking) category = 'event_booking';
                 else if (isGroupParty) category = 'group_party';
                 else category = 'venue_booking';
 
@@ -711,7 +711,7 @@ export class MobileTicketController {
                     ticketId: ticketCode,
                     ticketCode,
                     bookingId: b.id,
-                    bookingType: isPartyPlan ? 'party_plan' : (isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : (isEventBooking ? 'event_booking' : 'venue_booking')))),
+                    bookingType: isPartyPlan ? 'party_plan' : (isEventBooking ? 'event_booking' : (isLargeParty ? 'group_party' : (isSolo ? 'solo' : (isGroupParty ? 'group_party' : 'venue_booking')))),
                     category,
                     status: isCancelled ? 'cancelled' : (isCompleted ? 'completed' : (isExpired ? 'expired' : 'confirmed')),
                     bookingDate: planStartAt || b.bookingDate,

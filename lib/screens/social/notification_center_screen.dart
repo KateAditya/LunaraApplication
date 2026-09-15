@@ -40,6 +40,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   int _selectedCategoryFilter = 0;
 
   bool _isLoading = true;
+  bool _isMarkingAllRead = false;
   List<dynamic> _notifications = [];
   final Set<String> _loadingActionKeys = {};
 
@@ -229,11 +230,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
   Future<void> _markAllAsRead() async {
     final currentUid = ApiService.currentUserId ?? '';
-    if (currentUid.isEmpty) return;
+    if (currentUid.isEmpty || _isMarkingAllRead) return;
+
+    setState(() => _isMarkingAllRead = true);
 
     try {
-      final success = await ApiService.markAllNotificationsAsRead();
-      if (success && mounted) {
+      await ApiService.markAllNotificationsAsRead();
+      if (mounted) {
         setState(() {
           for (var item in _notifications) {
             item['read'] = true;
@@ -249,6 +252,10 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       }
     } catch (e) {
       debugPrint('Error marking all as read: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isMarkingAllRead = false);
+      }
     }
   }
 
@@ -1039,30 +1046,47 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return list.where((n) {
       final title = (n['title'] ?? '').toString().toLowerCase();
+      final body = (n['body'] ?? '').toString().toLowerCase();
       final type = (n['data']?['type'] ?? n['eventType'] ?? n['id'] ?? '')
           .toString()
           .toLowerCase();
+      final category = (n['category'] ?? '').toString().toLowerCase();
+      final status = (n['data']?['status'] ?? n['status'] ?? '').toString().toLowerCase();
+      final cancellationStatus = (n['data']?['cancellationStatus'] ?? n['cancellationStatus'] ?? '').toString().toLowerCase();
+
+      final bool isCancelled = category == 'cancelled' ||
+          category == 'cancellation' ||
+          title.contains('cancel') ||
+          body.contains('cancel') ||
+          type.contains('cancel') ||
+          status == 'cancelled' ||
+          cancellationStatus == 'cancelled' ||
+          cancellationStatus == 'approved' ||
+          cancellationStatus == 'requested';
 
       if (_selectedCategoryFilter == 1) {
-        // PARTNER REQUESTS
-        return title.contains('request') || type.contains('request');
+        // REQUESTS
+        return !isCancelled && (category == 'requests' || title.contains('request') || type.contains('request'));
       } else if (_selectedCategoryFilter == 2) {
-        // INTERESTS
-        return title.contains('interest') || type.contains('interest');
+        // CANCELLED
+        return isCancelled;
       } else if (_selectedCategoryFilter == 3) {
-        // BOOKINGS
-        return title.contains('booking') ||
-            title.contains('confirm') ||
-            type.contains('booking');
+        // INTERESTS
+        return !isCancelled && (title.contains('interest') || type.contains('interest'));
       } else if (_selectedCategoryFilter == 4) {
-        // TICKETS
-        return title.contains('ticket') || type.contains('ticket');
+        // BOOKINGS
+        return !isCancelled && (title.contains('booking') ||
+            title.contains('confirm') ||
+            type.contains('booking'));
       } else if (_selectedCategoryFilter == 5) {
-        // MESSAGES
-        return title.contains('message') ||
-            title.contains('chat') ||
-            type.contains('chat');
+        // TICKETS
+        return !isCancelled && (title.contains('ticket') || type.contains('ticket'));
       } else if (_selectedCategoryFilter == 6) {
+        // MESSAGES
+        return !isCancelled && (title.contains('message') ||
+            title.contains('chat') ||
+            type.contains('chat'));
+      } else if (_selectedCategoryFilter == 7) {
         // OTHER
         return true;
       }
@@ -1151,17 +1175,33 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Mark all as read',
-            icon: const Icon(
-              Icons.done_all_rounded,
-              color: LunaraTheme.electricViolet,
-              size: 22,
+          if (_isMarkingAllRead)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: LunaraTheme.electricViolet,
+                  ),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              tooltip: 'Mark all as read',
+              icon: const Icon(
+                Icons.done_all_rounded,
+                color: LunaraTheme.electricViolet,
+                size: 22,
+              ),
+              onPressed: _markAllAsRead,
             ),
-            onPressed: _markAllAsRead,
-          ),
           if (_notifications.isNotEmpty)
             PopupMenuButton<String>(
+              enabled: !_isMarkingAllRead,
               icon: const Icon(
                 Icons.more_vert_rounded,
                 color: Color(0xFF475569),
@@ -1304,6 +1344,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final categories = [
       'All',
       'Requests',
+      'Cancelled',
       'Interests',
       'Bookings',
       'Tickets',
@@ -1629,7 +1670,26 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     } else if (eventType.contains('REMINDER') ||
         titleLower.contains('starting soon')) {
       return _buildEventReminderCard(item);
-    } else if (eventType.contains('EXPIRED') ||
+    }
+
+    final bool isOtherCancellation =
+        eventType.contains('CANCEL') ||
+        type.contains('cancel') ||
+        (item['category'] ?? '').toString().toLowerCase() == 'cancelled' ||
+        (item['category'] ?? '').toString().toLowerCase() == 'cancellation' ||
+        (data['status'] ?? item['status'] ?? '').toString().toLowerCase() == 'cancelled' ||
+        (data['cancellationStatus'] ?? item['cancellationStatus'] ?? '').toString().toLowerCase() == 'cancelled' ||
+        (data['cancellationStatus'] ?? item['cancellationStatus'] ?? '').toString().toLowerCase() == 'approved' ||
+        titleLower.contains('cancelled') ||
+        titleLower.contains('cancellation') ||
+        bodyLower.contains('cancelled') ||
+        bodyLower.contains('has been cancelled');
+
+    if (isOtherCancellation) {
+      return _buildCancelledCard(item);
+    }
+
+    if (eventType.contains('EXPIRED') ||
         titleLower.contains('completed') ||
         titleLower.contains('ended')) {
       return _buildExpiredCard(item);
@@ -2935,10 +2995,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         .toString();
 
     final title = (item['title'] ?? 'Safety Check: Has your party ended?').toString();
-    final body = (item['body'] ?? 'Your party started 3 hours ago. Please confirm you are safe & sound.').toString();
+    final body = (item['body'] ?? 'Your party started recently. Please confirm you are safe & sound.').toString();
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['created_at']);
     final safetyStatus = (data['safetyStatus'] ?? item['safetyStatus'] ?? 'NO_RESPONSE').toString();
-    final isAnswered = safetyStatus == 'SAFE' || safetyStatus == 'NEED_HELP' || safetyStatus == 'EXTENDED' || item['answered'] == true;
+    final rawDate = data['partyDate'] ?? item['createdAt'] ?? item['created_at'];
+    bool isOlderThan12Hours = false;
+    if (rawDate != null) {
+      try {
+        final dt = DateTime.parse(rawDate.toString()).toLocal();
+        if (DateTime.now().difference(dt).inHours >= 12) {
+          isOlderThan12Hours = true;
+        }
+      } catch (_) {}
+    }
+    final isAnswered = safetyStatus == 'SAFE' || safetyStatus == 'NEED_HELP' || safetyStatus == 'EXTENDED' || item['answered'] == true || isOlderThan12Hours;
 
     final isSafeKey = 'SAFETY_SAFE:$checkId';
     final isHelpKey = 'SAFETY_HELP:$checkId';
@@ -5002,6 +5072,174 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── 8B. General / Booking / Meet Cancelled Card Component ────────────────
+  Widget _buildCancelledCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+
+    final title = (item['title'] ?? 'Event Cancelled').toString();
+    final body = (item['body'] ?? 'This event has been cancelled.').toString();
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+    final reason = (data['reason'] ??
+            data['cancellationReason'] ??
+            item['cancellationReason'] ??
+            '')
+        .toString();
+    final bool hasRefund = data['refundAmount'] != null ||
+        data['isRefunded'] == true ||
+        body.toLowerCase().contains('refund') ||
+        body.toLowerCase().contains('wallet');
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE4E6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.cancel_outlined,
+                  color: Color(0xFFE11D48),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFFE4E6)),
+                          ),
+                          child: const Text(
+                            'CANCELLED',
+                            style: TextStyle(
+                              color: Color(0xFFE11D48),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          timeStr,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) ...[
+                const SizedBox(width: 6),
+                _buildUnreadDot(),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (reason.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Reason: $reason',
+                style: const TextStyle(
+                  color: Color(0xFF9F1239),
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+          if (hasRefund) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _markAsRead(item);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LunaraWalletScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'View Refund in Wallet',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

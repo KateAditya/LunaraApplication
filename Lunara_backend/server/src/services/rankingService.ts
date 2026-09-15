@@ -199,37 +199,42 @@ export class RankingService {
                 if (u?.photos && u.photos.length > 0) profileQualityScore += 20;
                 if (u?.isVerified) profileQualityScore += 20;
 
-                // Recency Engagement score
-                const recencyEngagementScore = (likes * 15) + (superlikes * 40) + (plans * 25);
+                // 1st Priority: Boost bonus (Boosted profiles immediately jump to the top of discovery)
+                const activeBoostScore = hasActiveBoost ? 5000000 : 0;
 
-                // Active Boost Score (granted ONLY when an active boost is running)
-                const activeBoostScore = hasActiveBoost ? 5000 : 0;
+                // 2nd Priority: Activated Subscription Plan / Tier (ELITE > PRO > PLUS > CORE > FREE)
+                // Tier scores: ELITE = 1,000,000, PRO = 750,000, PLUS = 500,000, CORE = 250,000, FREE = 0
+                const vipTierScore = tierRank * 250000;
 
-                // VIP Tier Score
-                const vipTierScore = tierRank * 500;
+                // 3rd Priority: Likes, Superlikes, and Plans
+                const engagementScore = (likes * 1000) + (superlikes * 500) + (plans * 250);
 
-                // Priority Tier categorization (1: Boost+VIP, 2: Boost, 3: VIP, 4: Organic High, 5: Base)
+                // Reliability tie-breakers
+                const reliabilityTieBreaker = reliabilityScore * 5;
+
+                // Priority Tier categorization (1: Boosted / ELITE, 2: PRO, 3: PLUS, 4: CORE, 5: Base)
                 let priorityTier = 5;
-                if (hasActiveBoost && tierRank > 0) priorityTier = 1;
-                else if (hasActiveBoost) priorityTier = 2;
-                else if (tierRank > 0) priorityTier = 3;
-                else if (recencyEngagementScore > 60) priorityTier = 4;
+                if (hasActiveBoost) priorityTier = 1;
+                else if (tierRank === 4) priorityTier = 1;
+                else if (tierRank === 3) priorityTier = 2;
+                else if (tierRank === 2) priorityTier = 3;
+                else if (tierRank === 1) priorityTier = 4;
+                else if (engagementScore > 1000) priorityTier = 4;
 
-                // Balanced Final Ranking Score
+                // Balanced Final Ranking Score: Boost 1st (5M), Plan tier 2nd (0-1M), then likes, superlikes, plans
                 const finalRankScore =
-                    (priorityTier === 1 ? 20000 : (priorityTier === 2 ? 10000 : (priorityTier === 3 ? 2000 : 0))) +
-                    recencyEngagementScore +
-                    (reliabilityScore * 5) +
-                    profileQualityScore +
                     activeBoostScore +
-                    vipTierScore;
+                    vipTierScore +
+                    engagementScore +
+                    reliabilityTieBreaker +
+                    profileQualityScore;
 
                 return {
                     userId,
                     finalRankScore,
                     priorityTier,
                     breakdown: {
-                        recencyEngagementScore,
+                        recencyEngagementScore: engagementScore,
                         reliabilityScore: reliabilityScore * 5,
                         profileQualityScore,
                         activeBoostScore,

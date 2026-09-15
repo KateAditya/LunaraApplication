@@ -153,7 +153,6 @@ class _PartySafetyCheckDialogState extends State<PartySafetyCheckDialog> {
               const Text(
                 'POST-PARTY SAFETY CHECK',
                 style: TextStyle(
-                  fontFamily: 'AllroundGothic',
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.2,
@@ -161,14 +160,39 @@ class _PartySafetyCheckDialogState extends State<PartySafetyCheckDialog> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                'Your party at $venueName started 3 hours ago.\nPlease confirm you are safe & sound.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  fontSize: 12.5,
-                  height: 1.35,
-                ),
+              Builder(
+                builder: (_) {
+                  final rawDate = widget.checkData['partyDate'] ?? widget.checkData['eventDateTime'] ?? widget.checkData['createdAt'];
+                  String elapsedText = (widget.checkData['hoursText'] ?? '').toString();
+                  if (rawDate != null) {
+                    try {
+                      final dt = DateTime.parse(rawDate.toString()).toLocal();
+                      final diff = DateTime.now().difference(dt);
+                      if (elapsedText.isEmpty) {
+                        final hours = diff.inHours;
+                        if (hours >= 1) {
+                          elapsedText = '$hours ${hours == 1 ? "hour" : "hours"} ago';
+                        } else if (diff.inMinutes > 0) {
+                          elapsedText = '${diff.inMinutes} mins ago';
+                        }
+                      }
+                    } catch (_) {}
+                  }
+                  if (elapsedText.isEmpty) {
+                    final pTime = widget.checkData['partyTime']?.toString();
+                    elapsedText = pTime != null && pTime.isNotEmpty ? 'at $pTime' : 'recently';
+                  }
+
+                  return Text(
+                    'Your party at $venueName started $elapsedText.\nPlease confirm you are safe & sound.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 16),
               if (partner != null)

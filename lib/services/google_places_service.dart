@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -23,18 +24,65 @@ class GooglePlacesService {
     _listeners.remove(listener);
   }
 
+  static Timer? _notifyTimer;
+
+  /// Coalesces listener notifications.
+  ///
+  /// Distances resolve one venue at a time, and each listener is a `setState`
+  /// on a large screen, so a screen of venues used to trigger one full rebuild
+  /// *per resolved venue*. Scheduling a single notification for the whole burst
+  /// collapses that into one rebuild. This is a throttle with a trailing edge,
+  /// not a debounce: the timer is never rescheduled while pending, so a steady
+  /// trickle of resolutions can't starve the update.
   static void _notifyListeners() {
-    for (final listener in List<VoidCallback>.from(_listeners)) {
-      try {
-        listener();
-      } catch (e) {
-        debugPrint('GooglePlacesService listener error: $e');
+    if (_notifyTimer != null) return;
+    _notifyTimer = Timer(const Duration(milliseconds: 100), () {
+      _notifyTimer = null;
+      for (final listener in List<VoidCallback>.from(_listeners)) {
+        try {
+          listener();
+        } catch (e) {
+          debugPrint('GooglePlacesService listener error: $e');
+        }
       }
-    }
+    });
   }
 
+  /// Cache resolution for the two endpoints.
+  ///
+  /// The destination is a fixed venue and keeps ~11 m resolution (4 dp), which
+  /// is what keeps neighbouring venues distinct.
+  ///
+  /// The origin is the user's own position, and the location stream reports it
+  /// every 10 m (`distanceFilter: 10`). At 4 dp the key's own resolution was
+  /// ~11 m — just *above* the stream's step — so virtually every GPS update
+  /// produced a fresh key, missing the cache for every venue on screen and
+  /// re-issuing a Directions request for each one. Rounding the origin to ~110 m
+  /// (3 dp) is still far finer than any "2.4 km away" label needs, and lets
+  /// ordinary walking reuse the distance already resolved.
   static String _cacheKey(double startLat, double startLng, double endLat, double endLng) {
-    return '${startLat.toStringAsFixed(4)},${startLng.toStringAsFixed(4)}->${endLat.toStringAsFixed(4)},${endLng.toStringAsFixed(4)}';
+    return '${startLat.toStringAsFixed(3)},${startLng.toStringAsFixed(3)}->${endLat.toStringAsFixed(4)},${endLng.toStringAsFixed(4)}';
+  }
+
+  /// Upper bound on cached distances. Both maps are static and previously grew
+  /// without limit for the life of the process; every new origin added another
+  /// entry per venue.
+  static const int _maxCacheEntries = 2000;
+
+  /// Writes a resolved distance into both caches, evicting the oldest entries
+  /// once the ceiling is reached. Dart maps preserve insertion order, so the
+  /// first keys are the least recently added.
+  static void _storeDistance(String key, double meters, String text) {
+    if (!_roadDistanceCache.containsKey(key) &&
+        _roadDistanceCache.length >= _maxCacheEntries) {
+      final excess = _roadDistanceCache.length - _maxCacheEntries + 1;
+      for (final stale in _roadDistanceCache.keys.take(excess).toList()) {
+        _roadDistanceCache.remove(stale);
+        _roadDistanceTextCache.remove(stale);
+      }
+    }
+    _roadDistanceCache[key] = meters;
+    _roadDistanceTextCache[key] = text;
   }
 
   /// Calculates road driving distance in meters.
@@ -54,8 +102,7 @@ class GooglePlacesService {
     // High-performance geodesic distance calculation with regional urban road multiplier (1.30x)
     final straightMeters = Geolocator.distanceBetween(startLat, startLng, endLat, endLng);
     final estimatedMeters = straightMeters * 1.30;
-    _roadDistanceCache[key] = estimatedMeters;
-    _roadDistanceTextCache[key] = formatDistanceDirect(estimatedMeters);
+    _storeDistance(key, estimatedMeters, formatDistanceDirect(estimatedMeters));
     return estimatedMeters;
   }
 
@@ -178,8 +225,7 @@ class GooglePlacesService {
     }
 
     // Cache the resolved values
-    _roadDistanceCache[key] = exactMeters;
-    _roadDistanceTextCache[key] = exactText ?? formatDistanceDirect(exactMeters);
+    _storeDistance(key, exactMeters, exactText ?? formatDistanceDirect(exactMeters));
     _inFlightRequests.remove(key);
 
     // Notify listeners so UI updates automatically with exact driving distance

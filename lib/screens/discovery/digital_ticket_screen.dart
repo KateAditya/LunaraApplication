@@ -332,49 +332,58 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     return '@guest';
   }
 
-  bool get _isSoloBooking {
-    if (widget.booking != null) {
-      final b = widget.booking!;
-      if (b['isSolo'] == true ||
-          b['goingMode'] == 'solo' ||
-          b['bookingType'] == 'solo' ||
-          b['category'] == 'solo') {
-        return true;
-      }
-    }
-    final pkg = (widget.package ?? '').toLowerCase();
-    final table = (widget.table ?? '').toLowerCase();
-    if (pkg.contains('solo') || table.contains('solo')) return true;
-
-    if (!_isEventBooking) {
-      final g = (widget.guests ?? '').toLowerCase().trim();
-      if (g == '1' || g == '1 guest' || g == '1 guests') return true;
-      if (widget.booking?['numberOfGuests'] == 1) return true;
-    }
-    return false;
-  }
-
   bool get _isEventBooking {
     if (widget.isUpcomingNight == true) return true;
     final b = widget.booking;
     if (b != null) {
       if (b['isUpcomingNight'] == true ||
           b['isEventBooking'] == true ||
-          b['category'] == 'event_booking') {
+          b['category'] == 'event_booking' ||
+          b['bookingType'] == 'event_booking' ||
+          b['bookingType'] == 'upcoming_night') {
         return true;
       }
-      if (b['partyEventId'] != null || b['partyEvent'] != null) return true;
+      if (b['partyEventId'] != null || b['partyEvent'] != null || b['party_event'] != null) return true;
     }
     final pkg = (widget.package ?? '').toLowerCase();
+    final table = (widget.table ?? '').toLowerCase();
     if (pkg.contains('party ticket') ||
         pkg.contains('event entry') ||
         pkg.contains('upcoming night') ||
-        pkg.contains('event pass')) {
+        pkg.contains('event pass') ||
+        table.contains('party ticket') ||
+        table.contains('event entry') ||
+        table.contains('upcoming night') ||
+        table.contains('event pass')) {
       return true;
     }
     if (widget.bannerImageUrl != null && widget.bannerImageUrl!.isNotEmpty) {
       return true;
     }
+    return false;
+  }
+
+  bool get _isSoloBooking {
+    if (_isEventBooking) return false;
+    if (widget.booking != null) {
+      final b = widget.booking!;
+      if (b['isSolo'] == true ||
+          b['bookingType'] == 'solo' ||
+          b['category'] == 'solo') {
+        return true;
+      }
+      if (b['goingMode'] == 'solo') {
+        final rawNum = b['numberOfGuests'] ?? b['quantity'];
+        final count = int.tryParse(rawNum?.toString() ?? '1') ?? 1;
+        if (count <= 1) return true;
+      }
+    }
+    final pkg = (widget.package ?? '').toLowerCase();
+    final table = (widget.table ?? '').toLowerCase();
+    if (pkg.contains('solo') || table.contains('solo')) return true;
+
+    final g = (widget.guests ?? '').toLowerCase().trim();
+    if (g == '1' || g == '1 guest' || g == '1 guests' || g == '1 guest (solo)') return true;
     return false;
   }
 
@@ -720,18 +729,22 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
     }
 
     // Guests display
+    final rawG = widget.guests ??
+        widget.booking?['numberOfGuests']?.toString() ??
+        widget.booking?['quantity']?.toString();
+    int guestCount = 1;
+    if (rawG != null && rawG.trim().isNotEmpty) {
+      final cleanG = rawG.trim().toUpperCase().replaceAll('GUESTS', '').replaceAll('GUEST', '').replaceAll('(SOLO)', '').replaceAll('SOLO', '').replaceAll('PERSONS', '').replaceAll('PERSON', '').replaceAll('MEMBERS', '').replaceAll('MEMBER', '').trim();
+      guestCount = int.tryParse(cleanG) ?? 1;
+    }
+
     String displayGuests;
-    if (isSolo) {
+    if (isSolo && guestCount <= 1) {
       displayGuests = '1 GUEST (SOLO)';
+    } else if (guestCount == 1) {
+      displayGuests = '1 GUEST';
     } else {
-      final rawG = widget.guests ?? widget.booking?['numberOfGuests']?.toString();
-      if (rawG != null && rawG.trim().isNotEmpty) {
-        final cleanG = rawG.trim().toUpperCase().replaceAll('GUESTS', '').replaceAll('GUEST', '').trim();
-        final count = int.tryParse(cleanG) ?? 1;
-        displayGuests = count == 1 ? '1 GUEST' : '$count GUESTS';
-      } else {
-        displayGuests = '1 GUEST';
-      }
+      displayGuests = '$guestCount GUESTS';
     }
 
     final String rawStatus = widget.status ??
@@ -1168,7 +1181,11 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                             border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.2), width: 1),
                           ),
                           child: Text(
-                            isSolo ? 'SOLO HOLDER' : 'HOLDER',
+                            isSolo
+                                ? 'SOLO HOLDER'
+                                : (isEvent
+                                    ? (guestCount > 1 ? '$guestCount PASSES' : 'PASS HOLDER')
+                                    : (guestCount > 1 ? '$guestCount GUESTS' : 'HOLDER')),
                             style: const TextStyle(
                               color: LunaraTheme.electricViolet,
                               fontSize: 9,
@@ -1429,7 +1446,7 @@ class _DigitalTicketScreenState extends State<DigitalTicketScreen> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    '${isSolo ? 'SOLO GUEST ENTRY' : 'ADMIT GUESTS'} • TICKET ID: $finalTicketId',
+                    '${isSolo ? 'SOLO GUEST ENTRY' : (guestCount > 1 ? 'ADMIT $guestCount GUESTS' : 'ADMIT 1 GUEST')} • TICKET ID: $finalTicketId',
                     style: TextStyle(
                       color: isDark ? Colors.white54 : Colors.grey[600],
                       fontSize: 9,

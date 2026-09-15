@@ -109,6 +109,28 @@ class LunaraCachedImage extends StatelessWidget {
 
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
 
+    int? decodeWidth = cacheWidth ?? LunaraImageCache.decodeTarget(width, dpr);
+    final int? decodeHeight = cacheHeight ?? LunaraImageCache.decodeTarget(height, dpr);
+
+    // Some call sites size an image purely from their parent's constraints,
+    // passing no width and no height (or an infinite one). `decodeTarget`
+    // correctly returns null for those, but that leaves the decode unbounded —
+    // the whole stored image, up to `LunaraImageCache.maxDiskWidth`, is decoded
+    // even into a small slot.
+    //
+    // A widget can never paint more pixels than the display physically has, so
+    // the window width is always a safe ceiling. `View.physicalSize` is already
+    // in device pixels, which is the unit `memCacheWidth` wants, and reading it
+    // does not subscribe this widget to MediaQuery size changes the way
+    // `MediaQuery.sizeOf` would. This bounds decode resolution only; it has no
+    // effect on layout.
+    if (decodeWidth == null && decodeHeight == null) {
+      final physicalWidth = View.maybeOf(context)?.physicalSize.width;
+      if (physicalWidth != null && physicalWidth.isFinite && physicalWidth > 0) {
+        decodeWidth = physicalWidth.round();
+      }
+    }
+
     return _round(
       CachedNetworkImage(
         imageUrl: resolved,
@@ -120,8 +142,8 @@ class LunaraCachedImage extends StatelessWidget {
         alignment: alignment,
         filterQuality: filterQuality,
         // Decode only as many pixels as this slot can actually show.
-        memCacheWidth: cacheWidth ?? LunaraImageCache.decodeTarget(width, dpr),
-        memCacheHeight: cacheHeight ?? LunaraImageCache.decodeTarget(height, dpr),
+        memCacheWidth: decodeWidth,
+        memCacheHeight: decodeHeight,
         maxWidthDiskCache: LunaraImageCache.maxDiskWidth,
         // A cached image should appear instantly; only a genuine network fetch
         // gets a fade, and callers can still see progress via loadingBuilder.
