@@ -359,7 +359,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 // ─── POST /party-event — Create Party Event Booking ──────────────────────────
 export const createPartyBooking = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { partyEventId, quantity } = req.body;
+        const { partyEventId, quantity, eventDate, time } = req.body;
         const userId = (req as any).user?.id || req.body?.userId;
 
         const ad = await Ad.findByPk(partyEventId);
@@ -378,40 +378,61 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             }
         }
 
-        // Check if user has an existing confirmed or pending booking for this exact party event
-        const existingPartyBooking = await Booking.findOne({
-            where: {
-                userId,
-                partyEventId: ad.id,
-                status: { [Op.in]: [BookingStatus.CONFIRMED, BookingStatus.PENDING] },
-                paymentStatus: { [Op.in]: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID] }
+        // 1. Resolve eventDate string properly (YYYY-MM-DD) based on actual event date
+        let eventDateStr = '';
+        const rawDate = eventDate || req.body?.bookingDate || req.body?.date || ad.eventDate;
+        
+        if (rawDate) {
+            if (rawDate instanceof Date) {
+                const yyyy = rawDate.getFullYear();
+                const mm = String(rawDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(rawDate.getDate()).padStart(2, '0');
+                eventDateStr = `${yyyy}-${mm}-${dd}`;
+            } else if (typeof rawDate === 'string') {
+                const str = rawDate.trim();
+                const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (match) {
+                    eventDateStr = match[1];
+                } else {
+                    const parsed = new Date(str);
+                    if (!isNaN(parsed.getTime())) {
+                        const yyyy = parsed.getFullYear();
+                        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+                        const dd = String(parsed.getDate()).padStart(2, '0');
+                        eventDateStr = `${yyyy}-${mm}-${dd}`;
+                    }
+                }
             }
-        });
-        if (existingPartyBooking) {
-            res.status(400).json({
-                success: false,
-                code: 'USER_ALREADY_BOOKED',
-                reason: 'USER_ALREADY_BOOKED',
-                message: 'You have already booked tickets for this party event.',
-                conflictingEventType: 'PARTY_BOOKING',
-                conflictingEventTitle: ad.title || 'Party Event',
-                conflictingDateTime: ad.eventDate ? new Date(ad.eventDate).toISOString() : new Date().toISOString()
-            });
-            return;
         }
 
-        // Validate 4-hour gap across all event types
-        const eventDateVal = ad.eventDate || ad.fromDate || ad.toDate;
-        const eventDateStr = eventDateVal
-            ? (eventDateVal instanceof Date ? eventDateVal.toISOString().split('T')[0] : String(eventDateVal).split('T')[0])
-            : new Date().toISOString().split('T')[0];
-        const eventTimeStr = (ad as any).time || (ad as any).startTime || '20:00';
+        if (!eventDateStr) {
+            const fallbackDate = ad.toDate || ad.fromDate;
+            if (fallbackDate instanceof Date) {
+                const yyyy = fallbackDate.getFullYear();
+                const mm = String(fallbackDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(fallbackDate.getDate()).padStart(2, '0');
+                eventDateStr = `${yyyy}-${mm}-${dd}`;
+            } else if (fallbackDate) {
+                eventDateStr = String(fallbackDate).split('T')[0];
+            } else {
+                eventDateStr = new Date().toISOString().split('T')[0];
+            }
+        }
+
+        // 2. Resolve eventTime string properly
+        const rawTime = time || req.body?.startTime || (ad as any).time || (ad as any).startTime || '20:00';
+        const eventTimeStr = String(rawTime).trim() || '20:00';
+
         const partyDateTime = parseBookingDateTime(eventDateStr, eventTimeStr);
 
+        // Validate 4-hour gap across conflicting events on the ACTUAL event date.
+        // Exclude the party event itself (ad.id) and the venue so booking multiple tickets for this event is allowed.
         const timeLockCheck = await EventTimeLockService.validateFourHourGap(
             userId,
             partyDateTime,
-            'solo_booking'
+            'solo_booking',
+            ad.id,
+            { excludeVenueId: ad.venueId || undefined }
         );
 
         if (!timeLockCheck.allowed) {
@@ -438,7 +459,7 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             userId,
             venueId: ad.venueId || '',
             bookingDate: eventDateStr as any,
-            startTime: '20:00', // Default start time
+            startTime: eventTimeStr,
             numberOfGuests: qty,
             totalAmount: amount,
             depositAmount: 0,

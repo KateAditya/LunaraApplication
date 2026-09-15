@@ -1,6 +1,7 @@
 import express, { Application } from 'express';
 import dotenv from 'dotenv';
 import cluster from 'cluster';
+import { fork } from 'child_process';
 import { cpus } from 'os';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -14,6 +15,7 @@ import path from 'path';
 import { logger } from './config/logger';
 import { connectDatabase } from './config/database';
 import { redisService } from './config/redis';
+import { attachRedisAdapter } from './config/socketAdapter';
 import { errorHandler } from './middleware/errorHandler';
 import User from './models/User';
 import Message, { MessageStatus } from './models/Message';
@@ -37,6 +39,12 @@ const io = new SocketIOServer(httpServer, {
         credentials: true,
     },
 });
+
+/// Resolves once the cross-process socket adapter has been attached (or has been
+/// determined to be unavailable). Both entry points — the HTTP server below and
+/// `cronWorker.ts` — await this before accepting traffic or running jobs, so no
+/// emit is issued while the adapter is still connecting.
+export const socketAdapterReady: Promise<boolean> = attachRedisAdapter(io);
 
 // 1. CORS — MUST be first before any other middleware or helmet
 app.use(cors({
@@ -316,10 +324,19 @@ app.get('/api/admin/party-plans/cancellations/:id', getAdminCancellationDetail);
 app.post('/api/admin/party-plans/cancellations/:id/investigate', adminMarkForInvestigation);
 app.post('/api/admin/party-plans/cancellations/:id/restore', adminRestoreBooking);
 
-// Run background auto-approval & expiration check for cancellation requests every 15 minutes
+// Background auto-approval & expiration check for cancellation requests, every 15 minutes.
+//
+// This used to start at module scope, which was fine while a single process did
+// everything. `cronWorker.ts` imports this module to reach `io`, so at module
+// scope the timer would now run in BOTH the web process and the cron worker and
+// double-execute the check. It is started explicitly by whichever process owns
+// the scheduled work instead — see `startBackgroundJobs()`.
 let isCancellationAutoCheckRunning = false;
-if (process.env.NODE_ENV !== 'test') {
-    setInterval(async () => {
+let cancellationAutoCheckTimer: NodeJS.Timeout | null = null;
+
+export const startCancellationAutoCheck = (): void => {
+    if (process.env.NODE_ENV === 'test' || cancellationAutoCheckTimer) return;
+    cancellationAutoCheckTimer = setInterval(async () => {
         if (isCancellationAutoCheckRunning) {
             logger.warn('[Cron] Cancellation auto-check is already running. Skipping overlapping execution.');
             return;
@@ -333,7 +350,7 @@ if (process.env.NODE_ENV !== 'test') {
             isCancellationAutoCheckRunning = false;
         }
     }, 15 * 60 * 1000);
-}
+};
 
 // Admin — chat subscription settings
 app.get('/api/admin/settings/chat', getAdminChatSettings);
@@ -528,9 +545,67 @@ app.use(errorHandler);
 
 // Sync database and start server after database connection
 // Sync database and start server after database connection
+/**
+ * Starts every scheduled job. Called only by the process that owns background
+ * work — `cronWorker.ts` — never by the HTTP process.
+ */
+export const startBackgroundJobs = (): void => {
+    startPartyPlanCron();
+    startNotificationJobCron();
+    startExpiringPlanAlertCron();
+    startSubscriptionCron();
+    startBoostCron();
+    startStrangersMeetCron();
+    ExpiredTicketCleanupWorker.startWorker();
+    startCancellationAutoCheck();
+    logger.info(`[CronWorker] Background jobs started in dedicated process ${process.pid}.`);
+};
+
+/**
+ * Forks the cron worker, unless this deployment is configured not to run jobs.
+ *
+ * `RUN_CRON=false` keeps the meaning it always had — "this deployment does not
+ * run scheduled work" — only the implementation changed from inline to forked.
+ * The `NODE_APP_INSTANCE` guard is preserved so a PM2 cluster still starts jobs
+ * on instance 0 alone.
+ */
+let cronWorkerRestarts = 0;
+const forkCronWorker = (): void => {
+    const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
+    const shouldRunCron = process.env.RUN_CRON !== 'false';
+
+    if (!shouldRunCron || !isFirstPm2Instance) {
+        logger.info(
+            `[CronWorker] Not started (pid ${process.pid}, RUN_CRON=${process.env.RUN_CRON}, NODE_APP_INSTANCE=${process.env.NODE_APP_INSTANCE ?? 'unset'}).`
+        );
+        return;
+    }
+
+    const workerPath = path.join(__dirname, 'cronWorker.js');
+    const child = fork(workerPath, [], { env: process.env });
+    logger.info(`[CronWorker] Forked background job process ${child.pid}.`);
+
+    child.on('exit', (code, signal) => {
+        // Losing the worker silently would stop every reminder, payment timeout
+        // and expiry in the product, so it is always brought back — but with a
+        // widening delay so a crash loop cannot saturate the container.
+        cronWorkerRestarts++;
+        const delayMs = Math.min(30000, 1000 * Math.pow(2, Math.min(cronWorkerRestarts, 5)));
+        logger.error(
+            `[CronWorker] Process ${child.pid} exited (code=${code}, signal=${signal}). Restarting in ${delayMs}ms (restart #${cronWorkerRestarts}).`
+        );
+        setTimeout(forkCronWorker, delayMs);
+    });
+};
+
 const startServer = async () => {
     try {
         await connectDatabase();
+
+        // Attach the cross-process socket adapter before accepting traffic, so
+        // no client can connect during the window where an emit would not fan
+        // out. A failure here is logged, never fatal — the API still serves.
+        await socketAdapterReady;
 
         httpServer.listen(PORT, () => {
             logger.info(`Worker ${process.pid} running server on http://${HOST}:${PORT}`);
@@ -538,23 +613,20 @@ const startServer = async () => {
             logger.info(`Cache Engine: ${redisService.isReady() ? 'Azure Managed Redis' : 'In-Memory High-Speed Cache'}`);
         });
 
-        // Start Background Cron Jobs
-        // Only run on the master process (if native cluster is disabled) AND only on instance 0 (if PM2 cluster)
-        const isMasterProcess = cluster.isPrimary || (cluster as any).isMaster;
-        const isFirstPm2Instance = !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === '0';
-        const shouldRunCron = process.env.RUN_CRON !== 'false';
-        if (isMasterProcess && isFirstPm2Instance && shouldRunCron) {
-            startPartyPlanCron();
-            startNotificationJobCron();
-            startExpiringPlanAlertCron();
-            startSubscriptionCron();
-            startBoostCron();
-            startStrangersMeetCron();
-            ExpiredTicketCleanupWorker.startWorker();
-            logger.info('Background Cron Jobs & ExpiredTicketCleanupWorker started on process/instance.');
-        } else {
-            logger.info(`Background Cron Jobs bypassed on worker/instance (Process ID: ${process.pid}, RUN_CRON=${process.env.RUN_CRON}).`);
-        }
+        // Background jobs are NOT started here any more.
+        //
+        // They used to run inline in this process. node-cron then began logging
+        // "missed execution ... Possible blocking IO or high CPU" because the
+        // scheduled work and the HTTP handlers shared one event loop. A stalled
+        // event loop also stops Node accepting sockets, the kernel accept queue
+        // overflows, SYNs are dropped, and the client sits through TCP
+        // retransmission backoff — measured as 13-21s hangs on requests that the
+        // server itself answers in under 100ms, including `/health`, which does
+        // no I/O at all.
+        //
+        // The jobs now run in a forked child with its own event loop, so they
+        // cannot delay a request no matter how long they take.
+        forkCronWorker();
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);

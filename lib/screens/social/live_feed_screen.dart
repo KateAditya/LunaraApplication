@@ -2518,23 +2518,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   Future<void> _handleRejectPartyPlan(String reqId) async {
+    final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'reject_party_$reqId';
     if (_activeActionKeys.contains(actionKey)) return;
     setState(() => _activeActionKeys.add(actionKey));
 
     try {
-      final success = await ApiService.rejectPartyPlanRequest(reqId);
+      final success = await ApiService.rejectPartyPlanRequest(cleanReqId);
       if (success) {
         _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Request declined.'),
-            backgroundColor: Colors.grey,
-          ),
-        );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request declined.'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          _loadFeed(showLoader: false, forceRefresh: true);
+        }
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2547,6 +2550,53 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     } catch (e) {
       debugPrint('Error rejecting request: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
+      }
+    } finally {
+      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+    }
+  }
+
+  Future<void> _handleRevokePartyPlan(String reqId) async {
+    final cleanReqId = ApiService.cleanBookingId(reqId);
+    final actionKey = 'revoke_party_$reqId';
+    if (_activeActionKeys.contains(actionKey)) return;
+    setState(() => _activeActionKeys.add(actionKey));
+
+    try {
+      bool success = await ApiService.revokePartyPlanAcceptance(cleanReqId);
+      if (!success) {
+        success = await ApiService.rejectPartyPlanRequest(cleanReqId);
+      }
+      if (success) {
+        _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+        ApiService.clearBookingCache();
+        ApiService.notifyFeedNeedsRefresh();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invitation revoked. Plan reopened.'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          _loadFeed(showLoader: false, forceRefresh: true);
+        }
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to revoke invitation.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadFeed(showLoader: false, forceRefresh: true);
+      }
+    } catch (e) {
+      debugPrint('Error revoking party plan invite: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
@@ -5599,19 +5649,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
 
       final fiStatus = (fi['status'] ?? '').toString().toUpperCase();
-      final bool isExpiredItem = fiStatus == 'EXPIRED' ||
-          fiStatus == 'CANCELLED' ||
-          fiStatus == 'REJECTED' ||
-          fiStatus == 'DECLINED' ||
-          fiStatus == 'NO_LONGER_AVAILABLE' ||
-          fi['isExpired'] == true;
+      final bool isCancelledItem = fiStatus == 'CANCELLED' ||
+          fi['category'] == 'cancelled' ||
+          fi['category'] == 'cancellation' ||
+          fi['isCancelled'] == true;
+      final bool isExpiredItem = !isCancelledItem &&
+          (fiStatus == 'EXPIRED' ||
+              fiStatus == 'REJECTED' ||
+              fiStatus == 'DECLINED' ||
+              fiStatus == 'NO_LONGER_AVAILABLE' ||
+              fi['isExpired'] == true);
 
       items.add(
         UnifiedNotificationItem(
           id: id.isNotEmpty
               ? id
               : 'item_${DateTime.now().millisecondsSinceEpoch}',
-          category: 'booking',
+          category: isCancelledItem ? 'cancelled' : 'booking',
           title: title,
           body: body,
           createdAt: createdAt,
@@ -5619,16 +5673,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           isRead: isRead,
           isExpired: isExpiredItem,
           priority: isPendingPayment ? 'CRITICAL' : 'NORMAL',
-          badgeText: isExpiredItem ? 'EXPIRED' : badge,
-          accentColor: isExpiredItem ? const Color(0xFF9CA3AF) : accentColor,
+          badgeText: isCancelledItem
+              ? 'CANCELLED'
+              : (isExpiredItem ? 'EXPIRED' : badge),
+          accentColor: isCancelledItem
+              ? const Color(0xFFEF4444)
+              : (isExpiredItem ? const Color(0xFF9CA3AF) : accentColor),
           categoryIcon: icon,
           avatarUrl:
               _extractVenuePhoto(fi['venue']) ??
               _extractVenuePhoto(fi) ??
               fi['venueImageUrl']?.toString(),
-          actionButtonText: isExpiredItem ? null : actionText,
-          onActionTap: isExpiredItem ? null : actionTap,
-          actions: isExpiredItem ? null : actionsList,
+          actionButtonText: (isExpiredItem || isCancelledItem) ? null : actionText,
+          onActionTap: (isExpiredItem || isCancelledItem) ? null : actionTap,
+          actions: (isExpiredItem || isCancelledItem) ? null : actionsList,
           rawData: fi,
           statusSummary: isPendingPayment
               ? 'Payment Pending'
@@ -6259,19 +6317,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String? venuePhoto =
         _extractVenuePhoto(partyMap['venue']) ?? _extractVenuePhoto(partyMap);
 
-    final bool finalIsExpired = isExpired ||
-        overallStatus == 'cancelled' ||
+    final bool isActuallyCancelled = overallStatus == 'cancelled' ||
         cancelStatus == 'COMPLETED' ||
         cancelStatus == 'APPROVED' ||
         cancelStatus == 'REFUND_PAID' ||
         badgeText == 'CANCELLED' ||
         badgeText == 'REFUND COMPLETED' ||
-        badgeText == 'REFUNDED TO WALLET' ||
-        badgeText == 'EXPIRED';
+        badgeText == 'REFUNDED TO WALLET';
+
+    final bool finalIsExpired = !isActuallyCancelled &&
+        (isExpired || badgeText == 'EXPIRED');
 
     return UnifiedNotificationItem(
       id: 'group_party_timeline_$partyId',
-      category: 'booking',
+      category: isActuallyCancelled ? 'cancelled' : 'booking',
       title: cardTitle,
       body: cardBody,
       createdAt: latestTime,
@@ -6738,19 +6797,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       hasUnread = true;
     }
     final parsedBookingDate = _parseEventDateTime(dateStr, timeStr);
+    final bool isActuallyCancelled = isCancelled ||
+        isRefunded ||
+        badge == 'CANCELLED' ||
+        badge == 'REFUNDED';
+
     bool isExpired = false;
-    if (parsedBookingDate != null &&
-        DateTime.now().isAfter(parsedBookingDate.add(const Duration(hours: 4)))) {
-      isExpired = true;
-    }
-    if (isCancelled || isCompleted || isRefunded || badge == 'CANCELLED' || badge == 'COMPLETED' || badge == 'EXPIRED') {
-      isExpired = true;
-    }
-    for (final e in entries) {
-      final s = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '').toString().toLowerCase();
-      if (s == 'expired' || s == 'cancelled' || s == 'completed' || s == 'refunded' || e['isExpired'] == true) {
+    if (!isActuallyCancelled) {
+      if (parsedBookingDate != null &&
+          DateTime.now().isAfter(parsedBookingDate.add(const Duration(hours: 4)))) {
         isExpired = true;
-        break;
+      }
+      if (badge == 'EXPIRED') {
+        isExpired = true;
+      }
+      for (final e in entries) {
+        final s = (e['status'] ?? e['bookingStatus'] ?? e['data']?['status'] ?? '').toString().toLowerCase();
+        if (s == 'expired' || e['isExpired'] == true) {
+          isExpired = true;
+          break;
+        }
       }
     }
 
@@ -6758,7 +6824,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     return UnifiedNotificationItem(
       id: 'venue_booking_timeline_$bookingId',
-      category: 'booking',
+      category: isActuallyCancelled ? 'cancelled' : 'booking',
       title: title,
       body: body,
       createdAt: latestCreatedAt,
@@ -8921,7 +8987,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             : 'You approved $joinerName. Waiting for safety deposit payment to unlock chat.';
         partnerUser = joiner.isNotEmpty ? joiner : null;
         partnerRoleLabel = 'Partner:';
-        final isRevokingJoiner = _activeActionKeys.contains('reject_party_$reqId');
+        final isRevokingJoiner = _activeActionKeys.contains('revoke_party_$reqId') ||
+            _activeActionKeys.contains('reject_party_$reqId');
         actionsList = [
           NotificationAction(
             label: isRevokingJoiner ? 'Revoking...' : 'Revoke',
@@ -8929,7 +8996,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             isPrimary: false,
             isLoading: isRevokingJoiner,
             color: Colors.grey[200],
-            onTap: isRevokingJoiner ? () {} : () => _handleRejectPartyPlan(reqId),
+            onTap: isRevokingJoiner ? () {} : () => _handleRevokePartyPlan(reqId),
           ),
           NotificationAction(
             label: 'View Plan',
@@ -9517,16 +9584,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       allRead = false;
     }
 
-    final bool finalIsExpired = isExpired ||
-        isCancelled ||
-        badge == 'NO LONGER AVAILABLE' ||
-        badge == 'EXPIRED' ||
-        badge == 'DECLINED' ||
-        badge == 'CANCELLED';
+    final bool isActuallyCancelled = isCancelled ||
+        badge == 'CANCELLED' ||
+        badge == 'REFUNDED' ||
+        planMap['status'] == 'cancelled' ||
+        planMap['cancellationStatus'] == 'approved';
+
+    final bool finalIsExpired = !isActuallyCancelled &&
+        (isExpired ||
+            badge == 'NO LONGER AVAILABLE' ||
+            badge == 'EXPIRED' ||
+            badge == 'DECLINED');
 
     return UnifiedNotificationItem(
       id: 'pp_$planId',
-      category: 'party_plan',
+      category: isActuallyCancelled ? 'cancelled' : 'party_plan',
       title: title,
       body: body,
       createdAt: latestCreatedAt,
@@ -9538,7 +9610,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       categoryIcon: Icons.celebration_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: finalIsExpired ? null : actionsList,
+      actions: (finalIsExpired || isActuallyCancelled) ? null : actionsList,
       rawData: {
         'id': planId,
         'plan': planMap,
@@ -11239,15 +11311,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       allRead = false;
     }
 
-    final bool finalIsExpired = isExpired ||
-        badge == 'NO LONGER AVAILABLE' ||
-        badge == 'EXPIRED' ||
-        badge == 'DECLINED' ||
-        badge == 'CANCELLED';
+    final bool isActuallyCancelledSM = badge == 'CANCELLED' ||
+        badge == 'REFUNDED' ||
+        badge == 'REFUND PROCESSED' ||
+        badge == 'CANCELLATION PENDING' ||
+        badge == 'HOST CANCELLATION' ||
+        meetMap['status'] == 'cancelled';
+
+    final bool finalIsExpired = !isActuallyCancelledSM &&
+        (isExpired ||
+            badge == 'NO LONGER AVAILABLE' ||
+            badge == 'EXPIRED' ||
+            badge == 'DECLINED');
 
     return UnifiedNotificationItem(
       id: 'sm_$meetId',
-      category: 'stranger_meet',
+      category: isActuallyCancelledSM ? 'cancelled' : 'stranger_meet',
       title: title,
       body: body,
       createdAt: latestCreatedAt,
@@ -11259,7 +11338,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       categoryIcon: Icons.people_alt_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: finalIsExpired ? null : actionsList,
+      actions: (finalIsExpired || isActuallyCancelledSM) ? null : actionsList,
       rawData: {
         'id': meetId,
         'plan': meetMap,
@@ -11617,26 +11696,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }).length;
     }
     if (pillId == 'EXPIRED') {
-      return allItems.where((i) => i.isExpired && !i.isRead).length;
+      return allItems.where((i) {
+        if (!i.isExpired || i.isRead) return false;
+        final badge = i.badgeText?.toUpperCase() ?? '';
+        final category = i.category.toLowerCase();
+        final rawStatus = (i.rawData['status'] ??
+                i.rawData['paymentStatus'] ??
+                i.rawData['stage'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        final cancellationStatus =
+            (i.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
+        final bool isCancelled = category == 'cancelled' ||
+            category == 'cancellation' ||
+            rawStatus.contains('cancel') ||
+            cancellationStatus.contains('cancel') ||
+            cancellationStatus == 'approved' ||
+            badge.contains('CANCEL') ||
+            i.title.toLowerCase().contains('cancel') ||
+            i.body.toLowerCase().contains('cancel') ||
+            i.rawData['isCancelled'] == true;
+        return !isCancelled;
+      }).length;
     }
     return allItems.where((item) {
-      if (item.isExpired) return false;
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
-      final isLike = category.contains('like') ||
-          badge.contains('LIKE') ||
-          title.contains('liked') ||
-          _isLikeItem(item.rawData);
-      final isSystem = !isLike && (category == 'system' ||
-          category == 'promotion' ||
-          category == 'promo' ||
-          badge.contains('SYSTEM') ||
-          badge.contains('PROMO') ||
-          title.contains('vip plan') ||
-          title.contains('super likes usage'));
-
       final rawStatus =
           (item.rawData['status'] ??
                   item.rawData['paymentStatus'] ??
@@ -11657,6 +11745,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           title.contains('cancel') ||
           body.contains('cancel') ||
           item.rawData['isCancelled'] == true;
+
+      if (item.isExpired && !isCancelled) return false;
+      final isLike = category.contains('like') ||
+          badge.contains('LIKE') ||
+          title.contains('liked') ||
+          _isLikeItem(item.rawData);
+      final isSystem = !isLike && (category == 'system' ||
+          category == 'promotion' ||
+          category == 'promo' ||
+          badge.contains('SYSTEM') ||
+          badge.contains('PROMO') ||
+          title.contains('vip plan') ||
+          title.contains('super likes usage'));
 
       bool matches = false;
       if (pillId == 'CANCELLED') {
@@ -11872,20 +11973,46 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     // Apply status pill filter (All, Requests, Pending, Cancelled, Payment, Confirmed, Expired, System)
     final filteredItems = categoryFilteredItems.where((item) {
-      if (_selectedStatusPill == 'EXPIRED' ||
-          _selectedCategoryFilter == 'EXPIRED') {
-        return item.isExpired;
-      }
-
-      // Expired items must NOT show in 'ALL' or other active tabs
-      if (item.isExpired) {
-        return false;
-      }
-
       final badge = item.badgeText?.toUpperCase() ?? '';
       final category = item.category.toLowerCase();
       final title = item.title.toLowerCase();
       final body = item.body.toLowerCase();
+      final rawStatus = (item.rawData['status'] ??
+              item.rawData['paymentStatus'] ??
+              item.rawData['stage'] ??
+              '')
+          .toString()
+          .toLowerCase();
+      final cancellationStatus =
+          (item.rawData['cancellationStatus'] ?? '').toString().toLowerCase();
+
+      final bool isCancelled = category == 'cancelled' ||
+          category == 'cancellation' ||
+          rawStatus.contains('cancel') ||
+          cancellationStatus.contains('cancel') ||
+          cancellationStatus == 'approved' ||
+          badge.contains('CANCEL') ||
+          badge.contains('REFUND') ||
+          title.contains('cancel') ||
+          body.contains('cancel') ||
+          item.rawData['isCancelled'] == true;
+
+      if (_selectedStatusPill == 'EXPIRED' ||
+          _selectedCategoryFilter == 'EXPIRED') {
+        // Expired tab must ONLY show truly expired items, NEVER cancelled items
+        return item.isExpired && !isCancelled;
+      }
+
+      if (_selectedStatusPill == 'CANCELLED' ||
+          _selectedCategoryFilter == 'CANCELLED') {
+        return isCancelled;
+      }
+
+      // Expired items must NOT show in 'ALL' or other active tabs
+      if (item.isExpired && !isCancelled) {
+        return false;
+      }
+
       final isLike = category.contains('like') ||
           badge.contains('LIKE') ||
           title.contains('liked') ||
@@ -11899,32 +12026,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           title.contains('vip plan') ||
           title.contains('super likes usage') ||
           body.contains('subscription will expire'));
-
-      final rawStatus =
-          (item.rawData['status'] ??
-                  item.rawData['paymentStatus'] ??
-                  item.rawData['stage'] ??
-                  '')
-              .toString()
-              .toLowerCase();
-      final cancellationStatus = (item.rawData['cancellationStatus'] ?? '')
-          .toString()
-          .toLowerCase();
-
-      final bool isCancelled = category == 'cancelled' ||
-          category == 'cancellation' ||
-          rawStatus.contains('cancel') ||
-          cancellationStatus.contains('cancel') ||
-          cancellationStatus == 'approved' ||
-          badge.contains('CANCEL') ||
-          title.contains('cancel') ||
-          body.contains('cancel') ||
-          item.rawData['isCancelled'] == true;
-
-      if (_selectedStatusPill == 'CANCELLED' ||
-          _selectedCategoryFilter == 'CANCELLED') {
-        return isCancelled;
-      }
 
       if (_selectedStatusPill == 'ALL') {
         // Exclude system notifications from ALL tab so they only appear in SYSTEM

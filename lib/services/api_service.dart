@@ -1738,10 +1738,11 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> acceptPartyPlanRequest(
-    String reqId,
+    String rawReqId,
   ) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept',
@@ -1769,8 +1770,9 @@ class ApiService {
   /// Loads the authoritative Party Plan data used when opening a notification
   /// or push deep link, where the original payload only contains a plan ID.
   static Future<Map<String, dynamic>?> fetchPartyPlanDetail(
-    String planId,
+    String rawPlanId,
   ) async {
+    final planId = cleanBookingId(rawPlanId);
     if (planId.isEmpty) return null;
     try {
       final response = await get('/api/mobile/party-plans/$planId');
@@ -1788,11 +1790,12 @@ class ApiService {
 
   /// Cancels only the caller's unaccepted Party Plan request.
   static Future<bool> cancelPartyPlanRequest(
-    String reqId, {
+    String rawReqId, {
     String? reason,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/cancel',
@@ -1801,7 +1804,7 @@ class ApiService {
       if (response.statusCode == 200) {
         String? targetPlanId;
         _cachedPartyPlanRequests.forEach((pId, req) {
-          if (req['id']?.toString() == reqId) {
+          if (cleanBookingId(req['id']?.toString() ?? '') == reqId) {
             targetPlanId = pId;
           }
         });
@@ -1820,11 +1823,12 @@ class ApiService {
 
   /// Withdraws the caller's accepted request before their payment completes.
   static Future<bool> withdrawPartyPlanRequest(
-    String reqId, {
+    String rawReqId, {
     String? reason,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/withdraw',
@@ -1833,7 +1837,7 @@ class ApiService {
       if (response.statusCode == 200) {
         String? targetPlanId;
         _cachedPartyPlanRequests.forEach((pId, req) {
-          if (req['id']?.toString() == reqId) {
+          if (cleanBookingId(req['id']?.toString() ?? '') == reqId) {
             targetPlanId = pId;
           }
         });
@@ -1852,11 +1856,12 @@ class ApiService {
 
   /// Host-only: withdraws an acceptance while the participant remains unpaid.
   static Future<bool> revokePartyPlanAcceptance(
-    String reqId, {
+    String rawReqId, {
     String? reason,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/revoke',
@@ -4391,11 +4396,12 @@ class ApiService {
 
   /// Reject/decline a party plan request
   static Future<bool> rejectPartyPlanRequest(
-    String reqId, {
+    String rawReqId, {
     String? reason,
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/reject',
@@ -4415,10 +4421,11 @@ class ApiService {
 
   /// Accept a party plan invite
   static Future<Map<String, dynamic>?> acceptPartyPlanInvite(
-    String reqId,
+    String rawReqId,
   ) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/accept-invite',
@@ -4444,10 +4451,11 @@ class ApiService {
 
   /// Joiner proceeds to pay after host accepts
   static Future<Map<String, dynamic>?> initiateJoinerPayment(
-    String reqId,
+    String rawReqId,
   ) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final reqId = cleanBookingId(rawReqId);
     try {
       final response = await post(
         '/api/mobile/party-plans/requests/$reqId/initiate-joiner-payment',
@@ -4758,16 +4766,21 @@ class ApiService {
   static Future<Map<String, dynamic>?> createPartyBooking({
     required String partyEventId,
     required int quantity,
+    String? eventDate,
+    String? time,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final cleanId = cleanBookingId(partyEventId);
     try {
       final response = await post(
         '/api/mobile/bookings/party-event',
         body: {
           'userId': userId,
-          'partyEventId': partyEventId,
+          'partyEventId': cleanId,
           'quantity': quantity,
+          if (eventDate != null && eventDate.isNotEmpty) 'eventDate': eventDate,
+          if (time != null && time.isNotEmpty) 'time': time,
         },
       );
       try {

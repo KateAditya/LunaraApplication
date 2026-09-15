@@ -239,6 +239,36 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
     );
   }
 
+  String? get _eventDate {
+    final raw = _liveEvent['eventDate'] ??
+        widget.event['eventDate'] ??
+        _liveEvent['date'] ??
+        widget.event['date'] ??
+        _liveEvent['rawDate'] ??
+        widget.event['rawDate'] ??
+        _liveEvent['fromDate'] ??
+        widget.event['fromDate'];
+    if (raw == null) return null;
+    final clean = raw.toString().trim();
+    if (clean.isEmpty) return null;
+    final match = RegExp(r'^(\d{4}-\d{2}-\d{2})').firstMatch(clean);
+    if (match != null) return match.group(1);
+    try {
+      final parsed = DateTime.parse(clean);
+      return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+    } catch (_) {}
+    return clean;
+  }
+
+  String? get _eventTime {
+    final raw = _liveEvent['time'] ??
+        widget.event['time'] ??
+        _liveEvent['startTime'] ??
+        widget.event['startTime'];
+    if (raw == null) return null;
+    return raw.toString().trim();
+  }
+
   void _processBooking() async {
     final eventId = _liveEvent['eventId'] ?? widget.event['eventId'] ?? _liveEvent['id'] ?? widget.event['id'];
     final rawPrice = _liveEvent['entryPrice'] ?? widget.event['entryPrice'];
@@ -256,6 +286,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       final bookingRes = await ApiService.createPartyBooking(
         partyEventId: eventId.toString(),
         quantity: _quantity,
+        eventDate: _eventDate,
+        time: _eventTime,
       );
       setState(() => _isProcessing = false);
 
@@ -315,6 +347,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         final bookingRes = await ApiService.createPartyBooking(
           partyEventId: eventId.toString(),
           quantity: _quantity,
+          eventDate: _eventDate,
+          time: _eventTime,
         );
 
         if (bookingRes == null || bookingRes['success'] != true) {
@@ -391,6 +425,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         final bookingRes = await ApiService.createPartyBooking(
           partyEventId: eventId.toString(),
           quantity: _quantity,
+          eventDate: _eventDate,
+          time: _eventTime,
         );
 
         if (bookingRes == null || bookingRes['success'] != true) {
@@ -493,6 +529,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         final bookingRes = await ApiService.createPartyBooking(
           partyEventId: eventId.toString(),
           quantity: _quantity,
+          eventDate: _eventDate,
+          time: _eventTime,
         );
 
         if (bookingRes == null || bookingRes['success'] != true) {
