@@ -719,7 +719,8 @@ class PushNotificationService {
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => LiveFeedScreen(initialTabIndex: initialTab),
+          builder: (_) =>
+              LiveFeedScreen(initialTabIndex: initialTab, forceInitialRefresh: true),
         ),
       );
       return;
@@ -742,7 +743,10 @@ class PushNotificationService {
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => const LiveFeedScreen(initialTabIndex: 1), // Tab 1 = Party Plans in Live Feed
+          builder: (_) => const LiveFeedScreen(
+            initialTabIndex: 1, // Tab 1 = Party Plans in Live Feed
+            forceInitialRefresh: true,
+          ),
         ),
       );
       return;
@@ -758,7 +762,10 @@ class PushNotificationService {
       }
       navigator.push(
         MaterialPageRoute(
-          builder: (_) => const LiveFeedScreen(initialTabIndex: 0), // Tab 0 = Stranger Meets in Live Feed
+          builder: (_) => const LiveFeedScreen(
+            initialTabIndex: 0, // Tab 0 = Stranger Meets in Live Feed
+            forceInitialRefresh: true,
+          ),
         ),
       );
       return;
@@ -774,7 +781,10 @@ class PushNotificationService {
       } else {
         navigator.push(
           MaterialPageRoute(
-            builder: (_) => const LiveFeedScreen(initialTabIndex: 2), // Tab 2 = Group Parties
+            builder: (_) => const LiveFeedScreen(
+              initialTabIndex: 2, // Tab 2 = Group Parties
+              forceInitialRefresh: true,
+            ),
           ),
         );
       }
@@ -811,7 +821,10 @@ class PushNotificationService {
 
     // Default Fallback to Live Feed
     navigator.push(
-      MaterialPageRoute(builder: (_) => const LiveFeedScreen(initialTabIndex: 0)),
+      MaterialPageRoute(
+        builder: (_) =>
+            const LiveFeedScreen(initialTabIndex: 0, forceInitialRefresh: true),
+      ),
     );
   }
 

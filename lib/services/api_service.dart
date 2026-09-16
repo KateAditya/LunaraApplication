@@ -121,6 +121,14 @@ class ApiService {
   static List<Map<String, dynamic>>? _cachedNotifications;
   static DateTime? _notificationsCacheTime;
 
+  /// Group parties (<= 20 friends), as consumed by [fetchMyLargePartyBookings].
+  ///
+  /// This request used to run unconditionally on every live-feed refresh — it
+  /// was the one leg of that five-call fan-out with no cache at all, so a burst
+  /// of realtime events meant a burst of group-party round trips.
+  static List<Map<String, dynamic>>? _cachedGroupParties;
+  static DateTime? _groupPartiesCacheTime;
+
   static List<Map<String, dynamic>>? _cachedAddonPackages;
   static DateTime? _addonPackagesCacheTime;
 
@@ -189,6 +197,7 @@ class ApiService {
     _liveFeedCacheTime = null;
     _notificationsCacheTime = null;
     _bookingsCacheTime = null;
+    _groupPartiesCacheTime = null;
     _badgeCountsCacheTime = null;
     _addonPackagesCacheTime = null;
     _subscriptionPackagesCacheTime = null;
@@ -225,6 +234,8 @@ class ApiService {
     _liveFeedCacheTime = null;
     _cachedNotifications = null;
     _notificationsCacheTime = null;
+    _cachedGroupParties = null;
+    _groupPartiesCacheTime = null;
     _cachedWalletBalance = null;
     _walletBalanceCacheTime = null;
     _cachedWalletData = null;
@@ -233,6 +244,28 @@ class ApiService {
     _addonPackagesCacheTime = null;
     _cachedSubscriptionPackages = null;
     _subscriptionPackagesCacheTime = null;
+  }
+
+  /// Immediately invalidates the 5-second live feed data cache so that
+  /// the next call to fetchLiveFeedData fetches fresh backend state.
+  static void invalidateLiveFeedCache() {
+    _cachedLiveFeedData = null;
+    _liveFeedCacheTime = null;
+  }
+
+  /// Expires only the caches a Party Plan / live-feed event can actually change.
+  ///
+  /// `clearBookingCache` expires *every* cache timestamp. Running it for each
+  /// realtime party-plan event therefore sent bookings, group parties, tickets,
+  /// conversations and the safety check back to the network as well — round
+  /// trips that event could not possibly have invalidated, on every single
+  /// request, acceptance and cancellation. Same retain-the-payload semantics as
+  /// `clearBookingCache`: only the timestamps go, so screens still paint their
+  /// last known content on the first frame.
+  static void invalidateLiveFeedAndNotificationCaches() {
+    _liveFeedCacheTime = null;
+    _notificationsCacheTime = null;
+    _badgeCountsCacheTime = null;
   }
 
   /// Synchronously returns whether the current user has requested to join a given party plan.
@@ -1079,77 +1112,98 @@ class ApiService {
       }
 
       // 2. Fetch group parties (<= 20 friends)
-      final List<Map<String, dynamic>> groupParties = [];
-      try {
-        final response = await get(
-          '/api/mobile/group-parties',
-          queryParameters: {'userId': userId},
-        );
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['success'] == true && data['data'] != null) {
-            final List rawList = data['data'];
-            for (final gp in rawList) {
-              if (gp is Map) {
-                final totalCount =
-                    (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
-                        is int
-                    ? (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
-                    : (int.tryParse(
-                            (gp['numberOfFriends'] ??
-                                    gp['totalParticipants'] ??
-                                    5)
-                                .toString(),
-                          ) ??
-                          5);
-                final hostUser = gp['user'] ?? gp['host'];
-                groupParties.add({
-                  'id': gp['id'],
-                  'bookingId': gp['id'],
-                  'venue': gp['venue'],
-                  'venueName': gp['venue']?['name'],
-                  'venueAddress':
-                      gp['venue']?['addressLine1'] ??
-                      gp['venue']?['city'] ??
-                      '',
-                  'status': gp['status']?.toString() ?? 'pending',
-                  'bookingStatus': gp['status']?.toString() ?? 'pending',
-                  'paymentStatus': gp['paymentStatus']?.toString(),
-                  'adminApprovalStatus': gp['adminApprovalStatus']?.toString(),
-                  'numberOfGuests': totalCount,
-                  'numberOfFriends': totalCount,
-                  'totalParticipants': totalCount,
-                  'memberCount': totalCount > 1 ? totalCount - 1 : 1,
-                  'hostCount': 1,
-                  'partySubject': 'Group Party',
-                  'bookingDate': gp['partyDate'],
-                  'partyDate': gp['partyDate'],
-                  'startTime':
-                      (gp['startTime'] != null &&
-                          gp['startTime'].toString().trim().isNotEmpty)
-                      ? gp['startTime'].toString().trim()
-                      : '08:00 PM',
-                  'approvedAmount': gp['totalAmount'],
-                  'charges': gp['totalAmount'],
-                  'totalAmount': gp['totalAmount'],
-                  'host': hostUser,
-                  'user': hostUser,
-                  'createdAt': gp['createdAt'],
-                  'mobileNumber': gp['mobileNumber'],
-                  'optionalMobileNumber': gp['optionalMobileNumber'],
-                  'goingMode': 'party_request',
-                  'ticketCode': gp['ticketCode'],
-                  'ticketUrl': gp['ticketUrl'],
-                  'isSmallGroupParty': true,
-                });
+      //
+      // Cached on the same 30s window as bookings: without this the live feed
+      // hit this endpoint on every single refresh, cached or not.
+      List<Map<String, dynamic>> groupParties = [];
+      final gpNow = DateTime.now();
+      if (!forceRefresh &&
+          _cachedGroupParties != null &&
+          _groupPartiesCacheTime != null &&
+          gpNow.difference(_groupPartiesCacheTime!).inSeconds < 30) {
+        groupParties = _cachedGroupParties!;
+      } else {
+        try {
+          final response = await get(
+            '/api/mobile/group-parties',
+            queryParameters: {'userId': userId},
+          );
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            if (data['success'] == true && data['data'] != null) {
+              final List rawList = data['data'];
+              for (final gp in rawList) {
+                if (gp is Map) {
+                  final totalCount =
+                      (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
+                          is int
+                      ? (gp['numberOfFriends'] ?? gp['totalParticipants'] ?? 5)
+                      : (int.tryParse(
+                              (gp['numberOfFriends'] ??
+                                      gp['totalParticipants'] ??
+                                      5)
+                                  .toString(),
+                            ) ??
+                            5);
+                  final hostUser = gp['user'] ?? gp['host'];
+                  groupParties.add({
+                    'id': gp['id'],
+                    'bookingId': gp['id'],
+                    'venue': gp['venue'],
+                    'venueName': gp['venue']?['name'],
+                    'venueAddress':
+                        gp['venue']?['addressLine1'] ??
+                        gp['venue']?['city'] ??
+                        '',
+                    'status': gp['status']?.toString() ?? 'pending',
+                    'bookingStatus': gp['status']?.toString() ?? 'pending',
+                    'paymentStatus': gp['paymentStatus']?.toString(),
+                    'adminApprovalStatus': gp['adminApprovalStatus']
+                        ?.toString(),
+                    'numberOfGuests': totalCount,
+                    'numberOfFriends': totalCount,
+                    'totalParticipants': totalCount,
+                    'memberCount': totalCount > 1 ? totalCount - 1 : 1,
+                    'hostCount': 1,
+                    'partySubject': 'Group Party',
+                    'bookingDate': gp['partyDate'],
+                    'partyDate': gp['partyDate'],
+                    'startTime':
+                        (gp['startTime'] != null &&
+                            gp['startTime'].toString().trim().isNotEmpty)
+                        ? gp['startTime'].toString().trim()
+                        : '08:00 PM',
+                    'approvedAmount': gp['totalAmount'],
+                    'charges': gp['totalAmount'],
+                    'totalAmount': gp['totalAmount'],
+                    'host': hostUser,
+                    'user': hostUser,
+                    'createdAt': gp['createdAt'],
+                    'mobileNumber': gp['mobileNumber'],
+                    'optionalMobileNumber': gp['optionalMobileNumber'],
+                    'goingMode': 'party_request',
+                    'ticketCode': gp['ticketCode'],
+                    'ticketUrl': gp['ticketUrl'],
+                    'isSmallGroupParty': true,
+                  });
+                }
               }
+              // Only a genuinely successful read is worth caching — a transient
+              // failure must not pin an empty list for the next 30 seconds.
+              _cachedGroupParties = groupParties;
+              _groupPartiesCacheTime = DateTime.now();
             }
           }
+        } catch (gpErr) {
+          debugPrint(
+            'fetchMyGroupParties in fetchMyLargePartyBookings error: $gpErr',
+          );
         }
-      } catch (gpErr) {
-        debugPrint(
-          'fetchMyGroupParties in fetchMyLargePartyBookings error: $gpErr',
-        );
+        if (groupParties.isEmpty && _groupPartiesCacheTime == null) {
+          // Nothing fetched and nothing cached: fall back to the last known
+          // list rather than dropping group parties out of the feed.
+          groupParties = _cachedGroupParties ?? groupParties;
+        }
       }
 
       // Combine both

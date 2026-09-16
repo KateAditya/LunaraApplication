@@ -4352,10 +4352,17 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                           planData['role'] = 'host';
                                           planData['userId'] = userId;
                                           planData['hostId'] = userId;
-                                          planData['hostPaymentStatus'] = 'pending';
+                                          // Mirror the server's own enum values so the
+                                          // live feed reads this seed exactly the way it
+                                          // reads the plan once the refetch lands.
+                                          planData['hostPaymentStatus'] = 'unpaid';
+                                          planData['paymentStatus'] = 'pending';
+                                          planData['lifecycleStatus'] = 'posted';
                                           planData['status'] = 'active';
                                           planData['isLive'] = false;
                                           planData['type'] = 'party_plan';
+                                          planData['planId'] = planData['id'];
+                                          planData['partyPlanId'] = planData['id'];
                                           planData['depositAmount'] = 99.0;
                                           if (selectedVenue != null) {
                                             planData['venue'] = {

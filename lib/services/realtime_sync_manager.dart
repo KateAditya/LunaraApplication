@@ -164,7 +164,25 @@ class RealtimeSyncManager with WidgetsBindingObserver {
 
     // 1. Party Plan & Recent Posts
     if (eventType.startsWith('party_plan_') || eventType.startsWith('post_') || eventType == 'live_feed_update' || entity == 'party_plan' || entity == 'post') {
-      ApiService.clearBookingCache();
+      // Only the few transitions that actually create or settle a booking need
+      // the full cache sweep. The high-frequency ones (requests, invites,
+      // relists, generic feed pings) can only have changed the live feed and
+      // notifications, so they no longer drag bookings, tickets, chats and the
+      // safety check back to the network alongside them.
+      const bookingAffectingEvents = {
+        'party_plan_match_success',
+        'party_plan_host_paid',
+        'party_plan_joiner_paid',
+        'party_plan_cancelled',
+        'party_plan_deleted',
+        'party_plan_ticket_generated',
+        'party_plan_arrival_confirmed',
+      };
+      if (bookingAffectingEvents.contains(eventType)) {
+        ApiService.clearBookingCache();
+      } else {
+        ApiService.invalidateLiveFeedAndNotificationCaches();
+      }
       final targetPlanId = (data['partyPlanId'] ?? data['planId'] ?? (entity == 'party_plan' ? entityId : '')).toString();
       if (targetPlanId.isNotEmpty) {
         if (eventType == 'party_plan_request_created' ||

@@ -684,10 +684,17 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
             ? PartyPlanLifecycleStatus.REQUEST_RECEIVED
             : PartyPlanLifecycleStatus.POSTED;
 
+        // A plan only goes back on Discovery if the host deposit actually
+        // cleared — `isLive` is the flag clients read as proof of that, so it
+        // must never be raised on a plan that is still awaiting its deposit.
+        const reopenedIsLive =
+            plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID &&
+            plan.visibility !== 'private';
+
         await plan.update({
             lifecycleStatus: newLifecycle,
             status: PartyPlanStatus.ACTIVE,
-            isLive: plan.visibility !== 'private',
+            isLive: reopenedIsLive,
             matchedRequestId: null,
             acceptedAt: null,
             paymentDeadlineAt: null,
@@ -707,12 +714,12 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
 
                 const { io } = require('../server');
                 if (plan.visibility !== 'private') {
-                    io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
-                    io.to('live_feed').emit('live_feed_update', { action: 'party_plan_relisted', id: plan.id, planId: plan.id, isLive: true });
+                    io.emit('party_plan_relisted', { planId: plan.id, isLive: reopenedIsLive, lifecycleStatus: newLifecycle });
+                    io.to('live_feed').emit('live_feed_update', { action: 'party_plan_relisted', id: plan.id, planId: plan.id, isLive: reopenedIsLive });
                 } else {
-                    io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle });
+                    io.to(`user_${plan.userId}`).emit('party_plan_relisted', { planId: plan.id, isLive: reopenedIsLive, lifecycleStatus: newLifecycle });
                 }
-                io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
+                io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, isLive: reopenedIsLive, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
 
                 // Notify host that plan is live again
                 await NotificationService.dispatch({
@@ -724,7 +731,7 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
                     entityId: plan.id,
                     title: '⚡ Plan Live Again',
                     body: 'The 30-minute payment window has expired. Your Party Plan is live again on Discovery for new joiners to send requests!',
-                    metadata: { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle },
+                    metadata: { planId: plan.id, isLive: reopenedIsLive, lifecycleStatus: newLifecycle },
                     idempotencyKey: `plan_relisted_${plan.id}_${failedRequestId}`,
                 });
 
@@ -734,10 +741,10 @@ export async function reopenPlan(plan: PartyPlan, failedRequestId: string, failR
                         planId: plan.id,
                         requestId: failedReq.id,
                         status: failReason === 'payment_failed' ? 'payment_failed' : 'cancelled',
-                        isLive: true
+                        isLive: reopenedIsLive
                     });
-                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_updated', { planId: plan.id, isLive: true, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
-                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_relisted', { planId: plan.id, isLive: true });
+                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_updated', { planId: plan.id, isLive: reopenedIsLive, lifecycleStatus: newLifecycle, status: PartyPlanStatus.ACTIVE });
+                    io.to(`user_${failedReq.requesterId}`).emit('party_plan_relisted', { planId: plan.id, isLive: reopenedIsLive });
 
                     await NotificationService.dispatch({
                         recipientUserId: failedReq.requesterId,
@@ -3067,10 +3074,16 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
         const pendingCount = await PartyPlanRequest.count({
             where: { planId: plan.id, status: PartyPlanRequestStatus.PENDING }, transaction,
         });
+        // Same rule as reopenPlan: `isLive` is the flag clients treat as proof
+        // the host deposit cleared, so an unpaid plan must not be relisted live.
+        const relistedIsLive =
+            plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID &&
+            plan.visibility !== PartyPlanVisibility.PRIVATE;
+
         await plan.update({
             lifecycleStatus: pendingCount ? PartyPlanLifecycleStatus.REQUEST_RECEIVED : PartyPlanLifecycleStatus.POSTED,
             status: PartyPlanStatus.ACTIVE,
-            isLive: plan.visibility !== PartyPlanVisibility.PRIVATE,
+            isLive: relistedIsLive,
             matchedRequestId: plan.matchedRequestId === request.id ? null : plan.matchedRequestId,
             acceptedAt: null,
             paymentDeadlineAt: null,
@@ -3112,7 +3125,7 @@ async function endPrePaymentMatch(req: Request, res: Response, actor: 'requester
                 io.to(`user_${request.requesterId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
 
                 if (plan.visibility !== PartyPlanVisibility.PRIVATE) {
-                    io.emit('party_plan_relisted', { planId: plan.id, isLive: true, lifecycleStatus: plan.lifecycleStatus });
+                    io.emit('party_plan_relisted', { planId: plan.id, isLive: relistedIsLive, lifecycleStatus: plan.lifecycleStatus });
                     io.to('live_feed').emit('live_feed_update', { action: 'party_plan_relisted', id: plan.id, planId: plan.id });
                 } else {
                     // Private: request cancelled on private plan

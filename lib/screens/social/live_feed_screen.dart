@@ -116,12 +116,18 @@ class LiveFeedScreen extends StatefulWidget {
   final int initialTabIndex;
   final Map<String, dynamic>? initialFeedItem;
 
+  /// Set when the screen is opened in response to something that just happened
+  /// server-side (a push notification tap). The cached feed and notification
+  /// lists predate that event, so the first load has to go to the network.
+  final bool forceInitialRefresh;
+
   const LiveFeedScreen({
     super.key,
     this.isTab = false,
     this.onCountChanged,
     this.initialTabIndex = 0,
     this.initialFeedItem,
+    this.forceInitialRefresh = false,
   });
 
   @override
@@ -172,17 +178,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   Set<String> get _localReadNotificationIds =>
       ApiService.localReadNotificationIds;
 
-  void _onPlanPostedNotify() {
-    if (mounted) {
-      _loadFeed(showLoader: false, forceRefresh: true);
-    }
-  }
+  // RealtimeSyncManager bumps `planPostedNotifier` for every party-plan, post
+  // and live-feed event it routes, on top of the three ValueNotifiers this
+  // screen already listens to. Refreshing straight from here bypassed the
+  // coalescer entirely and added a full uncached reload per event, which is a
+  // large part of why accepting/cancelling felt slow. Share the same window.
+  void _onPlanPostedNotify() => _onRealtimeLiveFeedChanged();
 
-  void _onProfileUpdateNotify() {
-    if (mounted) {
-      _loadFeed(showLoader: false, forceRefresh: true);
-    }
-  }
+  void _onProfileUpdateNotify() => _onRealtimeLiveFeedChanged();
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -222,7 +225,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _isLoading = false;
     }
 
-    _loadFeed(showLoader: _cachedTimeline.isEmpty);
+    // Opened straight from the create-plan sheet or from a push notification:
+    // the client-side caches predate the event, so a cached read would come
+    // back without the very card the user was sent here to act on.
+    _loadFeed(
+      showLoader: _cachedTimeline.isEmpty,
+      forceRefresh: widget.initialFeedItem != null || widget.forceInitialRefresh,
+    );
     _initSocketListeners();
 
     // Razorpay setup (native platforms only)
@@ -276,32 +285,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _onRealtimeLiveFeedChanged() {
     if (!mounted) return;
 
+    // A refresh is already scheduled — this event is covered by it.
+    if (_realtimeRefreshQueued) return;
+
     final now = DateTime.now();
     final last = _lastRealtimeRefresh;
 
-    // Leading edge: the first event after a quiet period refreshes immediately,
-    // so an isolated update stays exactly as responsive as before.
-    if (last == null || now.difference(last) >= _realtimeCoalesceWindow) {
-      _lastRealtimeRefresh = now;
-      _loadFeed(showLoader: false, forceRefresh: true);
-      return;
-    }
+    // One server-side change fans out across several notifiers (party plan,
+    // recent posts, live feed, global tick) and every one of them fires
+    // synchronously, so refreshing on the first arrival ran the whole reload
+    // three or four times over for a single change. A short leading debounce
+    // collapses that fan-out into one refresh; the socket handlers have already
+    // patched the affected card in place, so the UI is up to date either way.
+    //
+    // Inside the coalesce window, further events fold into a single trailing
+    // refresh instead. The refresh is delayed, never dropped.
+    final Duration delay =
+        (last == null || now.difference(last) >= _realtimeCoalesceWindow)
+        ? _realtimeFanOutWindow
+        : _realtimeCoalesceWindow - now.difference(last);
 
-    // Inside the window: fold this and any further events into a single
-    // trailing refresh, so a burst costs two reloads rather than one each.
-    // The refresh still happens - it is delayed, never dropped.
-    if (_realtimeRefreshQueued) return;
     _realtimeRefreshQueued = true;
     _realtimeCoalesceTimer?.cancel();
-    _realtimeCoalesceTimer = Timer(
-      _realtimeCoalesceWindow - now.difference(last),
-      () {
-        _realtimeRefreshQueued = false;
-        if (!mounted) return;
-        _lastRealtimeRefresh = DateTime.now();
-        _loadFeed(showLoader: false, forceRefresh: true);
-      },
-    );
+    _realtimeCoalesceTimer = Timer(delay, () {
+      _realtimeRefreshQueued = false;
+      if (!mounted) return;
+      _lastRealtimeRefresh = DateTime.now();
+      _loadFeed(
+        showLoader: false,
+        forceRefresh: true,
+        refreshAncillary: false,
+      );
+    });
   }
 
   @override
@@ -962,6 +977,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   void _patchEntityInFeed(dynamic data) {
     if (!mounted || data == null) return;
     if (data is! Map) {
+      ApiService.invalidateLiveFeedCache();
       _loadFeed(showLoader: false);
       return;
     }
@@ -983,47 +999,101 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             '')
         .toString();
     if (entityId.isEmpty) {
+      ApiService.invalidateLiveFeedCache();
       _loadFeed(showLoader: false);
       return;
     }
 
+    final cleanEntityId = ApiService.cleanBookingId(entityId);
     bool matched = false;
 
-    // 1. Patch _feedItems
-    final newFeed = _feedItems.map((item) {
-      final itemId = (item['id'] ?? item['_id'] ?? '').toString();
-      if (itemId == entityId) {
-        matched = true;
-        return {...item, ...map};
-      }
-      return item;
-    }).toList();
+    // A socket payload is a delta, not a replacement, and it routinely carries
+    // the *plan's* id (`live_feed_update` sends `{action, id: planId, …}`).
+    // Merging it wholesale overwrote the id and type of whatever it matched —
+    // including notifications, whose read-state and de-duplication both key off
+    // that id, which is how cards ended up duplicated or silently reclassified.
+    final patch = Map<String, dynamic>.from(map)
+      ..remove('id')
+      ..remove('_id')
+      ..remove('type')
+      ..remove('category')
+      ..remove('requestType')
+      ..remove('entityType')
+      ..remove('createdAt')
+      ..remove('action');
 
-    // 2. Patch _largePartyBookings
-    final newLargeParties = _largePartyBookings.map((b) {
-      final bId = (b['id'] ?? b['_id'] ?? '').toString();
-      if (bId == entityId) {
-        matched = true;
-        return {...b, ...map};
-      }
-      return b;
-    }).toList();
+    // Helper to check if an item matches the incoming entity
+    bool matchesItem(Map<String, dynamic> item) {
+      final iId = (item['id'] ?? item['_id'] ?? '').toString();
+      final pId = (item['planId'] ?? item['partyPlanId'] ?? item['plan']?['id'] ?? '').toString();
+      final bId = (item['bookingId'] ?? item['booking']?['id'] ?? '').toString();
+      final mId = (item['meetId'] ?? item['strangersMeetId'] ?? '').toString();
+      final rId = (item['requestId'] ?? item['inviteId'] ?? '').toString();
 
-    // 3. Patch _userBookings
-    final newUserBookings = _userBookings.map((b) {
-      final bId = (b['id'] ?? b['_id'] ?? '').toString();
-      if (bId == entityId) {
-        matched = true;
-        return {...b, ...map};
-      }
-      return b;
-    }).toList();
+      final cleanI = ApiService.cleanBookingId(iId);
+      final cleanP = ApiService.cleanBookingId(pId);
+      final cleanB = ApiService.cleanBookingId(bId);
+      final cleanM = ApiService.cleanBookingId(mId);
+      final cleanR = ApiService.cleanBookingId(rId);
+
+      return iId == entityId ||
+          cleanI == cleanEntityId ||
+          (pId.isNotEmpty && (pId == entityId || cleanP == cleanEntityId)) ||
+          (bId.isNotEmpty && (bId == entityId || cleanB == cleanEntityId)) ||
+          (mId.isNotEmpty && (mId == entityId || cleanM == cleanEntityId)) ||
+          (rId.isNotEmpty && (rId == entityId || cleanR == cleanEntityId));
+    }
+
+    // `matchesItem` deliberately matches everything sharing the plan id, which
+    // is right for plan-level fields but wrong for `status`: a payload like
+    // `party_plan_request_cancelled` carries the *request's* status, and
+    // stamping that onto the plan entry (and onto every sibling request) is how
+    // a single declined request could read as a cancelled plan.
+    final requestScopedId = (map['requestId'] ?? '').toString();
+    final cleanRequestScopedId = ApiService.cleanBookingId(requestScopedId);
+
+    bool isThatRequest(Map<String, dynamic> item) {
+      final iId = (item['id'] ?? item['_id'] ?? '').toString();
+      final rId = (item['requestId'] ?? item['inviteId'] ?? '').toString();
+      return iId == requestScopedId ||
+          ApiService.cleanBookingId(iId) == cleanRequestScopedId ||
+          (rId.isNotEmpty &&
+              (rId == requestScopedId ||
+                  ApiService.cleanBookingId(rId) == cleanRequestScopedId));
+    }
+
+    final planScopedPatch = Map<String, dynamic>.from(patch)
+      ..remove('status')
+      ..remove('requestStatus');
+
+    Map<String, dynamic> patchFor(Map<String, dynamic> item) =>
+        (requestScopedId.isEmpty || isThatRequest(item))
+        ? patch
+        : planScopedPatch;
+
+    List<Map<String, dynamic>> applyPatch(List<Map<String, dynamic>> items) {
+      return items.map((item) {
+        if (matchesItem(item)) {
+          matched = true;
+          return {...item, ...patchFor(item)};
+        }
+        return item;
+      }).toList();
+    }
+
+    final newFeed = applyPatch(_feedItems);
+    final newLargeParties = applyPatch(_largePartyBookings);
+    final newUserBookings = applyPatch(_userBookings);
+    final newNotifications = applyPatch(_notifications);
+
+    ApiService.invalidateLiveFeedCache();
 
     if (matched) {
       setState(() {
         _feedItems = newFeed;
         _largePartyBookings = newLargeParties;
         _userBookings = newUserBookings;
+        _notifications = newNotifications;
         _cachedTimeline = _buildUnifiedTimeline();
       });
     } else {
@@ -1052,7 +1122,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (_silentReloadThrottle != null) return;
     _silentReloadThrottle = Timer(const Duration(milliseconds: 400), () {
       _silentReloadThrottle = null;
-      if (mounted) _loadFeed(showLoader: false);
+      // This path exists because the local patch missed, so the point is to get
+      // authoritative state for whatever this event touched — the notification
+      // cache (20s) and the ancillary lists have to be bypassed too, or the card
+      // keeps showing the status it had before the action. It is throttled, so
+      // the cost stays bounded even under a burst.
+      if (mounted) _loadFeed(showLoader: false, forceRefresh: true);
     });
   }
 
@@ -1138,10 +1213,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (!mounted || !context.mounted) return;
     if (data is Map) {
       final map = Map<String, dynamic>.from(data);
+      // The creator gets this event on the same plan the live feed is about to
+      // return, so replace rather than prepend — otherwise the plan is counted
+      // twice while the refetch is in flight.
+      final newId = (map['id'] ?? map['planId'] ?? map['partyPlanId'] ?? '')
+          .toString();
       setState(() {
-        _feedItems = [map, ..._feedItems];
+        _feedItems = [
+          map,
+          ..._feedItems.where(
+            (i) => newId.isEmpty || (i['id'] ?? '').toString() != newId,
+          ),
+        ];
         _cachedTimeline = _buildUnifiedTimeline();
       });
+      // Pull in the server's own pending-deposit entry for this plan so the
+      // card keeps its authoritative state once the refetch lands.
+      _scheduleSilentReload();
     } else {
       _loadFeed(showLoader: false);
     }
@@ -1212,6 +1300,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   bool _hasPendingForceRefresh = false;
+  bool _hasPendingAncillaryRefresh = false;
   Timer? _feedDebounceTimer;
 
   // Coalescing state for socket-driven refreshes. Each refresh costs four API
@@ -1221,15 +1310,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   DateTime? _lastRealtimeRefresh;
   bool _realtimeRefreshQueued = false;
   static const Duration _realtimeCoalesceWindow = Duration(seconds: 3);
+  // Long enough to absorb the synchronous notifier fan-out for one event,
+  // short enough to stay imperceptible on top of the instant local patch.
+  static const Duration _realtimeFanOutWindow = Duration(milliseconds: 250);
 
   Future<void> _loadFeed({
     bool showLoader = true,
     bool forceRefresh = false,
+    bool refreshAncillary = true,
   }) async {
     final requestUserId = _sessionUserId;
     if (_isFetchingFeed) {
       _hasPendingRefetch = true;
       if (forceRefresh) _hasPendingForceRefresh = true;
+      if (refreshAncillary) _hasPendingAncillaryRefresh = true;
       return;
     }
     _isFetchingFeed = true;
@@ -1242,12 +1336,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (!ApiService.localReadIdsLoaded) {
         await ApiService.loadLocalReadIds();
       }
+      // A socket-driven refresh only invalidates live-feed and notification
+      // state. Bookings, group parties and the safety check are left on their
+      // own short caches so one realtime event costs two network round-trips
+      // instead of five — that fan-out is what made status changes crawl.
+      final bool forceAncillary = forceRefresh && refreshAncillary;
       final responses = await Future.wait([
         ApiService.fetchLiveFeedData(forceRefresh: forceRefresh),
         ApiService.fetchNotifications(forceRefresh: forceRefresh),
-        ApiService.fetchMyLargePartyBookings(forceRefresh: forceRefresh),
-        ApiService.fetchBookings(forceRefresh: forceRefresh),
-        ApiService.fetchPendingSafetyCheck(forceRefresh: forceRefresh),
+        ApiService.fetchMyLargePartyBookings(forceRefresh: forceAncillary),
+        ApiService.fetchBookings(forceRefresh: forceAncillary),
+        ApiService.fetchPendingSafetyCheck(forceRefresh: forceAncillary),
       ]);
 
       final data = responses[0] as Map<String, dynamic>;
@@ -1266,6 +1365,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ...List<Map<String, dynamic>>.from(data['incomingRequests'] ?? []),
         ...List<Map<String, dynamic>>.from(data['pendingPayments'] ?? []),
       ];
+
+      // A plan we were opened with (straight from the create-plan sheet) can be
+      // newer than the cached live-feed payload. Keep it until the server's own
+      // copy shows up, or the deposit card would blink out of existence on the
+      // very first refresh after creating the plan.
+      final seed = widget.initialFeedItem;
+      if (seed != null) {
+        final seedId = (seed['id'] ?? seed['_id'] ?? '').toString();
+        final seedPlanId =
+            (seed['planId'] ?? seed['partyPlanId'] ?? seedId).toString();
+        final bool serverHasIt =
+            seedId.isEmpty ||
+            combined.any(
+              (i) =>
+                  (i['id'] ?? '').toString() == seedId ||
+                  (i['planId'] ?? i['partyPlanId'] ?? '').toString() ==
+                      seedPlanId,
+            );
+        if (!serverHasIt) combined = [seed, ...combined];
+      }
 
       if (mounted &&
           requestUserId == ApiService.currentUserId &&
@@ -1297,11 +1416,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       _isFetchingFeed = false;
       if (_hasPendingRefetch && mounted) {
         final pendingForce = _hasPendingForceRefresh;
+        final pendingAncillary = _hasPendingAncillaryRefresh;
         _hasPendingRefetch = false;
         _hasPendingForceRefresh = false;
+        _hasPendingAncillaryRefresh = false;
         _feedDebounceTimer?.cancel();
         _feedDebounceTimer = Timer(const Duration(milliseconds: 150), () {
-          if (mounted) _loadFeed(showLoader: false, forceRefresh: pendingForce);
+          if (mounted) {
+            _loadFeed(
+              showLoader: false,
+              forceRefresh: pendingForce,
+              refreshAncillary: pendingAncillary,
+            );
+          }
         });
       }
     }
@@ -7834,6 +7961,30 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   // Build Authoritative Party Plan Smart Card (1 Party Plan = 1 Card)
   // ─────────────────────────────────────────────────────────────────────────────
+  /// Lifecycle states a Party Plan can only have reached *after* the host's
+  /// commitment deposit was captured (mirrors `PartyPlanLifecycleStatus` on the
+  /// server).
+  ///
+  /// `guest_payment_completed` is deliberately absent: the server sets it when
+  /// the guest pays *first*, which is precisely the case where the host still
+  /// owes the deposit.
+  static const Set<String> _hostPaidLifecycleStates = {
+    'host_payment_completed',
+    'match_confirmed',
+    'chat_enabled',
+    'event_upcoming',
+    'event_reminder',
+    'one_hour_reminder',
+    'thirty_min_reminder',
+    'ten_min_confirmation',
+    'arrival_pending',
+    'arrival_confirmation',
+    'arrival_verified',
+    'wallet_credit_processed',
+    'plan_completed',
+    'completed',
+  };
+
   UnifiedNotificationItem? _buildAuthoritativePartyPlanCard(
     String planId,
     List<Map<String, dynamic>> entries,
@@ -7841,19 +7992,61 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   ) {
     if (entries.isEmpty) return null;
 
-    // 1. Extract the richest Plan map
+    // 1. Build the richest Plan map.
+    //
+    // No single entry is guaranteed to be complete: the enriched timeline card
+    // is dropped by the notifications endpoint in some states, the public feed
+    // item is absent while the plan is unpublished, and the pending-deposit
+    // entry carries the order id but little else. Taking the first hit and
+    // stopping therefore produced cards with a missing venue, date or deposit.
+    // Merge instead, in descending order of authority, filling only the gaps —
+    // so a lower-priority source can add what is missing but never overwrite
+    // what a better one already said.
     Map<String, dynamic> planMap = {};
+
+    void mergePlanSource(dynamic src) {
+      if (src is! Map || src.isEmpty) return;
+      final m = Map<String, dynamic>.from(src);
+      if (planMap.isEmpty) {
+        planMap = m;
+        return;
+      }
+      m.forEach((key, value) {
+        if (value == null) return;
+        final existing = planMap[key];
+        final bool isBlank =
+            existing == null ||
+            (existing is String && existing.trim().isEmpty) ||
+            (existing is Iterable && existing.isEmpty) ||
+            (existing is Map && existing.isEmpty);
+        if (isBlank) planMap[key] = value;
+      });
+    }
+
+    // Tier 1 — a nested `plan` snapshot (timeline card, request payloads).
     for (final e in entries) {
       if (e['plan'] is Map && (e['plan'] as Map).isNotEmpty) {
-        planMap = Map<String, dynamic>.from(e['plan']);
-        break;
-      } else if (e['type'] == 'party_plan' || e['category'] == 'party_plan') {
-        if (e['venue'] != null ||
-            e['creator'] != null ||
-            e['planDateTime'] != null) {
-          planMap = Map<String, dynamic>.from(e);
-          break;
-        }
+        mergePlanSource(e['plan']);
+      }
+    }
+    // Tier 2 — entries that are themselves a plan object (feed item, the
+    // `party_plan_created` socket payload, the seed handed in on navigation).
+    for (final e in entries) {
+      if (e['type'] == 'party_plan' &&
+          (e['venue'] != null ||
+              e['creator'] != null ||
+              e['planDateTime'] != null)) {
+        mergePlanSource(e);
+      }
+    }
+    // Tier 3 — the server's pending host-deposit entry: thin, but the canonical
+    // source for the deposit amount and Razorpay order id.
+    for (final e in entries) {
+      if ((e['category'] == 'party_plan' || e['type'] == 'pending_payment') &&
+          (e['venue'] != null ||
+              e['creator'] != null ||
+              e['planDateTime'] != null)) {
+        mergePlanSource(e);
       }
     }
     if (planMap.isEmpty) {
@@ -7865,7 +8058,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       }
     }
 
-    planMap['id'] = planMap['id'] ?? planId;
+    // The group is keyed by the plan id, so that is the id this card — and every
+    // screen it opens — must carry. A thin pending-payment or timeline entry
+    // contributes its own synthetic id and must never stand in for the plan's.
+    final existingPlanId = (planMap['id'] ?? '').toString();
+    if (existingPlanId.isEmpty ||
+        existingPlanId.startsWith('pending_') ||
+        existingPlanId.startsWith('party_plan_timeline_')) {
+      planMap['id'] = planId;
+    }
+    planMap['planId'] ??= planMap['id'];
+    planMap['partyPlanId'] ??= planMap['id'];
 
     // 2. Identify Venue and Host details
     final venue = (planMap['venue'] is Map)
@@ -8012,7 +8215,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           e['payActionPayload']?['isHost'] == true ||
           e['requestType'] == 'party_plan_host_deposit' ||
           e['category'] == 'party_plan_host_deposit' ||
-          e['id']?.toString().startsWith('pending_pp_') == true ||
+          // `pending_pp_join_…` is the *joiner's* share and shares this prefix,
+          // so matching it here used to render host cards for a guest.
+          (e['id']?.toString().startsWith('pending_pp_') == true &&
+              e['id']?.toString().startsWith('pending_pp_join_') != true) ||
           e['id']?.toString().startsWith('pp_host_deposit_') == true ||
           (e['hostRazorpayOrderId'] != null &&
               e['hostRazorpayOrderId'].toString().isNotEmpty &&
@@ -8237,25 +8443,93 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final String lifecycleStatus = (planMap['lifecycleStatus'] ?? '')
         .toString()
         .toLowerCase();
+
+    // ── Authoritative host deposit resolution ────────────────────────────────
+    // A Party Plan row is created with status 'active' while the ₹99 host
+    // deposit is still UNPAID, so `status == 'active'` is not — and never was —
+    // evidence of payment. Reading it as such silently swallowed the host's
+    // "Pay Deposit" card on every refresh. Only host-scoped fields decide this,
+    // and only from plan-shaped maps: a notification's `metadata` is frozen at
+    // dispatch time and would keep reporting the state the plan had back then.
     bool anyHostPaid = false;
-    for (final e in entries) {
-      final hps = (e['hostPaymentStatus'] ??
-              e['plan']?['hostPaymentStatus'] ??
-              e['paymentStatus'] ??
-              '')
+    bool hostDepositExplicitlyUnpaid = false;
+    String rawHostPaymentStatus = '';
+
+    void readHostDepositSignals(dynamic src) {
+      if (src is! Map) return;
+
+      final hps = (src['hostPaymentStatus'] ?? '')
           .toString()
+          .trim()
           .toLowerCase();
-      if (hps == 'paid' ||
-          hps == 'completed' ||
-          e['isLive'] == true ||
-          e['plan']?['isLive'] == true) {
+      final bool saysUnpaid =
+          hps == 'unpaid' || hps == 'pending' || hps == 'failed';
+      if (hps.isNotEmpty) {
+        // 'refunded' is the furthest state along and must stay sticky, so a
+        // stale entry still reporting 'paid' cannot walk the card backwards.
+        if (rawHostPaymentStatus.isEmpty ||
+            hps == 'refunded' ||
+            (hps == 'paid' && rawHostPaymentStatus != 'refunded')) {
+          rawHostPaymentStatus = hps;
+        }
+        if (hps == 'paid' || hps == 'completed' || hps == 'refunded') {
+          anyHostPaid = true;
+        } else if (saysUnpaid) {
+          hostDepositExplicitlyUnpaid = true;
+        }
+      }
+
+      // `isLive` is only ever flipped on after the deposit clears, but a relist
+      // can broadcast it as a bare delta — so it never overrides an explicit
+      // unpaid status sitting on the very same map.
+      if (src['isLive'] == true && !saysUnpaid) anyHostPaid = true;
+
+      final lifecycle = (src['lifecycleStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      if (_hostPaidLifecycleStates.contains(lifecycle)) anyHostPaid = true;
+
+      // Server-maintained progress label on the plan row.
+      final progress = (src['paymentStatus'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      // Deliberately not 'paid': the generic optimistic patch writes that on a
+      // *joiner's* payment too, and it must not be read as the host's.
+      if (progress == 'awaiting participant payment' ||
+          progress == 'confirmed' ||
+          progress == 'refunded') {
         anyHostPaid = true;
-        break;
+      } else if (progress == 'awaiting host payment') {
+        hostDepositExplicitlyUnpaid = true;
       }
     }
-    final String hostPaymentStatus = anyHostPaid
-        ? 'paid'
-        : (planMap['hostPaymentStatus'] ?? '').toString().toLowerCase();
+
+    readHostDepositSignals(planMap);
+    readHostDepositSignals(planMap['plan']);
+    for (final e in entries) {
+      // The live-feed endpoint emits this entry only while the host deposit is
+      // still outstanding, so it is conclusive. The joiner's own share item
+      // (`pending_pp_join_…`) shares the prefix and must not be mistaken for it.
+      final entryId = (e['id'] ?? '').toString();
+      final entryType = (e['requestType'] ?? e['type'] ?? '').toString();
+      if (entryType == 'party_plan_host_deposit' ||
+          (entryId.startsWith('pending_pp_') &&
+              !entryId.startsWith('pending_pp_join_'))) {
+        hostDepositExplicitlyUnpaid = true;
+      }
+      readHostDepositSignals(e);
+      readHostDepositSignals(e['plan']);
+    }
+
+    // Positive evidence wins: a stale "unpaid" entry can survive a refresh race,
+    // but nothing ever reports "paid" for a deposit that was never taken.
+    if (anyHostPaid) hostDepositExplicitlyUnpaid = false;
+
+    final String hostPaymentStatus = rawHostPaymentStatus.isNotEmpty
+        ? rawHostPaymentStatus
+        : (anyHostPaid ? 'paid' : '');
 
     if (planStatus == 'expired' ||
         lifecycleStatus == 'expired' ||
@@ -8320,26 +8594,56 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             parsedEventDate.difference(DateTime.now()).inMinutes <= 35 &&
             parsedEventDate.difference(DateTime.now()).inHours >= -24);
 
-    // A plan-level lifecycleStatus/acceptedJoinerRequest only genuinely reflects
-    // the current viewer's own match when they're the host (there's only one
-    // host per plan, so the plan's own state IS their state). A non-host viewer
-    // must only trust their own myRequest — otherwise a rejected/pending/
-    // uninvolved user viewing a plan that got matched with someone else would
-    // incorrectly see "Match Confirmed" with working Chat/Ticket buttons.
+    bool anyEntryConfirmed = false;
+    for (final e in entries) {
+      final eType = (e['type'] ?? e['eventType'] ?? e['requestType'] ?? '').toString();
+      final eStatus = (e['status'] ?? '').toString().toLowerCase();
+      final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '').toString().toLowerCase();
+      final title = (e['title'] ?? '').toString().toLowerCase();
+      final body = (e['body'] ?? '').toString().toLowerCase();
+      if (eType == 'party_plan_match_success' ||
+          eType == 'party_plan_confirmed' ||
+          eType == 'party_plan_matched' ||
+          eStatus == 'confirmed' ||
+          eStatus == 'match_confirmed' ||
+          title.contains('booking confirmed') ||
+          title.contains('match confirmed') ||
+          body.contains('both payments are complete') ||
+          (pStatus == 'paid' && (e['requester'] != null || e['user'] != null))) {
+        anyEntryConfirmed = true;
+        break;
+      }
+    }
+
+    // A plan-level lifecycleStatus/acceptedJoinerRequest reflects a confirmed match
+    // when either party or server indicates both deposits are complete.
+    // A match cannot be confirmed while the host deposit is known to be
+    // outstanding: in self-pay the guest is marked paid the moment they accept,
+    // which used to read as "confirmed" even though the host still owed ₹99.
     final bool isConfirmed =
-        (isHost &&
-            (lifecycleStatus == 'match_confirmed' ||
-                lifecycleStatus == 'chat_enabled' ||
-                lifecycleStatus == 'plan_completed' ||
-                (acceptedJoinerRequest != null &&
-                    (acceptedJoinerRequest['status'] == 'confirmed' ||
-                        acceptedJoinerRequest['status'] == 'paid' ||
-                        acceptedJoinerRequest['joinerPaymentStatus'] ==
-                            'paid')))) ||
-        (myRequest != null &&
-            (myRequest['status'] == 'confirmed' ||
-                myRequest['status'] == 'paid' ||
-                myRequest['joinerPaymentStatus'] == 'paid'));
+        !hostDepositExplicitlyUnpaid &&
+        (anyEntryConfirmed ||
+            (isHost &&
+                (lifecycleStatus == 'match_confirmed' ||
+                    lifecycleStatus == 'chat_enabled' ||
+                    lifecycleStatus == 'plan_completed' ||
+                    planStatus == 'confirmed' ||
+                    planStatus == 'match_confirmed' ||
+                    (acceptedJoinerRequest != null &&
+                        (acceptedJoinerRequest['status'] == 'confirmed' ||
+                            acceptedJoinerRequest['status'] == 'paid' ||
+                            acceptedJoinerRequest['joinerPaymentStatus'] ==
+                                'paid')))) ||
+            (myRequest != null &&
+                (myRequest['status'] == 'confirmed' ||
+                    myRequest['status'] == 'paid' ||
+                    myRequest['joinerPaymentStatus'] == 'paid')));
+
+    // The host's own deposit is settled only when the plan itself says so. An
+    // accepted joiner says nothing about it — treating it as proof is what left
+    // the host with an "Awaiting Deposit" card and no way to pay.
+    final bool isHostPaid =
+        anyHostPaid || (isConfirmed && !hostDepositExplicitlyUnpaid);
 
     String countdownLabel = '30m';
     String timeRemainingText = '';
@@ -8368,9 +8672,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } catch (_) {}
     }
 
-    if (isPaymentExpired && !isConfirmed) {
-      isExpired = true;
-    }
+    // `paymentDeadlineAt` is the 30-minute window on a *request*, not the plan's
+    // own lifetime: when it lapses the server reopens the plan (status active,
+    // lifecycle back to posted) rather than ending it. Expiring the whole card
+    // on it stranded hosts behind an "Expired" card with no way to pay their
+    // still-outstanding deposit — for a party that is often weeks away — and
+    // made the joiner's own "Payment Window Expired" button state unreachable.
+    // A plan is expired only when its own status, lifecycle or event date says
+    // so, all of which are handled above.
 
     // 6. Contextual Title, Role, Partner & Actions
     Color accent = const Color(0xFF8B5CF6);
@@ -8979,18 +9288,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bool isPrivatePlan = planVis == 'PRIVATE';
       final bool isBothPlan = planVis == 'BOTH';
 
-      if (hostPaymentStatus != 'paid' && hostPaymentStatus != 'completed') {
+      if (!isHostPaid) {
+        // The ₹99 commitment deposit gates everything else on this plan — the
+        // plan cannot go live, invitations cannot go out and no match can be
+        // confirmed until it clears. So it stays the card's primary action no
+        // matter what else has happened in the meantime; whatever that is gets
+        // folded into the body instead of replacing the call to action.
         dynamic rawDeposit = planMap['depositAmount'];
         if (rawDeposit == null) {
           for (final e in entries) {
-            if (e['depositAmount'] != null) {
-              rawDeposit = e['depositAmount'];
-              break;
-            }
-            if (e['amountDue'] != null) {
-              rawDeposit = e['amountDue'];
-              break;
-            }
+            rawDeposit =
+                e['depositAmount'] ??
+                e['amountDue'] ??
+                (e['plan'] is Map ? e['plan']['depositAmount'] : null);
+            if (rawDeposit != null) break;
           }
         }
         final double depositAmt = rawDeposit is num
@@ -9002,6 +9313,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             final oid =
                 (e['hostRazorpayOrderId'] ??
                         e['payActionPayload']?['orderId'] ??
+                        e['plan']?['hostRazorpayOrderId'] ??
                         e['metadata']?['hostRazorpayOrderId'] ??
                         e['data']?['hostRazorpayOrderId'])
                     ?.toString();
@@ -9011,17 +9323,56 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             }
           }
         }
+
+        final String depositLabel = '₹${depositAmt.toStringAsFixed(0)}';
+        final String revokeReqId =
+            acceptedJoinerRequest?['id']?.toString() ?? '';
+        final bool isRevokingJoiner =
+            _activeActionKeys.contains('revoke_party_$revokeReqId') ||
+            _activeActionKeys.contains('reject_party_$revokeReqId');
         title = '⚡ Action Required: Pay Host Deposit';
         badge = 'ACTION REQUIRED';
         accent = const Color(0xFF8B5CF6);
-        body =
-            'Pay deposit of ₹${depositAmt.toStringAsFixed(0)} to publish your Party Plan at $venueName!';
+
+        if (acceptedJoinerRequest != null) {
+          final joiner =
+              (acceptedJoinerRequest['requester'] is Map &&
+                  (acceptedJoinerRequest['requester'] as Map).isNotEmpty)
+              ? Map<String, dynamic>.from(acceptedJoinerRequest['requester'])
+              : <String, dynamic>{};
+          final joinerName =
+              '${joiner["firstName"] ?? "Your partner"} ${joiner["lastName"] ?? ""}'
+                  .trim();
+          if (joiner.isNotEmpty) {
+            partnerUser = joiner;
+            partnerRoleLabel = 'Partner:';
+          }
+          body =
+              '$joinerName accepted your Party Plan at $venueName. Pay your $depositLabel commitment deposit to confirm the match.';
+          statusSummary = 'Your Deposit Pending';
+        } else if (pendingIncomingRequests.isNotEmpty) {
+          final int reqCount = pendingIncomingRequests.length;
+          body =
+              '$reqCount ${reqCount == 1 ? "person has" : "people have"} requested to join your Party Plan at $venueName. Pay your $depositLabel deposit to publish it and review them.';
+          statusSummary = '$reqCount Waiting • Deposit Pending';
+        } else if (isPrivatePlan ||
+            isBothPlan ||
+            selectedUserIdsList.isNotEmpty) {
+          body =
+              'Pay your $depositLabel commitment deposit to publish your Party Plan at $venueName and send your private invitations!';
+          statusSummary = 'Deposit Pending';
+        } else {
+          body =
+              'Pay deposit of $depositLabel to publish your Party Plan at $venueName!';
+          statusSummary = 'Deposit Pending';
+        }
+
         final isPayingHost = _activeActionKeys.contains('pay_host_pp_$planId');
         actionsList = [
           NotificationAction(
             label: isPayingHost
                 ? 'Opening Gateway...'
-                : 'Pay Deposit (₹${depositAmt.toStringAsFixed(0)})',
+                : 'Pay Deposit ($depositLabel)',
             icon: Icons.payment_rounded,
             isPrimary: true,
             isLoading: isPayingHost,
@@ -9042,7 +9393,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             planId: planId,
                             isHost: true,
                           );
-                          await _loadFeed(showLoader: false);
+                          await _loadFeed(
+                            showLoader: false,
+                            forceRefresh: true,
+                          );
                         },
                       );
                     } finally {
@@ -9055,6 +9409,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                     }
                   },
           ),
+          if (pendingIncomingRequests.isNotEmpty)
+            NotificationAction(
+              label: 'Review Requests (${pendingIncomingRequests.length})',
+              icon: Icons.people_alt_rounded,
+              isPrimary: false,
+              color: Colors.grey[200],
+              onTap: () => _showReviewPartyPlanRequestsModal(
+                planMap,
+                pendingIncomingRequests,
+              ),
+            ),
           NotificationAction(
             label: 'View Plan',
             icon: Icons.open_in_new_rounded,
@@ -9065,8 +9430,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               MaterialPageRoute(
                 builder: (_) => PartyPlanDetailScreen(plan: planMap),
               ),
-            ),
+            ).then((_) => _loadFeed(showLoader: false)),
           ),
+          // Kept alongside the deposit so a host who no longer wants this
+          // partner still has the way out the "Awaiting Deposit" card offered.
+          if (revokeReqId.isNotEmpty)
+            NotificationAction(
+              label: isRevokingJoiner ? 'Revoking...' : 'Revoke',
+              icon: Icons.cancel_rounded,
+              isPrimary: false,
+              isLoading: isRevokingJoiner,
+              color: Colors.grey[200],
+              onTap: isRevokingJoiner
+                  ? () {}
+                  : () => _handleRevokePartyPlan(revokeReqId),
+            ),
         ];
       } else if (isConfirmed) {
         final joiner =
@@ -9494,6 +9872,33 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               context,
               MaterialPageRoute(
                 builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
+              ),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if ((myRequest?['joinerPaymentStatus'] ?? '')
+                  .toString()
+                  .toLowerCase() ==
+              'paid' &&
+          hostDepositExplicitlyUnpaid) {
+        // The guest's side is settled (self-pay marks it paid on acceptance, or
+        // they already paid their share) but the host still owes the deposit.
+        // Asking them to pay again here is the wrong call to action.
+        title = '⏳ Waiting for Host Deposit';
+        badge = 'AWAITING HOST';
+        accent = const Color(0xFFF59E0B);
+        body =
+            'Your spot at $venueName is secured. Waiting for $hostName to pay their commitment deposit to confirm the match.';
+        statusSummary = 'Host Deposit Pending';
+        actionsList = [
+          NotificationAction(
+            label: 'View Plan',
+            icon: Icons.open_in_new_rounded,
+            isPrimary: true,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
               ),
             ).then((_) => _loadFeed(showLoader: false)),
           ),
@@ -13194,7 +13599,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final cleanId = ApiService.cleanBookingId(planId);
     bool changed = false;
 
-    // 1. Remove any stale pending_payment entries for this plan
+    // 1. Invalidate stale cached live feed
+    ApiService.invalidateLiveFeedCache();
+
+    // 2. Remove any stale pending_payment entries for this plan from _feedItems
     _feedItems.removeWhere((item) {
       final id = item['id']?.toString() ?? '';
       final pId = ApiService.cleanBookingId(
@@ -13204,6 +13612,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (id.startsWith('pending_pp_') ||
           item['type'] == 'pending_payment' ||
           item['requestType'] == 'party_plan_host_deposit') {
+        if (pId == cleanId || pId == planId || id.contains(cleanId)) {
+          changed = true;
+          return true;
+        }
+      }
+      return false;
+    });
+
+    // 3. Remove/update stale notifications for this plan
+    _notifications.removeWhere((n) {
+      final id = n['id']?.toString() ?? '';
+      final pId = ApiService.cleanBookingId(
+        (n['partyPlanId'] ?? n['planId'] ?? n['data']?['partyPlanId'] ?? n['data']?['planId'] ?? '')?.toString() ?? '',
+      );
+      if (id.startsWith('pending_pp_') || n['type'] == 'party_plan_host_deposit') {
         if (pId == cleanId || pId == planId || id.contains(cleanId)) {
           changed = true;
           return true;
@@ -13251,6 +13674,51 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           }
         }
         _feedItems[i] = updated;
+        changed = true;
+      }
+    }
+
+    for (int i = 0; i < _notifications.length; i++) {
+      final n = _notifications[i];
+      final pId = ApiService.cleanBookingId(
+        (n['partyPlanId'] ?? n['planId'] ?? n['data']?['partyPlanId'] ?? n['data']?['planId'] ?? '')?.toString() ?? '',
+      );
+      if (pId == cleanId || pId == planId) {
+        final updatedN = Map<String, dynamic>.from(n);
+        // The enriched timeline notification carries the plan snapshot the card
+        // reads its payment state from, under `plan` and `data`. Patching only
+        // the top level left those nested copies still reporting "unpaid".
+        Map<String, dynamic> patchNested(Map<String, dynamic> nested) {
+          final copy = Map<String, dynamic>.from(nested);
+          if (isHost) {
+            copy['hostPaymentStatus'] = 'paid';
+            copy['isLive'] = true;
+          } else {
+            copy['joinerPaymentStatus'] = 'paid';
+          }
+          return copy;
+        }
+
+        if (isHost) {
+          updatedN['hostPaymentStatus'] = 'paid';
+          updatedN['paymentStatus'] = 'paid';
+          updatedN['isLive'] = true;
+        } else {
+          updatedN['joinerPaymentStatus'] = 'paid';
+          updatedN['paymentStatus'] = 'paid';
+          updatedN['status'] = 'confirmed';
+        }
+        if (updatedN['plan'] is Map) {
+          updatedN['plan'] = patchNested(
+            Map<String, dynamic>.from(updatedN['plan'] as Map),
+          );
+        }
+        if (updatedN['data'] is Map) {
+          updatedN['data'] = patchNested(
+            Map<String, dynamic>.from(updatedN['data'] as Map),
+          );
+        }
+        _notifications[i] = updatedN;
         changed = true;
       }
     }
