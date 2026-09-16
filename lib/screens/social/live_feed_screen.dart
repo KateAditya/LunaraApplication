@@ -3401,246 +3401,386 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         : (confirmedCount > 0
               ? 'Stranger Meet at $venueName • $confirmedCount Confirmed'
               : 'Stranger Meet at $venueName');
+    final Map<String, String> localStatusMap = {};
+    final Set<String> localLoadingActions = {};
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.85,
-          ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF13131A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
               ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+              decoration: const BoxDecoration(
+                color: Color(0xFF13131A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.people_alt_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.people_alt_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Join Requests (${requests.length})',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitleCount,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white60,
-                      ),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Color(0xFF222230), height: 24),
-              Flexible(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  shrinkWrap: true,
-                  itemCount: requests.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final req = requests[index];
-                    final reqUser = (req['user'] is Map)
-                        ? req['user'] as Map<String, dynamic>
-                        : (req['requester'] is Map
-                              ? req['requester'] as Map<String, dynamic>
-                              : <String, dynamic>{});
-                    final reqUserName =
-                        '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
-                            .trim();
-                    final joinerId =
-                        req['joinerId']?.toString() ??
-                        req['id']?.toString() ??
-                        req['userId']?.toString() ??
-                        '';
-                    final userBio =
-                        reqUser['profile']?['bio']?.toString() ??
-                        reqUser['bio']?.toString() ??
-                        '';
-
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E2A),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0xFF2A2A3C)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              LunaraProfileImage(
-                                userData: reqUser,
-                                radius: 24,
-                                showGradientBorder: true,
+                              Text(
+                                'Join Requests (${requests.length})',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      reqUserName.isNotEmpty
-                                          ? reqUserName
-                                          : 'Lunara Member',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    if (userBio.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          userBio,
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitleCount,
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white60,
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Color(0xFF222230), height: 24),
+                  Flexible(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      shrinkWrap: true,
+                      itemCount: requests.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final req = requests[index];
+                        final reqUser = (req['user'] is Map)
+                            ? req['user'] as Map<String, dynamic>
+                            : (req['requester'] is Map
+                                  ? req['requester'] as Map<String, dynamic>
+                                  : <String, dynamic>{});
+                        final reqUserName =
+                            '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
+                                .trim();
+                        final joinerId =
+                            req['joinerId']?.toString() ??
+                            req['id']?.toString() ??
+                            req['userId']?.toString() ??
+                            '';
+                        final userBio =
+                            reqUser['profile']?['bio']?.toString() ??
+                            reqUser['bio']?.toString() ??
+                            '';
+
+                        final status = (localStatusMap[joinerId] ?? req['status'] ?? 'pending').toString().toLowerCase();
+                        final payStatus = (req['paymentStatus'] ?? '').toString().toLowerCase();
+                        final isPaid = status == 'paid' || payStatus == 'paid';
+                        final isAccepted = status == 'accepted' || status == 'confirmed' || payStatus == 'pending';
+                        final isRejected = status == 'rejected' || status == 'declined';
+                        final isCancelled = status == 'cancelled';
+
+                        final acceptKey = 'modal_$joinerId:accept';
+                        final declineKey = 'modal_$joinerId:reject';
+                        final isAccepting = localLoadingActions.contains(acceptKey);
+                        final isDeclining = localLoadingActions.contains(declineKey);
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E2A),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFF2A2A3C)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  LunaraProfileImage(
+                                    userData: reqUser,
+                                    radius: 24,
+                                    showGradientBorder: true,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          reqUserName.isNotEmpty
+                                              ? reqUserName
+                                              : 'Lunara Member',
                                           style: const TextStyle(
-                                            color: Colors.white60,
-                                            fontSize: 12,
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
                                           ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (userBio.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              userBio,
+                                              style: const TextStyle(
+                                                color: Colors.white60,
+                                                fontSize: 12,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              if (isPaid)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.check_circle_rounded, size: 14, color: Colors.green),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Paid & Confirmed',
+                                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isAccepted)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFF9333EA)),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Accepted • Awaiting Payment',
+                                        style: TextStyle(color: Color(0xFFA855F7), fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isRejected)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cancel_rounded, size: 14, color: Colors.redAccent),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Declined',
+                                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isCancelled)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cancel_outlined, size: 14, color: Colors.grey),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Cancelled',
+                                        style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: (isAccepting || isDeclining)
+                                            ? null
+                                            : () async {
+                                                setModalState(() => localLoadingActions.add(acceptKey));
+                                                setModalState(() => localStatusMap[joinerId] = 'accepted');
+                                                try {
+                                                  await _handleStrangersMeetJoinAction(
+                                                    meetId,
+                                                    joinerId,
+                                                    'accept',
+                                                  );
+                                                } finally {
+                                                  if (modalContext.mounted) {
+                                                    setModalState(() => localLoadingActions.remove(acceptKey));
+                                                  }
+                                                }
+                                              },
+                                        icon: isAccepting
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.check_circle_rounded,
+                                                size: 16,
+                                              ),
+                                        label: Text(
+                                          isAccepting ? 'Approving...' : 'Approve',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF7C3AED),
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 10,
+                                          ),
                                         ),
                                       ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: (isAccepting || isDeclining)
+                                            ? null
+                                            : () async {
+                                                setModalState(() => localLoadingActions.add(declineKey));
+                                                setModalState(() => localStatusMap[joinerId] = 'rejected');
+                                                try {
+                                                  await _handleStrangersMeetJoinAction(
+                                                    meetId,
+                                                    joinerId,
+                                                    'reject',
+                                                  );
+                                                } finally {
+                                                  if (modalContext.mounted) {
+                                                    setModalState(() => localLoadingActions.remove(declineKey));
+                                                  }
+                                                }
+                                              },
+                                        icon: isDeclining
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.redAccent,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.cancel_rounded,
+                                                size: 16,
+                                                color: Colors.redAccent,
+                                              ),
+                                        label: Text(
+                                          isDeclining ? 'Declining...' : 'Decline',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: Color(0x40EF4444),
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                              ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
-                                    _handleStrangersMeetJoinAction(
-                                      meetId,
-                                      joinerId,
-                                      'accept',
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text(
-                                    'Approve',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF7C3AED),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(ctx);
-                                    _handleStrangersMeetJoinAction(
-                                      meetId,
-                                      joinerId,
-                                      'reject',
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.cancel_rounded,
-                                    size: 16,
-                                    color: Colors.redAccent,
-                                  ),
-                                  label: const Text(
-                                    'Decline',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.redAccent,
-                                    ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(
-                                      color: Color(0x40EF4444),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

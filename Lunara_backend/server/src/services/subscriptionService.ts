@@ -99,7 +99,7 @@ export class SubscriptionService {
         return null;
     }
 
-    static async activateUpcomingSubscriptions(userId: string): Promise<void> {
+    static async activateUpcomingSubscriptions(userId: string, options?: { transaction?: Transaction }): Promise<void> {
         const now = new Date();
 
         // 1. Expire currently ACTIVE subscriptions that have passed endDate
@@ -110,7 +110,8 @@ export class SubscriptionService {
                     userId, 
                     status: SubscriptionStatus.ACTIVE, 
                     endDate: { [Op.lte]: now } 
-                } 
+                },
+                transaction: options?.transaction,
             }
         );
 
@@ -122,6 +123,7 @@ export class SubscriptionService {
         const activeSub = await UserSubscription.findOne({
             where: { userId, status: SubscriptionStatus.ACTIVE },
             include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
+            transaction: options?.transaction,
         });
 
         if (!activeSub) {
@@ -133,7 +135,8 @@ export class SubscriptionService {
                     startDate: { [Op.lte]: now }
                 },
                 order: [['startDate', 'ASC']],
-                include: [{ model: SubscriptionPackage, as: 'package' }]
+                include: [{ model: SubscriptionPackage, as: 'package' }],
+                transaction: options?.transaction,
             });
 
             if (upcomingSub) {
@@ -142,9 +145,9 @@ export class SubscriptionService {
                     status: SubscriptionStatus.ACTIVE,
                     superlikesRemaining: pkg?.superlikesPerCycle || 0,
                     boostsRemaining: pkg?.boostsPerCycle || 0,
-                });
+                }, { transaction: options?.transaction });
                 // Recursively call to handle skipped periods if necessary
-                await this.activateUpcomingSubscriptions(userId);
+                await this.activateUpcomingSubscriptions(userId, options);
             }
         }
     }
@@ -279,7 +282,7 @@ export class SubscriptionService {
         code?: string;
     }> {
         try {
-            await this.activateUpcomingSubscriptions(userId);
+            await this.activateUpcomingSubscriptions(userId, options);
 
             const activeSub = await UserSubscription.findOne({
                 where: {
@@ -873,7 +876,7 @@ export class SubscriptionService {
                 const userAddons = await UserAddon.findAll({
                     where: {
                         userId,
-                        status: UserAddonStatus.ACTIVE,
+                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                         remainingQuantity: { [Op.gt]: 0 },
                     },
                 });

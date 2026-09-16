@@ -189,11 +189,15 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_likes') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_likes INTEGER DEFAULT 7; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_match_requests') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_match_requests INTEGER DEFAULT 3; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='daily_posts') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN daily_posts INTEGER DEFAULT 5; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='party_plan_limit') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN party_plan_limit INTEGER DEFAULT 1; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='party_plan_period_days') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN party_plan_period_days INTEGER DEFAULT 7; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='backtrack_limit') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN backtrack_limit INTEGER DEFAULT 3; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_hide_profile') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_hide_profile BOOLEAN DEFAULT false; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_priority_visibility') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_priority_visibility BOOLEAN DEFAULT false; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_trust_badge') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_trust_badge BOOLEAN DEFAULT false; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='has_elite_badge') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN has_elite_badge BOOLEAN DEFAULT false; END IF;
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='can_see_who_liked') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN can_see_who_liked BOOLEAN DEFAULT false; END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='SubscriptionPackages' AND column_name='currency') THEN ALTER TABLE "SubscriptionPackages" ADD COLUMN currency VARCHAR(10) DEFAULT 'INR'; END IF;
 
                     -- profile_boosts table
                     CREATE TABLE IF NOT EXISTS profile_boosts (
@@ -302,14 +306,19 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         remaining_quantity INTEGER NOT NULL,
                         status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
                         expires_at TIMESTAMP WITH TIME ZONE,
+                        metadata JSONB,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='UserAddons' AND column_name='metadata') THEN
+                        ALTER TABLE "UserAddons" ADD COLUMN metadata JSONB;
+                    END IF;
 
                     -- EntitlementAuditLogs table
                     CREATE TABLE IF NOT EXISTS "EntitlementAuditLogs" (
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
                         subscription_id UUID,
                         addon_id UUID,
                         feature VARCHAR(50) NOT NULL,
@@ -318,11 +327,18 @@ export const connectDatabase = async (maxRetries = 5, retryDelayMs = 2000): Prom
                         quantity INTEGER NOT NULL,
                         old_value JSONB,
                         new_value JSONB,
+                        reason VARCHAR(255),
                         request_id VARCHAR(100),
                         metadata JSONB,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                     );
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='EntitlementAuditLogs' AND column_name='reason') THEN
+                        ALTER TABLE "EntitlementAuditLogs" ADD COLUMN reason VARCHAR(255);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='EntitlementAuditLogs' AND column_name='admin_id') THEN
+                        ALTER TABLE "EntitlementAuditLogs" ADD COLUMN admin_id UUID REFERENCES users(id) ON DELETE SET NULL;
+                    END IF;
 
                     -- user_likes table
                     CREATE TABLE IF NOT EXISTS user_likes (

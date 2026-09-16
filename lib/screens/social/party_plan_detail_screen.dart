@@ -306,11 +306,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   Future<void> _handleAcceptPartyPlanRequest(String reqId) async {
     if (!OptimisticActionGuard.start('ACCEPT_PARTY_REQ:$reqId')) return;
 
-    // Optimistic UI: immediately remove from pending requests list
+    // Optimistic UI: update status in place to keep the profile visible with status badge
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
-    setState(() {
-      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
-    });
+    final reqIndex = _pendingRequests.indexWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    if (reqIndex != -1) {
+      setState(() {
+        _pendingRequests[reqIndex] = {
+          ..._pendingRequests[reqIndex],
+          'status': 'ACCEPTED',
+          'lifecycleStatus': 'USER_ACCEPTED',
+        };
+      });
+    }
 
     try {
       final res = await ApiService.acceptPartyPlanRequest(reqId);
@@ -362,11 +369,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   Future<void> _handleRejectPartyPlanRequest(String reqId) async {
     if (!OptimisticActionGuard.start('REJECT_PARTY_REQ:$reqId')) return;
 
-    // Optimistic UI: immediately remove from pending requests list
+    // Optimistic UI: update status in place to keep the profile visible with status badge
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
-    setState(() {
-      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
-    });
+    final reqIndex = _pendingRequests.indexWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    if (reqIndex != -1) {
+      setState(() {
+        _pendingRequests[reqIndex] = {
+          ..._pendingRequests[reqIndex],
+          'status': 'REJECTED',
+          'lifecycleStatus': 'REJECTED',
+        };
+      });
+    }
 
     try {
       final success = await ApiService.rejectPartyPlanRequest(reqId);
@@ -413,9 +427,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (!OptimisticActionGuard.start('CANCEL_PARTY_REQ:$reqId')) return;
 
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
-    setState(() {
-      _pendingRequests.removeWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
-    });
+    final reqIndex = _pendingRequests.indexWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
+    if (reqIndex != -1) {
+      setState(() {
+        _pendingRequests[reqIndex] = {
+          ..._pendingRequests[reqIndex],
+          'status': 'CANCELLED',
+          'lifecycleStatus': 'CANCELLED',
+        };
+      });
+    }
 
     try {
       bool success = await ApiService.cancelPartyPlanRequest(reqId);
@@ -3827,6 +3848,11 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       (widget.plan['selectedUsers'] as List)
                           .contains(reqUser['id']?.toString() ?? req['requesterId']?.toString()));
 
+              final reqStatus = (req['status'] ?? req['lifecycleStatus'] ?? 'PENDING').toString().toUpperCase();
+              final isAccepted = reqStatus == 'ACCEPTED' || reqStatus == 'USER_ACCEPTED';
+              final isRejected = reqStatus == 'REJECTED' || reqStatus == 'DECLINED';
+              final isCancelled = reqStatus == 'CANCELLED';
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -3881,7 +3907,82 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  if (isInvite)
+                  if (isAccepted)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Request Accepted • Awaiting Deposit',
+                            style: TextStyle(
+                              color: Color(0xFF10B981),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isRejected)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Request Declined',
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isCancelled)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.block_rounded, color: Colors.grey, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Invitation Cancelled',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isInvite)
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(

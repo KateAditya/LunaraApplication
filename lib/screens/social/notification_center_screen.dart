@@ -11,10 +11,13 @@ import '../profile/profile_screen.dart';
 import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/top_notification_banner.dart';
 import '../../widgets/upcoming_night_invite_dialog.dart';
-import '../../widgets/upcoming_night_host_confirm_dialog.dart';
 import 'live_feed_screen.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import 'party_plan_detail_screen.dart';
+import 'strangers_meet_ticket_screen.dart';
+import 'strangers_meet_payment_screen.dart';
+import '../../models/strangers_meet_request.dart';
 import 'large_party_ticket_screen.dart';
 import '../discovery/digital_ticket_screen.dart';
 import '../profile/lunara_wallet_screen.dart';
@@ -43,6 +46,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   bool _isMarkingAllRead = false;
   List<dynamic> _notifications = [];
   final Set<String> _loadingActionKeys = {};
+  final Set<String> _navigatingCardIds = {};
 
   @override
   void initState() {
@@ -905,7 +909,26 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           final existingItem = entityMap[groupKey];
           final isCurrentTimeline = itemId.contains('_timeline_') || (item['type']?.toString().endsWith('_timeline') == true);
           final isExistingTimeline = (existingItem is Map) && ((existingItem['id']?.toString().contains('_timeline_') == true) || (existingItem['type']?.toString().endsWith('_timeline') == true));
-          if (isCurrentTimeline && !isExistingTimeline) {
+
+          final currentCancelStatus = (data['cancellationStatus'] ?? item['cancellationStatus'] ?? '').toString().toLowerCase();
+          final currentGenStatus = (data['status'] ?? item['status'] ?? '').toString().toLowerCase();
+          final isCurrentCancelled = currentCancelStatus == 'cancelled' ||
+              currentCancelStatus == 'approved' ||
+              currentGenStatus == 'cancelled' ||
+              currentGenStatus == 'declined' ||
+              item['category'] == 'cancelled' ||
+              item['category'] == 'cancellation' ||
+              item['eventType']?.toString().toUpperCase().contains('CANCEL') == true ||
+              (item['title']?.toString().toLowerCase().contains('cancel') ?? false) ||
+              (item['body']?.toString().toLowerCase().contains('cancel') ?? false);
+
+          if (isCurrentCancelled) {
+            entityMap[groupKey] = item;
+            final idx = deduplicatedList.indexOf(existingItem);
+            if (idx != -1) {
+              deduplicatedList[idx] = item;
+            }
+          } else if (isCurrentTimeline && !isExistingTimeline) {
             final idx = deduplicatedList.indexOf(existingItem);
             if (idx != -1) {
               deduplicatedList[idx] = item;
@@ -925,19 +948,21 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           final currentPrimaryAction = (currentData['primaryAction'] ?? '')
               .toString()
               .toLowerCase();
-          final currentHostStatus = (currentData['hostPaymentStatus'] ?? '')
-              .toString()
-              .toLowerCase();
           final currentJoinerStatus = (currentData['joinerPaymentStatus'] ?? '')
               .toString()
               .toLowerCase();
+          final currentLifecycle = (currentData['lifecycleStatus'] ?? currentData['status'] ?? '')
+              .toString()
+              .toLowerCase();
+
           final isCurrentPaidOrConfirmed =
               currentPrimaryAction == 'open chat' ||
               currentPrimaryAction == 'chat' ||
-              currentHostStatus == 'paid' ||
+              currentLifecycle == 'match_confirmed' ||
+              currentLifecycle == 'chat_enabled' ||
+              currentData['chatUnlocked'] == true ||
               currentJoinerStatus == 'paid' ||
-              currentData['isPaid'] == true ||
-              currentData['depositPaid'] == true;
+              currentJoinerStatus == 'completed';
 
           final isCurrentActivePayDeposit =
               (currentPrimaryAction == 'pay deposit' ||
@@ -947,20 +972,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           final existingPrimaryAction = (existingData['primaryAction'] ?? '')
               .toString()
               .toLowerCase();
-          final existingHostStatus = (existingData['hostPaymentStatus'] ?? '')
-              .toString()
-              .toLowerCase();
           final existingJoinerStatus =
               (existingData['joinerPaymentStatus'] ?? '')
                   .toString()
                   .toLowerCase();
+          final existingLifecycle = (existingData['lifecycleStatus'] ?? existingData['status'] ?? '')
+              .toString()
+              .toLowerCase();
+
           final isExistingPaidOrConfirmed =
               existingPrimaryAction == 'open chat' ||
               existingPrimaryAction == 'chat' ||
-              existingHostStatus == 'paid' ||
+              existingLifecycle == 'match_confirmed' ||
+              existingLifecycle == 'chat_enabled' ||
+              existingData['chatUnlocked'] == true ||
               existingJoinerStatus == 'paid' ||
-              existingData['isPaid'] == true ||
-              existingData['depositPaid'] == true;
+              existingJoinerStatus == 'completed';
 
           final isExistingActivePayDeposit =
               (existingPrimaryAction == 'pay deposit' ||
@@ -969,6 +996,98 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
           if ((isCurrentActivePayDeposit && !isExistingActivePayDeposit) ||
               (isCurrentPaidOrConfirmed && !isExistingPaidOrConfirmed)) {
+            entityMap[groupKey] = item;
+            final idx = deduplicatedList.indexOf(existingItem);
+            if (idx != -1) {
+              deduplicatedList[idx] = item;
+            }
+          }
+        } else if (groupKey.startsWith('meet_')) {
+          final existingItem = entityMap[groupKey];
+          final existingData =
+              existingItem is Map && existingItem['data'] is Map
+              ? Map<String, dynamic>.from(existingItem['data'])
+              : (existingItem is Map && existingItem['metadata'] is Map
+                  ? Map<String, dynamic>.from(existingItem['metadata'])
+                  : <String, dynamic>{});
+          final currentData = item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : (item['metadata'] is Map
+                  ? Map<String, dynamic>.from(item['metadata'])
+                  : <String, dynamic>{});
+
+          final currentPaymentStatus = (currentData['paymentStatus'] ?? currentData['joinerPaymentStatus'] ?? item['paymentStatus'] ?? '')
+              .toString()
+              .toLowerCase();
+          final currentStatus = (currentData['status'] ?? item['status'] ?? '')
+              .toString()
+              .toLowerCase();
+          final isCurrentPaidOrConfirmed = currentPaymentStatus == 'paid' ||
+              currentPaymentStatus == 'completed' ||
+              currentStatus == 'paid' ||
+              currentStatus == 'confirmed' ||
+              currentStatus == 'completed' ||
+              item['isPaid'] == true ||
+              currentData['isPaid'] == true;
+
+          final existingPaymentStatus = (existingData['paymentStatus'] ?? existingData['joinerPaymentStatus'] ?? (existingItem is Map ? existingItem['paymentStatus'] : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final existingStatus = (existingData['status'] ?? (existingItem is Map ? existingItem['status'] : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final isExistingPaidOrConfirmed = existingPaymentStatus == 'paid' ||
+              existingPaymentStatus == 'completed' ||
+              existingStatus == 'paid' ||
+              existingStatus == 'confirmed' ||
+              existingStatus == 'completed' ||
+              (existingItem is Map && existingItem['isPaid'] == true) ||
+              existingData['isPaid'] == true;
+
+          final isCurrentActivePayFee = (currentStatus == 'approved' || currentStatus == 'accepted' || currentPaymentStatus == 'pending') && !isCurrentPaidOrConfirmed;
+          final isExistingActivePayFee = (existingStatus == 'approved' || existingStatus == 'accepted' || existingPaymentStatus == 'pending') && !isExistingPaidOrConfirmed;
+
+          if ((isCurrentPaidOrConfirmed && !isExistingPaidOrConfirmed) ||
+              (isCurrentActivePayFee && !isExistingActivePayFee && !isExistingPaidOrConfirmed)) {
+            entityMap[groupKey] = item;
+            final idx = deduplicatedList.indexOf(existingItem);
+            if (idx != -1) {
+              deduplicatedList[idx] = item;
+            }
+          }
+        } else if (groupKey.startsWith('group_') || groupKey.startsWith('booking_')) {
+          final existingItem = entityMap[groupKey];
+          final existingData =
+              existingItem is Map && existingItem['data'] is Map
+              ? Map<String, dynamic>.from(existingItem['data'])
+              : (existingItem is Map && existingItem['metadata'] is Map
+                  ? Map<String, dynamic>.from(existingItem['metadata'])
+                  : <String, dynamic>{});
+          final currentData = item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : (item['metadata'] is Map
+                  ? Map<String, dynamic>.from(item['metadata'])
+                  : <String, dynamic>{});
+
+          final currentPaymentStatus = (currentData['paymentStatus'] ?? currentData['status'] ?? item['paymentStatus'] ?? item['status'] ?? '')
+              .toString()
+              .toLowerCase();
+          final isCurrentPaidOrConfirmed = currentPaymentStatus == 'paid' ||
+              currentPaymentStatus == 'confirmed' ||
+              currentPaymentStatus == 'completed' ||
+              item['isPaid'] == true ||
+              currentData['isPaid'] == true;
+
+          final existingPaymentStatus = (existingData['paymentStatus'] ?? existingData['status'] ?? (existingItem is Map ? (existingItem['paymentStatus'] ?? existingItem['status']) : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final isExistingPaidOrConfirmed = existingPaymentStatus == 'paid' ||
+              existingPaymentStatus == 'confirmed' ||
+              existingPaymentStatus == 'completed' ||
+              (existingItem is Map && existingItem['isPaid'] == true) ||
+              existingData['isPaid'] == true;
+
+          if (isCurrentPaidOrConfirmed && !isExistingPaidOrConfirmed) {
             entityMap[groupKey] = item;
             final idx = deduplicatedList.indexOf(existingItem);
             if (idx != -1) {
@@ -1489,6 +1608,69 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       'body=$bodyStr',
     );
 
+    final String eventType =
+        (item['eventType'] ??
+                data['eventType'] ??
+                data['type'] ??
+                item['type'] ??
+                item['actionType'] ??
+                item['category'] ??
+                '')
+            .toString()
+            .toUpperCase();
+
+    final title = (item['title'] ?? '').toString();
+    final body = (item['body'] ?? '').toString();
+    final titleLower = title.toLowerCase();
+    final bodyLower = body.toLowerCase();
+
+    final bookingData = data['booking'] is Map ? Map<String, dynamic>.from(data['booking']) : <String, dynamic>{};
+    final String itemStatus = (data['status'] ?? item['status'] ?? bookingData['status'] ?? '').toString().toLowerCase();
+    final String itemCancelStatus = (data['cancellationStatus'] ?? item['cancellationStatus'] ?? bookingData['cancellationStatus'] ?? '').toString().toLowerCase();
+
+    // ── STEP 1: UNIVERSAL CANCELLATION (HIGHEST PRIORITY) ─────────────────────
+    final bool isItemCancelled =
+        eventType.contains('CANCEL') ||
+        type.contains('cancel') ||
+        itemStatus == 'cancelled' ||
+        itemStatus == 'declined' ||
+        itemCancelStatus == 'cancelled' ||
+        itemCancelStatus == 'approved' ||
+        (item['category'] ?? '').toString().toLowerCase() == 'cancelled' ||
+        (item['category'] ?? '').toString().toLowerCase() == 'cancellation' ||
+        titleLower.contains('cancelled') ||
+        titleLower.contains('cancellation') ||
+        bodyLower.contains('cancelled') ||
+        bodyLower.contains('cancellation') ||
+        bodyLower.contains('has been cancelled') ||
+        bodyLower.contains('cancelled by host') ||
+        bodyLower.contains('cancelled by user') ||
+        bodyLower.contains('booking cancelled') ||
+        bodyLower.contains('plan cancelled');
+
+    if (isItemCancelled) {
+      if (eventType.contains('CANCELLATION_REQUEST') ||
+          eventType == 'UPCOMING_NIGHT_CANCELLATION_REQUESTED' ||
+          (data['actions'] is List && (data['actions'] as List).contains('ACCEPT_CANCELLATION')) ||
+          titleLower.contains('cancellation request') ||
+          bodyLower.contains('requested to cancel upcoming night') ||
+          bodyLower.contains('requested to cancel the upcoming night')) {
+        return _buildUpcomingNightCancellationRequestCard(item);
+      }
+
+      final bool isPartyPlan = data['partyPlanId'] != null ||
+          data['planId'] != null ||
+          item['entityType'] == 'party_plan' ||
+          type.contains('party_plan') ||
+          titleLower.contains('party plan') ||
+          bodyLower.contains('party plan');
+
+      if (isPartyPlan) {
+        return _buildPartyPlanCancellationCard(item);
+      }
+      return _buildCancelledCard(item);
+    }
+
     // STEP 5: HOST PARTY PLAN MUST HAVE HIGHEST PRIORITY
     final bool isHostPartyPlanPayment =
         (type == 'party_plan_timeline' ||
@@ -1517,22 +1699,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildPartyPlanPostedCard(item);
     }
 
-    final String eventType =
-        (item['eventType'] ??
-                data['eventType'] ??
-                data['type'] ??
-                item['type'] ??
-                item['actionType'] ??
-                item['category'] ??
-                '')
-            .toString()
-            .toUpperCase();
-
-    final title = (item['title'] ?? '').toString();
-    final body = (item['body'] ?? '').toString();
-    final titleLower = title.toLowerCase();
-    final bodyLower = body.toLowerCase();
-
     // ── Safety Check event routing ──────────────────────────────────
     final bool isSafetyCheck =
         eventType.contains('SAFETY_CHECK') ||
@@ -1550,23 +1716,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     if (isSafetyCheck) {
       return _buildSafetyCheckCard(item);
-    }
-
-    // ── Cancellation event routing ────────────────────────────────────
-    final bool isPartyPlanCancellation =
-        eventType.contains('PARTY_PLAN_CANCELLATION') ||
-        type.contains('party_plan_cancellation') ||
-        (item['entityType'] == 'party_plan' &&
-            (eventType.contains('CANCEL') ||
-             titleLower.contains('cancel') ||
-             bodyLower.contains('cancel'))) ||
-        ((data['partyPlanId'] != null || data['planId'] != null) &&
-            (eventType.contains('CANCEL') ||
-             titleLower.contains('cancel') ||
-             bodyLower.contains('cancel')));
-
-    if (isPartyPlanCancellation) {
-      return _buildPartyPlanCancellationCard(item);
     }
 
     if (eventType.contains('REJECTED') ||
@@ -1612,6 +1761,62 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         titleLower.contains('plan is now live') ||
         titleLower.contains("let's party at")) {
       return _buildPartyPlanPostedCard(item);
+    }
+
+    // ── Strangers Meet specific event types ─────────────────────────
+    final bool isStrangersMeetRequestReceived =
+        eventType.contains('STRANGERS_MEET_REQUEST_RECEIVED') ||
+        eventType.contains('STRANGER_MEET_REQUEST_RECEIVED') ||
+        eventType == 'STRANGERS_MEET_REQUEST' ||
+        eventType == 'STRANGER_MEET_JOIN_REQUEST' ||
+        (type.contains('strangers_meet') && (type.contains('request') || bodyLower.contains('requested to join your stranger meet'))) ||
+        titleLower.contains('stranger meet request') ||
+        titleLower.contains('strangers meet request') ||
+        bodyLower.contains('requested to join your stranger meet');
+
+    if (isStrangersMeetRequestReceived) {
+      return _buildStrangersMeetRequestReceivedCard(item);
+    }
+
+    final bool isStrangersMeetAccepted =
+        eventType.contains('STRANGERS_MEET_REQUEST_ACCEPTED') ||
+        eventType.contains('STRANGERS_MEET_ACCEPTED') ||
+        eventType.contains('STRANGER_MEET_ACCEPTED') ||
+        eventType.contains('STRANGERS_MEET_APPROVED') ||
+        eventType.contains('STRANGER_MEET_APPROVED') ||
+        eventType.contains('STRANGERS_MEET_JOINER_PAID') ||
+        eventType.contains('STRANGERS_MEET_CONFIRMED') ||
+        (type.contains('strangers_meet') && (bodyLower.contains('accepted your request') || bodyLower.contains('seat confirmed') || bodyLower.contains('pay entry fee')));
+
+    if (isStrangersMeetAccepted) {
+      return _buildStrangersMeetAcceptedCard(item);
+    }
+
+    final bool isStrangersMeetPosted =
+        eventType.contains('STRANGERS_MEET') ||
+        eventType.contains('STRANGER_MEET') ||
+        type.contains('strangers_meet') ||
+        type.contains('stranger_meet') ||
+        titleLower.contains('stranger meet') ||
+        titleLower.contains('strangers meet');
+
+    if (isStrangersMeetPosted) {
+      return _buildStrangersMeetPostedCard(item);
+    }
+
+    // ── Large Party / Group Party Event Types ─────────────────────────
+    final bool isLargeParty =
+        eventType.contains('LARGE_PARTY') ||
+        eventType.contains('GROUP_PARTY') ||
+        type.contains('large_party') ||
+        type.contains('group_party') ||
+        titleLower.contains('large party') ||
+        titleLower.contains('group party') ||
+        bodyLower.contains('large party') ||
+        bodyLower.contains('group party');
+
+    if (isLargeParty) {
+      return _buildLargePartyCard(item);
     }
     // ── Generic & Upcoming Night Event Types ─────────────────────
     if (eventType.contains('CANCELLATION_REQUEST') ||
@@ -1672,23 +1877,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       return _buildEventReminderCard(item);
     }
 
-    final bool isOtherCancellation =
-        eventType.contains('CANCEL') ||
-        type.contains('cancel') ||
-        (item['category'] ?? '').toString().toLowerCase() == 'cancelled' ||
-        (item['category'] ?? '').toString().toLowerCase() == 'cancellation' ||
-        (data['status'] ?? item['status'] ?? '').toString().toLowerCase() == 'cancelled' ||
-        (data['cancellationStatus'] ?? item['cancellationStatus'] ?? '').toString().toLowerCase() == 'cancelled' ||
-        (data['cancellationStatus'] ?? item['cancellationStatus'] ?? '').toString().toLowerCase() == 'approved' ||
-        titleLower.contains('cancelled') ||
-        titleLower.contains('cancellation') ||
-        bodyLower.contains('cancelled') ||
-        bodyLower.contains('has been cancelled');
-
-    if (isOtherCancellation) {
-      return _buildCancelledCard(item);
-    }
-
     if (eventType.contains('EXPIRED') ||
         titleLower.contains('completed') ||
         titleLower.contains('ended')) {
@@ -1698,8 +1886,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     return _buildGenericCard(item);
   }
 
-  void _openUserProfile(dynamic actorData) {
+  Future<void> _openUserProfile(dynamic actorData, [String? cardId]) async {
     if (actorData == null) return;
+    if (cardId != null && cardId.isNotEmpty) {
+      setState(() => _navigatingCardIds.add(cardId));
+    }
     Map<String, dynamic> userMap = {};
     if (actorData is Map) {
       userMap = Map<String, dynamic>.from(actorData);
@@ -1707,7 +1898,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       userMap = {'id': actorData.trim()};
     }
 
-    if (userMap.isEmpty) return;
+    if (userMap.isEmpty) {
+      if (cardId != null && cardId.isNotEmpty && mounted) {
+        setState(() => _navigatingCardIds.remove(cardId));
+      }
+      return;
+    }
 
     final uid =
         userMap['id']?.toString() ??
@@ -1715,7 +1911,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         userMap['_id']?.toString() ??
         userMap['actorUserId']?.toString() ??
         '';
-    if (uid.isEmpty || uid == 'masked') return;
+    if (uid.isEmpty || uid == 'masked') {
+      if (cardId != null && cardId.isNotEmpty && mounted) {
+        setState(() => _navigatingCardIds.remove(cardId));
+      }
+      return;
+    }
 
     final userObj = User.fromJson({
       'id': uid,
@@ -1736,15 +1937,28 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       'bio': userMap['bio'] ?? '',
     });
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ProfileScreen(user: userObj)),
-    );
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProfileScreen(user: userObj)),
+      );
+    } finally {
+      if (cardId != null && cardId.isNotEmpty && mounted) {
+        setState(() => _navigatingCardIds.remove(cardId));
+      }
+    }
   }
 
   void _onNotificationCardTapped(dynamic item) {
     _markAsRead(item);
     if (item == null) return;
+    final cardId = (item is Map ? (item['id'] ?? item['entityId'] ?? '') : '').toString();
+    if (cardId.isNotEmpty) {
+      setState(() {
+        _navigatingCardIds.add(cardId);
+      });
+    }
+
     final payloadData = item['data'] is Map
         ? Map<String, dynamic>.from(item['data'])
         : (item['metadata'] is Map
@@ -1777,11 +1991,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-      );
+      ).then((_) {
+        if (mounted && cardId.isNotEmpty) {
+          setState(() => _navigatingCardIds.remove(cardId));
+        }
+      });
       return;
     }
 
-    PushNotificationService.navigateFromPayload(payload);
+    try {
+      PushNotificationService.navigateFromPayload(payload);
+    } finally {
+      if (mounted && cardId.isNotEmpty) {
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) {
+            setState(() {
+              _navigatingCardIds.remove(cardId);
+            });
+          }
+        });
+      }
+    }
   }
 
   void _openUpcomingNightInvite(dynamic item) {
@@ -1811,40 +2041,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         onAccepted: () {
           _fetchNotifications();
         },
-      ),
-    );
-  }
-
-  void _openUpcomingNightHostConfirm(dynamic item) {
-    final payloadData = item['data'] is Map
-        ? Map<String, dynamic>.from(item['data'])
-        : (item['metadata'] is Map
-              ? Map<String, dynamic>.from(item['metadata'])
-              : <String, dynamic>{});
-    final matchId =
-        payloadData['matchId']?.toString() ??
-        item['entityId']?.toString() ??
-        '';
-    final actor = item['actor'] ?? item['sender'];
-    final partnerName = actor is Map
-        ? (actor['firstName'] ?? actor['name'] ?? 'Partner')
-        : 'Partner';
-    final partnerPhoto = actor is Map
-        ? (actor['profilePhotoUrl'] ?? actor['primaryPhoto'])
-        : null;
-    final venueName = payloadData['venueName']?.toString() ?? 'Venue';
-    final date = payloadData['eventDate']?.toString() ?? 'Tonight';
-    final time = payloadData['eventTime']?.toString() ?? '20:00';
-
-    showDialog(
-      context: context,
-      builder: (_) => UpcomingNightHostConfirmDialog(
-        matchId: matchId,
-        partnerName: partnerName,
-        partnerPhoto: partnerPhoto,
-        venueName: venueName,
-        date: date,
-        time: time,
       ),
     );
   }
@@ -1948,8 +2144,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       'depositAmount=$depositAmount',
     );
 
+    final cardId = (item['id'] ?? item['entityId'] ?? partyPlanId).toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2108,12 +2308,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
                     icon: const Icon(
                       Icons.open_in_new_rounded,
@@ -2146,6 +2349,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── P2. Party Plan Request Received Card (Host sees incoming requests) ───────
   Widget _buildPartyPlanRequestReceivedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
     final actor = item['actor'] ?? item['sender'];
     final actorName = actor is Map
         ? '${actor['firstName'] ?? ''} ${actor['lastName'] ?? ''}'.trim()
@@ -2157,6 +2362,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2274,6 +2480,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── P3. Party Plan Request Accepted — Partner pays deposit ──────────────────
   Widget _buildPartyPlanRequestAcceptedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
     final body =
         item['body']?.toString() ?? 'Pay the safety deposit to lock your spot!';
     final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
@@ -2302,28 +2509,24 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       depositAmount = double.tryParse(rawAmount) ?? 99.0;
     }
 
+    final currentUid = ApiService.currentUserId ?? '';
+    final planHostId = (data['hostId'] ?? data['userId'] ?? item['hostId'] ?? '').toString();
+    final bool isHostOfPlan = (currentUid.isNotEmpty && planHostId.isNotEmpty && currentUid == planHostId) || item['isHost'] == true;
+
     final String joinerPaymentStatus =
         (data['joinerPaymentStatus'] ??
-                data['paymentStatus'] ??
                 item['joinerPaymentStatus'] ??
-                item['paymentStatus'] ??
                 '')
             .toString()
             .trim()
             .toLowerCase();
 
-    final bool isPaid =
-        data['isPaid'] == true ||
-        item['isPaid'] == true ||
-        data['depositPaid'] == true ||
-        item['depositPaid'] == true ||
-        data['guestPaid'] == true ||
-        item['guestPaid'] == true ||
-        joinerPaymentStatus == 'paid' ||
-        joinerPaymentStatus == 'completed';
-
-    final String primaryAction =
-        (data['primaryAction'] ?? item['primaryAction'] ?? '')
+    final String hostPaymentStatus =
+        (data['hostPaymentStatus'] ??
+                item['hostPaymentStatus'] ??
+                data['paymentStatus'] ??
+                item['paymentStatus'] ??
+                '')
             .toString()
             .trim()
             .toLowerCase();
@@ -2344,6 +2547,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             .trim()
             .toLowerCase();
 
+    final String primaryAction =
+        (data['primaryAction'] ?? item['primaryAction'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
     final bool isChatAction =
         primaryAction == 'open chat' ||
         primaryAction == 'chat' ||
@@ -2352,17 +2561,22 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         data['isConfirmed'] == true ||
         item['isConfirmed'] == true;
 
-    final bool isDepositPaid =
-        isPaid ||
-        isChatAction ||
+    final bool isGuestPaid =
+        joinerPaymentStatus == 'paid' ||
+        joinerPaymentStatus == 'completed' ||
+        data['guestPaid'] == true ||
+        item['guestPaid'] == true;
+
+    final bool isMatchConfirmed =
         lifecycleStatus == 'match_confirmed' ||
         lifecycleStatus == 'chat_enabled' ||
         lifecycleStatus == 'guest_payment_completed' ||
         lifecycleStatus == 'completed' ||
         lifecycleStatus == 'confirmed' ||
-        lifecycleStatus == 'paid' ||
         currentStatus.contains('match confirmed') ||
-        currentStatus.contains('completed');
+        currentStatus.contains('completed') ||
+        (isGuestPaid && (hostPaymentStatus == 'paid' || hostPaymentStatus.isEmpty)) ||
+        isChatAction;
 
     final actor = item['actor'] ?? item['sender'] ?? item['actorUser'];
     final actorId =
@@ -2374,8 +2588,130 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 : 'Partner')
             .toString();
 
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+
+    // If viewer is host and match is not yet confirmed by guest payment:
+    if (isHostOfPlan && !isMatchConfirmed) {
+      return _buildBaseCardContainer(
+        isUnread: isUnread,
+        isLoading: isCardLoading,
+        onTap: () => _onNotificationCardTapped(item),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEF3C7),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.hourglass_top_rounded,
+                    color: Color(0xFFD97706),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'AWAITING GUEST DEPOSIT',
+                        style: TextStyle(
+                          color: Color(0xFFD97706),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const Text(
+                        '✅ Request Accepted!',
+                        style: TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isUnread) _buildUnreadDot(),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Waiting for $actorName to pay safety commitment deposit to unlock chat & ticket.',
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      if (partyPlanId.isNotEmpty) {
+                        setState(() => _navigatingCardIds.add(cardId));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PartyPlanDetailScreen(
+                              plan: {'id': partyPlanId, ...data},
+                            ),
+                          ),
+                        ).then((_) {
+                          if (mounted) {
+                            setState(() => _navigatingCardIds.remove(cardId));
+                            _fetchNotifications();
+                          }
+                        });
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.visibility_rounded,
+                      size: 14,
+                      color: Color(0xFF7C3AED),
+                    ),
+                    label: const Text(
+                      'View Plan Details',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2385,16 +2721,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isDepositPaid
+                  color: isMatchConfirmed
                       ? const Color(0xFFE0E7FF)
                       : const Color(0xFFD1FAE5),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isDepositPaid
+                  isMatchConfirmed
                       ? Icons.forum_rounded
                       : Icons.check_circle_rounded,
-                  color: isDepositPaid
+                  color: isMatchConfirmed
                       ? LunaraTheme.electricViolet
                       : const Color(0xFF10B981),
                   size: 20,
@@ -2406,9 +2742,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isDepositPaid ? 'MATCH CONFIRMED' : 'ACTION REQUIRED',
+                      isMatchConfirmed ? 'MATCH CONFIRMED' : 'ACTION REQUIRED',
                       style: TextStyle(
-                        color: isDepositPaid
+                        color: isMatchConfirmed
                             ? LunaraTheme.electricViolet
                             : const Color(0xFF10B981),
                         fontSize: 9,
@@ -2417,7 +2753,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       ),
                     ),
                     Text(
-                      isDepositPaid
+                      isMatchConfirmed
                           ? '🎉 Party Plan Confirmed!'
                           : '✅ Invite Accepted!',
                       style: const TextStyle(
@@ -2441,7 +2777,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            isDepositPaid
+            isMatchConfirmed
                 ? 'Your safety deposit is paid! Chat is unlocked.'
                 : body,
             style: const TextStyle(
@@ -2451,13 +2787,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          if (isDepositPaid)
+          if (isMatchConfirmed)
             Row(
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -2470,7 +2807,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             },
                           ),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
                     icon: const Icon(
                       Icons.chat_bubble_rounded,
@@ -2498,16 +2837,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => PartyPlanTicketScreen(
                             request: item,
                             plan: {'id': partyPlanId, ...data},
-                            isHost: false,
+                            isHost: isHostOfPlan,
                           ),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
                     icon: const Icon(
                       Icons.confirmation_number_rounded,
@@ -2609,6 +2951,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           _fetchNotifications();
                           final planId = data['partyPlanId']?.toString() ?? '';
                           if (planId.isNotEmpty) {
+                            setState(() => _navigatingCardIds.add(cardId));
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -2618,7 +2961,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                   isHost: false,
                                 ),
                               ),
-                            );
+                            ).then((_) {
+                              if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                            });
                           }
                         }
                       }
@@ -2659,6 +3004,1028 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     );
   }
 
+  // ── SM1. Strangers Meet Request Received Card (Host sees incoming join request) ──
+  Widget _buildStrangersMeetRequestReceivedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+    final actor = item['actor'] ?? item['sender'];
+    final actorName = actor is Map
+        ? '${actor['firstName'] ?? ''} ${actor['lastName'] ?? ''}'.trim()
+        : (item['metadata']?['requesterName']?.toString() ?? 'Someone');
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+    final meetId = (data['meetId'] ?? data['strangersMeetId'] ?? data['planId'] ?? item['entityId'] ?? '').toString();
+    final joinerId = (data['joinerId'] ?? data['requestId'] ?? (actor is Map ? (actor['id'] ?? actor['userId']) : '') ?? '').toString();
+    final venueName = data['venueName']?.toString() ?? 'Venue';
+    final body =
+        item['body']?.toString() ??
+        '$actorName requested to join your Stranger Meet at $venueName.';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+
+    final acceptKey = '$cardId:ACCEPT';
+    final declineKey = '$cardId:DECLINE';
+    final isAccepting = _loadingActionKeys.contains(acceptKey);
+    final isDeclining = _loadingActionKeys.contains(declineKey);
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      isLoading: isCardLoading,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              LunaraProfileImage(
+                userData: actor is Map ? Map<String, dynamic>.from(actor) : {},
+                radius: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'STRANGER MEET',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      actorName.isNotEmpty
+                          ? '$actorName sent a join request'
+                          : 'New Stranger Meet Request',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) _buildUnreadDot(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: (isAccepting || isDeclining)
+                      ? null
+                      : () async {
+                          _markAsRead(item);
+                          setState(() => _loadingActionKeys.add(acceptKey));
+                          try {
+                            if (meetId.isNotEmpty && joinerId.isNotEmpty) {
+                              final ok = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, 'accept');
+                              if (ok && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Join request approved! Waiting for participant payment.'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                                _fetchNotifications();
+                              }
+                            } else {
+                              await _handleNotificationAction(item, 'ACCEPT');
+                            }
+                          } finally {
+                            if (mounted) setState(() => _loadingActionKeys.remove(acceptKey));
+                          }
+                        },
+                  icon: isAccepting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle_rounded, size: 14, color: Colors.white),
+                  label: Text(
+                    isAccepting ? 'Approving...' : 'Approve',
+                    style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LunaraTheme.electricViolet,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: (isAccepting || isDeclining)
+                      ? null
+                      : () async {
+                          _markAsRead(item);
+                          setState(() => _loadingActionKeys.add(declineKey));
+                          try {
+                            if (meetId.isNotEmpty && joinerId.isNotEmpty) {
+                              final ok = await ApiService.handleStrangersMeetJoinRequest(meetId, joinerId, 'reject');
+                              if (ok && mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Join request declined.'),
+                                    backgroundColor: Colors.grey,
+                                  ),
+                                );
+                                _fetchNotifications();
+                              }
+                            } else {
+                              await _handleNotificationAction(item, 'DECLINE');
+                            }
+                          } finally {
+                            if (mounted) setState(() => _loadingActionKeys.remove(declineKey));
+                          }
+                        },
+                  icon: isDeclining
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF64748B)),
+                        )
+                      : const Icon(Icons.close, size: 14, color: Color(0xFF64748B)),
+                  label: Text(
+                    isDeclining ? 'Declining...' : 'Decline',
+                    style: const TextStyle(color: Color(0xFF64748B), fontSize: 11.5, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── SM2. Strangers Meet Request Accepted Card ─────────────────────────────
+  Widget _buildStrangersMeetAcceptedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final body =
+        item['body']?.toString() ?? 'Pay the entry fee to secure your spot!';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+    final meetId = (data['meetId'] ?? data['strangersMeetId'] ?? data['planId'] ?? item['entityId'] ?? '').toString();
+    final venueName = data['venueName']?.toString() ?? 'Venue';
+    
+    double entryFee = 0.0;
+    final rawFee = data['chargesPerHead'] ?? data['paymentAmount'] ?? data['amount'] ?? item['amount'];
+    if (rawFee is num) {
+      entryFee = rawFee.toDouble();
+    } else if (rawFee is String) {
+      entryFee = double.tryParse(rawFee) ?? 0.0;
+    }
+
+    final currentUid = ApiService.currentUserId ?? '';
+    final meetHostId = (data['hostId'] ?? data['userId'] ?? item['hostId'] ?? '').toString();
+    final bool isHostOfMeet = currentUid.isNotEmpty && meetHostId.isNotEmpty && currentUid == meetHostId;
+
+    final String paymentStatus =
+        (data['joinerPaymentStatus'] ??
+                data['paymentStatus'] ??
+                item['paymentStatus'] ??
+                '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    final String status =
+        (data['status'] ?? item['status'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    final bool isPaid =
+        paymentStatus == 'paid' ||
+        paymentStatus == 'completed' ||
+        status == 'paid' ||
+        status == 'confirmed' ||
+        status == 'completed' ||
+        data['isPaid'] == true ||
+        item['isPaid'] == true;
+
+    final actor = item['actor'] ?? item['sender'] ?? item['actorUser'];
+    final actorId =
+        (actor is Map ? (actor['id'] ?? actor['userId']) : null)?.toString() ??
+        '';
+    final actorName =
+        (actor is Map
+                ? (actor['firstName'] ?? actor['name'] ?? 'Host')
+                : 'Host')
+            .toString();
+
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+
+    if (isHostOfMeet && !isPaid) {
+      return _buildBaseCardContainer(
+        isUnread: isUnread,
+        isLoading: isCardLoading,
+        onTap: () => _onNotificationCardTapped(item),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEF3C7),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.hourglass_top_rounded,
+                    color: Color(0xFFD97706),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'AWAITING PARTICIPANT PAYMENT',
+                        style: TextStyle(
+                          color: Color(0xFFD97706),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const Text(
+                        '✅ Join Request Approved!',
+                        style: TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isUnread) _buildUnreadDot(),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You approved $actorName for your Stranger Meet at $venueName. Waiting for payment to confirm seat.',
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LiveFeedScreen(initialTabIndex: 0),
+                        ),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
+                    },
+                    icon: const Icon(
+                      Icons.visibility_rounded,
+                      size: 14,
+                      color: Color(0xFF7C3AED),
+                    ),
+                    label: const Text(
+                      'View Meet in Feed',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      isLoading: isCardLoading,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isPaid
+                      ? const Color(0xFFE0E7FF)
+                      : const Color(0xFFD1FAE5),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPaid
+                      ? Icons.forum_rounded
+                      : Icons.check_circle_rounded,
+                  color: isPaid
+                      ? LunaraTheme.electricViolet
+                      : const Color(0xFF10B981),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPaid ? 'SEAT CONFIRMED' : 'ACTION REQUIRED',
+                      style: TextStyle(
+                        color: isPaid
+                            ? LunaraTheme.electricViolet
+                            : const Color(0xFF10B981),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      isPaid
+                          ? '🎉 Stranger Meet Confirmed!'
+                          : '✅ Request Approved!',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) _buildUnreadDot(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isPaid
+                ? 'Your seat at $venueName is confirmed! Chat is unlocked.'
+                : body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (isPaid)
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            user: {
+                              'id': actorId.isNotEmpty ? actorId : meetHostId,
+                              'firstName': actorName,
+                              'contextType': 'strangers_meet',
+                              'planId': meetId,
+                            },
+                          ),
+                        ),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
+                    },
+                    icon: const Icon(
+                      Icons.chat_bubble_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Chat',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      try {
+                        final smReq = StrangersMeetRequest.fromJson({'id': meetId, ...data});
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetTicketScreen(request: smReq),
+                          ),
+                        );
+                      } catch (e) {
+                        debugPrint('Error opening SM ticket: $e');
+                      } finally {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      }
+                    },
+                    icon: const Icon(
+                      Icons.confirmation_number_rounded,
+                      size: 14,
+                      color: Color(0xFF7C3AED),
+                    ),
+                    label: const Text(
+                      'View Ticket',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF7C3AED)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      try {
+                        final smReq = StrangersMeetRequest.fromJson({'id': meetId, ...data});
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetPaymentScreen(
+                              request: smReq,
+                              onPaymentSuccess: () => _fetchNotifications(),
+                              isJoinPayment: true,
+                            ),
+                          ),
+                        ).then((_) {
+                          if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                        });
+                      } catch (e) {
+                        debugPrint('Error opening SM payment: $e');
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      }
+                    },
+                    icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                    label: Text(
+                      entryFee > 0 ? 'Pay Entry Fee (₹${entryFee.toStringAsFixed(0)})' : 'Pay Entry Fee',
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? null
+                      : () => _handleNotificationAction(item, 'DECLINE'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: _loadingActionKeys.contains('${item['id']}:DECLINE')
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.close,
+                          color: Color(0xFF94A3B8),
+                          size: 18,
+                        ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── SM3. Strangers Meet Posted Card ───────────────────────────────────────
+  Widget _buildStrangersMeetPostedCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+    final title = (item['title'] ?? '🤝 Stranger Meet').toString();
+    final body = item['body']?.toString() ?? 'Your Stranger Meet is live!';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+    final meetId = (data['meetId'] ?? data['strangersMeetId'] ?? data['planId'] ?? item['entityId'] ?? '').toString();
+    final venueName = data['venueName']?.toString() ?? 'Venue';
+    final hostPaymentStatus = (data['hostPaymentStatus'] ?? data['paymentStatus'] ?? '').toString().toLowerCase();
+    final bool isHostPaid = hostPaymentStatus == 'paid' || hostPaymentStatus == 'completed';
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      isLoading: isCardLoading,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFA855F7)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'STRANGER MEET',
+                      style: TextStyle(
+                        color: Color(0xFF7C3AED),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      title.isNotEmpty ? title : '🤝 Stranger Meet at $venueName',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    timeStr,
+                    style: const TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 10.5,
+                    ),
+                  ),
+                  if (isUnread) ...[
+                    const SizedBox(height: 4),
+                    _buildUnreadDot(),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (!isHostPaid && (data['paymentAmount'] != null || data['depositAmount'] != null)) ...[
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      try {
+                        final smReq = StrangersMeetRequest.fromJson({'id': meetId, ...data});
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => StrangersMeetPaymentScreen(
+                              request: smReq,
+                              onPaymentSuccess: () => _fetchNotifications(),
+                              isJoinPayment: false,
+                            ),
+                          ),
+                        ).then((_) {
+                          if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                        });
+                      } catch (e) {
+                        debugPrint('Error opening SM host pay: $e');
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      }
+                    },
+                    icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                    label: const Text(
+                      'Pay Deposit',
+                      style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LiveFeedScreen(initialTabIndex: 0),
+                      ),
+                    ).then((_) {
+                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                    });
+                  },
+                  icon: const Icon(
+                    Icons.open_in_new_rounded,
+                    size: 14,
+                    color: Color(0xFF7C3AED),
+                  ),
+                  label: const Text(
+                    'View Meet',
+                    style: TextStyle(
+                      color: Color(0xFF7C3AED),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF7C3AED)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── LP1. Large Party / Group Party Card ──────────────────────────────────
+  Widget _buildLargePartyCard(dynamic item) {
+    final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
+    final title = (item['title'] ?? '👥 Large Party Booking').toString();
+    final body = item['body']?.toString() ?? 'Large party booking details.';
+    final timeStr = _formatTimeAgo(item['createdAt'] ?? item['updatedAt']);
+
+    final data = item['metadata'] is Map
+        ? Map<String, dynamic>.from(item['metadata'])
+        : (item['data'] is Map
+              ? Map<String, dynamic>.from(item['data'])
+              : <String, dynamic>{});
+    final bookingData = Map<String, dynamic>.from(data['booking'] is Map ? data['booking'] : data);
+    final venueMap = bookingData['venue'] is Map
+        ? Map<String, dynamic>.from(bookingData['venue'])
+        : {'name': bookingData['venueName'] ?? data['venueName'] ?? 'Venue'};
+    final bookingId = (data['partyId'] ?? data['bookingId'] ?? data['groupPartyId'] ?? item['entityId'] ?? item['id'] ?? '').toString();
+
+    final status = (bookingData['status'] ?? data['status'] ?? item['status'] ?? '').toString().toLowerCase();
+    final paymentStatus = (bookingData['paymentStatus'] ?? data['paymentStatus'] ?? item['paymentStatus'] ?? '').toString().toLowerCase();
+    final bool isPaid = paymentStatus == 'paid' || paymentStatus == 'completed' || status == 'paid' || status == 'confirmed' || status == 'completed' || item['isPaid'] == true || data['isPaid'] == true;
+
+    double depositAmount = 1999.0;
+    final rawAmount = bookingData['totalAmount'] ?? bookingData['depositAmount'] ?? data['paymentAmount'] ?? data['depositAmount'] ?? item['amount'];
+    if (rawAmount is num) {
+      depositAmount = rawAmount.toDouble();
+    } else if (rawAmount is String) {
+      depositAmount = double.tryParse(rawAmount) ?? 1999.0;
+    }
+
+    return _buildBaseCardContainer(
+      isUnread: isUnread,
+      isLoading: isCardLoading,
+      onTap: () => _onNotificationCardTapped(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFC084FC)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPaid ? 'BOOKING CONFIRMED' : 'ACTION REQUIRED',
+                      style: TextStyle(
+                        color: isPaid ? const Color(0xFF10B981) : const Color(0xFFD97706),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      title.isNotEmpty ? title : '👥 Large Party Booking',
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: const TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isUnread) _buildUnreadDot(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Color(0xFF475569),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (isPaid) ...[
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LargePartyTicketScreen(
+                            booking: bookingData,
+                            venue: venueMap,
+                          ),
+                        ),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
+                    },
+                    icon: const Icon(
+                      Icons.confirmation_number_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'View Ticket',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
+                      try {
+                        final vName = venueMap['name']?.toString() ?? 'Venue';
+                        final cleanId = ApiService.cleanBookingId(bookingId);
+                        await SmartCheckoutSheet.show(
+                          context: context,
+                          title: 'Large Party Booking',
+                          subtitle: 'Deposit payment for Large Party at $vName',
+                          itemPrice: depositAmount,
+                          onWalletPayment: () async {
+                            final res = await ApiService.payWithWallet(
+                              amount: depositAmount,
+                              bookingId: cleanId,
+                              paymentType: 'group_party',
+                            );
+                            if (res != null && res['success'] == true) {
+                              final transactionId = res['data']?['transactionId']?.toString() ?? 'wallet';
+                              final confirmRes = await ApiService.verifyLargePartyPayment(
+                                cleanId,
+                                razorpayOrderId: 'order_mock_wallet',
+                                razorpayPaymentId: 'wallet_$transactionId',
+                                razorpaySignature: 'mock_signature',
+                              );
+                              if (confirmRes) {
+                                _fetchNotifications();
+                                return true;
+                              }
+                            }
+                            return false;
+                          },
+                          onDirectPayment: () async {
+                            final result = await ApiService.initiateLargePartyPayment(cleanId);
+                            if (result != null && result['success'] == true) {
+                              _fetchNotifications();
+                            }
+                          },
+                          onHybridPayment: (shortfall) async {
+                            final result = await ApiService.initiateLargePartyPayment(cleanId);
+                            if (result != null && result['success'] == true) {
+                              _fetchNotifications();
+                            }
+                          },
+                        );
+                      } catch (e) {
+                        debugPrint('Error starting large party payment: $e');
+                      } finally {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      }
+                    },
+                    icon: const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                    label: Text(
+                      'Pay Deposit (₹${depositAmount.toStringAsFixed(0)})',
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C3AED),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LiveFeedScreen(initialTabIndex: 0),
+                      ),
+                    ).then((_) {
+                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                    });
+                  },
+                  icon: const Icon(
+                    Icons.open_in_new_rounded,
+                    size: 14,
+                    color: Color(0xFF7C3AED),
+                  ),
+                  label: const Text(
+                    'View in Feed',
+                    style: TextStyle(
+                      color: Color(0xFF7C3AED),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFF7C3AED)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPartyPlanCancellationCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
     final data = item['metadata'] is Map
@@ -2693,8 +4060,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         body.toLowerCase().contains('cancelled') ||
         title.toLowerCase().contains('cancelled');
 
+    final cardId = (item['id'] ?? item['entityId'] ?? planId).toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
+
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2755,12 +4126,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               child: ElevatedButton.icon(
                 onPressed: () {
                   _markAsRead(item);
+                  if (cardId.isNotEmpty) setState(() => _navigatingCardIds.add(cardId));
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const LunaraWalletScreen(),
                     ),
-                  );
+                  ).then((_) {
+                    if (mounted && cardId.isNotEmpty) setState(() => _navigatingCardIds.remove(cardId));
+                  });
                 },
                 icon: const Icon(
                   Icons.account_balance_wallet_rounded,
@@ -4504,6 +5878,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 3. Request Accepted Card Component ─────────────────────────────────────
   Widget _buildRequestAcceptedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final actor = item['actor'] ?? item['sender'];
     final actorName = actor?['firstName'] ?? actor?['name'] ?? 'User';
     final body = item['body']?.toString() ?? 'You are going together!';
@@ -4511,6 +5887,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4559,41 +5936,143 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             style: const TextStyle(color: Color(0xFF475569), fontSize: 12.5),
           ),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: () {
-              _markAsRead(item);
-              _openUpcomingNightHostConfirm(item);
-            },
-            icon: const Icon(
-              Icons.payment_rounded,
-              size: 14,
-              color: Colors.white,
-            ),
-            label: const Text(
-              "Confirm Booking & Pay",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
+                    final data = item['data'] is Map
+                        ? Map<String, dynamic>.from(item['data'])
+                        : (item['metadata'] is Map
+                            ? Map<String, dynamic>.from(item['metadata'])
+                            : <String, dynamic>{});
+                    final bookingData = Map<String, dynamic>.from(data['booking'] is Map ? data['booking'] : data);
+                    final venueMap = bookingData['venue'] is Map
+                        ? Map<String, dynamic>.from(bookingData['venue'])
+                        : {'name': bookingData['venueName'] ?? 'Venue'};
+                    final isGroupOrLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1) > 1 ||
+                        bookingData['isGroupParty'] == true ||
+                        bookingData['isLargePartyRequest'] == true ||
+                        bookingData['goingMode'] == 'party_request' ||
+                        bookingData['type'] == 'group_party_timeline' ||
+                        bookingData['type'] == 'large_party_timeline' ||
+                        bookingData['isGroupBooking'] == true ||
+                        (item['id']?.toString().startsWith('group_party_') ?? false) ||
+                        (item['id']?.toString().startsWith('large_party_') ?? false);
+
+                    if (isGroupOrLarge) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LargePartyTicketScreen(
+                            booking: bookingData,
+                            venue: venueMap,
+                          ),
+                        ),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
+                    } else {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DigitalTicketScreen(
+                            venue: venueMap,
+                            date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
+                            time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
+                            table: 'Confirmed Entry',
+                            guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
+                            package: 'Confirmed Entry',
+                            totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+                            ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
+                            status: 'CONFIRMED',
+                            booking: bookingData,
+                            user: ApiService.cachedCurrentUser,
+                          ),
+                        ),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
+                    }
+                  },
+                  icon: const Icon(
+                    Icons.confirmation_number_outlined,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'View Ticket',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LunaraTheme.electricViolet,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: LunaraTheme.electricViolet,
-              minimumSize: const Size(double.infinity, 38),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
+                    final actor = item['actor'] ?? item['sender'];
+                    final data = item['data'] is Map
+                        ? Map<String, dynamic>.from(item['data'])
+                        : (item['metadata'] is Map
+                            ? Map<String, dynamic>.from(item['metadata'])
+                            : <String, dynamic>{});
+                    final partner = actor is Map
+                        ? Map<String, dynamic>.from(actor)
+                        : (data['user'] is Map ? Map<String, dynamic>.from(data['user']) : <String, dynamic>{});
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(user: partner),
+                      ),
+                    ).then((_) {
+                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Open Chat',
+                        style: TextStyle(
+                          color: LunaraTheme.electricViolet,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // ── 4. Booking Confirmed Card Component ────────────────────────────────────
+  // ── 4. Booking Confirmed Card Component ───────────────────────────────────
   Widget _buildBookingConfirmedCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final body =
         item['body']?.toString() ??
         'Your booking is confirmed. Get ready for the party!';
@@ -4601,6 +6080,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4658,6 +6138,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
                     final data = item['data'] is Map
                         ? Map<String, dynamic>.from(item['data'])
                         : (item['metadata'] is Map
@@ -4686,7 +6167,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             venue: venueMap,
                           ),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     } else {
                       Navigator.push(
                         context,
@@ -4705,7 +6188,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             user: ApiService.cachedCurrentUser,
                           ),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     }
                   },
                   icon: const Icon(
@@ -4734,6 +6219,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 child: GestureDetector(
                   onTap: () {
                     _markAsRead(item);
+                    setState(() => _navigatingCardIds.add(cardId));
                     final actor = item['actor'] ?? item['sender'];
                     final data = item['data'] is Map
                         ? Map<String, dynamic>.from(item['data'])
@@ -4748,7 +6234,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       MaterialPageRoute(
                         builder: (_) => ChatScreen(user: partner),
                       ),
-                    );
+                    ).then((_) {
+                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                    });
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -4890,11 +6378,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 6. Ticket Ready Card Component ─────────────────────────────────────────
   Widget _buildTicketReadyCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final body = item['body']?.toString() ?? 'Your digital pass is generated.';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Row(
         children: [
@@ -4946,6 +6437,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ElevatedButton(
             onPressed: () {
               _markAsRead(item);
+              setState(() => _navigatingCardIds.add(cardId));
               final data = item['data'] is Map
                   ? Map<String, dynamic>.from(item['data'])
                   : (item['metadata'] is Map
@@ -4955,24 +6447,89 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               final venueMap = bookingData['venue'] is Map
                   ? Map<String, dynamic>.from(bookingData['venue'])
                   : {'name': bookingData['venueName'] ?? 'Venue'};
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => DigitalTicketScreen(
-                    venue: venueMap,
-                    date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
-                    time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
-                    table: 'Standard Entry',
-                    guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
-                    package: 'Digital Pass',
-                    totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
-                    ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
-                    status: 'CONFIRMED',
-                    booking: bookingData,
-                    user: ApiService.cachedCurrentUser,
+
+              final isPartyPlan = bookingData['partyPlanId'] != null ||
+                  bookingData['planId'] != null ||
+                  data['partyPlanId'] != null ||
+                  (item['id']?.toString().startsWith('party_plan_') ?? false) ||
+                  (item['id']?.toString().startsWith('pp_') ?? false);
+
+              final isStrangerMeet = bookingData['meetId'] != null ||
+                  bookingData['strangersMeetId'] != null ||
+                  data['meetId'] != null ||
+                  (item['id']?.toString().startsWith('strangers_meet_') ?? false) ||
+                  (item['id']?.toString().startsWith('meet_') ?? false);
+
+              final isGroupOrLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1) > 1 ||
+                  bookingData['isGroupParty'] == true ||
+                  bookingData['isLargePartyRequest'] == true ||
+                  bookingData['goingMode'] == 'party_request' ||
+                  bookingData['type'] == 'group_party_timeline' ||
+                  bookingData['type'] == 'large_party_timeline' ||
+                  bookingData['isGroupBooking'] == true ||
+                  (item['id']?.toString().startsWith('group_party_') ?? false) ||
+                  (item['id']?.toString().startsWith('large_party_') ?? false);
+
+              if (isPartyPlan) {
+                final planId = bookingData['partyPlanId'] ?? bookingData['planId'] ?? data['partyPlanId'] ?? '';
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PartyPlanTicketScreen(
+                      request: item is Map ? Map<String, dynamic>.from(item) : const {},
+                      plan: {'id': planId, 'venue': venueMap, ...bookingData},
+                      isHost: bookingData['isHost'] == true || data['isHost'] == true,
+                    ),
                   ),
-                ),
-              );
+                ).then((_) {
+                  if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                });
+              } else if (isStrangerMeet) {
+                final smRequest = StrangersMeetRequest.fromJson(bookingData);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StrangersMeetTicketScreen(
+                      request: smRequest,
+                    ),
+                  ),
+                ).then((_) {
+                  if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                });
+              } else if (isGroupOrLarge) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => LargePartyTicketScreen(
+                      booking: bookingData,
+                      venue: venueMap,
+                    ),
+                  ),
+                ).then((_) {
+                  if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                });
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DigitalTicketScreen(
+                      venue: venueMap,
+                      date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
+                      time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
+                      table: 'Standard Entry',
+                      guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
+                      package: 'Digital Pass',
+                      totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+                      ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
+                      status: 'CONFIRMED',
+                      booking: bookingData,
+                      user: ApiService.cachedCurrentUser,
+                    ),
+                  ),
+                ).then((_) {
+                  if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                });
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0284C7),
@@ -5057,13 +6614,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 8. Event Reminder Card Component ───────────────────────────────────────
   Widget _buildEventReminderCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final body =
         item['body']?.toString() ??
-        'Your Stranger Meet starts tomorrow at 8:00 PM';
+        'Your event starts tomorrow!';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5123,12 +6683,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           GestureDetector(
             onTap: () {
               _markAsRead(item);
+              setState(() => _navigatingCardIds.add(cardId));
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                 ),
-              );
+              ).then((_) {
+                if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+              });
             },
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -5156,6 +6719,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── 8B. General / Booking / Meet Cancelled Card Component ────────────────
   Widget _buildCancelledCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final data = item['metadata'] is Map
         ? Map<String, dynamic>.from(item['metadata'])
         : (item['data'] is Map
@@ -5177,6 +6742,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5287,12 +6853,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               child: ElevatedButton.icon(
                 onPressed: () {
                   _markAsRead(item);
+                  if (cardId.isNotEmpty) setState(() => _navigatingCardIds.add(cardId));
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const LunaraWalletScreen(),
                     ),
-                  );
+                  ).then((_) {
+                    if (mounted && cardId.isNotEmpty) setState(() => _navigatingCardIds.remove(cardId));
+                  });
                 },
                 icon: const Icon(
                   Icons.account_balance_wallet_rounded,
@@ -5402,6 +6971,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── Like Card Component (VIP Unmasked vs Free Masked) ───────────────────────
   Widget _buildLikeCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
         : (item['data'] is Map
@@ -5432,15 +7003,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () {
         _markAsRead(item);
         if (isActorMasked) {
+          setState(() => _navigatingCardIds.add(cardId));
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-          );
+          ).then((_) {
+            if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+          });
         } else if (actorId.isNotEmpty) {
-          _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+          _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
         }
       },
       child: Column(
@@ -5448,49 +7023,64 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: isActorMasked
-                      ? const LinearGradient(
-                          colors: [Color(0xFF2A1B38), Color(0xFF581C87)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        )
-                      : const LinearGradient(
-                          colors: [Color(0xFFEC4899), Color(0xFFF43F5E)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: isActorMasked
-                          ? const Color(0xFF581C87).withValues(alpha: 0.3)
-                          : const Color(0xFFEC4899).withValues(alpha: 0.3),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: isActorMasked
-                      ? const Center(
-                          child: Icon(Icons.lock_rounded, color: Color(0xFFE9D5FF), size: 20),
-                        )
-                      : (senderPhoto != null && senderPhoto.isNotEmpty
-                          ? LunaraCachedImage(
-                              ApiService.formatImageUrl(senderPhoto) ?? '',
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const Center(
+              GestureDetector(
+                onTap: () {
+                  if (isActorMasked) {
+                    setState(() => _navigatingCardIds.add(cardId));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                    ).then((_) {
+                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                    });
+                  } else if (actorId.isNotEmpty) {
+                    _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
+                  }
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: isActorMasked
+                        ? const LinearGradient(
+                            colors: [Color(0xFF2A1B38), Color(0xFF581C87)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : const LinearGradient(
+                            colors: [Color(0xFFEC4899), Color(0xFFF43F5E)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isActorMasked
+                            ? const Color(0xFF581C87).withValues(alpha: 0.3)
+                            : const Color(0xFFEC4899).withValues(alpha: 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: isActorMasked
+                        ? const Center(
+                            child: Icon(Icons.lock_rounded, color: Color(0xFFE9D5FF), size: 20),
+                          )
+                        : (senderPhoto != null && senderPhoto.isNotEmpty
+                            ? LunaraCachedImage(
+                                ApiService.formatImageUrl(senderPhoto) ?? '',
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Center(
+                                  child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
+                                ),
+                              )
+                            : const Center(
                                 child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
-                              ),
-                            )
-                          : const Center(
-                              child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
-                            )),
+                              )),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -5562,10 +7152,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 ? ElevatedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
                     icon: const Icon(Icons.workspace_premium_rounded, size: 16, color: Colors.white),
                     label: const Text(
@@ -5587,7 +7180,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     onPressed: () {
                       _markAsRead(item);
                       if (actorId.isNotEmpty) {
-                        _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+                        _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
                       }
                     },
                     icon: const Icon(Icons.person_rounded, size: 14, color: LunaraTheme.hotPink),
@@ -5614,6 +7207,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   // ── Super Like Card Component ─────────────────────────────────────────────
   Widget _buildSuperLikeCard(dynamic item) {
     final bool isUnread = !(item['isRead'] == true || item['read'] == true);
+    final cardId = (item['id'] ?? item['entityId'] ?? '').toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId);
     final data = item['metadata'] is Map
         ? item['metadata'] as Map<String, dynamic>
         : (item['data'] is Map
@@ -5637,10 +7232,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () {
         _markAsRead(item);
         if (senderId.isNotEmpty) {
-          _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+          _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
         }
       },
       child: Column(
@@ -5648,37 +7244,44 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+              GestureDetector(
+                onTap: () {
+                  if (senderId.isNotEmpty) {
+                    _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
+                  }
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: senderPhoto != null && senderPhoto.isNotEmpty
-                      ? LunaraCachedImage(
-                          ApiService.formatImageUrl(senderPhoto) ?? '',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const Center(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: senderPhoto != null && senderPhoto.isNotEmpty
+                        ? LunaraCachedImage(
+                            ApiService.formatImageUrl(senderPhoto) ?? '',
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(Icons.star_rounded, color: Colors.white, size: 22),
+                            ),
+                          )
+                        : const Center(
                             child: Icon(Icons.star_rounded, color: Colors.white, size: 22),
                           ),
-                        )
-                      : const Center(
-                          child: Icon(Icons.star_rounded, color: Colors.white, size: 22),
-                        ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -5743,30 +7346,46 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           ),
           if (firstPlan != null) ...[
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.celebration_rounded, color: Color(0xFF8B5CF6), size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "$senderName's Plan: ${firstPlan['title'] ?? firstPlan['venueName'] ?? 'Party Plan'}",
-                      style: const TextStyle(
-                        color: Color(0xFF1E293B),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+            GestureDetector(
+              onTap: () {
+                _markAsRead(item);
+                setState(() => _navigatingCardIds.add(cardId));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                   ),
-                ],
+                ).then((_) {
+                  if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.celebration_rounded, color: Color(0xFF8B5CF6), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "$senderName's Plan: ${firstPlan['title'] ?? firstPlan['venueName'] ?? 'Party Plan'}",
+                        style: const TextStyle(
+                          color: Color(0xFF1E293B),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFF94A3B8)),
+                  ],
+                ),
               ),
             ),
           ],
@@ -5778,7 +7397,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   onPressed: () {
                     _markAsRead(item);
                     if (senderId.isNotEmpty) {
-                      _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto});
+                      _openUserProfile({'id': senderId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
                     }
                   },
                   icon: const Icon(Icons.person_rounded, size: 14, color: Color(0xFF8B5CF6)),
@@ -5803,12 +7422,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
+                      setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
-                      );
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
                     icon: const Icon(Icons.open_in_new_rounded, size: 14, color: Colors.white),
                     label: const Text(
@@ -5903,11 +7525,12 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     required bool isUnread,
     required VoidCallback onTap,
     required Widget child,
+    bool isLoading = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
-        onTap: onTap,
+        onTap: isLoading ? null : onTap,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -5927,7 +7550,32 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ),
             ],
           ),
-          child: child,
+          child: Stack(
+            children: [
+              child,
+              if (isLoading)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            LunaraTheme.electricViolet,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

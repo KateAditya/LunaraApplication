@@ -45,6 +45,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   double? _calculatedDistanceKm;
   bool _isFetchingDistance = false;
   final Map<String, String> _optimisticJoinerStatus = {};
+  final Set<String> _loadingJoinerActions = {};
 
   @override
   void initState() {
@@ -1874,16 +1875,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPendingRequestsSection(int slotsFilled, int maxPersons) {
-    final pendingJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().where((j) {
-      final id = j['id']?.toString() ?? '';
-      final optStatus = _optimisticJoinerStatus[id];
-      final status = (optStatus ?? j['status']?.toString() ?? '').toLowerCase();
-      return status == 'pending';
-    }).toList();
-
-    if (pendingJoiners.isEmpty) {
+    final rawJoiners = (_meetRequest?.joiners ?? []).whereType<Map>().toList();
+    if (rawJoiners.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final allJoiners = rawJoiners.map((j) {
+      final id = j['id']?.toString() ?? '';
+      if (_optimisticJoinerStatus.containsKey(id)) {
+        final copy = Map<String, dynamic>.from(j);
+        copy['status'] = _optimisticJoinerStatus[id];
+        return copy;
+      }
+      return j;
+    }).toList();
 
     final bool isFull = slotsFilled >= maxPersons;
     final int availableSlots = (maxPersons - slotsFilled).clamp(0, maxPersons);
@@ -1896,7 +1901,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'PENDING REQUESTS (${pendingJoiners.length})',
+              'JOIN REQUESTS (${allJoiners.length})',
               style: const TextStyle(
                 color: Colors.black38,
                 fontSize: 10,
@@ -1948,9 +1953,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: pendingJoiners.length,
+          itemCount: allJoiners.length,
           itemBuilder: (context, index) {
-            final joiner = pendingJoiners[index];
+            final joiner = allJoiners[index];
             final ju = (joiner['user'] is Map)
                 ? joiner['user'] as Map<String, dynamic>
                 : (joiner['requester'] is Map ? joiner['requester'] as Map<String, dynamic> : <String, dynamic>{});
@@ -1968,6 +1973,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             final bio = ju['bio']?.toString() ?? ju['profile']?['bio']?.toString();
             final foodPref = joiner['foodPreference']?.toString() ?? ju['foodPreference']?.toString();
             final drinkPref = joiner['drinkPreference']?.toString() ?? ju['drinkPreference']?.toString();
+
+            final status = (joiner['status'] ?? 'pending').toString().toLowerCase();
+            final payStatus = (joiner['paymentStatus'] ?? '').toString().toLowerCase();
+            final isPaid = status == 'paid' || payStatus == 'paid';
+            final isAccepted = status == 'accepted' || status == 'confirmed' || payStatus == 'pending';
+            final isRejected = status == 'rejected' || status == 'declined';
+            final isCancelled = status == 'cancelled';
+
+            final acceptKey = '$joinerId:accept';
+            final declineKey = '$joinerId:reject';
+            final isAccepting = _loadingJoinerActions.contains(acceptKey);
+            final isDeclining = _loadingJoinerActions.contains(declineKey);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -2040,54 +2057,106 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: isFull
-                              ? null
-                              : () => _handleRequest(joinerId, 'accept'),
-                          icon: const Icon(Icons.check_circle_rounded, size: 16),
-                          label: const Text(
-                            'Approve',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: LunaraTheme.electricViolet,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey[300],
-                            disabledForegroundColor: Colors.grey[600],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                  if (isPaid)
+                    _buildJoinerStatusBadge(
+                      'Paid & Confirmed',
+                      Colors.green,
+                      Icons.check_circle_rounded,
+                    )
+                  else if (isAccepted)
+                    _buildJoinerStatusBadge(
+                      'Accepted • Awaiting Payment',
+                      LunaraTheme.electricViolet,
+                      Icons.hourglass_top_rounded,
+                    )
+                  else if (isRejected)
+                    _buildJoinerStatusBadge(
+                      'Declined',
+                      Colors.redAccent,
+                      Icons.cancel_rounded,
+                    )
+                  else if (isCancelled)
+                    _buildJoinerStatusBadge(
+                      'Cancelled',
+                      Colors.grey,
+                      Icons.cancel_outlined,
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: (isFull || isAccepting || isDeclining)
+                                ? null
+                                : () => _handleRequest(joinerId, 'accept'),
+                            icon: isAccepting
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.check_circle_rounded, size: 16),
+                            label: Text(
+                              isAccepting ? 'Approving...' : 'Approve',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: LunaraTheme.electricViolet,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey[300],
+                              disabledForegroundColor: Colors.grey[600],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _handleRequest(joinerId, 'reject'),
-                          icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.redAccent),
-                          label: const Text(
-                            'Decline',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Colors.redAccent,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: (isAccepting || isDeclining)
+                                ? null
+                                : () => _handleRequest(joinerId, 'reject'),
+                            icon: isDeclining
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.redAccent,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.cancel_rounded,
+                                    size: 16,
+                                    color: Colors.redAccent,
+                                  ),
+                            label: Text(
+                              isDeclining ? 'Declining...' : 'Decline',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Colors.redAccent,
+                              ),
                             ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0x40EF4444)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0x40EF4444)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
             );
@@ -2097,11 +2166,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  Widget _buildJoinerStatusBadge(String text, Color color, IconData icon) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleRequest(String joinerId, String action) async {
     final req = _meetRequest;
     if (req == null) return;
 
-    if (!OptimisticActionGuard.start('HANDLE_MEET_REQ:${req.id}:$joinerId')) return;
+    final actionKey = '$joinerId:$action';
+    if (_loadingJoinerActions.contains(actionKey)) return;
+    setState(() => _loadingJoinerActions.add(actionKey));
+
+    if (!OptimisticActionGuard.start('HANDLE_MEET_REQ:${req.id}:$joinerId')) {
+      setState(() => _loadingJoinerActions.remove(actionKey));
+      return;
+    }
 
     final prevStatus = _optimisticJoinerStatus[joinerId];
 
@@ -2125,11 +2228,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             content: Text(
               action == 'accept'
                   ? 'Join request accepted!'
-                  : 'Join request rejected.',
+                  : 'Join request declined.',
             ),
             backgroundColor: action == 'accept' ? Colors.green : Colors.grey[800],
           ),
         );
+        _loadStrangersMeetDetails(showFullScreenLoader: false);
       } else {
         // Rollback
         setState(() {
@@ -2163,6 +2267,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
     } finally {
+      if (mounted) {
+        setState(() => _loadingJoinerActions.remove(actionKey));
+      }
       OptimisticActionGuard.end('HANDLE_MEET_REQ:${req.id}:$joinerId');
     }
   }

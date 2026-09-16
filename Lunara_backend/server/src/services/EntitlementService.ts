@@ -196,7 +196,7 @@ export class EntitlementService {
             UserAddon.findAll({
                 where: {
                     userId,
-                    status: UserAddonStatus.ACTIVE,
+                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                     remainingQuantity: { [Op.gt]: 0 },
                 },
                 include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
@@ -691,7 +691,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['superlike', 'super_likes', 'super_like'] },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -699,18 +699,22 @@ export class EntitlementService {
                     const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
                     const totalRemaining = newRemaining + addonRemaining;
 
-                    await EntitlementAuditLog.create({
-                        userId,
-                        subscriptionId: activeSub.id,
-                        feature: 'superlike',
-                        action: 'PLAN_ENTITLEMENT_CONSUMED',
-                        source: 'PLAN',
-                        quantity: -amount,
-                        oldValue: { superlikesRemaining: currentSuperlikes },
-                        newValue: { superlikesRemaining: newRemaining },
-                        requestId: options.requestId,
-                        metadata: options.metadata,
-                    }, { transaction: t });
+                    try {
+                        await EntitlementAuditLog.create({
+                            userId,
+                            subscriptionId: activeSub.id,
+                            feature: 'superlike',
+                            action: 'PLAN_ENTITLEMENT_CONSUMED',
+                            source: 'PLAN',
+                            quantity: -amount,
+                            oldValue: { superlikesRemaining: currentSuperlikes },
+                            newValue: { superlikesRemaining: newRemaining },
+                            requestId: options.requestId,
+                            metadata: options.metadata,
+                        }, { transaction: t });
+                    } catch (auditErr) {
+                        logger.warn('[EntitlementService] Non-fatal audit log error:', auditErr);
+                    }
 
                     await t.commit();
                     const { SubscriptionService } = await import('./subscriptionService');
@@ -761,7 +765,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['profile_boost', 'boost', 'boosts'] },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -769,18 +773,22 @@ export class EntitlementService {
                     const addonRemaining = userAddons.reduce((acc, a) => acc + (Number(a.remainingQuantity) || 0), 0);
                     const totalRemaining = newRemaining + addonRemaining;
 
-                    await EntitlementAuditLog.create({
-                        userId,
-                        subscriptionId: activeSub.id,
-                        feature: 'profile_boost',
-                        action: 'PLAN_ENTITLEMENT_CONSUMED',
-                        source: 'PLAN',
-                        quantity: -amount,
-                        oldValue: { boostsRemaining: currentBoosts },
-                        newValue: { boostsRemaining: newRemaining },
-                        requestId: options.requestId,
-                        metadata: options.metadata,
-                    }, { transaction: t });
+                    try {
+                        await EntitlementAuditLog.create({
+                            userId,
+                            subscriptionId: activeSub.id,
+                            feature: 'profile_boost',
+                            action: 'PLAN_ENTITLEMENT_CONSUMED',
+                            source: 'PLAN',
+                            quantity: -amount,
+                            oldValue: { boostsRemaining: currentBoosts },
+                            newValue: { boostsRemaining: newRemaining },
+                            requestId: options.requestId,
+                            metadata: options.metadata,
+                        }, { transaction: t });
+                    } catch (auditErr) {
+                        logger.warn('[EntitlementService] Non-fatal audit log error:', auditErr);
+                    }
 
                     await t.commit();
                     const { SubscriptionService } = await import('./subscriptionService');
@@ -836,7 +844,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['daily_likes', 'likes', 'like'] },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -866,18 +874,22 @@ export class EntitlementService {
             const isUnlimitedBacktracks = isElite || (activePkg && (activePkg.backtrackLimit === -1 || activePkg.backtrackLimit >= 9999));
             if (normalizedKey === 'backtrack' && isUnlimitedBacktracks) {
                 if (activeSub) {
-                    await EntitlementAuditLog.create({
-                        userId,
-                        subscriptionId: activeSub.id,
-                        feature: 'backtrack',
-                        action: 'ELITE_UNLIMITED_CONSUMED',
-                        source: 'PLAN',
-                        quantity: -amount,
-                        oldValue: { unlimited: true },
-                        newValue: { unlimited: true },
-                        requestId: options.requestId,
-                        metadata: options.metadata,
-                    }, { transaction: t });
+                    try {
+                        await EntitlementAuditLog.create({
+                            userId,
+                            subscriptionId: activeSub.id,
+                            feature: 'backtrack',
+                            action: 'ELITE_UNLIMITED_CONSUMED',
+                            source: 'PLAN',
+                            quantity: -amount,
+                            oldValue: { unlimited: true },
+                            newValue: { unlimited: true },
+                            requestId: options.requestId,
+                            metadata: options.metadata,
+                        }, { transaction: t });
+                    } catch (auditErr) {
+                        logger.warn('[EntitlementService] Non-fatal audit log error:', auditErr);
+                    }
                 }
 
                 await t.commit();
@@ -928,7 +940,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['backtrack', 'undo', 'backtracks'] },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -983,7 +995,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -1026,7 +1038,7 @@ export class EntitlementService {
                 where: {
                     userId,
                     featureKey: { [Op.in]: addonKeys },
-                    status: UserAddonStatus.ACTIVE,
+                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                     remainingQuantity: { [Op.gt]: 0 },
                 },
                 order: [['createdAt', 'ASC']],
@@ -1062,7 +1074,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: addonKeys },
-                            status: UserAddonStatus.ACTIVE,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -1088,21 +1100,27 @@ export class EntitlementService {
                                 ? (activePkg?.dailyLikes || 50)
                                 : (normalizedKey === 'backtrack')
                                     ? (activePkg?.backtrackLimit || 3)
-                                    : 0;
+                                    : (normalizedKey === 'party_creation')
+                                        ? ((activePkg as any)?.partyPlanLimit ?? (activePkg?.tier === PackageTier.FREE ? 1 : 3))
+                                        : 0;
                     const totalGranted = baseGranted + totalAddonPurchased;
 
-                    await EntitlementAuditLog.create({
-                        userId,
-                        addonId: primaryAddonId,
-                        feature: normalizedKey,
-                        action: 'ADDON_ENTITLEMENT_CONSUMED',
-                        source: 'ADDON',
-                        quantity: -consumedFromAddons,
-                        oldValue: { remainingQuantity: totalAddonRemaining + consumedFromAddons },
-                        newValue: { remainingQuantity: totalAddonRemaining },
-                        requestId: options.requestId,
-                        metadata: options.metadata,
-                    }, { transaction: t });
+                    try {
+                        await EntitlementAuditLog.create({
+                            userId,
+                            addonId: primaryAddonId,
+                            feature: normalizedKey,
+                            action: 'ADDON_ENTITLEMENT_CONSUMED',
+                            source: 'ADDON',
+                            quantity: -consumedFromAddons,
+                            oldValue: { remainingQuantity: totalAddonRemaining + consumedFromAddons },
+                            newValue: { remainingQuantity: totalAddonRemaining },
+                            requestId: options.requestId,
+                            metadata: options.metadata,
+                        }, { transaction: t });
+                    } catch (auditErr) {
+                        logger.warn('[EntitlementService] Non-fatal audit log error:', auditErr);
+                    }
 
                     await t.commit();
                     const { SubscriptionService } = await import('./subscriptionService');
