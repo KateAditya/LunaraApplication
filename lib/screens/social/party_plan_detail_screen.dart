@@ -3312,17 +3312,24 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   Widget _myPlanBanner() {
     final plan = widget.plan;
     final lifecycleStatus = plan['lifecycleStatus']?.toString() ?? plan['lifecycle_status']?.toString() ?? '';
-    final planStatus = plan['status']?.toString() ?? '';
     final hostPaymentStatus = plan['hostPaymentStatus']?.toString() ?? plan['host_payment_status']?.toString() ?? '';
     final chatEnabled = plan['chatEnabled'] == true || plan['chat_enabled'] == true;
+    final joinerPaid = _isJoinerPaid(plan);
+    final isHostPaid = hostPaymentStatus == 'paid' || hostPaymentStatus == 'completed';
+    final isHostPaysOnly = (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'host_pays' ||
+        (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'i_pay' ||
+        (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'free';
 
-    // Determine if the plan is fully confirmed (match locked)
-    final isConfirmed = chatEnabled ||
+    // Determine if the plan is fully confirmed (match locked and payments completed)
+    final isConfirmed = isHostPaid && (joinerPaid || isHostPaysOnly) && (
+        chatEnabled ||
         lifecycleStatus == 'match_confirmed' ||
         lifecycleStatus == 'chat_enabled' ||
         lifecycleStatus == 'event_reminder' ||
         lifecycleStatus == 'arrival_confirmation' ||
-        (planStatus == 'inactive' && hostPaymentStatus == 'paid');
+        lifecycleStatus == 'both_arrived' ||
+        lifecycleStatus == 'plan_completed'
+    );
 
     if (isConfirmed) {
       // Host sees: Ticket + Chat + Cancel after plan is matched

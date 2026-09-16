@@ -762,12 +762,28 @@ export const getAllCustomers = async (req: Request, res: Response): Promise<Resp
             }
         }
         if (search) {
-            userWhere[Op.or] = [
+            const searchTokens = search.split(/\s+/).filter(Boolean);
+            const searchConditions: any[] = [
                 { firstName: { [Op.iLike]: `%${search}%` } },
                 { lastName: { [Op.iLike]: `%${search}%` } },
                 { email: { [Op.iLike]: `%${search}%` } },
                 { phone: { [Op.iLike]: `%${search}%` } },
+                sequelize.where(
+                    sequelize.fn('concat', sequelize.col('User.first_name'), ' ', sequelize.col('User.last_name')),
+                    { [Op.iLike]: `%${search}%` }
+                ),
             ];
+            if (searchTokens.length > 1) {
+                searchConditions.push({
+                    [Op.and]: searchTokens.map((t: string) => ({
+                        [Op.or]: [
+                            { firstName: { [Op.iLike]: `%${t}%` } },
+                            { lastName: { [Op.iLike]: `%${t}%` } },
+                        ]
+                    }))
+                });
+            }
+            userWhere[Op.or] = searchConditions;
         }
 
         // Build Profile-level where clause (for city filter)

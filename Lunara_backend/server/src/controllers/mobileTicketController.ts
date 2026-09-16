@@ -19,6 +19,7 @@ import {
 } from '../models';
 import { TicketStatus } from '../models/Ticket';
 import { GoingMode } from '../models/Booking';
+import { PartyPlanLifecycleStatus } from '../models/PartyPlan';
 import { PartyPlanRequestStatus, PartyPlanJoinerPaymentStatus } from '../models/PartyPlanRequest';
 import { StrangersMeetStatus } from '../models/StrangersMeetRequest';
 import { StrangersMeetJoinerStatus } from '../models/StrangersMeetJoiner';
@@ -884,13 +885,20 @@ export class MobileTicketController {
                 const isCancelledReq = sStatus === 'cancelled' || sStatus === 'rejected' || pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || (req.joinerPaymentStatus || '').toLowerCase() === 'refunded' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
 
                 const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
-                const joinerPaid = (req.joinerPaymentStatus || '').toLowerCase() === 'paid' || (req.joinerPaymentStatus || '').toLowerCase() === 'refunded' || plan.paymentType === 'self_pay';
-                const isBothPaidMatch = (hostPaid && joinerPaid && (
-                    plan.lifecycleStatus === 'match_confirmed' ||
-                    plan.lifecycleStatus === 'chat_enabled' ||
-                    plan.lifecycleStatus === 'event_upcoming' ||
-                    plan.matchedRequestId === req.id
-                )) || isCancelledReq;
+                const isJoinerExempt = (plan.paymentType || '').toLowerCase() === 'host_pays' || (plan.paymentType || '').toLowerCase() === 'i_pay' || (plan.paymentType || '').toLowerCase() === 'free';
+                const joinerPaid = (req.joinerPaymentStatus || '').toLowerCase() === 'paid' || (req.joinerPaymentStatus || '').toLowerCase() === 'refunded' || isJoinerExempt;
+
+                const isBothPaidMatch = isCancelledReq || (
+                    hostPaid && joinerPaid && (
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.MATCH_CONFIRMED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.CHAT_ENABLED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.EVENT_UPCOMING ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_VERIFIED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.PLAN_COMPLETED ||
+                        (plan.matchedRequestId === req.id && (req.joinerPaymentStatus || '').toLowerCase() === 'paid')
+                    )
+                );
 
                 if (!isBothPaidMatch) {
                     continue;
@@ -1033,19 +1041,33 @@ export class MobileTicketController {
             for (const plan of partyPlanHostPlans) {
                 const planAny = plan as any;
 
-                // STRICT RULE: No ticket for Host until host deposit is paid AND a partner match is confirmed, unless cancelled!
+                // STRICT RULE: No ticket for Host until BOTH host deposit is paid AND joiner deposit is paid, unless cancelled!
                 const pLife = (plan.lifecycleStatus || '').toLowerCase();
                 const isCancelledPlan = pLife === 'cancelled' || (plan.status || '').toLowerCase() === 'cancelled' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
 
                 const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
-                const isMatchConfirmed = (
-                    plan.lifecycleStatus === 'match_confirmed' ||
-                    plan.lifecycleStatus === 'chat_enabled' ||
-                    plan.lifecycleStatus === 'event_upcoming' ||
-                    Boolean(plan.matchedRequestId) ||
-                    isCancelledPlan
+
+                // Look up matched joiner request
+                const matchedReq = plan.matchedRequestId 
+                    ? partyPlanRequestsByPlanId.get(plan.matchedRequestId) || (sourcePartyPlanRequests || []).find((r: any) => r.id === plan.matchedRequestId || r.planId === plan.id)
+                    : partyPlanRequestsByPlanId.get(plan.id);
+
+                const joinerPaidStatus = (matchedReq?.joinerPaymentStatus || '').toLowerCase();
+                const isJoinerExempt = (plan.paymentType || '').toLowerCase() === 'host_pays' || (plan.paymentType || '').toLowerCase() === 'i_pay' || (plan.paymentType || '').toLowerCase() === 'free';
+                const joinerPaid = joinerPaidStatus === 'paid' || joinerPaidStatus === 'refunded' || isJoinerExempt;
+
+                const isMatchConfirmed = isCancelledPlan || (
+                    hostPaid && joinerPaid && (
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.MATCH_CONFIRMED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.CHAT_ENABLED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.EVENT_UPCOMING ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_VERIFIED ||
+                        plan.lifecycleStatus === PartyPlanLifecycleStatus.PLAN_COMPLETED ||
+                        (Boolean(plan.matchedRequestId) && joinerPaidStatus === 'paid')
+                    )
                 );
-                if (!hostPaid || !isMatchConfirmed) {
+                if (!isMatchConfirmed) {
                     continue;
                 }
 

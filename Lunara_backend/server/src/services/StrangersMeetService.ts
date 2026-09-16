@@ -57,6 +57,9 @@ export class StrangersMeetService {
             apiCache.invalidatePattern('sm_feed');
             apiCache.invalidatePattern('bookings');
             apiCache.invalidatePattern('tickets');
+            apiCache.invalidatePrefix('strangers_meet');
+            apiCache.invalidatePrefix('sm_');
+            apiCache.invalidatePrefix('notifs:');
         } catch (e) {
             logger.warn(`[StrangersMeetService] Cache invalidation error: ${e}`);
         }
@@ -666,11 +669,20 @@ export class StrangersMeetService {
                         const acceptedCount = joiners.filter((j: any) => j.status === 'accepted' || j.status === 'paid' || j.paymentStatus === 'paid').length;
                         const remainingSlots = Math.max(0, request.numberOfPersons - acceptedCount);
                         const isFull = acceptedCount >= request.numberOfPersons;
-                        currentStatusText = isFull
-                            ? `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • FULL`
-                            : `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • ${remainingSlots} slots remaining`;
-                        primaryAction = 'View Meet';
-                        primaryActionUrl = `/strangers-meet/${request.id}`;
+                        const pendingJoinersList = joiners.filter((j: any) => j.status === 'pending');
+                        if (pendingJoinersList.length > 0) {
+                            currentStatusText = pendingJoinersList.length === 1
+                                ? `📥 1 Join Request Pending Review • ${acceptedCount}/${request.numberOfPersons} Accepted`
+                                : `📥 ${pendingJoinersList.length} Join Requests Pending Review • ${acceptedCount}/${request.numberOfPersons} Accepted`;
+                            primaryAction = 'Review Requests';
+                            primaryActionUrl = `/strangers-meet/${request.id}`;
+                        } else {
+                            currentStatusText = isFull
+                                ? `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • FULL`
+                                : `✓ ${acceptedCount} / ${request.numberOfPersons} Accepted • ${remainingSlots} slots remaining`;
+                            primaryAction = 'View Meet';
+                            primaryActionUrl = `/strangers-meet/${request.id}`;
+                        }
                     }
                 } else {
                     if (userJoiner?.status === 'accepted' && userJoiner?.paymentStatus !== 'paid') {
@@ -785,6 +797,7 @@ export class StrangersMeetService {
                 isFull,
                 pendingRequestsCount: pendingJoiners.length,
                 pendingRequests: pendingJoiners.map((j: any) => ({
+                    id: j.id,
                     joinerId: j.id,
                     userId: j.user?.id || j.userId,
                     name: j.user ? `${j.user.firstName} ${j.user.lastName}`.trim() : 'Participant',
@@ -793,6 +806,26 @@ export class StrangersMeetService {
                     drinkPreference: j.drinkPreference,
                     status: j.status,
                     createdAt: j.createdAt,
+                    requester: j.user ? {
+                        id: j.user.id,
+                        firstName: j.user.firstName,
+                        lastName: j.user.lastName,
+                        profileImageUrl: j.user.profileImageUrl,
+                    } : {
+                        id: j.userId,
+                        firstName: 'Participant',
+                        lastName: '',
+                    },
+                    user: j.user ? {
+                        id: j.user.id,
+                        firstName: j.user.firstName,
+                        lastName: j.user.lastName,
+                        profileImageUrl: j.user.profileImageUrl,
+                    } : {
+                        id: j.userId,
+                        firstName: 'Participant',
+                        lastName: '',
+                    },
                 })),
                 pendingCancellationRequests: pendingCancellations.map((c: any) => ({
                     cancellationId: c.id,

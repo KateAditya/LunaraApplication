@@ -1614,19 +1614,26 @@ export const sendJoinRequest = async (req: Request, res: Response): Promise<void
 
         try {
             const requester = await User.findByPk(userId);
+            const Venue = (await import('../models/Venue')).default;
+            const venue = request.venueId ? await Venue.findByPk(request.venueId) : null;
+            const venueName = venue?.name || 'the venue';
             if (requester) {
                 await StrangersMeetService.emitNotification({
                     recipientUserId: request.userId,
                     eventType: 'strangers_meet_join_request',
-                    title: '✨ Join Request Received',
-                    body: `${requester.firstName} ${requester.lastName} requested to join your "${request.subject}" meet.`,
+                    title: '📥 Join Request Received',
+                    body: `${requester.firstName} ${requester.lastName} requested to join your "${request.subject || 'Stranger Meet'}" meet at ${venueName}.`,
                     entityId: request.id,
                     metadata: {
+                        type: 'strangers_meet_timeline',
+                        strangersMeetId: request.id,
                         requestId: request.id,
                         joinerId: joiner.id,
                         requesterId: requester.id,
-                        requesterName: `${requester.firstName} ${requester.lastName}`,
+                        requesterName: `${requester.firstName} ${requester.lastName}`.trim(),
                         requesterPhoto: requester.profileImageUrl,
+                        foodPreference: joiner.foodPreference,
+                        drinkPreference: joiner.drinkPreference,
                     },
                 });
             }

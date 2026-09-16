@@ -801,10 +801,11 @@ class ApiService {
     int page = 1,
     bool includeAllCities = true,
     bool forceRefresh = false,
+    String? search,
   }) async {
     final targetCity = includeAllCities ? 'all' : (city ?? selectedCity ?? '');
     final cacheKey =
-        '${targetCity.toLowerCase()}_${limit}_${page}_$includeAllCities';
+        '${targetCity.toLowerCase()}_${limit}_${page}_${includeAllCities}_${search ?? ''}';
     final now = DateTime.now();
 
     if (!forceRefresh && _cachedCustomers.containsKey(cacheKey)) {
@@ -822,6 +823,9 @@ class ApiService {
       };
       if (userId != null) params['currentUserId'] = userId;
       if (forceRefresh) params['refresh'] = 'true';
+      if (search != null && search.trim().isNotEmpty) {
+        params['search'] = search.trim();
+      }
       if (includeAllCities) {
         params['allCities'] = 'true';
       } else {

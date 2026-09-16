@@ -10284,6 +10284,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       } else if (e['plan'] is Map && (e['plan'] as Map).isNotEmpty) {
         meetMap = Map<String, dynamic>.from(e['plan']);
         break;
+      } else if (e['cardPayload'] is Map && (e['cardPayload'] as Map).isNotEmpty) {
+        meetMap = Map<String, dynamic>.from(e['cardPayload']);
+        break;
+      } else if (e['data'] is Map && e['data']['cardPayload'] is Map && (e['data']['cardPayload'] as Map).isNotEmpty) {
+        meetMap = Map<String, dynamic>.from(e['data']['cardPayload']);
+        break;
       } else if (e['requestType'] == 'stranger_meet' ||
           e['category'] == 'stranger_meet') {
         meetMap = Map<String, dynamic>.from(e);
@@ -10296,6 +10302,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         meetMap = Map<String, dynamic>.from(first['data']);
       } else {
         meetMap = Map<String, dynamic>.from(first);
+      }
+    }
+    for (final e in entries) {
+      final cp = e['cardPayload'] is Map
+          ? e['cardPayload'] as Map<String, dynamic>
+          : (e['data'] is Map && e['data']['cardPayload'] is Map
+              ? e['data']['cardPayload'] as Map<String, dynamic>
+              : null);
+      if (cp != null) {
+        cp.forEach((k, v) {
+          if (!meetMap.containsKey(k) || meetMap[k] == null) {
+            meetMap[k] = v;
+          }
+        });
       }
     }
     meetMap['id'] = meetMap['id'] ?? meetId;
@@ -10408,6 +10428,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         paidJoinerRecord = e;
       } else if (status == 'accepted' || status == 'payment_pending') {
         acceptedJoinerRecord = e;
+      }
+    }
+
+    if (isHost && pendingIncomingRequests.isEmpty && meetMap['pendingRequests'] is List) {
+      for (final p in (meetMap['pendingRequests'] as List)) {
+        if (p is Map) {
+          final pMap = Map<String, dynamic>.from(p);
+          final pStatus = (pMap['status'] ?? 'pending').toString().toLowerCase();
+          if (pStatus == 'pending') {
+            final pReq = pMap['requester'] is Map
+                ? Map<String, dynamic>.from(pMap['requester'])
+                : (pMap['user'] is Map
+                    ? Map<String, dynamic>.from(pMap['user'])
+                    : <String, dynamic>{
+                        'id': pMap['userId'] ?? pMap['joinerId'],
+                        'firstName': pMap['name'] ?? 'Participant',
+                        'lastName': '',
+                        'profileImageUrl': pMap['photo'] ?? pMap['profileImageUrl'],
+                      });
+            pendingIncomingRequests.add({
+              'id': pMap['joinerId'] ?? pMap['id'],
+              'joinerId': pMap['joinerId'] ?? pMap['id'],
+              'status': 'pending',
+              'requester': pReq,
+              'foodPreference': pMap['foodPreference'],
+              'drinkPreference': pMap['drinkPreference'],
+            });
+          }
+        }
+      }
+    }
+    if (isHost && pendingIncomingRequests.isEmpty && meetMap['joiners'] is List) {
+      for (final j in (meetMap['joiners'] as List)) {
+        if (j is Map) {
+          final jMap = Map<String, dynamic>.from(j);
+          final jStatus = (jMap['status'] ?? '').toString().toLowerCase();
+          if (jStatus == 'pending') {
+            final jUser = jMap['user'] is Map
+                ? Map<String, dynamic>.from(jMap['user'])
+                : <String, dynamic>{
+                    'id': jMap['userId'],
+                    'firstName': 'Participant',
+                  };
+            pendingIncomingRequests.add({
+              'id': jMap['id'],
+              'joinerId': jMap['id'],
+              'status': 'pending',
+              'requester': jUser,
+              'foodPreference': jMap['foodPreference'],
+              'drinkPreference': jMap['drinkPreference'],
+            });
+          }
+        }
       }
     }
 

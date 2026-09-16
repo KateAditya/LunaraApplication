@@ -4996,10 +4996,28 @@ export const getPartyPlanTicket = async (req: Request, res: Response): Promise<v
             (request?.joinerPaymentStatus || '').toLowerCase() === 'refunded';
 
         const hostPaid = (plan.hostPaymentStatus || '').toLowerCase() === 'paid' || (plan.hostPaymentStatus || '').toLowerCase() === 'refunded';
-        const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || (request?.joinerPaymentStatus || '').toLowerCase() === 'refunded' || plan.paymentType === 'self_pay';
-        const isPlanConfirmed = plan.lifecycleStatus === 'match_confirmed' || plan.lifecycleStatus === 'chat_enabled' || plan.lifecycleStatus === 'event_upcoming' || isCancelled;
-        if (!hostPaid && !joinerPaid && !isPlanConfirmed) {
-            res.status(403).json({ success: false, message: 'Ticket is unavailable until payments are verified.' });
+        const isJoinerExempt = (plan.paymentType || '').toLowerCase() === 'host_pays' || (plan.paymentType || '').toLowerCase() === 'i_pay' || (plan.paymentType || '').toLowerCase() === 'free';
+        const joinerPaid = (request?.joinerPaymentStatus || '').toLowerCase() === 'paid' || (request?.joinerPaymentStatus || '').toLowerCase() === 'refunded' || isJoinerExempt;
+
+        const isMatchFullyConfirmed = (
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.MATCH_CONFIRMED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.CHAT_ENABLED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.EVENT_UPCOMING ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_CONFIRMATION ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.ARRIVAL_VERIFIED ||
+            plan.lifecycleStatus === PartyPlanLifecycleStatus.PLAN_COMPLETED
+        ) && hostPaid && joinerPaid;
+
+        if (!isCancelled && (!hostPaid || !joinerPaid || !request || !isMatchFullyConfirmed)) {
+            res.status(403).json({
+                success: false,
+                message: 'Ticket is unavailable until both host and partner complete their payments and match is confirmed.',
+                data: {
+                    hostPaid,
+                    joinerPaid,
+                    lifecycleStatus: plan.lifecycleStatus,
+                }
+            });
             return;
         }
 

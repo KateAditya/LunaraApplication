@@ -23,7 +23,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
   String _selectedGender = 'All';
   String _selectedAgeRange = 'All Ages';
-  String _selectedSortFilter = 'Top Ranked'; // 'Top Ranked', 'Boosted', 'Most Liked'
+  String _selectedSortFilter = 'All'; // 'All', 'Top Ranked', 'Boosted ⚡', 'VIP Plans 👑', 'Most Liked ❤️'
 
   final List<String> _genders = ['All', 'Female', 'Male', 'Other'];
   final List<String> _ageRanges = [
@@ -34,8 +34,10 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     '45+',
   ];
   final List<String> _sortFilters = [
+    'All',
     'Top Ranked',
     'Boosted ⚡',
+    'VIP Plans 👑',
     'Most Liked ❤️',
   ];
 
@@ -91,24 +93,53 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
           if (uId == currentUserId) return false;
         }
 
-        // Search query
-        final String name =
-            (user['firstName'] ?? user['fullName'] ?? user['name'] ?? 'User')
-                .toString()
-                .toLowerCase();
-        final String userName = (user['userName'] ?? '')
-            .toString()
-            .toLowerCase();
-        final String email = (user['email'] ?? '')
-            .toString()
-            .toLowerCase();
-        final String city = (user['city'] ?? (user['profile'] is Map ? user['profile']['city'] : '') ?? '')
-            .toString()
-            .toLowerCase();
+        // Comprehensive search query matching
         final q = _searchQuery.toLowerCase().trim();
-        final bool matchesSearch =
-            q.isEmpty || name.contains(q) || userName.contains(q) || email.contains(q) || city.contains(q);
-        if (!matchesSearch) return false;
+        if (q.isNotEmpty) {
+          final String firstName = (user['firstName'] ?? '').toString().toLowerCase();
+          final String lastName = (user['lastName'] ?? '').toString().toLowerCase();
+          final String fullName = (user['fullName'] ?? '$firstName $lastName').toString().toLowerCase();
+          final String name = (user['name'] ?? user['displayName'] ?? fullName).toString().toLowerCase();
+          final String userName = (user['userName'] ?? user['username'] ?? '').toString().toLowerCase();
+          final String email = (user['email'] ?? '').toString().toLowerCase();
+          final String phone = (user['phone'] ?? '').toString().toLowerCase();
+          final String city = (user['city'] ?? (user['profile'] is Map ? user['profile']['city'] : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final String bio = (user['bio'] ?? (user['profile'] is Map ? user['profile']['bio'] : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final String occupation = (user['occupation'] ?? (user['profile'] is Map ? user['profile']['occupation'] : '') ?? '')
+              .toString()
+              .toLowerCase();
+          final String ig = (user['profile'] is Map ? (user['profile']['instagramHandle'] ?? '') : '')
+              .toString()
+              .toLowerCase();
+
+          final qWords = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+          final bool matchesSearch = name.contains(q) ||
+              fullName.contains(q) ||
+              firstName.contains(q) ||
+              lastName.contains(q) ||
+              userName.contains(q) ||
+              email.contains(q) ||
+              phone.contains(q) ||
+              city.contains(q) ||
+              bio.contains(q) ||
+              occupation.contains(q) ||
+              ig.contains(q) ||
+              (qWords.length > 1 && qWords.every((w) =>
+                  firstName.contains(w) ||
+                  lastName.contains(w) ||
+                  fullName.contains(w) ||
+                  city.contains(w) ||
+                  userName.contains(w) ||
+                  occupation.contains(w)
+              ));
+
+          if (!matchesSearch) return false;
+        }
 
         // Gender filter
         if (_selectedGender != 'All') {
@@ -162,6 +193,11 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               (user['boostCount'] != null && (int.tryParse(user['boostCount'].toString()) ?? 0) > 0) ||
               (user['boostsRemaining'] != null && (int.tryParse(user['boostsRemaining'].toString()) ?? 0) > 0);
           if (!isBoosted) return false;
+        } else if (_selectedSortFilter == 'VIP Plans 👑') {
+          final rawTier = (user['subscriptionTier'] ?? user['tier'] ?? user['packageTier'] ?? 'FREE').toString().toUpperCase();
+          final tier = (rawTier == 'NULL' || rawTier == 'UNDEFINED') ? 'FREE' : rawTier;
+          final bool hasPlan = tier != 'FREE';
+          if (!hasPlan) return false;
         }
 
         return true;
@@ -169,6 +205,39 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
       // Advanced Ranking & Sorting Engine
       filtered.sort((a, b) {
+        // When searching, sort primarily by match relevance
+        final q = _searchQuery.toLowerCase().trim();
+        if (q.isNotEmpty) {
+          final String firstNameA = (a['firstName'] ?? '').toString().toLowerCase();
+          final String lastNameA = (a['lastName'] ?? '').toString().toLowerCase();
+          final String fullNameA = (a['fullName'] ?? '$firstNameA $lastNameA').toString().toLowerCase();
+          final String nameA = (a['name'] ?? a['displayName'] ?? fullNameA).toString().toLowerCase();
+          final String uNameA = (a['userName'] ?? a['username'] ?? '').toString().toLowerCase();
+          final String cityA = (a['city'] ?? (a['profile'] is Map ? a['profile']['city'] : '') ?? '').toString().toLowerCase();
+
+          final String firstNameB = (b['firstName'] ?? '').toString().toLowerCase();
+          final String lastNameB = (b['lastName'] ?? '').toString().toLowerCase();
+          final String fullNameB = (b['fullName'] ?? '$firstNameB $lastNameB').toString().toLowerCase();
+          final String nameB = (b['name'] ?? b['displayName'] ?? fullNameB).toString().toLowerCase();
+          final String uNameB = (b['userName'] ?? b['username'] ?? '').toString().toLowerCase();
+          final String cityB = (b['city'] ?? (b['profile'] is Map ? b['profile']['city'] : '') ?? '').toString().toLowerCase();
+
+          int relevanceScore(String n, String fn, String un, String c) {
+            if (n == q || fn == q || un == q) return 100;
+            if (fn.startsWith(q) || n.startsWith(q) || un.startsWith(q)) return 80;
+            if (fn.contains(q) || n.contains(q) || un.contains(q)) return 60;
+            if (c == q || c.startsWith(q)) return 40;
+            if (c.contains(q)) return 20;
+            return 10;
+          }
+
+          final int relA = relevanceScore(nameA, fullNameA, uNameA, cityA);
+          final int relB = relevanceScore(nameB, fullNameB, uNameB, cityB);
+          if (relA != relB) {
+            return relB.compareTo(relA);
+          }
+        }
+
         if (_selectedSortFilter == 'Most Liked ❤️') {
           final likesA = (a['likesCount'] is num ? a['likesCount'] : int.tryParse(a['likesCount']?.toString() ?? '0') ?? 0).toInt() +
               ((a['superLikesCount'] is num ? a['superLikesCount'] : int.tryParse(a['superLikesCount']?.toString() ?? '0') ?? 0).toInt() * 2);
@@ -177,7 +246,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
           return likesB.compareTo(likesA);
         }
 
-        // Default: Top Ranked (Boost (5M) > VIP Tier (1M/750k/500k/250k) > Superlikes > Likes > Recency)
+        // Top Ranked / Default / All:
         final scoreA = (a['rankScore'] is num
             ? a['rankScore']
             : double.tryParse(a['rankScore']?.toString() ?? '0') ?? 0);
@@ -214,7 +283,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
       _searchQuery.isNotEmpty ||
       _selectedGender != 'All' ||
       _selectedAgeRange != 'All Ages' ||
-      _selectedSortFilter != 'Top Ranked';
+      _selectedSortFilter != 'All';
 
   void _onSearchChanged(String query) {
     _searchQuery = query;
@@ -327,11 +396,11 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
             ),
           ),
 
-          // Sort Filters Row
+          // Sort Filters Row (Purple gradient on selected, clean white on unselected)
           Padding(
             padding: const EdgeInsets.only(left: 20, right: 20, bottom: 6),
             child: SizedBox(
-              height: 34,
+              height: 36,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
@@ -345,7 +414,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                     onTap: () {
                       setState(() {
                         if (_selectedSortFilter == filter) {
-                          _selectedSortFilter = 'Top Ranked';
+                          _selectedSortFilter = 'All';
                         } else {
                           _selectedSortFilter = filter;
                         }
@@ -356,7 +425,13 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
-                        gradient: isSelected ? LunaraTheme.primaryGradient : null,
+                        gradient: isSelected
+                            ? const LinearGradient(
+                                colors: [Color(0xFF7F00FF), Color(0xFFA855F7)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : null,
                         color: isSelected ? null : Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
@@ -367,7 +442,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                  color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -391,7 +466,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
             ),
           ),
 
-          // Secondary Filter Chips (Gender & Age)
+          // Secondary Filter Chips (Gender & Age - all in consistent purple styling, no blue/cyan)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
             child: SingleChildScrollView(
@@ -434,7 +509,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                   const SizedBox(width: 8),
                   Container(height: 18, width: 1, color: Colors.grey[300]),
                   const SizedBox(width: 8),
-                  // Age Chips
+                  // Age Chips (All using purple styling)
                   ..._ageRanges.map((ageRange) {
                     final isSelected = _selectedAgeRange == ageRange;
                     return Padding(
@@ -448,10 +523,10 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                             _applyFilters();
                           });
                         },
-                        selectedColor: LunaraTheme.cyberCyan.withValues(alpha: 0.15),
+                        selectedColor: LunaraTheme.electricViolet.withValues(alpha: 0.15),
                         backgroundColor: Colors.white,
                         labelStyle: TextStyle(
-                          color: isSelected ? const Color(0xFF0088CC) : const Color(0xFF64748B),
+                          color: isSelected ? LunaraTheme.electricViolet : const Color(0xFF64748B),
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                           fontSize: 11.5,
                         ),
@@ -460,7 +535,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
-                            color: isSelected ? const Color(0xFF0088CC) : Colors.grey[200]!,
+                            color: isSelected ? LunaraTheme.electricViolet : Colors.grey[200]!,
                           ),
                         ),
                       ),
