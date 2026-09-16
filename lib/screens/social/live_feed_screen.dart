@@ -646,7 +646,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
     ApiService.addSocketListener(
       'like_received',
-      _onPartyPlanRequestUpdated,
+      _onLikeReceived,
+    );
+    ApiService.addSocketListener(
+      'superlike_received',
+      _onLikeReceived,
+    );
+    ApiService.addSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
+    ApiService.addSocketListener(
+      'notification_received',
+      _onNotificationCreated,
+    );
+    ApiService.addSocketListener(
+      'notification_updated',
+      _onNotificationCreated,
     );
     ApiService.addSocketListener(
       'new_match',
@@ -956,7 +972,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     );
     ApiService.removeSocketListener(
       'like_received',
-      _onPartyPlanRequestUpdated,
+      _onLikeReceived,
+    );
+    ApiService.removeSocketListener(
+      'superlike_received',
+      _onLikeReceived,
+    );
+    ApiService.removeSocketListener(
+      'notification_created',
+      _onNotificationCreated,
+    );
+    ApiService.removeSocketListener(
+      'notification_received',
+      _onNotificationCreated,
+    );
+    ApiService.removeSocketListener(
+      'notification_updated',
+      _onNotificationCreated,
     );
     ApiService.removeSocketListener(
       'new_match',
@@ -1175,6 +1207,52 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   : notifMap),
       );
     }
+  }
+
+  void _onLikeReceived(dynamic data) {
+    if (!mounted || !context.mounted) return;
+    if (data is Map) {
+      final notifMap = Map<String, dynamic>.from(data);
+      final recipientId =
+          (notifMap['recipientUserId'] ??
+                  notifMap['recipientId'] ??
+                  notifMap['userId'] ??
+                  '')
+              .toString();
+      final currentUid = ApiService.currentUserId ?? '';
+      if (recipientId.isNotEmpty &&
+          currentUid.isNotEmpty &&
+          recipientId != currentUid) {
+        return;
+      }
+
+      final notifId = (notifMap['id'] ?? 'like_${notifMap['matchId'] ?? DateTime.now().millisecondsSinceEpoch}').toString();
+      final matchId = (notifMap['matchId'] ?? notifMap['data']?['matchId'] ?? '').toString();
+
+      final alreadyExists = _notifications.any((n) {
+        final nId = (n['id'] ?? '').toString();
+        final nMatchId = (n['matchId'] ?? n['data']?['matchId'] ?? '').toString();
+        return (nId.isNotEmpty && nId == notifId) || (matchId.isNotEmpty && nMatchId == matchId);
+      });
+
+      if (!alreadyExists) {
+        setState(() {
+          _notifications = [notifMap, ..._notifications];
+          _cachedTimeline = _buildUnifiedTimeline();
+        });
+      }
+
+      TopNotificationBanner.show(
+        title: notifMap['title'] ?? '💖 New Profile Like!',
+        body: notifMap['body'] ?? 'Someone liked your profile!',
+        data: notifMap['data'] is Map
+            ? Map<String, dynamic>.from(notifMap['data'])
+            : (notifMap['metadata'] is Map
+                  ? Map<String, dynamic>.from(notifMap['metadata'])
+                  : notifMap),
+      );
+    }
+    _scheduleSilentReload();
   }
 
   void _onGroupPartyUpdated(dynamic data) {
@@ -1750,43 +1828,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   void _optimisticallyRemoveNightPartnerRequest(String matchOrRequestId) {
-    final clean = matchOrRequestId
-        .replaceAll('upcoming_night_timeline_', '')
-        .replaceAll('party_plan_timeline_', '')
-        .replaceAll('night_partner_', '')
-        .replaceAll('party_plan_', '')
-        .replaceAll('match_', '')
-        .replaceAll('request_', '')
-        .replaceAll('req_', '')
-        .replaceAll('pp_', '')
-        .trim();
+    final clean = ApiService.cleanBookingId(matchOrRequestId);
     _feedItems.removeWhere((f) {
       final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
-      final cleanFId = id
-          .replaceAll('upcoming_night_timeline_', '')
-          .replaceAll('party_plan_timeline_', '')
-          .replaceAll('night_partner_', '')
-          .replaceAll('party_plan_', '')
-          .replaceAll('match_', '')
-          .replaceAll('request_', '')
-          .replaceAll('req_', '')
-          .replaceAll('pp_', '')
-          .trim();
-      return id == matchOrRequestId || (clean.isNotEmpty && cleanFId == clean) || (clean.isNotEmpty && cleanFId.contains(clean));
+      final cleanFId = ApiService.cleanBookingId(id);
+      return id == matchOrRequestId || (clean.isNotEmpty && cleanFId == clean);
     });
     _notifications.removeWhere((n) {
       final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? n['data']?['requestId'] ?? n['metadata']?['requestId'] ?? '').toString();
-      final cleanNId = id
-          .replaceAll('upcoming_night_timeline_', '')
-          .replaceAll('party_plan_timeline_', '')
-          .replaceAll('night_partner_', '')
-          .replaceAll('party_plan_', '')
-          .replaceAll('match_', '')
-          .replaceAll('request_', '')
-          .replaceAll('req_', '')
-          .replaceAll('pp_', '')
-          .trim();
-      return id == matchOrRequestId || (clean.isNotEmpty && cleanNId == clean) || (clean.isNotEmpty && cleanNId.contains(clean));
+      final cleanNId = ApiService.cleanBookingId(id);
+      return id == matchOrRequestId || (clean.isNotEmpty && cleanNId == clean);
     });
     _cachedTimeline = _buildUnifiedTimeline();
     if (mounted) setState(() {});
@@ -1797,31 +1848,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     String matchId,
     String newStatus,
   ) {
-    if (newStatus == 'rejected' || newStatus == 'declined' || newStatus == 'cancelled' || newStatus == 'expired') {
-      _optimisticallyRemoveNightPartnerRequest(matchId);
-      return;
-    }
+    final cleanTarget = ApiService.cleanBookingId(matchId);
+    final String targetStage = newStatus == 'accepted'
+        ? 'WAITING_FOR_PAYMENT'
+        : (newStatus == 'cancelled' ? 'CANCELLED' : 'DECLINED');
+
     for (int i = 0; i < _feedItems.length; i++) {
       final f = _feedItems[i];
       final id = (f['id'] ?? f['matchId'] ?? f['requestId'] ?? '').toString();
-      if (id == matchId) {
-        _feedItems[i] = {
-          ...f,
-          'status': newStatus,
-          'stage': newStatus == 'accepted' ? 'WAITING_FOR_PAYMENT' : 'DECLINED',
-        };
+      final cleanFId = ApiService.cleanBookingId(id);
+      if (id == matchId || (cleanTarget.isNotEmpty && cleanFId == cleanTarget)) {
+        final updated = Map<String, dynamic>.from(f);
+        updated['status'] = newStatus;
+        updated['stage'] = targetStage;
+        if (newStatus == 'cancelled') {
+          updated['isCancelled'] = true;
+        }
+        _feedItems[i] = updated;
       }
     }
     for (int i = 0; i < _notifications.length; i++) {
       final n = _notifications[i];
-      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? '')
+      final id = (n['id'] ?? n['entityId'] ?? n['data']?['matchId'] ?? n['data']?['requestId'] ?? '')
           .toString();
-      if (id == matchId || id.contains(matchId)) {
-        _notifications[i] = {
-          ...n,
-          'status': newStatus,
-          'stage': newStatus == 'accepted' ? 'WAITING_FOR_PAYMENT' : 'DECLINED',
-        };
+      final cleanNId = ApiService.cleanBookingId(id);
+      if (id == matchId || (cleanTarget.isNotEmpty && cleanNId == cleanTarget)) {
+        final updated = Map<String, dynamic>.from(n);
+        updated['status'] = newStatus;
+        updated['stage'] = targetStage;
+        if (newStatus == 'cancelled') {
+          updated['isCancelled'] = true;
+        }
+        _notifications[i] = updated;
       }
     }
     _cachedTimeline = _buildUnifiedTimeline();
@@ -7703,7 +7761,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               : () async {
                   setState(() => _activeActionKeys.add(cancelWaitKey));
                   try {
-                    _optimisticallyRemoveNightPartnerRequest(targetMatchId);
+                    _optimisticallyUpdateNightPartnerRequest(targetMatchId, 'cancelled');
                     final res = await ApiService.cancelUpcomingNight(
                       targetId: targetMatchId,
                       reason: 'Cancelled before booking',
@@ -7802,7 +7860,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 : () async {
                     setState(() => _activeActionKeys.add(declineKey));
                     try {
-                      _optimisticallyRemoveNightPartnerRequest(targetRequestId);
+                      _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'declined');
                       final res =
                           await ApiService.respondToNightPartnerRequestDetailed(
                             requestId: targetRequestId,
@@ -7872,14 +7930,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 : () async {
                     setState(() => _activeActionKeys.add(cancelInviteKey));
                     try {
-                      _optimisticallyRemoveNightPartnerRequest(targetRequestId);
+                      _optimisticallyUpdateNightPartnerRequest(targetRequestId, 'cancelled');
                       for (final e in entries) {
                         final reqId = e['requestId'] ??
                             e['data']?['requestId'] ??
                             e['metadata']?['requestId'] ??
                             (e['id']?.toString().startsWith('upcoming_night_timeline_') == false ? e['id'] : null);
                         if (reqId != null) {
-                          _optimisticallyRemoveNightPartnerRequest(reqId.toString());
+                          _optimisticallyUpdateNightPartnerRequest(reqId.toString(), 'cancelled');
                           await ApiService.cancelUpcomingNight(
                             targetId: reqId.toString(),
                             reason: 'Host cancelled invite',
@@ -10197,7 +10255,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       categoryIcon: Icons.celebration_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: (finalIsExpired || isActuallyCancelled) ? null : actionsList,
+      actions: actionsList,
       rawData: {
         'id': planId,
         'plan': planMap,
@@ -11991,7 +12049,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       categoryIcon: Icons.people_alt_rounded,
       avatarUrl: avatarUrl,
       senderUser: senderUser,
-      actions: (finalIsExpired || isActuallyCancelledSM) ? null : actionsList,
+      actions: actionsList,
       rawData: {
         'id': meetId,
         'plan': meetMap,

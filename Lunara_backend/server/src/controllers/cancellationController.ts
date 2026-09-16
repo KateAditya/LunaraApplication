@@ -445,7 +445,13 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
 
             await plan.update({ lifecycleStatus: PartyPlanLifecycleStatus.MATCH_CONFIRMED });
 
-            // Notify Requester
+            // Notify Requester.
+            //
+            // Deferred: the decline is already committed above, and none of this
+            // changes the response. Awaiting it made the responder wait on two
+            // user lookups, a notification write and an FCM round trip before
+            // their tap registered. The approve path below already does this.
+            setImmediate(async () => {
             try {
                 const [recipientUser, requester] = await Promise.all([
                     User.findByPk(userId),
@@ -507,6 +513,7 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             } catch (notifErr: any) {
                 logger.warn('[RespondToCancellationRequest] Rejection notification warning:', notifErr.message);
             }
+            });
 
             return res.status(200).json({
                 success: true,

@@ -38,8 +38,9 @@ import PartyPlanRequest, {
     PartyPlanRequestStatus,
 } from '../models/PartyPlanRequest';
 import User from '../models/User';
-import Venue from '../models/Venue';
+import Venue, { VenueCategory, VenueStatus } from '../models/Venue';
 import { generateAccessToken } from '../utils/jwt';
+import apiCache from '../utils/apiCache';
 
 jest.mock('razorpay', () => {
     return jest.fn().mockImplementation(() => {
@@ -64,19 +65,22 @@ jest.mock('../services/fcmService', () => ({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+let testUserCounter = 1000;
+
 /** Create a minimal test user and return its id + auth token. */
 async function createTestUser(suffix: string): Promise<{ id: string; token: string }> {
-    const phone = `+91999900${suffix.slice(0, 4)}`;
+    testUserCounter++;
+    const phone = `9999${testUserCounter.toString().padStart(6, '0')}`;
     let user = await User.findOne({ where: { phone } });
     if (!user) {
         user = await User.create({
-            firstName: `Test${suffix}`,
+            firstName: `Test${suffix.slice(0, 8)}`,
             lastName: 'User',
             phone,
-            email: `test_${suffix}@lunara-test.invalid`,
+            email: `test_${suffix}_${testUserCounter}@lunara-test.invalid`,
             isVerified: true,
             city: 'Pune',
-            dateOfBirth: '1995-01-01',
+            dateOfBirth: new Date('1995-01-01'),
             passwordHash: 'dummyhash',
         } as any);
     }
@@ -88,13 +92,29 @@ async function createTestUser(suffix: string): Promise<{ id: string; token: stri
 async function getTestVenue(): Promise<string> {
     let venue = await Venue.findOne({ where: { name: 'Lunara Test Venue' } });
     if (!venue) {
+        const owner = await createTestUser('venue_owner');
         venue = await Venue.create({
+            ownerId: owner.id,
             name: 'Lunara Test Venue',
+            slug: `lunara-test-venue-${Date.now()}`,
             addressLine1: '1 Test Street',
             city: 'Pune',
+            state: 'Maharashtra',
+            postalCode: '411001',
             area: 'Koregaon Park',
-            category: 'Nightclub',
+            category: VenueCategory.CLUB,
+            phone: '9999000001',
+            capacity: 500,
+            openingTime: '10:00:00',
+            closingTime: '23:30:00',
+            daysOpen: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            status: VenueStatus.APPROVED,
             isActive: true,
+            isVerified: true,
+            displayOrder: 0,
+            averageRating: 4.5,
+            totalReviews: 10,
+            featured: false,
         } as any);
     }
     return venue.id;
@@ -110,6 +130,8 @@ function futurePlanDateTime(daysFromNow = 3): string {
 
 /** Create an UNPAID party plan directly in the DB (simulates state right after createPartyPlan API call). */
 async function createUnpaidPlan(hostId: string, venueId: string, opts: { visibility?: PartyPlanVisibility; selectedUsers?: string[] } = {}): Promise<PartyPlan> {
+    apiCache.clear();
+    apiCache.invalidatePrefix('pp_feed');
     return PartyPlan.create({
         userId: hostId,
         venueId,
@@ -137,6 +159,8 @@ async function createUnpaidPlan(hostId: string, venueId: string, opts: { visibil
 
 /** Create a PAID (live) party plan directly in the DB. */
 async function createPaidPlan(hostId: string, venueId: string, opts: { visibility?: PartyPlanVisibility; selectedUsers?: string[] } = {}): Promise<PartyPlan> {
+    apiCache.clear();
+    apiCache.invalidatePrefix('pp_feed');
     return PartyPlan.create({
         userId: hostId,
         venueId,
@@ -183,11 +207,24 @@ afterAll(async () => {
     await sequelize.close();
 }, 10_000);
 
+beforeEach(() => {
+    apiCache.clear();
+    apiCache.invalidatePrefix('pp_feed');
+});
+
 // Clean up any plans created during tests so they don't interfere with each other
 afterEach(async () => {
-    await PartyPlanRequest.destroy({ where: { requesterId: joiner.id }, force: true });
-    await PartyPlan.destroy({ where: { userId: hostA.id }, force: true });
-    await PartyPlan.destroy({ where: { userId: hostB.id }, force: true });
+    apiCache.clear();
+    apiCache.invalidatePrefix('pp_feed');
+    if (joiner?.id) {
+        await PartyPlanRequest.destroy({ where: { requesterId: joiner.id }, force: true });
+    }
+    if (hostA?.id) {
+        await PartyPlan.destroy({ where: { userId: hostA.id }, force: true });
+    }
+    if (hostB?.id) {
+        await PartyPlan.destroy({ where: { userId: hostB.id }, force: true });
+    }
 }, 15_000);
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -268,7 +305,7 @@ describe('BUG-1: Party Plan Feed Visibility — Unpaid plans hidden from public'
 
         const res = await request(app)
             .get('/api/mobile/plans/live-feed')
-            .set('Authorization', `Bearer ${joiner.token}`)
+            .set('Authorization', `Bearer ${hostA.token}`)
             .expect(200);
 
         const partyPlanIds: string[] = (res.body.data ?? []).map((item: any) => item.id ?? item.planId);
@@ -284,7 +321,7 @@ describe('BUG-1: Party Plan Feed Visibility — Unpaid plans hidden from public'
             .expect(200);
 
         const publicIds: string[] = (res.body.data ?? []).map((item: any) => item.id ?? item.planId);
-        const pendingPaymentIds: string[] = (res.body.pendingPayments ?? []).map((p: any) => p.id ?? p.planId);
+        const pendingPaymentIds: string[] = (res.body.pendingPayments ?? []).map((p: any) => (p.id?.toString().replace(/^pending_pp_/, '') ?? p.planId ?? p.partyPlanId));
 
         // Should NOT appear in the shared public data
         expect(publicIds).not.toContain(unpaid.id);

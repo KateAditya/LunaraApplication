@@ -194,10 +194,14 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     // Stage 2: Concurrently load customer profiles with accurate loading state
     unawaited(() async {
       try {
+        // Plan Hub is re-entered constantly, and this pulls 500 profiles across
+        // every city. Forcing a refresh made each entry pay the full download
+        // again and told the server to bypass its cache too. `fetchCustomers`
+        // already refetches once its 60s window lapses, which is ample freshness
+        // for a browse list.
         final customers = await ApiService.fetchCustomers(
           limit: 500,
           includeAllCities: true,
-          forceRefresh: true,
         );
         if (mounted) {
           setState(() {

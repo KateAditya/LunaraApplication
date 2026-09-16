@@ -111,6 +111,67 @@ export const respondToSafetyCheck = async (req: Request, res: Response): Promise
 import { Op } from 'sequelize';
 
 /**
+ * Last time the 12-hour auto-resolve sweep ran for a given user.
+ *
+ * The sweep is housekeeping, not part of this endpoint's answer: the pending
+ * query below already excludes anything older than 12 hours, so the response is
+ * identical whether or not the sweep has run yet. It used to run inline on every
+ * call — and the live feed polls this endpoint on every refresh — so each poll
+ * paid for a scan plus, whenever it found anything, two bulk writes. One of those
+ * writes is to the notifications table, whose model hooks drop that user's cached
+ * notification payload: a read endpoint was repeatedly invalidating the most
+ * expensive cache in the app and forcing it to rebuild from scratch.
+ */
+const lastSafetySweepAt = new Map<string, number>();
+const SAFETY_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+async function autoResolveExpiredSafetyChecks(userId: string, now: Date, twelveHoursAgo: Date): Promise<void> {
+    try {
+        const expiredChecks = await PartySafetyCheck.findAll({
+            where: {
+                userId,
+                safetyStatus: SafetyStatus.NO_RESPONSE,
+                [Op.or]: [
+                    { partyDate: { [Op.lte]: twelveHoursAgo } },
+                    { createdAt: { [Op.lte]: twelveHoursAgo } },
+                ]
+            },
+            attributes: ['id'],
+        });
+
+        if (expiredChecks.length > 0) {
+            const expiredIds = expiredChecks.map(c => c.id);
+            await PartySafetyCheck.update(
+                {
+                    safetyStatus: SafetyStatus.SAFE,
+                    notes: 'Auto-resolved safe after 12 hours',
+                    respondedAt: now,
+                },
+                {
+                    where: { id: { [Op.in]: expiredIds } }
+                }
+            );
+
+            // Mark associated notifications as read
+            try {
+                const Notification = (await import('../models/Notification')).default;
+                await Notification.update(
+                    { isRead: true },
+                    {
+                        where: {
+                            recipientUserId: userId,
+                            entityId: { [Op.in]: expiredIds },
+                        }
+                    }
+                );
+            } catch (_) {}
+        }
+    } catch (autoErr: any) {
+        logger.warn('[getPendingSafetyCheck] Failed to auto-resolve 12h checks:', autoErr.message);
+    }
+}
+
+/**
  * GET /api/mobile/safety-checks/pending
  * Get pending/unanswered safety check for current user
  */
@@ -120,48 +181,15 @@ export const getPendingSafetyCheck = async (req: Request, res: Response): Promis
         const now = new Date();
         const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
-        // Auto-resolve any safety checks older than 12 hours as SAFE
-        try {
-            const expiredChecks = await PartySafetyCheck.findAll({
-                where: {
-                    userId,
-                    safetyStatus: SafetyStatus.NO_RESPONSE,
-                    [Op.or]: [
-                        { partyDate: { [Op.lte]: twelveHoursAgo } },
-                        { createdAt: { [Op.lte]: twelveHoursAgo } },
-                    ]
-                }
+        // Auto-resolve checks older than 12 hours, off the response path and at
+        // most once every few minutes per user. A 12-hour rule does not need to
+        // be enforced on every poll.
+        const lastSweep = lastSafetySweepAt.get(userId) ?? 0;
+        if (now.getTime() - lastSweep >= SAFETY_SWEEP_INTERVAL_MS) {
+            lastSafetySweepAt.set(userId, now.getTime());
+            setImmediate(() => {
+                autoResolveExpiredSafetyChecks(userId, now, twelveHoursAgo).catch(() => {});
             });
-
-            if (expiredChecks.length > 0) {
-                const expiredIds = expiredChecks.map(c => c.id);
-                await PartySafetyCheck.update(
-                    {
-                        safetyStatus: SafetyStatus.SAFE,
-                        notes: 'Auto-resolved safe after 12 hours',
-                        respondedAt: now,
-                    },
-                    {
-                        where: { id: { [Op.in]: expiredIds } }
-                    }
-                );
-
-                // Mark associated notifications as read
-                try {
-                    const Notification = (await import('../models/Notification')).default;
-                    await Notification.update(
-                        { isRead: true },
-                        {
-                            where: {
-                                recipientUserId: userId,
-                                entityId: { [Op.in]: expiredIds },
-                            }
-                        }
-                    );
-                } catch (_) {}
-            }
-        } catch (autoErr: any) {
-            logger.warn('[getPendingSafetyCheck] Failed to auto-resolve 12h checks:', autoErr.message);
         }
 
         const pendingCheck = await PartySafetyCheck.findOne({

@@ -7,6 +7,7 @@ interface CacheEntry<T> {
 
 export class ApiCache {
     private localCache = new Map<string, CacheEntry<any>>();
+    private inFlight = new Map<string, Promise<any>>();
     private cleanupInterval: NodeJS.Timeout | null = null;
 
     constructor() {
@@ -52,6 +53,36 @@ export class ApiCache {
         }
 
         return null;
+    }
+
+    /**
+     * Single-flight: runs `producer` at most once per key at a time, and hands
+     * every caller that arrives while it is running the same result.
+     *
+     * A cache only helps requests that arrive *after* one has finished. For a
+     * response that takes seconds to build, the expensive case is the opposite
+     * one: several requests for the same key arriving while the first is still
+     * working, each starting its own full build. They then compete for the same
+     * database pool, so every extra copy makes all of them slower — the pile-up
+     * is self-reinforcing. Collapsing them into one build is what breaks that.
+     *
+     * A rejection is shared too, so a failure is not retried N times either; the
+     * key is released as soon as the producer settles.
+     */
+    public async dedupe<T>(key: string, producer: () => Promise<T>): Promise<T> {
+        const existing = this.inFlight.get(key) as Promise<T> | undefined;
+        if (existing) return existing;
+
+        const pending = (async () => {
+            try {
+                return await producer();
+            } finally {
+                this.inFlight.delete(key);
+            }
+        })();
+
+        this.inFlight.set(key, pending);
+        return pending;
     }
 
     public set<T>(key: string, data: T, ttlSeconds: number = 60): void {

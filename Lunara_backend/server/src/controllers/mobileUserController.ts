@@ -1931,118 +1931,186 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
             });
         }
 
-        // Send push notification & socket event for Like or Super Like
-        try {
-            const [currentUser, targetUser] = await Promise.all([
-                User.findByPk(userId),
-                User.findByPk(targetUserId),
-            ]);
-            if (currentUser && targetUser) {
-                const { SubscriptionService } = require('../services/subscriptionService');
-                const canSeeWhoLikedTarget = await SubscriptionService.hasAccess(targetUserId, 'who_liked_me');
+        // Send push notification & socket event for Like or Super Like.
+        //
+        // Deferred: none of this shapes the response, but it costs two user
+        // lookups, an entitlement check, a plan query, a notification write and
+        // an FCM round trip to Google — all of which the caller was made to wait
+        // for. Swiping is the highest-frequency action in the app, and this block
+        // was the bulk of its measured latency. Same setImmediate pattern the
+        // party plan flows already use.
+        setImmediate(async () => {
+            try {
+                const [currentUser, targetUser] = await Promise.all([
+                    User.findByPk(userId),
+                    User.findByPk(targetUserId),
+                ]);
+                if (currentUser && targetUser) {
+                    const { SubscriptionService } = require('../services/subscriptionService');
+                    const canSeeWhoLikedTarget = await SubscriptionService.hasAccess(targetUserId, 'who_liked_me');
 
-                const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
-                const isSuper = action === 'superlike';
+                    const senderName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || 'Someone';
+                    const isSuper = action === 'superlike';
 
-                // Superlike is strictly excluded from masking: always visible to receiver regardless of tier
-                const title = isSuper
-                    ? `⭐ ${senderName} Super Liked You!`
-                    : (canSeeWhoLikedTarget ? `💖 ${senderName} liked your profile!` : '❤️ Someone liked your profile');
+                    // Superlike is strictly excluded from masking: always visible to receiver regardless of tier
+                    const title = isSuper
+                        ? `⭐ ${senderName} Super Liked You!`
+                        : (canSeeWhoLikedTarget ? `💖 ${senderName} liked your profile!` : '❤️ Someone liked your profile');
 
-                const body = isSuper
-                    ? `${senderName} sent you a Super Like! 💜`
-                    : (canSeeWhoLikedTarget ? `${senderName} liked your profile ❤️` : 'Someone liked your profile! Upgrade to VIP to see who!');
+                    const body = isSuper
+                        ? `${senderName} sent you a Super Like! 💜`
+                        : (canSeeWhoLikedTarget ? `${senderName} liked your profile ❤️` : 'Someone liked your profile! Upgrade to VIP to see who!');
 
-                let postedPlans: any[] = [];
-                if (isSuper || canSeeWhoLikedTarget) {
-                    try {
-                        const activePlans = await PartyPlan.findAll({
-                            where: {
-                                userId: currentUser.id,
-                                status: 'active',
-                                isLive: true,
-                                planDateTime: { [Op.gte]: new Date() },
-                                visibility: 'public',
-                            },
-                            include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
-                            order: [['planDateTime', 'ASC']],
-                            limit: 3,
-                        });
-                        postedPlans = activePlans.map((p: any) => ({
-                            id: p.id,
-                            title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
-                            venueName: p.venue?.name || 'Venue',
-                            planDateTime: p.planDateTime,
-                            status: p.status,
-                            isLive: p.isLive,
-                        }));
-                    } catch (planErr) {
-                        logger.warn('[swipeUser] Failed to fetch sender posted plans:', planErr);
+                    let postedPlans: any[] = [];
+                    if (isSuper || canSeeWhoLikedTarget) {
+                        try {
+                            const activePlans = await PartyPlan.findAll({
+                                where: {
+                                    userId: currentUser.id,
+                                    status: 'active',
+                                    isLive: true,
+                                    planDateTime: { [Op.gte]: new Date() },
+                                    visibility: 'public',
+                                },
+                                include: [{ model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'area', 'city'] }],
+                                order: [['planDateTime', 'ASC']],
+                                limit: 3,
+                            });
+                            postedPlans = activePlans.map((p: any) => ({
+                                id: p.id,
+                                title: `Let's party at ${p.venue?.name || 'Venue'}! 🚀`,
+                                venueName: p.venue?.name || 'Venue',
+                                planDateTime: p.planDateTime,
+                                status: p.status,
+                                isLive: p.isLive,
+                            }));
+                        } catch (planErr) {
+                            logger.warn('[swipeUser] Failed to fetch sender posted plans:', planErr);
+                        }
                     }
-                }
 
-                const dedupeKey = isSuper ? `SUPERLIKE:${match.id}` : `LIKE:${match.id}`;
-                const isRecipientVipOrSuper = isSuper || canSeeWhoLikedTarget;
+                    const dedupeKey = isSuper ? `SUPERLIKE:${match.id}` : `LIKE:${match.id}`;
+                    const isRecipientVipOrSuper = isSuper || canSeeWhoLikedTarget;
 
-                try {
-                    const { NotificationService } = require('../services/NotificationService');
-                    await NotificationService.dispatch({
-                        recipientUserId: targetUserId,
-                        actorUserId: currentUser.id,
-                        title,
-                        body,
-                        category: isSuper ? 'super_like' : 'likes',
-                        eventType: isSuper ? 'super_like' : 'like',
-                        actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
-                        entityType: 'user_match',
-                        entityId: match.id,
-                        priority: isSuper ? 'HIGH' : 'NORMAL',
-                        deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
-                        imageUrl: isRecipientVipOrSuper ? (currentUser.profileImageUrl || undefined) : undefined,
-                        idempotencyKey: dedupeKey,
-                        metadata: isRecipientVipOrSuper ? {
+                    try {
+                        const { NotificationService } = require('../services/NotificationService');
+                        await NotificationService.dispatch({
+                            recipientUserId: targetUserId,
+                            actorUserId: currentUser.id,
+                            title,
+                            body,
+                            category: isSuper ? 'super_like' : 'likes',
+                            eventType: isSuper ? 'super_like' : 'like',
+                            actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
+                            entityType: 'user_match',
+                            entityId: match.id,
+                            priority: isSuper ? 'HIGH' : 'NORMAL',
+                            deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
+                            imageUrl: isRecipientVipOrSuper ? (currentUser.profileImageUrl || undefined) : undefined,
+                            idempotencyKey: dedupeKey,
+                            metadata: isRecipientVipOrSuper ? {
+                                matchId: match.id,
+                                senderId: currentUser.id,
+                                senderName,
+                                senderImage: currentUser.profileImageUrl || '',
+                                postedPlans,
+                                action: isSuper ? 'superlike' : 'like',
+                                actor: {
+                                    id: currentUser.id,
+                                    firstName: currentUser.firstName,
+                                    lastName: currentUser.lastName,
+                                    profileImageUrl: currentUser.profileImageUrl,
+                                },
+                            } : {
+                                matchId: match.id,
+                                isMasked: true,
+                                action: 'like',
+                                actor: {
+                                    id: 'masked',
+                                    firstName: 'Someone',
+                                    lastName: '',
+                                    profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                                },
+                            },
+                        });
+                    } catch (dbNotifErr) {
+                        logger.warn('[swipeUser] Failed to persist/dispatch like notification:', dbNotifErr);
+                    }
+
+                    try {
+                        apiCache.delete(`notifs:${targetUserId}`);
+                    } catch (_) {}
+
+                    const { io } = require('../server');
+                    if (io) {
+                        const notifPayload = {
+                            id: `like_${match.id}`,
+                            recipientUserId: targetUserId,
+                            title,
+                            body,
+                            category: isSuper ? 'super_like' : 'likes',
+                            type: isSuper ? 'super_like' : 'like',
+                            eventType: isSuper ? 'super_like' : 'like',
+                            actionType: isRecipientVipOrSuper ? 'view_profile' : 'open_vip_upgrade',
+                            deepLink: isRecipientVipOrSuper ? `/profile/${currentUser.id}` : '/vip-membership',
+                            imageUrl: isRecipientVipOrSuper ? (currentUser.profileImageUrl || undefined) : undefined,
+                            createdAt: new Date().toISOString(),
+                            read: false,
+                            isRead: false,
                             matchId: match.id,
-                            senderId: currentUser.id,
-                            senderName,
-                            senderImage: currentUser.profileImageUrl || '',
-                            postedPlans,
-                            action: isSuper ? 'superlike' : 'like',
-                            actor: {
+                            likerId: isRecipientVipOrSuper ? currentUser.id : 'masked',
+                            isSuper,
+                            actor: isRecipientVipOrSuper ? {
                                 id: currentUser.id,
                                 firstName: currentUser.firstName,
                                 lastName: currentUser.lastName,
                                 profileImageUrl: currentUser.profileImageUrl,
-                            },
-                        } : {
-                            matchId: match.id,
-                            isMasked: true,
-                            action: 'like',
-                            actor: {
+                            } : {
                                 id: 'masked',
                                 firstName: 'Someone',
                                 lastName: '',
                                 profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
                             },
-                        },
-                    });
-                } catch (dbNotifErr) {
-                    logger.warn('[swipeUser] Failed to persist/dispatch like notification:', dbNotifErr);
+                            sender: isRecipientVipOrSuper ? {
+                                id: currentUser.id,
+                                firstName: currentUser.firstName,
+                                lastName: currentUser.lastName,
+                                profileImageUrl: currentUser.profileImageUrl,
+                            } : {
+                                id: 'masked',
+                                firstName: 'Someone',
+                                lastName: '',
+                                profileImageUrl: 'https://placehold.co/400x400/2a1b38/e0a0ff.png?text=Upgrade+to+See',
+                            },
+                            data: {
+                                matchId: match.id,
+                                senderId: isRecipientVipOrSuper ? currentUser.id : 'masked',
+                                senderName,
+                                senderImage: isRecipientVipOrSuper ? (currentUser.profileImageUrl || '') : '',
+                                isMasked: !isRecipientVipOrSuper,
+                                action: isSuper ? 'superlike' : 'like',
+                            },
+                            metadata: {
+                                matchId: match.id,
+                                senderId: isRecipientVipOrSuper ? currentUser.id : 'masked',
+                                senderName,
+                                senderImage: isRecipientVipOrSuper ? (currentUser.profileImageUrl || '') : '',
+                                isMasked: !isRecipientVipOrSuper,
+                                action: isSuper ? 'superlike' : 'like',
+                            }
+                        };
+                        io.to(`user_${targetUserId}`).emit('like_received', notifPayload);
+                        if (isSuper) {
+                            io.to(`user_${targetUserId}`).emit('superlike_received', notifPayload);
+                        }
+                        io.to(`user_${targetUserId}`).emit('notification_created', notifPayload);
+                        io.to(`user_${targetUserId}`).emit('notification_received', notifPayload);
+                    }
                 }
-
-                const { io } = require('../server');
-                if (io) {
-                    // Emit real-time like_received event for live UI synchronization
-                    io.to(`user_${targetUserId}`).emit('like_received', {
-                        matchId: match.id,
-                        likerId: isRecipientVipOrSuper ? currentUser.id : 'masked',
-                        isSuper,
-                        timestamp: new Date().toISOString(),
-                    });
-                }
+            } catch (fcmErr) {
+                logger.error('[swipeUser] Failed to send push notification/socket:', fcmErr);
             }
-        } catch (fcmErr) {
-            logger.error('[swipeUser] Failed to send push notification/socket:', fcmErr);
-        }
+        });
 
         const [finalLikeRow, finalSuperRow] = await Promise.all([
             UserLike.findOne({ where: { userId, targetUserId, actionType: 'like' } }),

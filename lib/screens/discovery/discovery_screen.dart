@@ -613,16 +613,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               }
             }
 
-            // Fallback: If still empty, use first available venue image (NEVER user avatar)
-            if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && !isSecretVenuePost) {
-              for (final v in _allVenues) {
-                if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
-                  rawImg = v.imageUrl;
-                  break;
-                }
-              }
-            }
-
             final String? photoUrl =
                 (user['profilePhotoUrl'] ??
                         user['photoUrl'] ??
@@ -797,16 +787,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     matchedV.images!.isNotEmpty) {
                   final first = matchedV.images!.first;
                   rawImg = first is Map ? (first['url'] ?? first['filePath']) : first?.toString();
-                }
-              }
-            }
-
-            // Fallback: If still empty, use first available venue image (NEVER user avatar)
-            if ((rawImg == null || rawImg.toString().isEmpty || rawImg.toString().startsWith('Instance of')) && !isSecretMeet) {
-              for (final v in _allVenues) {
-                if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
-                  rawImg = v.imageUrl;
-                  break;
                 }
               }
             }
@@ -2924,21 +2904,28 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     feed['bannerUrl'] ??
                     feed['bannerImage']);
 
-          if ((rawCover == null || rawCover.toString().isEmpty) &&
-              feed['venue'] is Map) {
-            final vMap = feed['venue'] as Map;
-            if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
-              final first = (vMap['images'] as List).first;
-              rawCover = first is Map
-                  ? (first['url'] ?? first['imageUrl'] ?? first['filePath'])
-                  : first?.toString();
+          // Check venue map from feed['venueMap'] or feed['venue']
+          Map? vMap;
+          if (feed['venueMap'] is Map) {
+            vMap = feed['venueMap'] as Map;
+          } else if (feed['venue'] is Map) {
+            vMap = feed['venue'] as Map;
+          }
+
+          if ((rawCover == null || rawCover.toString().isEmpty) && vMap != null) {
+            rawCover = (vMap['coverImageUrl'] ??
+                    vMap['imageUrl'] ??
+                    vMap['image'] ??
+                    (vMap['coverImage'] is Map ? vMap['coverImage']['url'] ?? vMap['coverImage']['filePath'] : (vMap['coverImage'] is String ? vMap['coverImage'] : null)))
+                ?.toString();
+            if (rawCover == null || rawCover.toString().isEmpty) {
+              if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
+                final first = (vMap['images'] as List).first;
+                rawCover = first is Map
+                    ? (first['url'] ?? first['imageUrl'] ?? first['filePath'])
+                    : first?.toString();
+              }
             }
-            rawCover ??=
-                (vMap['imageUrl'] ??
-                        vMap['coverImage'] ??
-                        vMap['photoUrl'] ??
-                        vMap['image'])
-                    ?.toString();
           }
 
           // Search in _allVenues by ID first, then by Name (O(1) lookups)
@@ -2953,7 +2940,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
               if (matchedVenue == null) {
                 for (final v in _allVenues) {
                   final nameLower = v.name.toLowerCase().trim();
-                  if (nameLower.contains(vNameLower) ||
+                  if (nameLower == vNameLower ||
+                      nameLower.contains(vNameLower) ||
                       vNameLower.contains(nameLower)) {
                     matchedVenue = v;
                     break;
@@ -2985,16 +2973,6 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     rawCover = firstImg.toString();
                   }
                 }
-              }
-            }
-          }
-
-          // Fall back to first available venue image in _allVenues if still empty (NEVER user avatar)
-          if (rawCover == null || rawCover.toString().isEmpty) {
-            for (final v in _allVenues) {
-              if (v.imageUrl != null && v.imageUrl!.isNotEmpty) {
-                rawCover = v.imageUrl;
-                break;
               }
             }
           }
@@ -3073,17 +3051,24 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               };
                             }
                           } else {
-                            final Venue venue = _venueMapByNameLower[venueName.toLowerCase().trim()] ??
-                                (_allVenues.isNotEmpty
-                                    ? _allVenues.first
-                                    : Venue(
-                                        id: '0',
-                                        name: venueName,
-                                        city: 'Pune',
-                                        addressLine1: 'Pune',
-                                        averageRating: 0.0,
-                                      ));
-                            resolvedVenue = venue.toMap();
+                            Venue? venue;
+                            if (targetVenueId.isNotEmpty) {
+                              venue = _venueMapById[targetVenueId];
+                            }
+                            venue ??= _venueMapByNameLower[venueName.toLowerCase().trim()];
+                            if (venue != null) {
+                              resolvedVenue = venue.toMap();
+                            } else if (vMap != null) {
+                              resolvedVenue = Map<String, dynamic>.from(vMap);
+                            } else {
+                              resolvedVenue = {
+                                'id': targetVenueId,
+                                'name': venueName,
+                                'city': feed['city'] ?? 'Pune',
+                                'addressLine1': feed['city'] ?? 'Pune',
+                                'averageRating': 0.0,
+                              };
+                            }
                           }
 
                           Navigator.push(

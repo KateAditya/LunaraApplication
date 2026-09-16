@@ -1158,13 +1158,22 @@ export class StrangersMeetService {
             await cancellation.reload();
             await request.reload();
 
-            // Regenerate ticket PDF with updated reduced participant count
-            try {
-                const { generateTicketForStrangersMeetHelper } = require('./ticketService');
-                await generateTicketForStrangersMeetHelper(meetId);
-            } catch (tErr: any) {
-                logger.warn('[StrangersMeetService] Ticket regeneration after joiner cancellation failed:', tErr);
-            }
+            // Regenerate ticket PDF with updated reduced participant count.
+            //
+            // Deferred: this downloads the profile images over HTTP, renders a
+            // PDF and stores it. None of it affects the result returned below,
+            // and its failure was already only a warning — but awaiting it put
+            // several seconds between the host's tap and their response. The
+            // refreshed ticket lands moments later, and the socket events below
+            // already tell both clients to re-read.
+            setImmediate(async () => {
+                try {
+                    const { generateTicketForStrangersMeetHelper } = require('./ticketService');
+                    await generateTicketForStrangersMeetHelper(meetId);
+                } catch (tErr: any) {
+                    logger.warn('[StrangersMeetService] Ticket regeneration after joiner cancellation failed:', tErr);
+                }
+            });
 
             // Realtime socket events for live feed & user state
             try {
@@ -1194,7 +1203,9 @@ export class StrangersMeetService {
                 }
             } catch (sockErr) {}
 
-            // Send notification to member
+            // Send notification to member (off the response path: a DB write
+            // plus an FCM round trip that the caller does not need to wait for).
+            setImmediate(async () => {
             try {
                 await this.emitNotification({
                     recipientUserId: cancellation.userId,
@@ -1212,6 +1223,7 @@ export class StrangersMeetService {
             } catch (notifErr: any) {
                 logger.warn('[StrangersMeetService] Failed to notify member of approved cancellation: ' + notifErr.message);
             }
+            });
 
             return {
                 success: true,
@@ -1226,7 +1238,8 @@ export class StrangersMeetService {
                 respondedAt: new Date(),
             });
 
-            // Member remains joined, send notification
+            // Member remains joined, send notification (off the response path).
+            setImmediate(async () => {
             try {
                 await this.emitNotification({
                     recipientUserId: cancellation.userId,
@@ -1243,6 +1256,7 @@ export class StrangersMeetService {
             } catch (notifErr: any) {
                 logger.warn('[StrangersMeetService] Failed to notify member of rejected cancellation: ' + notifErr.message);
             }
+            });
 
             return {
                 success: true,

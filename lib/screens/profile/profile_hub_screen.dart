@@ -52,7 +52,12 @@ class _ProfileHubScreenState extends State<ProfileHubScreen> {
   Future<void> _loadProfile() async {
     final results = await Future.wait([
       ApiService.fetchProfile(forceRefresh: true),
-      ApiService.fetchAllUserTickets(forceRefresh: true),
+      // Not forced: the tickets endpoint is one of the slowest in the app, and
+      // this screen re-runs on every profile-update event as well as every open,
+      // so forcing it made the whole page wait seconds for data that had not
+      // changed. Its own 30s window still refreshes it, and `clearBookingCache`
+      // expires it the moment a booking or ticket actually changes.
+      ApiService.fetchAllUserTickets(),
     ]);
 
     User? user = results[0] as User?;

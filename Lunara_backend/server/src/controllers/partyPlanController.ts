@@ -929,8 +929,45 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        // ── Read-only validation lookups, issued together ──────────────────────
+        //
+        // The host time-lock check and the invited users' details are independent
+        // reads that used to run one after another with the entitlement
+        // consumption and the stale-plan sweep in between, so creating a plan
+        // paid for a chain of sequential database round trips before it could
+        // start. Issuing these two together removes one of them.
+        //
+        // The invitees' *time-lock* check deliberately stays where it was, below
+        // the stale-plan sweep: that sweep cancels the host's own abandoned plans
+        // and releases their locks, so moving the check above it could read locks
+        // the sweep was about to clear. Nothing else is reordered — every failure
+        // is still reported in the same order, and the entitlement is still only
+        // consumed after the host time-lock check has passed.
+        const wantsSelectedUsers =
+            parsedVisibility === PartyPlanVisibility.PRIVATE ||
+            parsedVisibility === PartyPlanVisibility.BOTH;
+
+        const prefetchedTargetIds: string[] = wantsSelectedUsers
+            ? (Array.isArray(selectedUsers) ? selectedUsers : (selectedUsers ? [selectedUsers] : []))
+                .map((u: any) => {
+                    if (typeof u === 'string') return u.trim();
+                    if (u && typeof u === 'object') return (u.id || u.userId || '').toString().trim();
+                    return '';
+                })
+                .filter(Boolean)
+            : [];
+
+        const [timeLockCheck, prefetchedTargetUsers] = await Promise.all([
+            EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
+            prefetchedTargetIds.length > 0
+                ? User.findAll({
+                    where: { id: { [Op.in]: prefetchedTargetIds } },
+                    attributes: ['id', 'firstName', 'lastName'],
+                })
+                : Promise.resolve([] as any[]),
+        ]);
+
         // ── Universal 4-Hour Time-Lock Validation (Host) ───────────────────────
-        const timeLockCheck = await EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan');
         if (!timeLockCheck.allowed) {
             res.status(400).json({ success: false, ...timeLockCheck });
             return;
@@ -979,26 +1016,17 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
 
         // ── Validate Selected Users for Private & Both Mode ───────────────────
         if (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) {
-            const rawSelected = selectedUsers || [];
-            const targetUserIds: string[] = (Array.isArray(rawSelected) ? rawSelected : [rawSelected]).map((u: any) => {
-                if (typeof u === 'string') return u.trim();
-                if (u && typeof u === 'object') return (u.id || u.userId || '').toString().trim();
-                return '';
-            }).filter(Boolean);
+            // The invitee lookup was already issued alongside the host time-lock check.
+            const targetUserIds: string[] = prefetchedTargetIds;
 
             const conflictingUsers: Array<{ id: string; name: string; reason?: string }> = [];
             const validUserIds: string[] = [];
 
             if (targetUserIds.length > 0) {
-                // Batch lookup all target users in a single query
-                const targetUsers = await User.findAll({
-                    where: { id: { [Op.in]: targetUserIds } },
-                    attributes: ['id', 'firstName', 'lastName'],
-                });
                 const targetUserMap = new Map<string, any>();
-                for (const tu of targetUsers) targetUserMap.set(tu.id, tu);
+                for (const tu of prefetchedTargetUsers) targetUserMap.set(tu.id, tu);
 
-                // Run batch 4-hour time lock checks for all target users efficiently in a single batch query
+                // Kept here, after the stale-plan sweep above, exactly as before.
                 const batchCheckResults = await EventTimeLockService.validateFourHourGapBatch(targetUserIds, planDateTime, 'party_plan');
 
                 for (const targetId of targetUserIds) {
@@ -1594,15 +1622,19 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
         if (requesterId) {
             where[Op.and] = [
                 {
-                    hostPaymentStatus: PartyPlanPaymentStatus.PAID,
-                    isLive: true,
                     [Op.or]: [
                         { userId: requesterId },
-                        { visibility: PartyPlanVisibility.PUBLIC },
-                        { visibility: PartyPlanVisibility.BOTH },
                         {
-                            visibility: PartyPlanVisibility.PRIVATE,
-                            selectedUsers: { [Op.contains]: [requesterId] },
+                            hostPaymentStatus: PartyPlanPaymentStatus.PAID,
+                            isLive: true,
+                            [Op.or]: [
+                                { visibility: PartyPlanVisibility.PUBLIC },
+                                { visibility: PartyPlanVisibility.BOTH },
+                                {
+                                    visibility: PartyPlanVisibility.PRIVATE,
+                                    selectedUsers: { [Op.contains]: [requesterId] },
+                                },
+                            ],
                         },
                     ],
                 },
@@ -2693,40 +2725,44 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
             }
         }
 
-        // ── Split-pay flow: generate Razorpay order for Joiner ─────────────────
+        // ── Split-pay flow: generate Razorpay orders ───────────────────────────
+        // Both calls leave the server, and this runs inside an open transaction
+        // that holds a row lock on the plan — so every millisecond spent waiting
+        // on Razorpay is a millisecond that lock (and a pooled connection) is
+        // held. They do not depend on each other, so they go out together.
         const joinerOptions = {
             amount: Math.round(plan.depositAmount * 100),
             currency: 'INR',
             receipt: `ppreq_${Date.now()}`
         };
-        let joinerOrder: any = { id: `order_mock_${Date.now()}`, amount: joinerOptions.amount, currency: joinerOptions.currency };
-        if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
-            try {
-                const resOrder = await razorpay.orders.create(joinerOptions);
-                if (resOrder) joinerOrder = resOrder;
-            } catch (err: any) {
-                logger.warn('Razorpay joiner order failed, using mock: ' + err.message);
-            }
-        }
+        const hostOptions = {
+            amount: Math.round(plan.depositAmount * 100),
+            currency: 'INR',
+            receipt: `pphost_${Date.now()}`
+        };
 
-        // Only create a new host order if the host hasn't paid yet
-        let hostOrder: any = null;
-        if (!hostAlreadyPaid) {
-            const hostOptions = {
-                amount: Math.round(plan.depositAmount * 100),
-                currency: 'INR',
-                receipt: `pphost_${Date.now()}`
-            };
-            hostOrder = { id: `order_mock_${Date.now()}`, amount: hostOptions.amount, currency: hostOptions.currency };
-            if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' && process.env.RAZORPAY_KEY_ID !== 'rzp_test_123') {
-                try {
-                    const resOrder = await razorpay.orders.create(hostOptions);
-                    if (resOrder) hostOrder = resOrder;
-                } catch (err: any) {
-                    logger.warn('Razorpay host order failed, using mock: ' + err.message);
-                }
+        const gatewayLive = Boolean(
+            process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID !== 'your_razorpay_key_id' &&
+            process.env.RAZORPAY_KEY_ID !== 'rzp_test_123'
+        );
+
+        const createOrder = async (options: any, label: string): Promise<any> => {
+            const fallback = { id: `order_mock_${Date.now()}`, amount: options.amount, currency: options.currency };
+            if (!gatewayLive) return fallback;
+            try {
+                return (await razorpay.orders.create(options)) || fallback;
+            } catch (err: any) {
+                logger.warn(`Razorpay ${label} order failed, using mock: ` + err.message);
+                return fallback;
             }
-        }
+        };
+
+        // Only create a new host order if the host hasn't paid yet.
+        const [joinerOrder, hostOrder] = await Promise.all([
+            createOrder(joinerOptions, 'joiner'),
+            hostAlreadyPaid ? Promise.resolve(null) : createOrder(hostOptions, 'host'),
+        ]);
 
         // Mark request PAYMENT_PENDING
         await request.update({

@@ -800,7 +800,7 @@ async function getUserNotifications(
                         try {
                             if (booking.goingMode === 'party_request' || booking.isLargePartyRequest) {
                                 const { GroupPartyService } = await import('../services/GroupPartyService');
-                                const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId);
+                                const enrichedCard = await GroupPartyService.enrichLargePartyNotificationCard(booking.id, uId, booking);
                                 if (enrichedCard) {
                                     const lastActivityAt = enrichedCard.lastActivityAt || enrichedCard.updatedAt || enrichedCard.createdAt || new Date().toISOString();
                                     const cardTime = new Date(lastActivityAt).getTime();
@@ -1203,39 +1203,49 @@ router.get('/notifications', authenticate, async (req, res) => {
                 ? readNotificationIds.split(',').filter(Boolean)
                 : []
         );
-        let notifications: any[] = [];
-        try {
-            notifications = await getUserNotifications(
-                uId,
-                filterStr,
-                searchStr,
-                clientReadNotificationIds,
-                getReadNotificationIds(uId)
-            );
-        } catch (genErr) {
-            console.error('Error loading enriched notifications, falling back to basic notifications:', genErr);
-            const NotificationModel = (await import('../models/Notification')).default;
-            const dbNotifs = await NotificationModel.findAll({
-                where: { recipientUserId: uId },
-                order: [['createdAt', 'DESC']],
-                limit: 30,
-            }).catch(() => []);
-            notifications = dbNotifs.map(n => ({
-                id: n.id,
-                title: n.title,
-                body: n.body,
-                createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
-                read: n.isRead,
-                type: n.eventType,
-                data: n.metadata,
-                section: getDateSection(n.createdAt ? n.createdAt.toISOString() : new Date().toISOString())
-            }));
-        }
 
-        const payload = { success: true, data: notifications };
-        // Short TTL: long enough to collapse the burst of refreshes a single
-        // socket event causes, short enough that nothing feels stale.
-        apiCache.set(cacheKey, payload, 15);
+        // This build routinely takes seconds, while the live feed re-requests it
+        // on every refresh and any notification write drops the cache entry. So
+        // the common case is several requests for the same key overlapping, each
+        // starting its own build and then fighting the others for the database
+        // pool. Single-flight collapses them into one.
+        const payload = await apiCache.dedupe(cacheKey, async () => {
+            let notifications: any[] = [];
+            try {
+                notifications = await getUserNotifications(
+                    uId,
+                    filterStr,
+                    searchStr,
+                    clientReadNotificationIds,
+                    getReadNotificationIds(uId)
+                );
+            } catch (genErr) {
+                console.error('Error loading enriched notifications, falling back to basic notifications:', genErr);
+                const NotificationModel = (await import('../models/Notification')).default;
+                const dbNotifs = await NotificationModel.findAll({
+                    where: { recipientUserId: uId },
+                    order: [['createdAt', 'DESC']],
+                    limit: 30,
+                }).catch(() => []);
+                notifications = dbNotifs.map(n => ({
+                    id: n.id,
+                    title: n.title,
+                    body: n.body,
+                    createdAt: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+                    read: n.isRead,
+                    type: n.eventType,
+                    data: n.metadata,
+                    section: getDateSection(n.createdAt ? n.createdAt.toISOString() : new Date().toISOString())
+                }));
+            }
+
+            const built = { success: true, data: notifications };
+            // Short TTL: long enough to collapse the burst of refreshes a single
+            // socket event causes, short enough that nothing feels stale.
+            apiCache.set(cacheKey, built, 15);
+            return built;
+        });
+
         return res.json(payload);
     } catch (error: any) {
         console.error('Error fetching notifications endpoint:', error);

@@ -872,11 +872,16 @@ export class GroupPartyService {
      * Consolidates all Large Party notifications into ONE single card per party request.
      * Card ID: large_party_timeline_${bookingId}
      */
-    public static async enrichLargePartyNotificationCard(bookingId: string, _recipientUserId: string): Promise<any | null> {
+    public static async enrichLargePartyNotificationCard(bookingId: string, _recipientUserId: string, preloadedBooking?: any): Promise<any | null> {
         try {
             const Booking = (await import('../models/Booking')).default;
             const Venue = (await import('../models/Venue')).default;
-            const bookingRecord = await Booking.findByPk(bookingId, {
+            // Callers that already hold the row (the notifications feed loads
+            // every booking up front, then enriched them one by one) pass it in.
+            // Re-reading it here cost one round trip per booking on an endpoint
+            // that builds dozens of cards, which is exactly the N+1 that made it
+            // take seconds. Mirrors enrichGroupPartyNotificationCard.
+            const bookingRecord = preloadedBooking ?? await Booking.findByPk(bookingId, {
                 include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 

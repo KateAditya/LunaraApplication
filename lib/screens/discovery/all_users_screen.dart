@@ -23,7 +23,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
   String _selectedGender = 'All';
   String _selectedAgeRange = 'All Ages';
-  String _selectedSortFilter = 'Top Ranked'; // 'Top Ranked', 'Boosted', 'VIP Plans', 'Most Liked'
+  String _selectedSortFilter = 'Top Ranked'; // 'Top Ranked', 'Boosted', 'Most Liked'
 
   final List<String> _genders = ['All', 'Female', 'Male', 'Other'];
   final List<String> _ageRanges = [
@@ -36,7 +36,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
   final List<String> _sortFilters = [
     'Top Ranked',
     'Boosted ⚡',
-    'VIP Plans 👑',
     'Most Liked ❤️',
   ];
 
@@ -163,9 +162,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               (user['boostCount'] != null && (int.tryParse(user['boostCount'].toString()) ?? 0) > 0) ||
               (user['boostsRemaining'] != null && (int.tryParse(user['boostsRemaining'].toString()) ?? 0) > 0);
           if (!isBoosted) return false;
-        } else if (_selectedSortFilter == 'VIP Plans 👑') {
-          final tier = (user['subscriptionTier'] ?? user['tier'] ?? user['packageTier'] ?? 'FREE').toString().toUpperCase();
-          if (tier.isEmpty || tier == 'FREE') return false;
         }
 
         return true;
@@ -348,7 +344,11 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                     borderRadius: BorderRadius.circular(20),
                     onTap: () {
                       setState(() {
-                        _selectedSortFilter = filter;
+                        if (_selectedSortFilter == filter) {
+                          _selectedSortFilter = 'Top Ranked';
+                        } else {
+                          _selectedSortFilter = filter;
+                        }
                         _applyFilters();
                       });
                     },

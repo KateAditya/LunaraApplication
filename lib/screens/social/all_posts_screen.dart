@@ -160,6 +160,14 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
 
     final String targetVenueId = (post['venueId'] ?? (post['venue'] is Map ? post['venue']['id'] : null))?.toString() ?? '';
 
+    // Check venue map from post['venueMap'] or post['venue']
+    Map? vMap;
+    if (post['venueMap'] is Map) {
+      vMap = post['venueMap'] as Map;
+    } else if (post['venue'] is Map) {
+      vMap = post['venue'] as Map;
+    }
+
     // Look up venue to get cover image
     Venue? matchedVenueObj;
     if (targetVenueId.isNotEmpty) {
@@ -178,34 +186,29 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
       }
     }
 
-    final Venue matchedVenue = matchedVenueObj ?? (widget.venues.isNotEmpty
-        ? widget.venues.first
-        : Venue(
-            id: '0',
-            name: venueName,
-            city: 'Pune',
-            addressLine1: 'Pune',
-            averageRating: 0.0,
-          ));
-
     // Resolve raw image path across all possible keys
     String? rawCover = post['coverImageUrl']?.toString().isNotEmpty == true
         ? post['coverImageUrl']
         : (post['venueImageUrl'] ?? post['venueImage'] ?? post['bannerUrl'] ?? post['bannerImage']);
 
-    if ((rawCover == null || rawCover.toString().isEmpty) && post['venue'] is Map) {
-      final vMap = post['venue'] as Map;
-      if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
-        final first = (vMap['images'] as List).first;
-        rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : (first is String ? first : null);
+    if ((rawCover == null || rawCover.toString().isEmpty) && vMap != null) {
+      rawCover = (vMap['coverImageUrl'] ??
+              vMap['imageUrl'] ??
+              vMap['image'] ??
+              (vMap['coverImage'] is Map ? vMap['coverImage']['url'] ?? vMap['coverImage']['filePath'] : (vMap['coverImage'] is String ? vMap['coverImage'] : null)))
+          ?.toString();
+      if (rawCover == null || rawCover.toString().isEmpty) {
+        if (vMap['images'] is List && (vMap['images'] as List).isNotEmpty) {
+          final first = (vMap['images'] as List).first;
+          rawCover = first is Map ? (first['url'] ?? first['imageUrl'] ?? first['filePath']) : (first is String ? first : null);
+        }
       }
-      rawCover ??= (vMap['imageUrl'] ?? vMap['coverImage'] ?? vMap['photoUrl'] ?? vMap['image'])?.toString();
     }
 
-    if (rawCover == null || rawCover.toString().isEmpty || rawCover.startsWith('Instance of')) {
-      rawCover = matchedVenue.imageUrl;
-      if ((rawCover == null || rawCover.isEmpty) && matchedVenue.images != null && matchedVenue.images!.isNotEmpty) {
-        final firstImg = matchedVenue.images!.first;
+    if ((rawCover == null || rawCover.toString().isEmpty) && matchedVenueObj != null) {
+      rawCover = matchedVenueObj.imageUrl;
+      if ((rawCover == null || rawCover.isEmpty) && matchedVenueObj.images != null && matchedVenueObj.images!.isNotEmpty) {
+        final firstImg = matchedVenueObj.images!.first;
         if (firstImg is Map) {
           rawCover = (firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'])?.toString();
         } else if (firstImg is String) {
@@ -281,10 +284,8 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
         onTap: () {
           Map<String, dynamic> resolvedVenue;
           if (isSecretVenue) {
-            if (post['venue'] is Map) {
-              resolvedVenue = Map<String, dynamic>.from(post['venue'] as Map);
-            } else if (post['venueMap'] is Map) {
-              resolvedVenue = Map<String, dynamic>.from(post['venueMap'] as Map);
+            if (vMap != null) {
+              resolvedVenue = Map<String, dynamic>.from(vMap);
             } else {
               resolvedVenue = {
                 'id': targetVenueId,
@@ -294,8 +295,18 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
                 'city': post['city'] ?? 'Pune',
               };
             }
+          } else if (matchedVenueObj != null) {
+            resolvedVenue = matchedVenueObj.toMap();
+          } else if (vMap != null) {
+            resolvedVenue = Map<String, dynamic>.from(vMap);
           } else {
-            resolvedVenue = matchedVenue.toMap();
+            resolvedVenue = {
+              'id': targetVenueId,
+              'name': venueName,
+              'city': post['city'] ?? 'Pune',
+              'addressLine1': post['city'] ?? 'Pune',
+              'averageRating': 0.0,
+            };
           }
 
           Navigator.push(
