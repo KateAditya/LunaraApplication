@@ -1105,10 +1105,13 @@ class ApiService {
               .whereType<Map>()
               .where((b) {
                 final gm = b['goingMode']?.toString();
-                if (gm != 'party_request' || gm == 'plan') return false;
-                final spec = b['specialRequests']?.toString() ?? '';
-                if (spec.contains('"joinerId"') || spec.contains('"planId"'))
+                if (gm != 'party_request' || gm == 'plan') {
                   return false;
+                }
+                final spec = b['specialRequests']?.toString() ?? '';
+                if (spec.contains('"joinerId"') || spec.contains('"planId"')) {
+                  return false;
+                }
                 return true;
               })
               .map((b) => Map<String, dynamic>.from(b)),
@@ -2076,8 +2079,9 @@ class ApiService {
     String? reason,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not authenticated'};
+    }
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/cancel',
@@ -2106,8 +2110,9 @@ class ApiService {
     String? reason,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not authenticated'};
+    }
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/repost',
@@ -2133,8 +2138,9 @@ class ApiService {
     String planId,
   ) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not authenticated'};
+    }
     try {
       final response = await post(
         '/api/mobile/party-plans/$planId/make-public',
@@ -2829,9 +2835,12 @@ class ApiService {
 
     try {
       final Map<String, dynamic> body = {'userId': userId};
-      if (durationHours != null) body['durationHours'] = durationHours;
-      if (customEndDateTime != null)
+      if (durationHours != null) {
+        body['durationHours'] = durationHours;
+      }
+      if (customEndDateTime != null) {
         body['customEndDateTime'] = customEndDateTime;
+      }
 
       final response = await post(
         '/api/mobile/strangers-meet/$id/start',
@@ -2863,9 +2872,12 @@ class ApiService {
 
     try {
       final Map<String, dynamic> body = {'userId': userId};
-      if (additionalHours != null) body['additionalHours'] = additionalHours;
-      if (customEndDateTime != null)
+      if (additionalHours != null) {
+        body['additionalHours'] = additionalHours;
+      }
+      if (customEndDateTime != null) {
         body['customEndDateTime'] = customEndDateTime;
+      }
 
       final response = await post(
         '/api/mobile/strangers-meet/$id/extend',
@@ -2950,8 +2962,9 @@ class ApiService {
     String? otherReasonText,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not logged in'};
+    }
 
     try {
       final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
@@ -2996,8 +3009,9 @@ class ApiService {
     String? rejectReason,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not logged in'};
+    }
 
     try {
       final Map<String, dynamic> body = {'userId': userId, 'action': action};
@@ -3041,8 +3055,9 @@ class ApiService {
     String? reasonText,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not logged in'};
+    }
 
     try {
       final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
@@ -3091,8 +3106,9 @@ class ApiService {
     String? ifscCode,
   }) async {
     final userId = currentUserId;
-    if (userId == null)
+    if (userId == null) {
       return {'success': false, 'message': 'User not logged in'};
+    }
 
     try {
       final Map<String, dynamic> body = {'userId': userId, 'reason': reason};
@@ -4307,6 +4323,13 @@ class ApiService {
     } catch (e) {
       debugPrint('Error saving local read notification IDs: $e');
     }
+  }
+
+  static Future<void> saveLocalReadIds() async {
+    await Future.wait([
+      saveLocalReadRequestIds(),
+      saveLocalReadNotificationIds(),
+    ]);
   }
 
   /// Fetch in-app notifications for current user

@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lunara_app/models/user.dart';
 import 'package:lunara_app/models/plan_status.dart';
-import 'package:lunara_app/services/subscription_provider.dart';
 
 void main() {
   group('User Model - Hide Profile & Visibility Parsing Tests', () {

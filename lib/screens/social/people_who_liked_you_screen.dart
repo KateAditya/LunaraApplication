@@ -672,7 +672,7 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
                 final provider = SubscriptionProvider.instance;
                 if (provider.canBoost) {
                   ApiService.useBoost().then((res) {
-                    if (res != null && res['success'] == true && mounted) {
+                    if (res['success'] == true && mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('⚡ Boost active! Your profile is in the spotlight!'),

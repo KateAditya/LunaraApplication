@@ -2027,54 +2027,80 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             Row(
               children: [
                 if (!isHostPaid) ...[
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        _markAsRead(item);
-                        if (partyPlanId.isEmpty || depositAmount <= 0) {
-                          debugPrint(
-                            'Error: Invalid partyPlanId or depositAmount for notification payment',
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Payment details unavailable. Please try again later.',
-                              ),
-                              backgroundColor: Colors.redAccent,
+                  Builder(
+                    builder: (context) {
+                      final payKey = 'PAY_HOST_DEPOSIT:$partyPlanId';
+                      final isPaying = _loadingActionKeys.contains(payKey);
+                      return Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: isPaying
+                              ? null
+                              : () async {
+                                  _markAsRead(item);
+                                  if (partyPlanId.isEmpty || depositAmount <= 0) {
+                                    debugPrint(
+                                      'Error: Invalid partyPlanId or depositAmount for notification payment',
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Payment details unavailable. Please try again later.',
+                                        ),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  setState(() => _loadingActionKeys.add(payKey));
+                                  try {
+                                    await _startHostRazorpayDirectPayment(
+                                      partyPlanId: partyPlanId,
+                                      venueName: venueName,
+                                      orderId: hostRazorpayOrderId,
+                                      depositAmount: depositAmount,
+                                      onSuccess: () async {
+                                        await _fetchNotifications();
+                                      },
+                                    );
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _loadingActionKeys.remove(payKey));
+                                    }
+                                  }
+                                },
+                          icon: isPaying
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.payment_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                          label: Text(
+                            isPaying
+                                ? 'Processing...'
+                                : 'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
                             ),
-                          );
-                          return;
-                        }
-                        await _startHostRazorpayDirectPayment(
-                          partyPlanId: partyPlanId,
-                          venueName: venueName,
-                          orderId: hostRazorpayOrderId,
-                          depositAmount: depositAmount,
-                          onSuccess: () async {
-                            await _fetchNotifications();
-                          },
-                        );
-                      },
-                      icon: const Icon(
-                        Icons.payment_rounded,
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                      label: Text(
-                        'Pay Deposit (${depositAmount.toStringAsFixed(0)})',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7C3AED),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -3398,101 +3424,151 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
               ),
             )
           else
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      _markAsRead(item);
-                      if (requestId.isNotEmpty) {
-                        final res = await ApiService.acceptPartyPlanInvite(
-                          requestId,
-                        );
-                        if (mounted) {
-                          if (res != null && res['success'] == true) {
-                            final bool isSelfPay = res['isSelfPay'] == true || (res['message']?.toString().toLowerCase().contains('host') ?? false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  res['message'] ?? (isSelfPay
-                                      ? '🎉 Invite Accepted! (Paid by Host)'
-                                      : '🎉 Invite Accepted! Please pay the safety deposit to confirm.'),
-                                ),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                            _fetchNotifications();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
-                              ),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  res?['message'] ?? 'Failed to accept invite',
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+            Builder(
+              builder: (context) {
+                final acceptKey = 'ACCEPT_INVITE:$requestId';
+                final isAccepting = _loadingActionKeys.contains(acceptKey);
+                return Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isAccepting
+                            ? null
+                            : () async {
+                                _markAsRead(item);
+                                if (requestId.isNotEmpty) {
+                                  setState(() => _loadingActionKeys.add(acceptKey));
+                                  try {
+                                    final res = await ApiService.acceptPartyPlanInvite(
+                                      requestId,
+                                    );
+                                    if (mounted && context.mounted) {
+                                      if (res != null && res['success'] == true) {
+                                        final bool isSelfPay = res['isSelfPay'] == true || (res['message']?.toString().toLowerCase().contains('host') ?? false);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              res['message'] ?? (isSelfPay
+                                                  ? '🎉 Invite Accepted! (Paid by Host)'
+                                                  : '🎉 Invite Accepted! Please pay the safety deposit to confirm.'),
+                                            ),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                        _fetchNotifications();
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              res?['message'] ?? 'Failed to accept invite',
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    debugPrint('Error accepting invite: $e');
+                                    if (mounted && context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Error: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _loadingActionKeys.remove(acceptKey));
+                                    }
+                                  }
+                                } else {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                                    ),
+                                  );
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF8B5CF6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF8B5CF6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'ACCEPT INVITE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      _markAsRead(item);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
                         ),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        child: isAccepting
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'ACCEPTING...',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Text(
+                                'ACCEPT INVITE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
-                    child: const Text(
-                      'VIEW DETAILS',
-                      style: TextStyle(
-                        color: Color(0xFF475569),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: isAccepting
+                            ? null
+                            : () {
+                                _markAsRead(item);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const LiveFeedScreen(initialTabIndex: 1),
+                                  ),
+                                );
+                              },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'VIEW DETAILS',
+                          style: TextStyle(
+                            color: Color(0xFF475569),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
         ],
       ),

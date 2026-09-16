@@ -8,6 +8,7 @@ import SubscriptionTransaction, { TransactionType, TransactionStatus } from '../
 import SubscriptionAddonPackage from '../models/SubscriptionAddonPackage';
 import UserAddon, { UserAddonStatus } from '../models/UserAddon';
 import EntitlementAuditLog from '../models/EntitlementAuditLog';
+import PartyPlan, { PartyPlanStatus } from '../models/PartyPlan';
 import { WalletService } from './walletService';
 import { WalletTransactionType } from '../models/WalletTransaction';
 import { RealtimeEventBroker } from './RealtimeEventBroker';
@@ -177,10 +178,9 @@ export class EntitlementService {
 
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const PlanModel = (await import('../models/Plan')).default;
 
-        // 1. Parallel fetch of active subscription, usage counters, party plans count, and user add-ons
-        const [activeSub, usageRecords, partyPlansCreatedThisMonth, userAddons] = await Promise.all([
+        // 1. Parallel fetch of active subscription, usage counters, and user add-ons
+        const [activeSub, usageRecords, userAddons] = await Promise.all([
             UserSubscription.findOne({
                 where: {
                     userId,
@@ -192,12 +192,6 @@ export class EntitlementService {
             }),
             SubscriptionUsage.findAll({
                 where: { userId },
-            }),
-            PlanModel.count({
-                where: {
-                    userId,
-                    createdAt: { [Op.gte]: startOfMonth },
-                },
             }),
             UserAddon.findAll({
                 where: {
@@ -223,10 +217,34 @@ export class EntitlementService {
             });
         }
 
-        const pkg: SubscriptionPackage | null = (activeSub as any)?.package || (lastExpiredSub as any)?.package || null;
+        const freePkgForDefaults = !activeSub && !lastExpiredSub
+            ? await SubscriptionPackage.findOne({ where: { tier: PackageTier.FREE, isActive: true }, order: [['createdAt', 'DESC']] })
+            : null;
+        const pkg: SubscriptionPackage | null = (activeSub as any)?.package || (lastExpiredSub as any)?.package || freePkgForDefaults;
         const tier = pkg ? pkg.tier : PackageTier.FREE;
         const isActive = !!activeSub;
         const isExpired = !activeSub && !!lastExpiredSub;
+
+        // Determine accurate party plan period and count active created PartyPlans
+        const partyPlanPeriodDays = (pkg as any)?.partyPlanPeriodDays ?? (tier === PackageTier.FREE ? 7 : 30);
+        const partyPeriodStart = partyPlanPeriodDays === 7
+            ? new Date(Date.now() - (7 * 24 * 60 * 60 * 1000))
+            : (partyPlanPeriodDays === 1
+                ? new Date(Date.now() - (24 * 60 * 60 * 1000))
+                : (activeSub ? new Date(activeSub.startDate) : startOfMonth));
+
+        let partyPlansCreatedThisPeriod = 0;
+        try {
+            partyPlansCreatedThisPeriod = await PartyPlan.count({
+                where: {
+                    userId,
+                    createdAt: { [Op.gte]: partyPeriodStart },
+                    status: { [Op.ne]: PartyPlanStatus.CANCELLED },
+                },
+            });
+        } catch (planCountErr) {
+            logger.warn('[EntitlementService] Error counting PartyPlan usage:', planCountErr);
+        }
 
         // Remaining time calculation
         let remainingDays = 0;
@@ -270,20 +288,17 @@ export class EntitlementService {
 
         // Party Plans Limit
         const partyPlansIncluded = (pkg as any)?.partyPlanLimit ?? (tier === PackageTier.FREE ? 1 : (tier === PackageTier.CORE ? 3 : (tier === PackageTier.PLUS ? 5 : (tier === PackageTier.PRO ? 10 : 9999))));
-        const partyPlanPeriodDays = (pkg as any)?.partyPlanPeriodDays ?? (tier === PackageTier.FREE ? 7 : 30);
 
         const isPartyPlansUnlimited = partyPlansIncluded >= 9999 || partyPlansIncluded === -1 || tier === PackageTier.ELITE;
         const partyPlansRemaining = isPartyPlansUnlimited
             ? 9999
-            : Math.max(0, partyPlansIncluded - partyPlansCreatedThisMonth);
+            : Math.max(0, partyPlansIncluded - partyPlansCreatedThisPeriod);
         const partyPlansProgress = isPartyPlansUnlimited
             ? 0
-            : Math.min(100, Math.round((partyPlansCreatedThisMonth / partyPlansIncluded) * 100));
+            : Math.min(100, Math.round((partyPlansCreatedThisPeriod / partyPlansIncluded) * 100));
 
         // Daily Likes
-        const freePkgForDefaults = !pkg ? await SubscriptionPackage.findOne({ where: { tier: PackageTier.FREE, isActive: true }, order: [['createdAt', 'DESC']] }) : null;
-        const resolvedPkg = pkg || freePkgForDefaults;
-        const dailyLikesIncluded = resolvedPkg?.dailyLikes ?? 7;
+        const dailyLikesIncluded = pkg?.dailyLikes ?? 7;
         const isDailyLikesUnlimited = dailyLikesIncluded >= 9999 || dailyLikesIncluded === -1;
         const dailyLikesUsed = usageMap['daily_likes_daily'] || usageMap['daily_likes'] || 0;
         const dailyLikesRemaining = isDailyLikesUnlimited
@@ -334,7 +349,7 @@ export class EntitlementService {
                 name: 'Party Plans',
                 icon: '🎉',
                 includedQuantity: isPartyPlansUnlimited ? -1 : partyPlansIncluded,
-                usedQuantity: partyPlansCreatedThisMonth,
+                usedQuantity: partyPlansCreatedThisPeriod,
                 remainingQuantity: isPartyPlansUnlimited ? -1 : partyPlansRemaining,
                 progressPercentage: partyPlansProgress,
                 isUnlimited: isPartyPlansUnlimited,

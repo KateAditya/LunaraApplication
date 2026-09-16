@@ -23,7 +23,7 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
 
   String _selectedGender = 'All';
   String _selectedAgeRange = 'All Ages';
-  String _selectedSortFilter = 'All'; // 'All', 'Top Ranked', 'Boosted ⚡', 'VIP Plans 👑', 'Most Liked ❤️'
+  String _selectedSortFilter = 'All'; // 'All', 'Top Ranked', 'Boosted ⚡', 'Most Liked ❤️'
 
   final List<String> _genders = ['All', 'Female', 'Male', 'Other'];
   final List<String> _ageRanges = [
@@ -37,7 +37,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
     'All',
     'Top Ranked',
     'Boosted ⚡',
-    'VIP Plans 👑',
     'Most Liked ❤️',
   ];
 
@@ -193,11 +192,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               (user['boostCount'] != null && (int.tryParse(user['boostCount'].toString()) ?? 0) > 0) ||
               (user['boostsRemaining'] != null && (int.tryParse(user['boostsRemaining'].toString()) ?? 0) > 0);
           if (!isBoosted) return false;
-        } else if (_selectedSortFilter == 'VIP Plans 👑') {
-          final rawTier = (user['subscriptionTier'] ?? user['tier'] ?? user['packageTier'] ?? 'FREE').toString().toUpperCase();
-          final tier = (rawTier == 'NULL' || rawTier == 'UNDEFINED') ? 'FREE' : rawTier;
-          final bool hasPlan = tier != 'FREE';
-          if (!hasPlan) return false;
         }
 
         return true;

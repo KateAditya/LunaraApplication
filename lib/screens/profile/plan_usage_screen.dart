@@ -671,12 +671,24 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
     final superlikeAddon = _getAddonRemaining(addons, 'superlike');
     final boostAddon = _getAddonRemaining(addons, 'profile_boost');
     final backtrackAddon = _getAddonRemaining(addons, 'backtrack');
+    final partyAddon = _getAddonRemaining(addons, 'party_creation');
 
     final superlikesFromProvider = provider.superlikesRemaining >= 9999 ? 9999 : provider.superlikesRemaining;
     final boostsFromProvider = provider.boostsRemaining >= 9999 ? 9999 : provider.boostsRemaining;
     final backtracksFromProvider = provider.backtracksRemaining >= 9999 ? 9999 : provider.backtracksRemaining;
 
     final fallbackItems = [
+      PlanEntitlementItem(
+        featureKey: 'party_creation',
+        name: 'Party Plans',
+        icon: '🎉',
+        includedQuantity: status.isElite ? -1 : (status.isPaid ? 5 : 1),
+        usedQuantity: 0,
+        remainingQuantity: status.isElite ? -1 : (status.isPaid ? 5 : 1),
+        progressPercentage: 0,
+        isUnlimited: status.isElite,
+        unit: status.isPaid ? 'per month' : 'per week',
+      ),
       PlanEntitlementItem(
         featureKey: 'daily_likes',
         name: 'Daily Likes',
@@ -730,6 +742,7 @@ class _PlanUsageContentState extends State<PlanUsageContent> {
           if (item.featureKey == 'superlike') addonRem = superlikeAddon;
           if (item.featureKey == 'profile_boost') addonRem = boostAddon;
           if (item.featureKey == 'backtrack') addonRem = backtrackAddon;
+          if (item.featureKey == 'party_creation') addonRem = partyAddon;
           return _buildUsageCard(item, addonRemaining: addonRem);
         }),
       ],

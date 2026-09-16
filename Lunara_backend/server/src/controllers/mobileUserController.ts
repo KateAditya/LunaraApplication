@@ -2054,6 +2054,8 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                     }
 
                     try {
+                        apiCache.invalidatePrefix(`notif:${targetUserId}:`);
+                        apiCache.invalidatePrefix(`badge:${targetUserId}:`);
                         apiCache.delete(`notifs:${targetUserId}`);
                     } catch (_) {}
 
@@ -2116,8 +2118,11 @@ export const swipeUser = async (req: Request, res: Response): Promise<Response> 
                             }
                         };
                         io.to(`user_${targetUserId}`).emit('like_received', notifPayload);
+                        io.to(`user_${targetUserId}`).emit('new_like', notifPayload);
+                        io.to(`user_${targetUserId}`).emit('notification', notifPayload);
                         if (isSuper) {
                             io.to(`user_${targetUserId}`).emit('superlike_received', notifPayload);
+                            io.to(`user_${targetUserId}`).emit('super_like_received', notifPayload);
                         }
                         io.to(`user_${targetUserId}`).emit('notification_created', notifPayload);
                         io.to(`user_${targetUserId}`).emit('notification_received', notifPayload);

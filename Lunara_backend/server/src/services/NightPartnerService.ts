@@ -1881,18 +1881,23 @@ export class NightPartnerService {
         reason: string = 'Change of plans',
         action?: 'request' | 'approve' | 'reject' | 'confirm' | 'decline' | 'accept'
     ): Promise<{ success: boolean; status?: string; message: string }> {
-        const cleanId = this.cleanEntityId(targetId);
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!cleanId || !uuidRegex.test(cleanId)) {
+        const cleanId = this.cleanEntityId(targetId) || targetId;
+        if (!cleanId) {
             throw new Error('RECORD_NOT_FOUND');
         }
 
         // Check if target is a Match or a Request
         let match = await NightPartnerMatch.findByPk(cleanId);
+        if (!match && cleanId !== targetId) {
+            match = await NightPartnerMatch.findByPk(targetId);
+        }
         let request: NightPartnerRequest | null = null;
 
         if (!match) {
             request = await NightPartnerRequest.findByPk(cleanId);
+            if (!request && cleanId !== targetId) {
+                request = await NightPartnerRequest.findByPk(targetId);
+            }
         }
 
         if (!match && !request) {
