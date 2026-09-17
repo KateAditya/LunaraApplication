@@ -268,33 +268,63 @@ export const respondToRequest = async (req: Request, res: Response): Promise<voi
         const cleanId = NightPartnerService.cleanEntityId(id);
         const action = (req.body.action || '').toString().toLowerCase();
         const partnerId = req.user!.id;
-        if (!cleanId || !['accept', 'decline'].includes(action)) {
+        // Optional event context. The live feed groups a night by venue + date,
+        // so the id it can offer is not always the request's own; when it isn't,
+        // this lets the service find the partner's pending invite for that night
+        // instead of rejecting an otherwise valid Accept.
+        const { venueId, eventDate, hostId } = req.body || {};
+        if ((!cleanId && !venueId) || !['accept', 'decline'].includes(action)) {
             res.status(400).json({ success: false, message: 'requestId and valid action (accept/decline) are required' });
             return;
         }
 
-        const result = await NightPartnerService.respondToRequest(cleanId, partnerId, action as 'accept' | 'decline');
+        const result = await NightPartnerService.respondToRequest(
+            cleanId,
+            partnerId,
+            action as 'accept' | 'decline',
+            {
+                venueId: venueId ? String(venueId) : undefined,
+                eventDate: eventDate || undefined,
+                hostId: hostId ? String(hostId) : undefined,
+            }
+        );
         res.json({ success: true, message: `Request ${action}ed successfully`, data: result });
     } catch (err: any) {
         logger.error('respondToRequest error:', err);
         const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
         const isSlotFilled = err.message === 'MATCH_SLOT_FILLED';
         const isExpired = err.message === 'REQUEST_EXPIRED';
-        const isNotFound = err.message === 'REQUEST_NOT_FOUND' || err.message === 'REQUEST_ALREADY_PROCESSED';
+        const isAlreadyProcessed = err.message === 'REQUEST_ALREADY_PROCESSED';
+        // REQUEST_NOT_FOUND means the id we were handed did not resolve to any
+        // night request, match or booking — which is just as often a client
+        // sending the wrong id as it is a genuinely finished invite. It must not
+        // be reported as "no longer available", because the client deletes the
+        // card on that signal and would throw away an invite that is still open.
+        const isUnresolved = err.message === 'REQUEST_NOT_FOUND';
+        const isUnauthorized = err.message === 'UNAUTHORIZED_REQUEST_ACTION';
+        const isWrongEndpoint = err.code === 'WRONG_ENDPOINT_PARTY_PLAN_REQUEST';
         let userMessage = err.message || 'Failed to process request response';
         if (isSlotFilled) {
             userMessage = 'This invitation is no longer available as the host is already matched with another guest.';
         } else if (isExpired) {
             userMessage = 'This invitation has expired.';
-        } else if (isNotFound) {
-            userMessage = 'This invitation is no longer available.';
+        } else if (isAlreadyProcessed) {
+            userMessage = 'This invitation has already been responded to.';
+        } else if (isUnresolved) {
+            userMessage = 'We could not find this invitation. Pull to refresh and try again.';
+        } else if (isUnauthorized) {
+            userMessage = 'This invitation was not sent to you.';
+        } else if (isWrongEndpoint) {
+            userMessage = 'This is a Party Plan request. Please respond to it from the Party Plan card.';
         }
         res.status(400).json({
             success: false,
             code: code || err.message,
             reason: code || err.message,
-            notAvailable: isSlotFilled || isExpired || isNotFound,
+            notAvailable: isSlotFilled || isExpired || isAlreadyProcessed,
+            unresolved: isUnresolved,
             message: userMessage,
+            ...(isWrongEndpoint && err.correctEndpoint ? { correctEndpoint: err.correctEndpoint } : {}),
             ...(err.timeLock || {}),
         });
     }

@@ -8106,42 +8106,92 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     Map<String, dynamic> metadata = {};
     Map<String, dynamic> rawItem = sortedEntries.first;
 
+    // `sortedEntries` is ordered most-progressed first, but `addAll` overwrites,
+    // so iterating it this way used to hand every key to the *least* progressed
+    // entry — the exact opposite of what the sort above is for. A group keyed by
+    // `event_<venueId>_<date>` can hold several requests and matches for the
+    // same night, so that is how an Accept button rendered from a live pending
+    // invite ended up carrying a stale, already-resolved request id, and the
+    // PATCH came back 400 REQUEST_NOT_FOUND. Fill gaps only: the first (most
+    // progressed) entry to supply a key keeps it.
+    void mergeNightSource(dynamic src) {
+      if (src is! Map || src.isEmpty) return;
+      Map<String, dynamic>.from(src).forEach((key, value) {
+        if (value == null) return;
+        final existing = metadata[key];
+        final bool isBlank =
+            existing == null ||
+            (existing is String && existing.trim().isEmpty) ||
+            (existing is Iterable && existing.isEmpty) ||
+            (existing is Map && existing.isEmpty);
+        if (isBlank) metadata[key] = value;
+      });
+    }
+
     for (final e in sortedEntries) {
-      if (e['metadata'] is Map && (e['metadata'] as Map).isNotEmpty) {
-        metadata.addAll(Map<String, dynamic>.from(e['metadata']));
-      }
-      if (e['data'] is Map && (e['data'] as Map).isNotEmpty) {
-        metadata.addAll(Map<String, dynamic>.from(e['data']));
-      }
+      mergeNightSource(e['data']);
+      mergeNightSource(e['metadata']);
       if (e['id']?.toString().startsWith('upcoming_night_timeline_') == true) {
         rawItem = e;
       }
     }
 
-    final String requestId =
-        (metadata['requestId'] ??
-                rawItem['requestId'] ??
-                rawItem['data']?['requestId'] ??
-                (rawItem['id']?.toString().startsWith(
-                          'upcoming_night_timeline_',
-                        ) ==
-                        false
-                    ? rawItem['id']
-                    : null) ??
-                nightId)
-            .toString();
-    final String matchId =
-        (metadata['matchId'] ??
-                rawItem['matchId'] ??
-                rawItem['data']?['matchId'] ??
-                '')
-            .toString();
-    final String targetRequestId = requestId.isNotEmpty
-        ? requestId
-        : (matchId.isNotEmpty ? matchId : nightId);
+    // Only a real record id can be sent to the server. `nightId` is frequently
+    // the synthetic `event_<venueId>_<date>` grouping key, and falling back to
+    // it guaranteed a rejected request rather than a failed one.
+    bool isRecordId(String? v) =>
+        v != null &&
+        RegExp(
+          r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+          caseSensitive: false,
+        ).hasMatch(v.trim());
+
+    String firstRecordId(List<dynamic> candidates) {
+      for (final c in candidates) {
+        final s = c?.toString().trim();
+        if (isRecordId(s)) return s!;
+      }
+      return '';
+    }
+
+    // Prefer the id carried by an entry that is still pending — that is the one
+    // the Accept / Decline buttons below actually act on.
+    String pendingRequestId = '';
+    for (final e in sortedEntries) {
+      final d = e['data'] is Map ? Map<String, dynamic>.from(e['data']) : const {};
+      final m =
+          e['metadata'] is Map ? Map<String, dynamic>.from(e['metadata']) : const {};
+      final entryStatus = (d['status'] ?? m['status'] ?? e['status'] ?? '')
+          .toString()
+          .toUpperCase();
+      if (entryStatus != 'PENDING' && entryStatus != 'INVITE_SENT') continue;
+      final candidate = firstRecordId([d['requestId'], m['requestId'], e['requestId']]);
+      if (candidate.isNotEmpty) {
+        pendingRequestId = candidate;
+        break;
+      }
+    }
+
+    final String requestId = pendingRequestId.isNotEmpty
+        ? pendingRequestId
+        : firstRecordId([
+            metadata['requestId'],
+            rawItem['requestId'],
+            rawItem['data']?['requestId'],
+            rawItem['id'],
+            nightId,
+          ]);
+    final String matchId = firstRecordId([
+      metadata['matchId'],
+      rawItem['matchId'],
+      rawItem['data']?['matchId'],
+    ]);
+    final String targetRequestId = requestId.isNotEmpty ? requestId : matchId;
+    // `nightId` is kept as the last resort here because the group key is a real
+    // match id whenever the card was keyed by one rather than by venue + date.
     final String targetMatchId = matchId.isNotEmpty
         ? matchId
-        : (requestId.isNotEmpty ? requestId : nightId);
+        : (requestId.isNotEmpty ? requestId : firstRecordId([nightId]));
 
     final String status =
         (metadata['status'] ?? rawItem['status'] ?? 'INVITE_SENT')
@@ -8203,6 +8253,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                 ? currentUserId
                 : ApiService.currentUserId ?? '')
             .toString();
+
+    // Event context sent alongside the id when responding, so the server can
+    // still find this partner's pending invite if the grouped card could only
+    // offer the synthetic `event_<venueId>_<date>` key.
+    final String nightVenueId =
+        (metadata['venueId'] ?? rawItem['venueId'] ?? rawItem['venue']?['id'] ?? '')
+            .toString();
+    final String nightEventDate =
+        (metadata['eventDate'] ?? rawItem['eventDate'] ?? rawItem['date'] ?? '')
+            .toString()
+            .split('T')
+            .first
+            .split(' ')
+            .first;
 
     bool isCurrentUserHost = false;
     if (metadata['isHost'] != null) {
@@ -8654,6 +8718,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final isAccepting = _activeActionKeys.contains(acceptKey);
         final isDeclining = _activeActionKeys.contains(declineKey);
 
+        // Needs either a real request id or enough event context for the server
+        // to resolve this partner's pending invite. With neither, the call could
+        // only ever be rejected, so the card stays but the buttons do not —
+        // tapping it still opens the invite.
+        if (targetRequestId.isNotEmpty || nightVenueId.isNotEmpty) {
         actionsList.add(
           NotificationAction(
             label: isAccepting ? 'Accepting...' : 'Accept',
@@ -8669,6 +8738,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           await ApiService.respondToNightPartnerRequestDetailed(
                             requestId: targetRequestId,
                             action: 'accept',
+                            venueId: nightVenueId,
+                            eventDate: nightEventDate,
+                            hostId: hostId,
                           );
                       if (res['success'] == true) {
                         _optimisticallyUpdateNightPartnerRequest(
@@ -8685,10 +8757,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         );
                         _loadFeed(showLoader: false, forceRefresh: true);
                       } else {
+                        // REQUEST_NOT_FOUND is deliberately not treated as
+                        // "gone": the server returns it both when the invite is
+                        // genuinely over and when the id we sent was never a
+                        // night request at all. Deleting the card on the second
+                        // case threw away an invite that is still pending, and
+                        // the forced refresh below already reconciles the real
+                        // outcome either way.
                         final bool isUnavailable = res['notAvailable'] == true ||
                             res['code'] == 'MATCH_SLOT_FILLED' ||
                             res['code'] == 'REQUEST_EXPIRED' ||
-                            res['code'] == 'REQUEST_NOT_FOUND' ||
                             res['code'] == 'REQUEST_ALREADY_PROCESSED';
                         if (isUnavailable) {
                           _optimisticallyRemoveNightPartnerRequest(targetRequestId);
@@ -8730,6 +8808,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           await ApiService.respondToNightPartnerRequestDetailed(
                             requestId: targetRequestId,
                             action: 'decline',
+                            venueId: nightVenueId,
+                            eventDate: nightEventDate,
+                            hostId: hostId,
                           );
                       if (res['success'] == true) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -8759,6 +8840,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   },
           ),
         );
+        }
       } else {
         accentColor = const Color(0xFF8B5CF6);
         badgeText = 'INVITE SENT';

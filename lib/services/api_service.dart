@@ -5307,10 +5307,16 @@ class ApiService {
   static Future<bool> respondToNightPartnerRequest({
     required String requestId,
     required String action, // 'accept' | 'decline'
+    String? venueId,
+    String? eventDate,
+    String? hostId,
   }) async {
     final res = await respondToNightPartnerRequestDetailed(
       requestId: requestId,
       action: action,
+      venueId: venueId,
+      eventDate: eventDate,
+      hostId: hostId,
     );
     return res['success'] == true;
   }
@@ -5318,6 +5324,12 @@ class ApiService {
   static Future<Map<String, dynamic>> respondToNightPartnerRequestDetailed({
     required String requestId,
     required String action, // 'accept' | 'decline'
+    // Event context. The live feed keys a night by venue + date, so the id it
+    // holds is not always the request's own; these let the server fall back to
+    // the caller's pending invite for that night instead of rejecting the call.
+    String? venueId,
+    String? eventDate,
+    String? hostId,
   }) async {
     final userId = currentUserId;
     if (userId == null) {
@@ -5344,9 +5356,20 @@ class ApiService {
           .replaceAll('gp_', '')
           .replaceAll('pp_', '')
           .trim();
+      // The route needs a path segment. When the card could not produce a real
+      // request id we send this placeholder: it fails the server's UUID check,
+      // which is exactly what routes the call to the venue + date + host
+      // resolution instead of rejecting it.
+      final pathId = cleanId.isEmpty ? 'resolve' : cleanId;
       final response = await patch(
-        '/api/mobile/nights/requests/$cleanId',
-        body: {'partnerId': userId, 'action': action.toLowerCase()},
+        '/api/mobile/nights/requests/$pathId',
+        body: {
+          'partnerId': userId,
+          'action': action.toLowerCase(),
+          if (venueId != null && venueId.isNotEmpty) 'venueId': venueId,
+          if (eventDate != null && eventDate.isNotEmpty) 'eventDate': eventDate,
+          if (hostId != null && hostId.isNotEmpty) 'hostId': hostId,
+        },
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 ||

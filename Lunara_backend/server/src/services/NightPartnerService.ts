@@ -1148,13 +1148,43 @@ export class NightPartnerService {
     public static async respondToRequest(
         requestIdInput: string,
         partnerId: string,
-        action: 'accept' | 'decline'
+        action: 'accept' | 'decline',
+        context?: { venueId?: string; eventDate?: string | Date; hostId?: string }
     ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch; booking?: Booking; conversation?: Conversation }> {
         const cleanId = this.cleanEntityId(requestIdInput);
 
+        // Resolves the one PENDING invite this partner holds for the night the
+        // client is looking at. The live feed groups a night by
+        // `event_<venueId>_<date>`, so the id it can offer is not always the
+        // request's own — this lets an otherwise correct Accept still land.
+        const resolveFromContext = async (): Promise<NightPartnerRequest | null> => {
+            if (!context?.venueId) return null;
+            const where: any = {
+                partnerId,
+                venueId: context.venueId,
+                status: NightPartnerRequestStatus.PENDING,
+            };
+            if (context.hostId) where.hostId = context.hostId;
+            if (context.eventDate) {
+                const d = this.normalizeDateString(context.eventDate as any);
+                if (d) where.eventDate = d;
+            }
+            try {
+                return await NightPartnerRequest.findOne({
+                    where,
+                    order: [['createdAt', 'DESC']],
+                });
+            } catch (e: any) {
+                logger.warn(`[NightPartnerService] context resolution failed: ${e?.message}`);
+                return null;
+            }
+        };
+
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!cleanId || !uuidRegex.test(cleanId)) {
-            throw new Error('REQUEST_NOT_FOUND');
+            const byContext = await resolveFromContext();
+            if (!byContext) throw new Error('REQUEST_NOT_FOUND');
+            return await this._respondToResolvedRequest(byContext, byContext.id, partnerId, action);
         }
 
         let initialReq = await NightPartnerRequest.findByPk(cleanId);
@@ -1224,26 +1254,59 @@ export class NightPartnerService {
         }
 
         if (!initialReq) {
-            // Check if cleanId was a PartyPlanRequest or PartyPlan
+            // A party plan request is NOT a night partner request and must never
+            // be resolved here. This used to flip its status directly, which
+            // skipped every part of the real accept flow that the rest of the
+            // system depends on: the host-ownership check, the partner
+            // exclusivity lock, PAYMENT_PENDING + the payment window,
+            // plan.matchedRequestId, the lifecycle transition, and the
+            // notifications and socket events that move both users' cards on.
+            // The request came back "accepted" while the plan stayed in a state
+            // nothing downstream could act on — and because this endpoint
+            // authenticates the caller as the *partner*, any signed-in user
+            // could accept or reject any party plan request whose id they knew.
+            //
+            // Point the caller at the endpoint that actually runs the flow.
             try {
                 const PartyPlanRequest = (await import('../models/PartyPlanRequest')).default;
-                const { PartyPlanRequestStatus } = await import('../models/PartyPlanRequest');
                 const partyReq = await PartyPlanRequest.findByPk(cleanId);
                 if (partyReq) {
-                    if (action === 'accept') {
-                        await partyReq.update({ status: PartyPlanRequestStatus.ACCEPTED });
-                    } else {
-                        await partyReq.update({ status: PartyPlanRequestStatus.REJECTED });
-                    }
-                    return { request: partyReq as any };
+                    const err: any = new Error('WRONG_ENDPOINT_PARTY_PLAN_REQUEST');
+                    err.code = 'WRONG_ENDPOINT_PARTY_PLAN_REQUEST';
+                    err.correctEndpoint = `/api/mobile/party-plans/requests/${partyReq.id}/${action === 'accept' ? 'accept' : 'reject'}`;
+                    throw err;
                 }
-            } catch (_) {}
+            } catch (e: any) {
+                if (e?.code === 'WRONG_ENDPOINT_PARTY_PLAN_REQUEST') throw e;
+                logger.warn(`[NightPartnerService] party plan request lookup failed for ${cleanId}: ${e?.message}`);
+            }
         }
 
         if (!initialReq) {
+            const byContext = await resolveFromContext();
+            if (byContext) {
+                initialReq = byContext;
+                effectiveRequestId = byContext.id;
+            }
+        }
+
+        if (!initialReq) {
+            logger.warn(
+                `[NightPartnerService] respondToRequest could not resolve id=${cleanId} ` +
+                `partner=${partnerId} context=${JSON.stringify(context || {})}`
+            );
             throw new Error('REQUEST_NOT_FOUND');
         }
 
+        return await this._respondToResolvedRequest(initialReq, effectiveRequestId, partnerId, action);
+    }
+
+    private static async _respondToResolvedRequest(
+        initialReq: NightPartnerRequest,
+        effectiveRequestId: string,
+        partnerId: string,
+        action: 'accept' | 'decline'
+    ): Promise<{ request: NightPartnerRequest; match?: NightPartnerMatch; booking?: Booking; conversation?: Conversation }> {
         const lockKey = `slot_${initialReq.hostId}_${initialReq.venueId}_${initialReq.eventDate}`;
         return await this._withSlotLock(lockKey, async () => {
             return await sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
