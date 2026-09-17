@@ -29,6 +29,9 @@ import AuditLog from '../models/AuditLog';
 import { WalletService } from '../services/walletService';
 import WalletTransaction, { WalletTransactionType, WalletTransactionStatus } from '../models/WalletTransaction';
 import { EventTimeLockService } from '../services/EventTimeLockService';
+import Ad from '../models/Ad';
+import { EventSeatService } from '../services/EventSeatService';
+import { EventPlanNoMatchService } from '../services/EventPlanNoMatchService';
 import { formatTime12Hour, formatDateFull, extractDateParts, DEFAULT_TIMEZONE } from '../utils/dateTimeUtils';
 import { EntitlementService } from '../services/EntitlementService';
 
@@ -775,6 +778,13 @@ const razorpay = new Razorpay({
 });
 
 // ─── Shared venue attributes to include ──────────────────────────────────────
+/**
+ * A partner plan posted from an Upcoming Night always holds two seats on that
+ * event: one for the host, one for whoever joins them. Converting the plan to a
+ * solo booking releases one of them; cancelling releases both.
+ */
+const EVENT_PLAN_SEATS = 2;
+
 const VENUE_ATTRS = ['id', 'name', 'addressLine1', 'area', 'city', 'category', 'phone', 'coverChargeMale', 'coverChargeFemale'];
 const USER_ATTRS = ['id', 'firstName', 'lastName', 'email', 'phone', 'profileImageUrl'];
 const PROFILE_ATTRS = ['bio', 'occupation', 'city', 'gender'];
@@ -1080,13 +1090,111 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             logger.warn(`[createPartyPlan timing] Validation phase took ${tValidation - diagStart}ms`);
         }
 
+        // ── Event-linked plan resolution ──────────────────────────────────────
+        // A plan posted from an Upcoming Night carries that event's id. The
+        // event is resolved here, from the database, so the price the plan is
+        // created with is the admin's price — never a number the client sent.
+        const rawEventId = (req.body.adId || req.body.upcomingNightId || '').toString().trim();
+        const isUpcomingNight = Boolean(req.body.isUpcomingNight || rawEventId);
+        let linkedEvent: Ad | null = null;
+
+        if (isUpcomingNight) {
+            if (!rawEventId) {
+                res.status(400).json({
+                    success: false,
+                    code: 'EVENT_REQUIRED',
+                    message: 'This plan must be linked to an event.',
+                });
+                return;
+            }
+            linkedEvent = await Ad.findByPk(rawEventId);
+            if (!linkedEvent || linkedEvent.type !== 'Party' || !linkedEvent.isActive) {
+                res.status(404).json({
+                    success: false,
+                    code: 'EVENT_NOT_FOUND',
+                    message: 'This event is no longer available.',
+                });
+                return;
+            }
+
+            // The event must still be ahead of us. Posting a partner search for
+            // a night that has already happened would take real seats and real
+            // money for something nobody can attend.
+            if (linkedEvent.eventDate && new Date(linkedEvent.eventDate).getTime() < Date.now()) {
+                res.status(409).json({
+                    success: false,
+                    code: 'EVENT_ALREADY_PASSED',
+                    message: 'This event has already taken place.',
+                });
+                return;
+            }
+
+            // The venue and date are the event's, not the client's. Without
+            // pinning them a caller could post a plan priced from one event but
+            // scheduled at a different venue or on a different night, and the
+            // seats it holds would belong to an event nobody is attending.
+            if (linkedEvent.venueId && linkedEvent.venueId !== venueId) {
+                res.status(400).json({
+                    success: false,
+                    code: 'EVENT_VENUE_MISMATCH',
+                    message: 'This plan does not match the event\'s venue.',
+                });
+                return;
+            }
+            if (linkedEvent.eventDate) {
+                // `eventDate` is a timestamp, not a calendar day, and nightlife
+                // events routinely run past midnight — a 1 AM IST event falls on
+                // the previous day in UTC. Comparing calendar days would reject
+                // perfectly valid posts depending on the server's timezone, so
+                // the check is a tolerance window instead. It still blocks a plan
+                // aimed at a different night, which is the thing worth blocking.
+                const driftMs = Math.abs(
+                    new Date(linkedEvent.eventDate).getTime() - new Date(partyDate).getTime()
+                );
+                const MAX_DRIFT_MS = 36 * 60 * 60 * 1000;
+                if (driftMs > MAX_DRIFT_MS) {
+                    res.status(400).json({
+                        success: false,
+                        code: 'EVENT_DATE_MISMATCH',
+                        message: 'This plan\'s date does not match the event date.',
+                    });
+                    return;
+                }
+            }
+            // A plan holds two seats, so the event must be able to give two.
+            const remaining = await EventSeatService.remaining(linkedEvent.id);
+            if (remaining !== null && remaining < EVENT_PLAN_SEATS) {
+                res.status(409).json({
+                    success: false,
+                    code: 'EVENT_SOLD_OUT',
+                    message: `This event has only ${Math.max(0, remaining)} seat(s) left — a partner plan needs ${EVENT_PLAN_SEATS}.`,
+                    remainingSeats: Math.max(0, remaining),
+                });
+                return;
+            }
+        }
+
         // ── Generate Razorpay Order ───────────────────────────────────────────
-        // Commitment deposit is always ₹99 per person, regardless of payment model.
-        // SELF_PAY only means the Host covers the party expense at the venue — it does NOT
-        // change the commitment deposit amount.
-        const depositAmount = 99.00;
+        // For an ordinary party plan the commitment deposit is always ₹99 per
+        // person, regardless of payment model: SELF_PAY only means the Host
+        // covers the party expense at the venue.
+        //
+        // An event-linked plan is different — there the per-person amount is the
+        // event's own ticket price, because the payment buys a real seat rather
+        // than a refundable commitment. `depositAmount` stays the *per person*
+        // figure either way, which is what the joiner-side code already reads.
+        const depositAmount = linkedEvent
+            ? Math.max(0, Number(linkedEvent.entryPrice) || 0)
+            : 99.00;
+
+        // SELF_PAY on an event plan means the host buys both tickets up front;
+        // SPLIT means each side buys their own.
+        const hostChargeAmount = linkedEvent
+            ? depositAmount * (parsedPaymentType === PartyPlanPaymentType.SELF_PAY ? EVENT_PLAN_SEATS : 1)
+            : depositAmount;
+
         const options = {
-            amount: Math.round(depositAmount * 100), // in paise
+            amount: Math.round(hostChargeAmount * 100), // in paise
             currency: 'INR',
             receipt: `pp_${Date.now()}`
         };
@@ -1103,10 +1211,17 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Create the party plan under a transaction ──
-        const isUpcomingNight = Boolean(req.body.isUpcomingNight || req.body.upcomingNightId || req.body.adId);
         const planType = isUpcomingNight ? 'upcoming_night_post' : 'party_plan';
-        const isLive = isUpcomingNight ? true : false;
-        const initialPaymentStatus = isUpcomingNight ? PartyPlanPaymentStatus.PAID : PartyPlanPaymentStatus.UNPAID;
+
+        // A free event has nothing to pay, so its plan goes live immediately and
+        // its two seats are taken right away — there is no later payment step to
+        // take them at. A paid event's plan stays unpublished until the host's
+        // ticket money is verified, exactly like an ordinary plan's deposit.
+        const isFreeEvent = Boolean(linkedEvent) && depositAmount <= 0;
+        const isLive = isUpcomingNight ? isFreeEvent : false;
+        const initialPaymentStatus = (isUpcomingNight && isFreeEvent)
+            ? PartyPlanPaymentStatus.PAID
+            : PartyPlanPaymentStatus.UNPAID;
 
         const partyPlan = await PlanEligibilityService.runAtomicCheckAndCreate(
             userId,
@@ -1124,11 +1239,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     visibility: parsedVisibility,
                     selectedUsers: (parsedVisibility === PartyPlanVisibility.PRIVATE || parsedVisibility === PartyPlanVisibility.BOTH) ? selectedUsers : null,
                     depositAmount: depositAmount,
+                    partyEventId: linkedEvent ? linkedEvent.id : null,
+                    eventSeatsReserved: 0,
                     hostPaymentStatus: initialPaymentStatus,
                     hostRazorpayOrderId: order.id,
-                    isLive: isLive, // Upcoming night event posts are published live immediately
+                    isLive: isLive,
                     expiresAt: partyDate,
-                    paymentStatus: isUpcomingNight ? 'paid' : 'pending',
+                    paymentStatus: (isUpcomingNight && isFreeEvent) ? 'paid' : 'pending',
                     foodPreference: foodPreference || 'Both',
                     drinkPreference: drinkPreference || 'Both',
                     paymentType: parsedPaymentType,
@@ -1138,6 +1255,17 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                     showDateDetails,
                     lifecycleStatus: PartyPlanLifecycleStatus.POSTED,
                 }, { transaction });
+
+                // A free event's two seats are taken inside the same
+                // transaction that creates the plan, so the plan and the seats
+                // it holds can never disagree: either both exist or neither do.
+                if (linkedEvent && isFreeEvent) {
+                    await EventSeatService.reserve(linkedEvent.id, EVENT_PLAN_SEATS, transaction);
+                    await plan.update(
+                        { eventSeatsReserved: EVENT_PLAN_SEATS },
+                        { transaction }
+                    );
+                }
 
                 return plan;
             },
@@ -1157,6 +1285,13 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             hostRazorpayOrderId: partyPlan.hostRazorpayOrderId,
             isLive: partyPlan.isLive,
             depositAmount: partyPlan.depositAmount,
+            // The client needs both to quote the right figure on the card: the
+            // event link tells it this is a ticket price rather than the flat
+            // ₹99 deposit, and the payment type tells it whether the host is
+            // buying one ticket or two.
+            partyEventId: partyPlan.partyEventId,
+            paymentType: partyPlan.paymentType,
+            eventSeatsReserved: partyPlan.eventSeatsReserved,
             expiresAt: partyPlan.expiresAt,
             foodPreference: partyPlan.foodPreference,
             drinkPreference: partyPlan.drinkPreference,
@@ -1331,12 +1466,72 @@ export const verifyHostPayment = async (req: Request, res: Response): Promise<vo
             const hasActiveOrAcceptedRequest = activeRequests.length > 0;
             const updatedIsLive = hasActiveOrAcceptedRequest ? false : (plan.visibility !== PartyPlanVisibility.PRIVATE);
 
+            // The payment is recorded first, unconditionally. It genuinely
+            // happened, and leaving the plan marked unpaid while the gateway
+            // holds the money would strand it: every refund path keys off
+            // `hostPaymentStatus`, so an unpaid-looking plan refunds nothing.
             await (plan as any).update({
                 hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                 hostRazorpayPaymentId: razorpay_payment_id,
                 isLive: updatedIsLive,
                 paymentStatus: 'Awaiting Participant Payment',
             });
+
+            // An event-linked plan takes its two seats the moment the host's
+            // ticket money is verified — one for them, one held for whoever
+            // joins. `eventSeatsReserved` guards the reservation so a replayed
+            // callback cannot take four.
+            if (plan.partyEventId && (plan.eventSeatsReserved || 0) === 0) {
+                try {
+                    await EventSeatService.reserve(plan.partyEventId, EVENT_PLAN_SEATS);
+                    await (plan as any).update({ eventSeatsReserved: EVENT_PLAN_SEATS });
+                } catch (seatErr: any) {
+                    // The event sold out between posting and paying. Rather than
+                    // overbook it, or leave the host to chase a refund for a plan
+                    // that can never run, the plan is cancelled and the money
+                    // returned here and now. `creditRefund` is keyed by
+                    // reference, so a retried callback cannot refund twice.
+                    logger.error(`Event seat reservation failed after host payment on plan ${plan.id}:`, seatErr);
+
+                    const unitsPaid = plan.paymentType === PartyPlanPaymentType.SELF_PAY
+                        ? EVENT_PLAN_SEATS
+                        : 1;
+                    const refundAmount = (Number(plan.depositAmount) || 0) * unitsPaid;
+
+                    try {
+                        if (refundAmount > 0) {
+                            await WalletService.creditRefund({
+                                userId: plan.userId,
+                                amount: refundAmount,
+                                referenceId: `REFUND_SOLDOUT_${plan.id}`,
+                                reason: 'Event sold out before your tickets could be reserved',
+                                partyPlanId: plan.id,
+                            });
+                        }
+                        await (plan as any).update({
+                            status: PartyPlanStatus.CANCELLED,
+                            lifecycleStatus: PartyPlanLifecycleStatus.CANCELLED,
+                            isLive: false,
+                            hostPaymentStatus: PartyPlanPaymentStatus.REFUNDED,
+                            paymentStatus: 'Refunded',
+                        });
+                        await PlanEligibilityService.releaseLock(plan.id).catch(() => { });
+                    } catch (refundErr: any) {
+                        logger.error(`Sold-out auto-refund failed for plan ${plan.id}:`, refundErr);
+                    }
+
+                    res.status(409).json({
+                        success: false,
+                        code: 'EVENT_SOLD_OUT',
+                        message: refundAmount > 0
+                            ? `This event sold out while your payment was processing. ₹${refundAmount} has been refunded to your wallet.`
+                            : 'This event sold out while your payment was processing.',
+                        refunded: refundAmount,
+                        remainingSeats: seatErr?.remainingSeats ?? 0,
+                    });
+                    return;
+                }
+            }
 
             // Only Razorpay-gateway payments need a new ledger entry here —
             // a 'wallet_'-prefixed order id means this was already paid (and
@@ -4332,18 +4527,39 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     // 1.5 Refund Host if paid (Idempotent: credit Smart Credit Wallet)
     if (wasHostPaid) {
         const hostRefundRef = `REFUND_HOST_CANCEL_${plan.id}`;
-        await WalletService.creditRefund({
-            userId: plan.userId,
-            amount: Number(plan.depositAmount) || 99.00,
-            referenceId: hostRefundRef,
-            reason: 'Party Plan Cancelled by Host',
-            partyPlanId: plan.id,
-            transaction,
-        });
+        // `depositAmount` is per person. On an ordinary plan the host paid one
+        // of them (₹99). On an event-linked SELF_PAY plan they bought both
+        // tickets, so refunding a single unit would hand back half of what they
+        // actually paid.
+        const hostUnitsPaid = (plan as any).partyEventId &&
+            plan.paymentType === PartyPlanPaymentType.SELF_PAY
+            ? EVENT_PLAN_SEATS
+            : 1;
+        const hostRefundAmount = (plan as any).partyEventId
+            ? (Number(plan.depositAmount) || 0) * hostUnitsPaid
+            : (Number(plan.depositAmount) || 99.00);
+
+        if (hostRefundAmount > 0) {
+            await WalletService.creditRefund({
+                userId: plan.userId,
+                amount: hostRefundAmount,
+                referenceId: hostRefundRef,
+                reason: 'Party Plan Cancelled by Host',
+                partyPlanId: plan.id,
+                transaction,
+            });
+        }
     }
 
     // 2. Release lock in Time Lock Engine
     await PlanEligibilityService.releaseLock(plan.id, { transaction });
+
+    // 2b. Hand back any event seats this plan was holding. No-op for an
+    // ordinary party plan, and idempotent, so it is safe alongside the other
+    // cancellation routes that also call it.
+    if ((plan as any).partyEventId) {
+        await EventSeatService.releaseForPlan(plan.id);
+    }
 
     // Dispatch 🔓 Schedule Unlocked notification for Host
     try {
@@ -5428,8 +5644,17 @@ export const initiateHostPayment = async (req: Request, res: Response): Promise<
             return;
         }
 
-        // Commitment deposit is always ₹99, regardless of SPLIT or SELF_PAY.
-        const amount = Number(plan.depositAmount) || 99; // host commitment deposit
+        // Ordinary plan: the commitment deposit is always ₹99, regardless of
+        // SPLIT or SELF_PAY.
+        //
+        // Event-linked plan: `depositAmount` is the event's ticket price, and
+        // SELF_PAY means the host is buying both tickets now — so they are
+        // charged for two. SPLIT charges them for one and the joiner pays for
+        // the other when their request is accepted.
+        const amount = plan.partyEventId
+            ? (Number(plan.depositAmount) || 0) *
+              (plan.paymentType === PartyPlanPaymentType.SELF_PAY ? EVENT_PLAN_SEATS : 1)
+            : (Number(plan.depositAmount) || 99);
         const shortId = plan.id.substring(0, 8);
         const options = {
             amount: amount * 100, // in paise
@@ -6526,6 +6751,21 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
                     } else if (pendingPrivateInvites.length > 0) {
                         currentStatusText = 'Invitation Sent • Awaiting Response';
                         primaryAction = null;
+                    } else if (plan.partyEventId && (plan as any).eventNoMatchNotifiedAt) {
+                        // The 24-hour sweep has asked this host what to do with
+                        // their two event tickets. It has to surface on the plan's
+                        // own card: the notifications endpoint folds every raw
+                        // party-plan notification into this card, so a standalone
+                        // one would be filtered out and the host would never see
+                        // the prompt at all.
+                        currentStatusText = 'No partner yet • Action Required';
+                        primaryAction = 'Keep Waiting';
+                        secondaryAction = 'Go Solo';
+                        permittedActions.push(
+                            { key: 'event_no_match_keep' },
+                            { key: 'event_no_match_solo' },
+                            { key: 'event_no_match_cancel' },
+                        );
                     } else {
                         currentStatusText = 'Active';
                     }
@@ -6705,6 +6945,26 @@ export async function enrichPartyPlanNotificationCard(planOrId: string | PartyPl
             requestId: matchedRequest?.id || null,
             hostPaymentStatus: plan.hostPaymentStatus,
             depositAmount: plan.depositAmount,
+            // Event-linked plans quote the event's ticket price, not the flat
+            // ₹99 deposit, and a SELF_PAY host pays for two — the card cannot
+            // work that out without these.
+            partyEventId: plan.partyEventId || null,
+            paymentType: plan.paymentType,
+            eventSeatsReserved: plan.eventSeatsReserved || 0,
+            // Drives the three-way "keep / solo / cancel" prompt on the card.
+            // Only ever true for the host of an unmatched, paid event plan.
+            eventNoMatchPrompt: Boolean(
+                plan.partyEventId &&
+                isHost &&
+                (plan as any).eventNoMatchNotifiedAt &&
+                !matchedRequest &&
+                plan.status === PartyPlanStatus.ACTIVE
+            ),
+            eventPerTicketAmount: plan.partyEventId ? Number(plan.depositAmount) || 0 : null,
+            eventHostPaidAmount: plan.partyEventId
+                ? (Number(plan.depositAmount) || 0) *
+                  (plan.paymentType === PartyPlanPaymentType.SELF_PAY ? EVENT_PLAN_SEATS : 1)
+                : null,
             hostRazorpayOrderId: plan.hostRazorpayOrderId,
             joinerPaymentStatus: matchedRequest?.joinerPaymentStatus || 'unpaid',
             joinerRazorpayOrderId: matchedRequest?.joinerRazorpayOrderId || null,
@@ -6929,3 +7189,119 @@ export const getReachStatus = async (req: Request, res: Response): Promise<void>
     }
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/mobile/party-plans/:id/no-match-response
+// The host answers the 24-hour "nobody joined yet" prompt for an event-linked
+// plan. Three outcomes, and each one settles both the money and the seats:
+//   keep   — leave the plan live; it can be asked again later
+//   solo   — take one ticket, give the partner's seat back, refund it if paid
+//   cancel — hand both seats back and refund through the normal policy
+// ─────────────────────────────────────────────────────────────────────────────
+export const respondToEventPlanNoMatch = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const planId = (req.params.id || '').replace(/^(pp_|party_plan_|party_plan_timeline_)/i, '').trim();
+        const userId = (req as any).user?.id;
+        const action = String(req.body?.action || '').toLowerCase();
+
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Authentication required' });
+            return;
+        }
+        if (!['keep', 'solo', 'cancel'].includes(action)) {
+            res.status(400).json({
+                success: false,
+                code: 'INVALID_ACTION',
+                message: 'action must be one of: keep, solo, cancel',
+            });
+            return;
+        }
+        // Checked before the query: Postgres raises a cast error on a malformed
+        // uuid, which would surface as a 500 rather than a plain "not found".
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
+            res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', message: 'Plan not found' });
+            return;
+        }
+
+        const plan = await PartyPlan.findByPk(planId);
+        if (!plan) {
+            res.status(404).json({ success: false, code: 'PLAN_NOT_FOUND', message: 'Plan not found' });
+            return;
+        }
+        // Only the host decides what happens to their own tickets.
+        if (plan.userId !== userId) {
+            res.status(403).json({ success: false, code: 'NOT_PLAN_OWNER', message: 'This is not your plan.' });
+            return;
+        }
+        if (!plan.partyEventId) {
+            res.status(400).json({
+                success: false,
+                code: 'NOT_AN_EVENT_PLAN',
+                message: 'This prompt only applies to plans posted from an event.',
+            });
+            return;
+        }
+
+        if (action === 'keep') {
+            // Clearing the stamp lets the sweep ask again after another day
+            // rather than going quiet on a plan that is still unmatched.
+            await plan.update({ eventNoMatchNotifiedAt: null });
+            res.json({
+                success: true,
+                action: 'keep',
+                message: 'Your plan stays live. We will keep looking for a partner.',
+                data: { planId: plan.id, status: plan.status, isLive: plan.isLive },
+            });
+            return;
+        }
+
+        if (action === 'solo') {
+            const result = await EventPlanNoMatchService.convertToSolo(plan.id, userId);
+            res.json({
+                success: true,
+                action: 'solo',
+                message: result.refundAmount > 0
+                    ? `Solo ticket confirmed. ₹${result.refundAmount} refunded to your wallet.`
+                    : 'Solo ticket confirmed.',
+                data: {
+                    planId: plan.id,
+                    bookingId: result.bookingId,
+                    ticketCode: result.ticketCode,
+                    refundAmount: result.refundAmount,
+                    seatsReleased: result.seatsReleased,
+                },
+            });
+            return;
+        }
+
+        // action === 'cancel' — reuse the existing host cancellation path so the
+        // refund policy, wallet credit, ticket invalidation, notifications and
+        // seat release all behave exactly as they do everywhere else.
+        req.body.reason = req.body.reason || 'No partner found within 24 hours';
+        // `cancelPartyPlan` looks the plan up by the raw route param, so it is
+        // handed the prefix-stripped id rather than whatever the client sent.
+        req.params.id = planId;
+        await cancelPartyPlan(req, res);
+    } catch (err: any) {
+        const known: Record<string, string> = {
+            PLAN_NOT_FOUND: 'Plan not found',
+            NOT_PLAN_OWNER: 'This is not your plan.',
+            NOT_AN_EVENT_PLAN: 'This prompt only applies to plans posted from an event.',
+            PLAN_ALREADY_CANCELLED: 'This plan has already been cancelled.',
+            PLAN_ALREADY_MATCHED: 'Someone has already joined this plan.',
+            HOST_HAS_NOT_PAID: 'Your ticket payment has not been completed yet.',
+            EVENT_NOT_FOUND: 'This event is no longer available.',
+        };
+        const code = err?.message;
+        if (known[code]) {
+            res.status(code === 'NOT_PLAN_OWNER' ? 403 : 409).json({
+                success: false,
+                code,
+                message: known[code],
+            });
+            return;
+        }
+        logger.error('respondToEventPlanNoMatch error:', err);
+        res.status(500).json({ success: false, message: 'Failed to process your choice' });
+    }
+};

@@ -23,7 +23,10 @@ class UpcomingPartyScreen extends StatefulWidget {
 class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   bool _isInterested = false;
   bool _isToggling = false;
-  final bool _showPostPartnerButton = false;
+  // Re-enabled: the event-linked plan flow behind this button now resolves the
+  // event's real ticket price server-side, holds seats against the event's
+  // capacity, and refunds through the existing cancellation path.
+  final bool _showPostPartnerButton = true;
   Map<String, dynamic>? _venueData;
   Map<String, dynamic>? get currentVenue => _venueData ?? widget.venueMap;
 

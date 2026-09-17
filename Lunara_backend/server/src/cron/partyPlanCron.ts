@@ -186,7 +186,21 @@ export const startPartyPlanCron = () => {
             isPartyPlanCronRunning = true;
             try {
                 logger.info('Running Party Plan Cron Jobs...');
-            
+
+            // 0. Ask hosts of event-linked plans that have gone 24 hours without
+            // a match what they want to do. Runs first and independently so a
+            // failure in the payment-timeout sweep below cannot starve it, and
+            // it is a no-op for every ordinary party plan.
+            try {
+                const { EventPlanNoMatchService } = await import('../services/EventPlanNoMatchService');
+                const notified = await EventPlanNoMatchService.notifyUnmatchedPlans();
+                if (notified > 0) {
+                    logger.info(`[Cron] Prompted ${notified} unmatched event plan host(s).`);
+                }
+            } catch (noMatchErr: any) {
+                logger.error('[Cron] Event plan no-match sweep failed:', noMatchErr?.message);
+            }
+
             const now = new Date();
 
             // 1. Check for expired payment timeouts (batch limit 500 for scalability)

@@ -10328,7 +10328,144 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bool isPrivatePlan = planVis == 'PRIVATE';
       final bool isBothPlan = planVis == 'BOTH';
 
-      if (!isHostPaid) {
+      // ── 24-hour "no partner yet" prompt on an event-linked plan ────────────
+      // The server raises this once a day has passed with nobody accepted. It
+      // only ever reaches the host, and only for a plan posted from an event,
+      // so it is checked before the ordinary host states below.
+      // Read from the plan's own enriched card, not from a standalone
+      // notification: the notifications endpoint folds every raw party-plan
+      // notification into this card, so a separate one would be filtered away
+      // before it ever reached here.
+      bool readNoMatchFlag(dynamic src) =>
+          src is Map && src['eventNoMatchPrompt'] == true;
+
+      final bool hasNoMatchPrompt = readNoMatchFlag(planMap) ||
+          entries.any((e) =>
+              readNoMatchFlag(e) ||
+              readNoMatchFlag(e['data']) ||
+              readNoMatchFlag(e['plan']) ||
+              readNoMatchFlag(e['metadata']));
+
+      if (hasNoMatchPrompt && !isCancelled && !isExpired && acceptedJoinerRequest == null) {
+        // Amounts come from the same authoritative card that raised the prompt,
+        // so what the buttons quote is what the server will actually refund.
+        double readAmount(String key) {
+          for (final src in [planMap, ...entries.map((e) => e['plan']), ...entries]) {
+            if (src is! Map) continue;
+            final v = src[key];
+            if (v is num) return v.toDouble();
+            final parsed = double.tryParse(v?.toString() ?? '');
+            if (parsed != null) return parsed;
+          }
+          return 0.0;
+        }
+
+        final double paidAmount = readAmount('eventHostPaidAmount');
+        final double perTicket = readAmount('eventPerTicketAmount');
+        final bool isSelfPay =
+            (planMap['paymentType'] ?? '').toString().toLowerCase() == 'self_pay';
+
+        accent = const Color(0xFFF59E0B);
+        badge = 'ACTION REQUIRED';
+        title = '⏳ No partner yet';
+        body =
+            'Nobody has joined your plan at $venueName yet. Keep waiting, take a solo ticket, or cancel for a refund.';
+        statusSummary = 'Waiting for a partner';
+
+        String money(double v) =>
+            '₹${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2)}';
+
+        Future<void> respond(String action, String actionKey) async {
+          _setPartyActionProcessing(planId, actionKey, true);
+          try {
+            final res = await ApiService.respondToEventPlanNoMatch(
+              planId: planId,
+              action: action,
+            );
+            final bool ok = res['success'] == true;
+            if (ok) {
+              // Patch the same card in place from the authoritative result
+              // instead of dropping it and reloading the feed.
+              _reconcilePartyPlanState(
+                planId,
+                action == 'cancel'
+                    ? {
+                        'status': 'cancelled',
+                        'lifecycleStatus': 'cancelled',
+                        'isCancelled': true,
+                      }
+                    : action == 'solo'
+                        ? {
+                            'status': 'inactive',
+                            'lifecycleStatus': 'completed',
+                            'isLive': false,
+                          }
+                        : {'eventNoMatchNotifiedAt': null},
+                isAuthoritative: true,
+              );
+            }
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    res['message']?.toString() ??
+                        (ok ? 'Done.' : 'Could not process your choice.'),
+                  ),
+                  backgroundColor: ok ? Colors.green : Colors.redAccent,
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error: $e'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+          } finally {
+            _setPartyActionProcessing(planId, actionKey, false);
+          }
+        }
+
+        final bool keeping = _isPartyActionProcessing(planId, 'no_match_keep');
+        final bool goingSolo = _isPartyActionProcessing(planId, 'no_match_solo');
+        final bool cancelling = _isPartyActionProcessing(planId, 'no_match_cancel');
+        final bool anyBusy = keeping || goingSolo || cancelling;
+
+        actionsList = [
+          NotificationAction(
+            label: keeping ? 'Keeping...' : 'Keep Waiting',
+            icon: Icons.schedule_rounded,
+            isPrimary: true,
+            isLoading: keeping,
+            onTap: anyBusy ? () {} : () => respond('keep', 'no_match_keep'),
+          ),
+          NotificationAction(
+            label: goingSolo
+                ? 'Booking...'
+                : (isSelfPay && perTicket > 0
+                    ? 'Go Solo (+${money(perTicket)} back)'
+                    : 'Go Solo'),
+            icon: Icons.person_rounded,
+            isPrimary: false,
+            isLoading: goingSolo,
+            color: Colors.grey[200],
+            onTap: anyBusy ? () {} : () => respond('solo', 'no_match_solo'),
+          ),
+          NotificationAction(
+            label: cancelling
+                ? 'Cancelling...'
+                : (paidAmount > 0 ? 'Cancel & Refund' : 'Cancel'),
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            isLoading: cancelling,
+            color: Colors.red[50],
+            onTap: anyBusy ? () {} : () => respond('cancel', 'no_match_cancel'),
+          ),
+        ];
+      } else if (!isHostPaid) {
         // The ₹99 commitment deposit gates everything else on this plan — the
         // plan cannot go live, invitations cannot go out and no match can be
         // confirmed until it clears. So it stays the card's primary action no
@@ -10344,9 +10481,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             if (rawDeposit != null) break;
           }
         }
-        final double depositAmt = rawDeposit is num
+        final double perPersonAmt = rawDeposit is num
             ? rawDeposit.toDouble()
             : (double.tryParse(rawDeposit?.toString() ?? '') ?? 99.0);
+
+        // `depositAmount` is the *per person* figure. On an ordinary plan that
+        // is the whole ₹99 the host owes. On an event-linked plan it is the
+        // ticket price, and a SELF_PAY host is buying both tickets — so the
+        // button has to quote two of them, or it would promise a price the
+        // server will not charge.
+        final bool isEventLinkedPlan =
+            (planMap['partyEventId'] ?? planMap['adId'] ?? planMap['upcomingNightId']) != null;
+        final bool hostBuysBothTickets = isEventLinkedPlan &&
+            (planMap['paymentType'] ?? '').toString().toLowerCase() == 'self_pay';
+        final double depositAmt =
+            hostBuysBothTickets ? perPersonAmt * 2 : perPersonAmt;
         String hostOrderId = planMap['hostRazorpayOrderId']?.toString() ?? '';
         if (hostOrderId.isEmpty) {
           for (final e in entries) {

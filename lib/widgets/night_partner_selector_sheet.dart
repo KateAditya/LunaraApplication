@@ -68,7 +68,8 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
   List<Map<String, dynamic>> _invitees = [];
   bool _isLoading = true;
   bool _isProcessing = false;
-  final bool _showPostPartnerBanner = false;
+  // Re-enabled alongside the button on the event detail screen — same flow.
+  final bool _showPostPartnerBanner = true;
   final Set<String> _sentInviteUserIds = {};
   final Set<String> _selectedUserIds = {};
 

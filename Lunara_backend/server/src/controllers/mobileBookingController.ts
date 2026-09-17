@@ -27,6 +27,7 @@ import { BookingPolicyType } from '../models/BookingPolicyConfig';
 import { WalletService } from '../services/walletService';
 import { WalletTransactionType } from '../models/WalletTransaction';
 import { EventTimeLockService, parseBookingDateTime } from '../services/EventTimeLockService';
+import { EventSeatService } from '../services/EventSeatService';
 import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
@@ -368,14 +369,39 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        // Check seat limit
         const qty = Number(quantity);
-        if (!ad.isUnlimited) {
-            const seatsRemaining = (ad.seatLimit || 0) - (ad.filledSeats || 0);
-            if (seatsRemaining < qty) {
-                res.status(400).json({ success: false, message: 'Not enough seats available.' });
-                return;
-            }
+        if (!Number.isFinite(qty) || qty < 1) {
+            res.status(400).json({ success: false, message: 'Invalid ticket quantity.' });
+            return;
+        }
+
+        // One booking per user per event. Without this the same person could
+        // hold several pending bookings for the same night and consume capacity
+        // other people were waiting for.
+        const existingBooking = await Booking.findOne({
+            where: {
+                userId,
+                partyEventId: ad.id,
+                status: { [Op.notIn]: [BookingStatus.CANCELLED, BookingStatus.NO_SHOW] },
+            },
+        });
+        if (existingBooking) {
+            res.status(409).json({
+                success: false,
+                code: 'USER_ALREADY_BOOKED',
+                message: 'You have already booked this event.',
+                data: { bookingId: existingBooking.id },
+            });
+            return;
+        }
+
+        // Availability is only advisory here — the seats are actually taken
+        // under a row lock below (free) or at verified payment (paid), which is
+        // what makes two people racing for the last seat come out correct.
+        const advisoryRemaining = await EventSeatService.remaining(ad.id);
+        if (advisoryRemaining !== null && advisoryRemaining < qty) {
+            res.status(400).json({ success: false, message: 'Not enough seats available.' });
+            return;
         }
 
         // 1. Resolve eventDate string properly (YYYY-MM-DD) based on actual event date
@@ -475,14 +501,27 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
         const venueDetails = await Venue.findByPk(ad.venueId, { attributes: ['id', 'name', 'addressLine1', 'area', 'city'] });
 
         if (amount === 0) {
-            // Free event flow
+            // Free event flow — the seat is taken here because there is no
+            // payment step to take it at. Under a row lock, so the last seat
+            // cannot be handed to two people at once.
+            try {
+                await EventSeatService.reserve(ad.id, qty);
+            } catch (seatErr: any) {
+                await booking.destroy();
+                res.status(409).json({
+                    success: false,
+                    code: seatErr?.code === 'EVENT_SOLD_OUT' ? 'EVENT_SOLD_OUT' : 'SEAT_RESERVATION_FAILED',
+                    message: seatErr?.code === 'EVENT_SOLD_OUT'
+                        ? 'This event just sold out.'
+                        : 'Could not reserve a seat for this event.',
+                    remainingSeats: seatErr?.remainingSeats ?? 0,
+                });
+                return;
+            }
+
             const ticketCode = uuidv4();
             booking.ticketCode = ticketCode;
             await booking.save();
-            
-            // Increment seats
-            ad.filledSeats = (ad.filledSeats || 0) + qty;
-            await ad.save();
 
             setImmediate(async () => {
                 try {
@@ -704,14 +743,23 @@ export const payNow = async (req: Request, res: Response) => {
         });
 
         if (booking.partyEventId) {
+            // Taken under a row lock at the moment payment is verified, not by a
+            // read-then-write. The early-return idempotency guard above means a
+            // duplicate callback or replayed webhook never reaches this line, so
+            // the seat is taken exactly once per booking.
             try {
-                const ad = await Ad.findByPk(booking.partyEventId);
-                if (ad) {
-                    ad.filledSeats = (ad.filledSeats || 0) + (booking.numberOfGuests || 1);
-                    await ad.save();
-                }
-            } catch (err) {
-                logger.error(`Failed to update filledSeats for ad ${booking.partyEventId}:`, err);
+                await EventSeatService.reserve(
+                    booking.partyEventId,
+                    booking.numberOfGuests || 1
+                );
+            } catch (seatErr: any) {
+                logger.error(`Seat reservation failed after payment for booking ${booking.id}:`, seatErr);
+                // The money is already captured, so the booking stands and is
+                // flagged for the admin rather than silently overbooking the
+                // event or silently dropping a paid customer.
+                await (booking as any).update({
+                    specialRequests: `${booking.specialRequests || ''}\n[SEATS_OVERSOLD] Paid but no seat available at ${new Date().toISOString()}`.trim(),
+                });
             }
         }
 

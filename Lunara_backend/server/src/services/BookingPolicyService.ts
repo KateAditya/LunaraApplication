@@ -445,6 +445,24 @@ export class BookingPolicyService {
             // Release time locks
             await PlanEligibilityService.releaseLock(booking.id);
 
+            // Give the event's seats back. Capacity was previously only ever
+            // consumed — nothing returned it on cancellation, so an event
+            // gradually read as sold out while real seats sat empty. Only runs
+            // for event bookings; every other booking type is untouched.
+            //
+            // Gated on `wasPaid` because that is exactly when a seat was taken:
+            // paid bookings reserve at verified payment, free ones are created
+            // already PAID/CONFIRMED. A pending unpaid booking holds no seat, so
+            // releasing for it would hand out capacity that was never consumed.
+            if ((booking as any).partyEventId && wasPaid) {
+                const { EventSeatService } = await import('./EventSeatService');
+                await EventSeatService.release(
+                    (booking as any).partyEventId,
+                    booking.numberOfGuests || 1,
+                    t
+                );
+            }
+
             // Process Wallet Refund if eligible (<= ₹1500)
             if (wasPaid && refundAmount > 0 && !isLargeRefund) {
                 const refundResult = await WalletService.refundToWallet({

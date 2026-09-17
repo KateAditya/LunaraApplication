@@ -1116,6 +1116,11 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                     paymentStatus: p.hostPaymentStatus || 'unpaid',
                     hostPaymentStatus: p.hostPaymentStatus || 'unpaid',
                     depositAmount: p.depositAmount,
+                    // Carried through so the card can tell an event ticket price
+                    // apart from the flat ₹99 deposit, and can quote two tickets
+                    // when the host chose to pay for both.
+                    partyEventId: p.partyEventId || null,
+                    paymentType: p.paymentType,
                     createdAt: p.createdAt,
                     plan: {
                         id: p.id,
@@ -1124,6 +1129,8 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                         planDateTime: p.planDateTime,
                         hostPaymentStatus: p.hostPaymentStatus,
                         depositAmount: p.depositAmount,
+                        partyEventId: p.partyEventId || null,
+                        paymentType: p.paymentType,
                         status: p.status,
                         isLive: p.isLive,
                         paymentStatus: p.paymentStatus,

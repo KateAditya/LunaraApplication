@@ -68,6 +68,14 @@ export interface PartyPlanAttributes {
     visibility: PartyPlanVisibility;
     selectedUsers?: string[];
     depositAmount: number;
+    // ── Event-linked plans ("post this Upcoming Night as a plan") ────────────
+    // Set only when the plan was created from an Ad of type 'Party'. It is what
+    // lets the server resolve the event's own entry price and hold seats
+    // against its capacity. Null for every ordinary party plan, which keeps
+    // their ₹99 commitment-deposit behaviour untouched.
+    partyEventId?: string | null;
+    eventSeatsReserved?: number;
+    eventNoMatchNotifiedAt?: Date | null;
     hostPaymentStatus: PartyPlanPaymentStatus;
     hostRazorpayOrderId?: string;
     hostRazorpayPaymentId?: string;
@@ -124,7 +132,7 @@ export interface PartyPlanAttributes {
 export interface PartyPlanCreationAttributes
     extends Optional<
         PartyPlanAttributes,
-        'id' | 'status' | 'lifecycleStatus' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails' | 'showDateDetails' | 'acceptedAt' | 'paymentDeadlineAt' | 'matchedRequestId'
+        'id' | 'status' | 'lifecycleStatus' | 'visibility' | 'createdAt' | 'updatedAt' | 'selectedUsers' | 'depositAmount' | 'hostPaymentStatus' | 'isLive' | 'expiresAt' | 'hostLatLangCheckIn' | 'paymentStatus' | 'optionalMobileNumber' | 'foodPreference' | 'drinkPreference' | 'paymentType' | 'showProfilePhoto' | 'showHostName' | 'showVenueDetails' | 'showDateDetails' | 'acceptedAt' | 'paymentDeadlineAt' | 'matchedRequestId' | 'partyEventId' | 'eventSeatsReserved' | 'eventNoMatchNotifiedAt'
     > { }
 
 class PartyPlan
@@ -140,6 +148,9 @@ class PartyPlan
     public visibility!: PartyPlanVisibility;
     public selectedUsers?: string[];
     public depositAmount!: number;
+    public partyEventId?: string | null;
+    public eventSeatsReserved!: number;
+    public eventNoMatchNotifiedAt?: Date | null;
     public hostPaymentStatus!: PartyPlanPaymentStatus;
     public hostRazorpayOrderId?: string;
     public hostRazorpayPaymentId?: string;
@@ -260,6 +271,22 @@ PartyPlan.init(
             allowNull: false,
             defaultValue: 99.00,
             field: 'deposit_amount',
+        },
+        partyEventId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'party_event_id',
+        },
+        eventSeatsReserved: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+            field: 'event_seats_reserved',
+        },
+        eventNoMatchNotifiedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'event_no_match_notified_at',
         },
         hostPaymentStatus: {
             type: DataTypes.ENUM(...Object.values(PartyPlanPaymentStatus)),

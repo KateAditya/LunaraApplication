@@ -466,4 +466,8 @@ router.post('/:planId/arrival-confirm', authenticate, confirmArrival);
 router.get('/:planId/summary', authenticate, getPlanSummary);
 router.post('/:id/review', authenticate, submitPartyReview);
 
+// Host's answer to the 24-hour "no partner yet" prompt on an event-linked plan.
+import { respondToEventPlanNoMatch } from '../controllers/partyPlanController';
+router.post('/:id/no-match-response', authenticate, respondToEventPlanNoMatch);
+
 export default router;

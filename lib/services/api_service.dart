@@ -6781,6 +6781,41 @@ class ApiService {
   }
 
   /// Approve or reject a received cancellation request
+  /// Answers the 24-hour "no partner yet" prompt on an event-linked plan.
+  ///
+  /// [action] is one of `keep`, `solo` or `cancel`. The server decides what each
+  /// one costs and refunds — this only reports the choice and hands back the
+  /// authoritative result for the card to reconcile against.
+  static Future<Map<String, dynamic>> respondToEventPlanNoMatch({
+    required String planId,
+    required String action,
+    String? reason,
+  }) async {
+    final cleanId = cleanBookingId(planId);
+    try {
+      final response = await post(
+        '/api/mobile/party-plans/$cleanId/no-match-response',
+        body: {
+          'action': action.toLowerCase(),
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+        },
+        timeout: transactionalTimeout,
+      );
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        if (data['success'] == true) {
+          clearBookingCache();
+          notifyFeedNeedsRefresh();
+        }
+        return data;
+      }
+      return {'success': false, 'message': 'Unexpected response'};
+    } catch (e) {
+      debugPrint('respondToEventPlanNoMatch error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
   static Future<Map<String, dynamic>> respondToPartyPlanCancellationRequest({
     required String planId,
     required String requestId,

@@ -2316,6 +2316,16 @@ export class NightPartnerService {
                 aboutEvent: ad.aboutEvent || `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
                 interestedCount,
                 seatLimit: ad.seatLimit,
+                filledSeats: ad.filledSeats || 0,
+                isUnlimited: ad.isUnlimited === true,
+                remainingSeats: ad.isUnlimited
+                    ? null
+                    : Math.max(0, (ad.seatLimit || 0) - (ad.filledSeats || 0)),
+                // The admin's own ticket price, unsubstituted. `price` below
+                // keeps its venue fallbacks for the display strip, but that
+                // fallback must not reach anything that quotes a charge: the
+                // server bills `entryPrice`, so the client has to show it.
+                entryPrice: ad.entryPrice != null ? Number(ad.entryPrice) : null,
                 price: ad.entryPrice || v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
                 isInterested,
                 hasActiveMatch,

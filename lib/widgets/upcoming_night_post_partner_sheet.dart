@@ -67,7 +67,11 @@ class UpcomingNightPostPartnerSheet extends StatefulWidget {
 class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartnerSheet> {
   late TextEditingController _messageController;
   bool _isPosting = false;
-  String _selectedPrivacy = 'PUBLIC'; // 'PUBLIC' or 'PRIVATE'
+  String _selectedPrivacy = 'PUBLIC'; // 'PUBLIC', 'PRIVATE' or 'BOTH'
+  // SELF_PAY: the host buys both tickets now. SPLIT: the host buys one and the
+  // person who joins buys the other when their request is accepted.
+  String _selectedPaymentType = 'self_pay';
+  final List<String> _selectedUserIds = [];
   String _selectedFoodPref = 'ANY'; // 'ANY', 'VEG', 'NON_VEG'
   String _selectedDrinkPref = 'COCKTAILS'; // 'COCKTAILS', 'BEER', 'NON_ALCOHOLIC', 'ANY'
 
@@ -85,6 +89,28 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
     _messageController.dispose();
     super.dispose();
   }
+
+  /// The event's ticket price, per person. The server resolves this again from
+  /// the event row before charging anything — this copy only drives the
+  /// breakdown the host sees before they commit.
+  double get _entryPrice {
+    // Only ever the event's own price. `price` is deliberately not consulted:
+    // the Event Posts feed substitutes venue cover charges into it when an event
+    // has none, and quoting that would show the host a figure the server would
+    // never charge.
+    final raw = widget.party['entryPrice'] ?? widget.party['rawAd']?['entryPrice'];
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw?.toString() ?? '') ?? 0.0;
+  }
+
+  bool get _isFreeEvent => _entryPrice <= 0;
+
+  /// What the host pays now: both tickets on SELF_PAY, just theirs on SPLIT.
+  double get _hostPaysNow =>
+      _isFreeEvent ? 0.0 : _entryPrice * (_selectedPaymentType == 'self_pay' ? 2 : 1);
+
+  String _money(double v) =>
+      '₹${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2)}';
 
   String _formatDisplayDate(String rawDate) {
     try {
@@ -158,11 +184,46 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       return;
     }
 
+    // An invite-only plan with no one invited can never be seen or joined, so
+    // it is refused here rather than posted into a dead end.
+    if (_selectedPrivacy == 'PRIVATE' && _selectedUserIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick at least one person to invite, or switch to Public Feed.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isPosting = true);
 
     try {
       final isoPlanDateTime = _formatToIsoDateTime(widget.date, widget.time);
-      final adId = widget.party['adId'] ?? widget.party['upcomingNightId'] ?? widget.party['id'];
+      // The same event reaches this sheet under three different key names
+      // depending on where it came from: `adId` from the Event Posts feed,
+      // `eventId` from the Discovery upcoming-nights strip, and a raw `id` from
+      // the venue screen's ad payload. The server needs the event's real id to
+      // resolve its price and hold its seats, so all three are accepted and the
+      // `ad_event_` prefix the feed adds is stripped.
+      final rawAdId = (widget.party['adId'] ??
+              widget.party['eventId'] ??
+              widget.party['upcomingNightId'] ??
+              widget.party['rawAd']?['id'] ??
+              widget.party['id'])
+          ?.toString();
+      final adId = (rawAdId ?? '').replaceFirst(RegExp(r'^ad_event_'), '');
+
+      if (adId.isEmpty) {
+        setState(() => _isPosting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not identify this event. Please reopen it and try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
 
       final response = await ApiService.post(
         '/api/mobile/party-plans',
@@ -173,8 +234,8 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
           'planDateTime': isoPlanDateTime,
           'privacyType': _selectedPrivacy.toLowerCase(),
           'paymentStatus': 'pending',
-          'paymentType': 'self_pay',
-          'selectedUserIds': [],
+          'paymentType': _selectedPaymentType,
+          'selectedUserIds': _selectedUserIds,
           'mobileNumber': '',
           'optionalMobileNumber': '',
           'foodPreference': _selectedFoodPref,
@@ -184,8 +245,8 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
           'showHostName': true,
           'showProfilePhoto': true,
           'isUpcomingNight': true,
-          'upcomingNightId': adId?.toString(),
-          'adId': adId?.toString(),
+          'upcomingNightId': adId,
+          'adId': adId,
           'bannerToDate': widget.party['bannerToDate'] ?? widget.party['toDate'],
         },
         timeout: const Duration(seconds: 25),
@@ -547,8 +608,8 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                     children: [
                       Expanded(
                         child: _buildPrivacyCard(
-                          title: 'Public Feed (Recommended)',
-                          subtitle: 'Visible to everyone in Live Feed',
+                          title: 'Public Feed',
+                          subtitle: 'Anyone can request to join',
                           isSelected: _selectedPrivacy == 'PUBLIC',
                           onTap: () => setState(() => _selectedPrivacy = 'PUBLIC'),
                           isDark: isDark,
@@ -557,15 +618,182 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                       const SizedBox(width: 10),
                       Expanded(
                         child: _buildPrivacyCard(
-                          title: 'Direct Invite Only',
-                          subtitle: 'Only visible to users you invite',
+                          title: 'Invite Only',
+                          subtitle: 'Only people you invite',
                           isSelected: _selectedPrivacy == 'PRIVATE',
                           onTap: () => setState(() => _selectedPrivacy = 'PRIVATE'),
                           isDark: isDark,
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildPrivacyCard(
+                          title: 'Both',
+                          subtitle: 'Public + direct invites',
+                          isSelected: _selectedPrivacy == 'BOTH',
+                          onTap: () => setState(() => _selectedPrivacy = 'BOTH'),
+                          isDark: isDark,
+                        ),
+                      ),
                     ],
                   ),
+
+                  // Invite-only and Both both need someone to invite. Posting a
+                  // PRIVATE plan with nobody selected used to be possible and
+                  // produced a plan no one could ever see or join.
+                  if (_selectedPrivacy != 'PUBLIC') ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded,
+                              size: 16, color: Color(0xFFB45309)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _selectedUserIds.isEmpty
+                                  ? 'Pick at least one person to invite, or switch to Public Feed.'
+                                  : '${_selectedUserIds.length} guest(s) will be invited.',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 18),
+
+                  // ── Who pays for the tickets ────────────────────────────────
+                  // Only shown for a paid event; a free event has nothing to
+                  // split and the whole section would be noise.
+                  if (!_isFreeEvent) ...[
+                    const Text(
+                      'TICKET PAYMENT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.0,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildPrivacyCard(
+                            title: 'I\'ll pay for both',
+                            subtitle:
+                                '2 × ${_money(_entryPrice)} = ${_money(_entryPrice * 2)}',
+                            isSelected: _selectedPaymentType == 'self_pay',
+                            onTap: () =>
+                                setState(() => _selectedPaymentType = 'self_pay'),
+                            isDark: isDark,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildPrivacyCard(
+                            title: 'Split it',
+                            subtitle:
+                                'You ${_money(_entryPrice)} · They ${_money(_entryPrice)}',
+                            isSelected: _selectedPaymentType == 'split',
+                            onTap: () =>
+                                setState(() => _selectedPaymentType = 'split'),
+                            isDark: isDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'You pay now',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                _money(_hostPaysNow),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: LunaraTheme.electricViolet,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _selectedPaymentType == 'self_pay'
+                                ? 'Both tickets are reserved as soon as your payment is confirmed.'
+                                : 'Your ticket is reserved now. Your partner pays ${_money(_entryPrice)} when you accept their request.',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              height: 1.4,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.celebration_rounded,
+                              size: 18, color: Color(0xFF059669)),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'This event is free — both spots are reserved as soon as you post.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                                color: Color(0xFF047857),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
 
                   // Post Button

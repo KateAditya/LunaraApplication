@@ -16,6 +16,7 @@ import ChatSubscription, { ChatSubscriptionStatus } from '../models/ChatSubscrip
 import { NotificationService } from '../services/NotificationService';
 import { sendMulticastPushNotification } from '../services/fcmService';
 import { PlanEligibilityService } from '../services/PlanEligibilityService';
+import { EventSeatService } from '../services/EventSeatService';
 import { logger } from '../config/logger';
 import apiCache from '../utils/apiCache';
 
@@ -224,9 +225,31 @@ export const createCancellationRequest = async (req: Request, res: Response): Pr
             requestedAt,
             expiresAt,
             autoApprovalEligible,
-            // Store the ACTUAL commitment deposit amounts, not a hardcoded fallback
-            hostDepositAmount: Number(plan.depositAmount) || 99.00,
-            joinerDepositAmount: 99.00,   // Joiner commitment deposit is always ₹99
+            // Store the ACTUAL amounts each side paid, so the approval step
+            // refunds exactly that.
+            //
+            // For an ordinary party plan both sides paid the ₹99 commitment
+            // deposit. For a plan posted from an event, `depositAmount` is the
+            // event's per-ticket price and who paid what depends on the model:
+            // SELF_PAY means the host bought both tickets and the joiner paid
+            // nothing; SPLIT means each bought their own. Reading the joiner's
+            // side as a flat ₹99 would refund a ₹1000 ticket as ₹99 on SPLIT,
+            // and hand a SELF_PAY joiner ₹99 they never paid.
+            ...(function computeDeposits() {
+                const perTicket = Number(plan.depositAmount) || 0;
+                const isEventPlan = Boolean((plan as any).partyEventId);
+                if (!isEventPlan) {
+                    return {
+                        hostDepositAmount: perTicket || 99.00,
+                        joinerDepositAmount: 99.00,
+                    };
+                }
+                const isSelfPay = String(plan.paymentType || '').toLowerCase() === 'self_pay';
+                return {
+                    hostDepositAmount: perTicket * (isSelfPay ? 2 : 1),
+                    joinerDepositAmount: isSelfPay ? 0 : perTicket,
+                };
+            })(),
             reliabilityImpact: -5,
         });
 
@@ -670,8 +693,14 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             // Each credit has a unique idempotency reference so duplicate API
             // calls / retries never double-credit the wallet.
             // ─────────────────────────────────────────────────────────────────
-            const hostDeposit = Number(cancellationRequest.hostDepositAmount) || 99.00;
-            const joinerDeposit = Number(cancellationRequest.joinerDepositAmount) || 99.00;
+            // `|| 99.00` would be wrong here: a SELF_PAY event plan stores a
+            // joiner amount of 0 because the joiner genuinely paid nothing, and
+            // `Number(0) || 99` would hand them ₹99 they never spent. The
+            // fallback must only apply when the amount is actually absent.
+            const storedHostDeposit = Number(cancellationRequest.hostDepositAmount);
+            const storedJoinerDeposit = Number(cancellationRequest.joinerDepositAmount);
+            const hostDeposit = Number.isFinite(storedHostDeposit) ? storedHostDeposit : 99.00;
+            const joinerDeposit = Number.isFinite(storedJoinerDeposit) ? storedJoinerDeposit : 99.00;
 
             const hostCreditRef  = `PARTY_PLAN_CANCEL_CREDIT_HOST_${lockedPlan.id}`;
             const joinerCreditRef = `PARTY_PLAN_CANCEL_CREDIT_JOINER_${lockedPlan.id}_${joinerId}`;
@@ -680,6 +709,7 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             let joinerWalletTxId: string | null = null;
 
             try {
+                if (hostDeposit <= 0) throw new Error('SKIP_ZERO_REFUND');
                 const hostRefund = await WalletService.creditRefund({
                     userId: lockedPlan.userId,
                     amount: hostDeposit,
@@ -691,10 +721,15 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 });
                 hostWalletTxId = hostRefund?.txn?.id || null;
             } catch (hostErr: any) {
-                logger.error('[CancellationApprove] Host creditRefund error:', hostErr);
+                if (hostErr?.message !== 'SKIP_ZERO_REFUND') {
+                    logger.error('[CancellationApprove] Host creditRefund error:', hostErr);
+                }
             }
 
             try {
+                // Nothing was paid, so there is nothing to give back — a zero
+                // credit would only create a confusing ₹0 wallet entry.
+                if (joinerDeposit <= 0) throw new Error('SKIP_ZERO_REFUND');
                 const joinerRefund = await WalletService.creditRefund({
                     userId: joinerId,
                     amount: joinerDeposit,
@@ -706,7 +741,9 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 });
                 joinerWalletTxId = joinerRefund?.txn?.id || null;
             } catch (joinerErr: any) {
-                logger.error('[CancellationApprove] Joiner creditRefund error:', joinerErr);
+                if (joinerErr?.message !== 'SKIP_ZERO_REFUND') {
+                    logger.error('[CancellationApprove] Joiner creditRefund error:', joinerErr);
+                }
             }
 
             // 7. Update Chat Subscription to EXPIRED (read-only for 24h)
@@ -776,6 +813,14 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 hostWalletTransactionId: hostWalletTxId,
                 joinerWalletTransactionId: joinerWalletTxId,
             }, { transaction: t });
+
+            // 9b. Hand the event's seats back. Only does anything for a plan
+            // posted from an Upcoming Night; an ordinary party plan holds no
+            // seats and this is a no-op for it. Idempotent, so the several
+            // routes a plan can be cancelled through cannot double-release.
+            if ((lockedPlan as any).partyEventId) {
+                await EventSeatService.releaseForPlan(lockedPlan.id);
+            }
 
             // ─────────────────────────────────────────────────────────────────
             // 10. Post-Approval Notifications + Socket Events (async, post-commit)
