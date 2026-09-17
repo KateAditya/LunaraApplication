@@ -84,22 +84,24 @@ export class SubscriptionService {
         }
     }
 
-    private static async getFromCache(userId: string): Promise<CacheEntry | null> {
-        const entry = planCache.get(userId);
+    private static async getFromCache(userId?: string): Promise<CacheEntry | null> {
+        const cacheKey = (userId && userId.trim().length > 0) ? userId : '__GUEST__';
+        const entry = planCache.get(cacheKey);
         if (entry && entry.expiresAt > Date.now()) {
             if (entry.subscriptionEndDate && entry.subscriptionEndDate <= new Date()) {
                 // The subscription expired since this entry was cached — do not
                 // keep serving VIP-tier limits from a stale cache hit.
-                planCache.delete(userId);
+                planCache.delete(cacheKey);
                 return null;
             }
             return entry;
         }
-        planCache.delete(userId);
+        planCache.delete(cacheKey);
         return null;
     }
 
-    static async activateUpcomingSubscriptions(userId: string, options?: { transaction?: Transaction }): Promise<void> {
+    static async activateUpcomingSubscriptions(userId?: string, options?: { transaction?: Transaction }): Promise<void> {
+        if (!userId || userId.trim().length === 0) return;
         const now = new Date();
 
         // 1. Expire currently ACTIVE subscriptions that have passed endDate
@@ -152,18 +154,21 @@ export class SubscriptionService {
         }
     }
 
-    private static async buildCache(userId: string): Promise<CacheEntry> {
-        await this.activateUpcomingSubscriptions(userId);
+    private static async buildCache(userId?: string): Promise<CacheEntry> {
+        const hasUser = !!(userId && userId.trim().length > 0);
+        if (hasUser) {
+            await this.activateUpcomingSubscriptions(userId!);
+        }
 
-        const subscription = await UserSubscription.findOne({
+        const subscription = hasUser ? await UserSubscription.findOne({
             where: {
-                userId,
+                userId: userId!,
                 status: SubscriptionStatus.ACTIVE,
                 endDate: { [Op.gt]: new Date() },
             },
             include: [{ model: SubscriptionPackage, as: 'package' }],
             order: [['createdAt', 'DESC']],
-        });
+        }) : null;
 
         const plan: SubscriptionPackage | null = (subscription as any)?.package || null;
         const features = new Map<string, any>();
@@ -256,7 +261,8 @@ export class SubscriptionService {
             expiresAt: Date.now() + CACHE_TTL_MS,
             subscriptionEndDate: subscription ? (subscription as any).endDate : null,
         };
-        planCache.set(userId, entry);
+        const cacheKey = (userId && userId.trim().length > 0) ? userId : '__GUEST__';
+        planCache.set(cacheKey, entry);
         return entry;
     }
 
@@ -268,7 +274,7 @@ export class SubscriptionService {
      * - Paid VIP Plan: Maximum 3 Party Plans per calendar day (or configured package limit).
      */
     static async checkPartyPlanLimit(
-        userId: string,
+        userId?: string,
         _targetDate: Date = new Date(),
         options?: { transaction?: Transaction }
     ): Promise<{
@@ -282,11 +288,23 @@ export class SubscriptionService {
         code?: string;
     }> {
         try {
+            const hasUser = !!(userId && userId.trim().length > 0);
+            if (!hasUser) {
+                return {
+                    allowed: true,
+                    tier: 'FREE',
+                    limit: 1,
+                    used: 0,
+                    remaining: 1,
+                    resetAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                };
+            }
+
             await this.activateUpcomingSubscriptions(userId, options);
 
             const activeSub = await UserSubscription.findOne({
                 where: {
-                    userId,
+                    userId: userId!,
                     status: SubscriptionStatus.ACTIVE,
                     endDate: { [Op.gt]: new Date() },
                 },
@@ -491,10 +509,11 @@ export class SubscriptionService {
     /**
      * Get the user's active plan (cached).
      */
-    static async getUserPlan(userId: string): Promise<SubscriptionPackage | null> {
-        const cached = await this.getFromCache(userId);
+    static async getUserPlan(userId?: string): Promise<SubscriptionPackage | null> {
+        const uid = userId || '';
+        const cached = await this.getFromCache(uid);
         if (cached) return cached.plan;
-        const entry = await this.buildCache(userId);
+        const entry = await this.buildCache(uid);
         return entry.plan;
     }
 
@@ -502,12 +521,13 @@ export class SubscriptionService {
      * Check if a user has access to a feature (boolean check).
      * Returns true even for unlimited-value numeric features.
      */
-    static async hasAccess(userId: string, featureKey: string): Promise<boolean> {
+    static async hasAccess(userId: string | undefined, featureKey: string): Promise<boolean> {
         if (featureKey === 'stranger_meet') {
             return true;
         }
         try {
-            const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const uid = userId || '';
+            const entry = (await this.getFromCache(uid)) || (await this.buildCache(uid));
             const featureValue = entry.features.get(featureKey);
             if (featureValue && (featureValue.enabled || featureValue.value)) {
                 return true;
@@ -537,9 +557,10 @@ export class SubscriptionService {
      * Returns 'unlimited' for -1 / unlimited features, or a specific number.
      * Returns 0 if the feature is not accessible.
      */
-    static async getLimit(userId: string, featureKey: string): Promise<FeatureLimit> {
+    static async getLimit(userId: string | undefined, featureKey: string): Promise<FeatureLimit> {
         try {
-            const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const uid = userId || '';
+            const entry = (await this.getFromCache(uid)) || (await this.buildCache(uid));
             const plan = entry.plan;
 
             // VIP plans (CORE, PLUS, PRO, ELITE) have unlimited daily likes
@@ -578,11 +599,12 @@ export class SubscriptionService {
     /**
      * Get remaining usage for a feature for this period.
      */
-    static async getRemainingUsage(userId: string, featureKey: string, period: UsagePeriod = UsagePeriod.DAILY): Promise<FeatureLimit> {
+    static async getRemainingUsage(userId: string | undefined, featureKey: string, period: UsagePeriod = UsagePeriod.DAILY): Promise<FeatureLimit> {
         try {
             const limit = await this.getLimit(userId, featureKey);
             if (limit === 0) return 0;
             if (limit === UNLIMITED) return UNLIMITED;
+            if (!userId || userId.trim().length === 0) return limit;
 
             // Get or create usage record
             const usage = await this.getOrResetUsage(userId, featureKey, period);
@@ -719,9 +741,10 @@ export class SubscriptionService {
     /**
      * Get complete feature summary for a user (for profile screen).
      */
-    static async getUserFeatureSummary(userId: string): Promise<Record<string, any>> {
+    static async getUserFeatureSummary(userId?: string): Promise<Record<string, any>> {
         try {
-            const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const uid = userId || '';
+            const entry = (await this.getFromCache(uid)) || (await this.buildCache(uid));
             const summary: Record<string, any> = {};
 
             for (const [key, val] of entry.features.entries()) {
@@ -743,28 +766,33 @@ export class SubscriptionService {
      * Get the complete subscription status for a user — single call for UI.
      * Returns tier, limits, usage, boosts, superlikes, feature flags.
      */
-    static async getFullStatus(userId: string): Promise<Record<string, any>> {
+    static async getFullStatus(userId?: string): Promise<Record<string, any>> {
         try {
-            const entry = (await this.getFromCache(userId)) || (await this.buildCache(userId));
+            const uid = userId || '';
+            const hasUser = !!(userId && userId.trim().length > 0);
+            const entry = (await this.getFromCache(uid)) || (await this.buildCache(uid));
             const plan = entry.plan;
 
             // 1. Get active subscription record
-            const subscription = await UserSubscription.findOne({
-                where: {
-                    userId,
-                    status: SubscriptionStatus.ACTIVE,
-                    endDate: { [Op.gt]: new Date() },
-                },
-                include: [{ model: SubscriptionPackage, as: 'package' }],
-                order: [['createdAt', 'DESC']],
-            });
+            let subscription: any = null;
+            if (hasUser) {
+                subscription = await UserSubscription.findOne({
+                    where: {
+                        userId: uid,
+                        status: SubscriptionStatus.ACTIVE,
+                        endDate: { [Op.gt]: new Date() },
+                    },
+                    include: [{ model: SubscriptionPackage, as: 'package' }],
+                    order: [['createdAt', 'DESC']],
+                });
+            }
 
             // 2. Check if there is a recently expired paid subscription (within last 7 days) if no active sub
             let lastExpiredSub: any = null;
-            if (!subscription) {
+            if (hasUser && !subscription) {
                 lastExpiredSub = await UserSubscription.findOne({
                     where: {
-                        userId,
+                        userId: uid,
                         status: SubscriptionStatus.EXPIRED,
                         endDate: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
                     },
@@ -790,12 +818,14 @@ export class SubscriptionService {
             }
 
             // Get daily usage
-            const usageRecords = await SubscriptionUsage.findAll({
-                where: { userId, period: UsagePeriod.DAILY },
-            });
             const usageMap: Record<string, number> = {};
-            for (const u of usageRecords) {
-                usageMap[u.featureKey] = u.used;
+            if (hasUser) {
+                const usageRecords = await SubscriptionUsage.findAll({
+                    where: { userId: uid, period: UsagePeriod.DAILY },
+                });
+                for (const u of usageRecords) {
+                    usageMap[u.featureKey] = u.used;
+                }
             }
 
             // Remaining days & hours calculation
@@ -872,24 +902,26 @@ export class SubscriptionService {
             let addonBacktracks = 0;
             let addonPartyPlans = 0;
             let addonLikes = 0;
-            try {
-                const userAddons = await UserAddon.findAll({
-                    where: {
-                        userId,
-                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
-                        remainingQuantity: { [Op.gt]: 0 },
-                    },
-                });
-                for (const ua of userAddons) {
-                    const r = Number(ua.remainingQuantity) || 0;
-                    if (ua.featureKey === 'superlike' || ua.featureKey === 'super_likes' || ua.featureKey === 'super_like') addonSuperlikes += r;
-                    else if (ua.featureKey === 'profile_boost' || ua.featureKey === 'boost' || ua.featureKey === 'boosts') addonBoosts += r;
-                    else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo' || ua.featureKey === 'backtracks') addonBacktracks += r;
-                    else if (ua.featureKey === 'party_creation' || ua.featureKey === 'party_plan' || ua.featureKey === 'party_plans') addonPartyPlans += r;
-                    else if (ua.featureKey === 'daily_likes' || ua.featureKey === 'likes' || ua.featureKey === 'like') addonLikes += r;
+            if (hasUser) {
+                try {
+                    const userAddons = await UserAddon.findAll({
+                        where: {
+                            userId: uid,
+                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            remainingQuantity: { [Op.gt]: 0 },
+                        },
+                    });
+                    for (const ua of userAddons) {
+                        const r = Number(ua.remainingQuantity) || 0;
+                        if (ua.featureKey === 'superlike' || ua.featureKey === 'super_likes' || ua.featureKey === 'super_like') addonSuperlikes += r;
+                        else if (ua.featureKey === 'profile_boost' || ua.featureKey === 'boost' || ua.featureKey === 'boosts') addonBoosts += r;
+                        else if (ua.featureKey === 'backtrack' || ua.featureKey === 'undo' || ua.featureKey === 'backtracks') addonBacktracks += r;
+                        else if (ua.featureKey === 'party_creation' || ua.featureKey === 'party_plan' || ua.featureKey === 'party_plans') addonPartyPlans += r;
+                        else if (ua.featureKey === 'daily_likes' || ua.featureKey === 'likes' || ua.featureKey === 'like') addonLikes += r;
+                    }
+                } catch (err) {
+                    logger.warn('[subscriptionService.getFullStatus] Could not fetch user addons:', err);
                 }
-            } catch (err) {
-                logger.warn('[subscriptionService.getFullStatus] Could not fetch user addons:', err);
             }
 
             const planSuperlikes = (tier === 'ELITE') ? 9999 : (subscription?.superlikesRemaining ?? 0);
@@ -903,18 +935,20 @@ export class SubscriptionService {
                 : (Number(baseLikesLimit) + addonLikes);
 
             let activeBoostRecord: any = null;
-            try {
-                const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
-                activeBoostRecord = await ProfileBoostModel.findOne({
-                    where: {
-                        userId,
-                        status: 'ACTIVE',
-                        expiresAt: { [Op.gt]: new Date() },
-                    },
-                    order: [['createdAt', 'DESC']],
-                });
-            } catch (err) {
-                logger.warn('[subscriptionService.getFullStatus] Could not fetch active profile boost:', err);
+            if (hasUser) {
+                try {
+                    const ProfileBoostModel = (await import('../models/ProfileBoost')).default;
+                    activeBoostRecord = await ProfileBoostModel.findOne({
+                        where: {
+                            userId: uid,
+                            status: 'ACTIVE',
+                            expiresAt: { [Op.gt]: new Date() },
+                        },
+                        order: [['createdAt', 'DESC']],
+                    });
+                } catch (err) {
+                    logger.warn('[subscriptionService.getFullStatus] Could not fetch active profile boost:', err);
+                }
             }
 
             return {

@@ -131,7 +131,7 @@ export const getAvailablePackages = async (_req: Request, res: Response): Promis
 // tier, tierRank, planName, daily limits/usage, superlikes, boosts, feature flags.
 export const getSubscriptionStatus = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.id || (req as any).user?._id || '';
         const status = await SubscriptionService.getFullStatus(userId);
         res.status(200).json({ success: true, data: status });
     } catch (error: any) {
@@ -145,9 +145,9 @@ export const getSubscriptionStatus = async (req: Request, res: Response): Promis
 // @route GET /api/mobile/subscriptions/current
 export const getCurrentSubscription = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.id || (req as any).user?._id || '';
 
-        const [subscription, featureSummary, usageRecords] = await Promise.all([
+        const [subscription, featureSummary, usageRecords] = (userId && userId.trim().length > 0) ? await Promise.all([
             UserSubscription.findOne({
                 where: {
                     userId,
@@ -161,7 +161,7 @@ export const getCurrentSubscription = async (req: Request, res: Response): Promi
             SubscriptionUsage.findAll({
                 where: { userId, period: 'daily' },
             }),
-        ]);
+        ]) : [null, await SubscriptionService.getUserFeatureSummary(''), []];
         const usageMap: Record<string, number> = {};
         for (const u of usageRecords) {
             usageMap[u.featureKey] = u.used;
@@ -616,7 +616,7 @@ export const getSubscriptionHistory = async (req: Request, res: Response): Promi
 // @route GET /api/mobile/subscriptions/check/:featureKey
 export const checkFeatureAccess = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.id || (req as any).user?._id || '';
         const { featureKey } = req.params;
 
         const [hasAccess, limit, remaining] = await Promise.all([
@@ -1116,7 +1116,7 @@ export const payAddonWithWallet = async (req: Request, res: Response): Promise<v
 // @route GET /api/mobile/subscriptions/party-plan-limit
 export const checkPartyPlanLimit = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.id || (req as any).user?._id || '';
         const targetDate = req.query.date ? new Date(req.query.date as string) : new Date();
         const limitResult = await SubscriptionService.checkPartyPlanLimit(userId, targetDate);
         res.status(200).json({ success: true, data: limitResult });

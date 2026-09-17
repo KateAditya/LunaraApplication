@@ -4,19 +4,17 @@ import * as ctrl from '../controllers/mobileSubscriptionController';
 
 const router = Router();
 
-// ── Public / Semi-Public Plan & Addon Listing (Allow discovery pre-warming) ───
+// ── Public / Semi-Public Discovery, Status & Entitlements (Pre-warming, Guests & Browser Testing) ───
 router.get('/packages', optionalAuth, ctrl.getAvailablePackages);
 router.get('/addons', optionalAuth, ctrl.getAvailableAddons);
 router.get('/entitlements', optionalAuth, ctrl.getEntitlementsSummary);
+router.get('/status', optionalAuth, ctrl.getSubscriptionStatus);
+router.get('/current', optionalAuth, ctrl.getCurrentSubscription);
+router.get('/check/:featureKey', optionalAuth, ctrl.checkFeatureAccess);
+router.get('/party-plan-limit', optionalAuth, ctrl.checkPartyPlanLimit);
 
-// All subsequent routes require mobile user auth
+// All subsequent mutating & transactional routes require strict mobile user auth
 router.use(authenticate);
-
-// ── Current Subscription ───────────────────────────────────────────────────────
-router.get('/current', ctrl.getCurrentSubscription);
-
-// ── Unified Status (tier + limits + usage + boosts + superlikes in one call) ──
-router.get('/status', ctrl.getSubscriptionStatus);
 
 // ── Purchase Flow ──────────────────────────────────────────────────────────────
 router.post('/create-order', ctrl.createSubscriptionOrder);
@@ -29,16 +27,9 @@ router.post('/create-boost-order', ctrl.createBoostOrder);
 router.post('/purchase-boost', ctrl.purchaseBoost);
 router.post('/use-boost', ctrl.useBoost);
 
-// ─── History & Invoices ─────────────────────────────────────────────────────────
+// ── History & Invoices ─────────────────────────────────────────────────────────
 router.get('/history', ctrl.getSubscriptionHistory);
 router.get('/plans', ctrl.getUserSubscriptions);
-
-// ── Feature Access Check ───────────────────────────────────────────────────────
-router.get('/check/:featureKey', ctrl.checkFeatureAccess);
-router.get('/party-plan-limit', ctrl.checkPartyPlanLimit);
-
-// ── Entitlements & Usage Breakdown ───────────────────────────────────────────
-router.get('/entitlements', ctrl.getEntitlementsSummary);
 
 // ── Addon Store & Purchases ──────────────────────────────────────────────────
 router.post('/addons/create-order', ctrl.createAddonOrder);
