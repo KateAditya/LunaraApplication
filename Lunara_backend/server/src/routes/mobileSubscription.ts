@@ -7,6 +7,7 @@ const router = Router();
 // ── Public / Semi-Public Plan & Addon Listing (Allow discovery pre-warming) ───
 router.get('/packages', optionalAuth, ctrl.getAvailablePackages);
 router.get('/addons', optionalAuth, ctrl.getAvailableAddons);
+router.get('/entitlements', optionalAuth, ctrl.getEntitlementsSummary);
 
 // All subsequent routes require mobile user auth
 router.use(authenticate);

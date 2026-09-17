@@ -397,20 +397,38 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 order: [['createdAt', 'DESC']],
             });
             if (existingReq) {
+                const planRecord = await PartyPlan.findByPk(planId, {
+                    include: [
+                        { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                        { model: PartyPlanRequest, as: 'requests', required: false }
+                    ]
+                });
                 return res.status(200).json({
                     success: true,
                     alreadyProcessed: true,
                     message: `Cancellation request was already ${existingReq.status.toLowerCase()}.`,
+                    cancellationRequest: existingReq,
+                    plan: planRecord,
+                    partyPlan: planRecord,
                 });
             }
             return res.status(404).json({ success: false, message: 'Cancellation request not found' });
         }
 
         if (cancellationRequest.status !== CancellationRequestStatus.PENDING) {
+            const planRecord = await PartyPlan.findByPk(planId, {
+                include: [
+                    { model: User, as: 'creator', attributes: ['id', 'firstName', 'lastName', 'profileImageUrl'] },
+                    { model: PartyPlanRequest, as: 'requests', required: false }
+                ]
+            });
             return res.status(200).json({
                 success: true,
                 alreadyProcessed: true,
                 message: `Cancellation request is already ${cancellationRequest.status.toLowerCase()}`,
+                cancellationRequest,
+                plan: planRecord,
+                partyPlan: planRecord,
             });
         }
 
@@ -519,6 +537,8 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 success: true,
                 message: 'Cancellation request rejected. Party Plan remains confirmed.',
                 cancellationRequest,
+                plan,
+                partyPlan: plan,
             });
         }
 
@@ -545,6 +565,9 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                     success: true,
                     alreadyCancelled: true,
                     message: 'Party Plan was already cancelled.',
+                    plan: lockedPlan,
+                    partyPlan: lockedPlan,
+                    cancellationRequest,
                 });
             }
 
@@ -852,6 +875,8 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
                 success: true,
                 message: `Party Plan cancelled by mutual agreement. Commitment deposits have been credited to both users' Lunara Wallets.`,
                 cancellationRequest,
+                plan: lockedPlan,
+                partyPlan: lockedPlan,
                 walletCredits: {
                     host: { userId: lockedPlan.userId, amount: hostDeposit },
                     joiner: { userId: joinerId, amount: joinerDeposit },

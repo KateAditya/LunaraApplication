@@ -173,40 +173,42 @@ export class EntitlementService {
      * Returns full authoritative breakdown of plan benefits, usage progress,
      * separated add-on balances, combined totals, and smart suggestions.
      */
-    public static async getEntitlementsSummary(userId: string): Promise<EntitlementsSummaryResponse> {
+    public static async getEntitlementsSummary(userId?: string): Promise<EntitlementsSummaryResponse> {
         await this.seedDefaultAddons();
 
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
         // 1. Parallel fetch of active subscription, usage counters, and user add-ons
-        const [activeSub, usageRecords, userAddons] = await Promise.all([
-            UserSubscription.findOne({
-                where: {
-                    userId,
-                    status: SubscriptionStatus.ACTIVE,
-                    endDate: { [Op.gt]: now },
-                },
-                include: [{ model: SubscriptionPackage, as: 'package' }],
-                order: [['createdAt', 'DESC']],
-            }),
-            SubscriptionUsage.findAll({
-                where: { userId },
-            }),
-            UserAddon.findAll({
-                where: {
-                    userId,
-                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
-                    remainingQuantity: { [Op.gt]: 0 },
-                },
-                include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
-                order: [['createdAt', 'ASC']],
-            }),
-        ]);
+        const [activeSub, usageRecords, userAddons] = (userId && userId.trim().length > 0)
+            ? await Promise.all([
+                UserSubscription.findOne({
+                    where: {
+                        userId,
+                        status: SubscriptionStatus.ACTIVE,
+                        endDate: { [Op.gt]: now },
+                    },
+                    include: [{ model: SubscriptionPackage, as: 'package' }],
+                    order: [['createdAt', 'DESC']],
+                }),
+                SubscriptionUsage.findAll({
+                    where: { userId },
+                }),
+                UserAddon.findAll({
+                    where: {
+                        userId,
+                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                        remainingQuantity: { [Op.gt]: 0 },
+                    },
+                    include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
+                    order: [['createdAt', 'ASC']],
+                }),
+            ])
+            : [null, [], []];
 
         // 2. Fallback / expired subscription
         let lastExpiredSub: any = null;
-        if (!activeSub) {
+        if (!activeSub && userId && userId.trim().length > 0) {
             lastExpiredSub = await UserSubscription.findOne({
                 where: {
                     userId,
@@ -234,16 +236,18 @@ export class EntitlementService {
                 : (activeSub ? new Date(activeSub.startDate) : startOfMonth));
 
         let partyPlansCreatedThisPeriod = 0;
-        try {
-            partyPlansCreatedThisPeriod = await PartyPlan.count({
-                where: {
-                    userId,
-                    createdAt: { [Op.gte]: partyPeriodStart },
-                    status: { [Op.ne]: PartyPlanStatus.CANCELLED },
-                },
-            });
-        } catch (planCountErr) {
-            logger.warn('[EntitlementService] Error counting PartyPlan usage:', planCountErr);
+        if (userId && userId.trim().length > 0) {
+            try {
+                partyPlansCreatedThisPeriod = await PartyPlan.count({
+                    where: {
+                        userId,
+                        createdAt: { [Op.gte]: partyPeriodStart },
+                        status: { [Op.ne]: PartyPlanStatus.CANCELLED },
+                    },
+                });
+            } catch (planCountErr) {
+                logger.warn('[EntitlementService] Error counting PartyPlan usage:', planCountErr);
+            }
         }
 
         // Remaining time calculation

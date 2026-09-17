@@ -1081,10 +1081,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (!mounted) return;
     setState(() => _isLoadingCancellation = false);
 
-    if (res['success'] == true) {
+    final bool isSuccess = res['success'] == true ||
+        res['alreadyProcessed'] == true ||
+        res['alreadyCancelled'] == true;
+
+    if (isSuccess) {
+      if (action == 'approve' || res['alreadyCancelled'] == true) {
+        ApiService.markPartyPlanAsCancelledLocal(planId);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(action == 'approve' ? 'Party Plan cancelled. ₹99 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.'),
+          content: Text(res['message'] ?? (action == 'approve' ? 'Party Plan cancelled. ₹99 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.')),
           backgroundColor: action == 'approve' ? Colors.green : Colors.grey.shade800,
         ),
       );

@@ -2874,6 +2874,8 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                 : 'Request accepted. Plan reserved. Host must pay deposit first within 30 minutes.',
             data: {
                 request,
+                plan,
+                partyPlan: plan,
                 hostRazorpayOrderId: hostOrder ? hostOrder.id : null,
                 hostAmount: hostOrder ? hostOrder.amount : null,
                 hostCurrency: hostOrder ? hostOrder.currency : null,

@@ -956,7 +956,7 @@ export const getUserSubscriptions = async (req: Request, res: Response): Promise
 // @route GET /api/mobile/subscriptions/entitlements
 export const getEntitlementsSummary = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = (req as any).user.id;
+        const userId = (req as any).user?.id || (req as any).user?._id || '';
         const summary = await EntitlementService.getEntitlementsSummary(userId);
         res.status(200).json({ success: true, data: summary });
     } catch (error: any) {

@@ -164,6 +164,165 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   final Set<String> _activeActionKeys = <String>{};
   String? _processingPaymentBookingId;
 
+  // Authoritative Party Plan State Timestamps to prevent stale GET overwrites
+  final Map<String, DateTime> _planStateTimestamps = <String, DateTime>{};
+
+  bool _isPartyActionProcessing(String planId, [String? actionType]) {
+    final cleanId = ApiService.cleanBookingId(planId);
+    if (actionType != null) {
+      return _activeActionKeys.contains('pp_act_${cleanId}_$actionType') ||
+          _activeActionKeys.contains('pp_act_${planId}_$actionType') ||
+          _activeActionKeys.contains('${actionType}_$cleanId') ||
+          _activeActionKeys.contains('${actionType}_$planId') ||
+          _activeActionKeys.contains('accept_cancel_pp_$planId') ||
+          _activeActionKeys.contains('accept_cancel_pp_$cleanId') ||
+          _activeActionKeys.contains('keep_plan_pp_$planId') ||
+          _activeActionKeys.contains('keep_plan_pp_$cleanId');
+    }
+    return _activeActionKeys.any((k) =>
+        k.contains(cleanId) || (planId.isNotEmpty && k.contains(planId)));
+  }
+
+  void _setPartyActionProcessing(String planId, String actionType, bool isProcessing) {
+    final cleanId = ApiService.cleanBookingId(planId);
+    final key1 = 'pp_act_${cleanId}_$actionType';
+    final key2 = 'pp_act_${planId}_$actionType';
+    if (isProcessing) {
+      _activeActionKeys.add(key1);
+      _activeActionKeys.add(key2);
+    } else {
+      _activeActionKeys.remove(key1);
+      _activeActionKeys.remove(key2);
+    }
+  }
+
+  /// Authoritative In-Place Party Plan Entity Reconciliation Engine
+  /// Ensures ONE PARTY PLAN = ONE STABLE, EVOLVING LIVE FEED / NOTIFICATION CARD.
+  void _reconcilePartyPlanState(
+    String rawPlanId,
+    Map<String, dynamic> deltaOrFullState, {
+    bool isAuthoritative = true,
+  }) {
+    if (!mounted || rawPlanId.isEmpty || deltaOrFullState.isEmpty) return;
+    final cleanPlanId = ApiService.cleanBookingId(rawPlanId);
+    if (cleanPlanId.isEmpty) return;
+
+    final now = DateTime.now();
+    _planStateTimestamps[cleanPlanId] = now;
+    _planStateTimestamps[rawPlanId] = now;
+
+    final String? newStatus = deltaOrFullState['status']?.toString().toLowerCase();
+    final String? newLifecycleStatus =
+        deltaOrFullState['lifecycleStatus']?.toString().toLowerCase();
+    final bool isCancelled = newStatus == 'cancelled' ||
+        newLifecycleStatus == 'cancelled' ||
+        deltaOrFullState['isCancelled'] == true ||
+        deltaOrFullState['cancellationStatus'] == 'approved';
+    final bool isConfirmed = newStatus == 'confirmed' ||
+        newLifecycleStatus == 'match_confirmed' ||
+        newLifecycleStatus == 'chat_enabled' ||
+        newLifecycleStatus == 'plan_completed';
+
+    bool matchedFeed = false;
+    _feedItems = _feedItems.map((item) {
+      if (_matchesId(item, rawPlanId, cleanTarget: cleanPlanId)) {
+        matchedFeed = true;
+        final updated = Map<String, dynamic>.from(item);
+        deltaOrFullState.forEach((k, v) {
+          if (v != null) updated[k] = v;
+        });
+        if (isCancelled) {
+          updated['status'] = 'cancelled';
+          updated['lifecycleStatus'] = 'cancelled';
+          updated['isCancelled'] = true;
+          updated['isLive'] = false;
+          updated['hostPaymentStatus'] = 'refunded';
+          updated['paymentStatus'] = 'Refunded';
+        } else if (isConfirmed) {
+          updated['status'] = 'confirmed';
+          updated['lifecycleStatus'] = newLifecycleStatus ?? 'match_confirmed';
+        }
+        return updated;
+      }
+      return item;
+    }).toList();
+
+    // If not found in _feedItems and state has rich venue/plan info, keep it in _feedItems so card stays mounted
+    if (!matchedFeed &&
+        (deltaOrFullState.containsKey('venue') ||
+            deltaOrFullState.containsKey('venueName') ||
+            deltaOrFullState.containsKey('planDateTime'))) {
+      final newItem = Map<String, dynamic>.from(deltaOrFullState);
+      newItem['id'] ??= cleanPlanId;
+      newItem['planId'] ??= cleanPlanId;
+      newItem['partyPlanId'] ??= cleanPlanId;
+      _feedItems = [newItem, ..._feedItems];
+    }
+
+    // Reconcile _notifications matching this plan
+    _notifications = _notifications.map((notif) {
+      final ppId = _extractPartyPlanId(notif);
+      if (ppId != null &&
+          (ppId == rawPlanId ||
+              ApiService.cleanBookingId(ppId) == cleanPlanId ||
+              _matchesId(notif, rawPlanId, cleanTarget: cleanPlanId))) {
+        final updatedNotif = Map<String, dynamic>.from(notif);
+        if (updatedNotif['data'] is Map) {
+          final d = Map<String, dynamic>.from(updatedNotif['data'] as Map);
+          deltaOrFullState.forEach((k, v) {
+            if (v != null) d[k] = v;
+          });
+          if (isCancelled) {
+            d['status'] = 'cancelled';
+            d['lifecycleStatus'] = 'cancelled';
+            d['isCancelled'] = true;
+          }
+          updatedNotif['data'] = d;
+        }
+        if (updatedNotif['metadata'] is Map) {
+          final m = Map<String, dynamic>.from(updatedNotif['metadata'] as Map);
+          deltaOrFullState.forEach((k, v) {
+            if (v != null) m[k] = v;
+          });
+          if (isCancelled) {
+            m['status'] = 'cancelled';
+            m['lifecycleStatus'] = 'cancelled';
+            m['isCancelled'] = true;
+          }
+          updatedNotif['metadata'] = m;
+        }
+        if (isCancelled) {
+          updatedNotif['isCancelled'] = true;
+          updatedNotif['status'] = 'cancelled';
+          updatedNotif['requestStatus'] = 'cancelled';
+          updatedNotif['cancellationStatus'] = 'approved';
+          updatedNotif['read'] = true;
+          updatedNotif['isRead'] = true;
+        } else if (newStatus == 'rejected' || newStatus == 'active') {
+          if (updatedNotif['category'] == 'party_plan_cancellation_requested' ||
+              updatedNotif['type'] == 'party_plan_cancellation_requested') {
+            updatedNotif['cancellationStatus'] = 'rejected';
+            updatedNotif['status'] = 'rejected';
+            updatedNotif['read'] = true;
+            updatedNotif['isRead'] = true;
+          }
+        }
+        return updatedNotif;
+      }
+      return notif;
+    }).toList();
+
+    ApiService.invalidateLiveFeedCache();
+    if (isCancelled) {
+      ApiService.markPartyPlanAsCancelledLocal(cleanPlanId);
+      ApiService.markPartyPlanAsCancelledLocal(rawPlanId);
+    }
+
+    setState(() {
+      _cachedTimeline = _buildUnifiedTimeline();
+    });
+  }
+
   void refreshFeed() {
     _loadFeed(showLoader: false, forceRefresh: true);
   }
@@ -1342,14 +1501,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (data is Map) {
       final delId = (data['partyPlanId'] ?? data['planId'] ?? data['id'])?.toString();
       if (delId != null && delId.isNotEmpty) {
+        final cleanDelId = ApiService.cleanBookingId(delId);
+        final currentUid = ApiService.currentUserId ?? '';
+
+        // Check if the current user is host, partner, joiner, or has request/notif for this plan
+        bool isMyPlan = false;
+        for (final item in _feedItems) {
+          if (_matchesId(item, delId, cleanTarget: cleanDelId)) {
+            final hostId = (item['userId'] ?? item['hostId'] ?? item['creatorId'] ?? item['creator']?['id'] ?? '').toString();
+            final partnerId = (item['partnerId'] ?? item['matchedUserId'] ?? '').toString();
+            if (currentUid.isNotEmpty && (hostId == currentUid || partnerId == currentUid || item['isHost'] == true || item['role'] == 'host' || item['myRequest'] != null)) {
+              isMyPlan = true;
+              break;
+            }
+          }
+        }
+        if (!isMyPlan) {
+          for (final notif in _notifications) {
+            final ppId = _extractPartyPlanId(notif);
+            if (ppId != null && (ppId == delId || ApiService.cleanBookingId(ppId) == cleanDelId || _matchesId(notif, delId, cleanTarget: cleanDelId))) {
+              isMyPlan = true;
+              break;
+            }
+          }
+        }
+
+        if (isMyPlan) {
+          // Keep card mounted and reconcile to cancelled/terminal state
+          _reconcilePartyPlanState(delId, {
+            'status': 'cancelled',
+            'lifecycleStatus': 'cancelled',
+            'isLive': false,
+            'isCancelled': true,
+          });
+          return;
+        }
+
         setState(() {
-          _feedItems = _feedItems.where((item) => (item['id'] ?? item['_id'])?.toString() != delId).toList();
+          _feedItems = _feedItems.where((item) => !_matchesId(item, delId, cleanTarget: cleanDelId)).toList();
           _cachedTimeline = _buildUnifiedTimeline();
         });
         return;
       }
     }
-    _loadFeed(showLoader: false);
   }
 
   void _onPartyPlanRequestAccepted(dynamic data) {
@@ -1488,6 +1682,47 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (!serverHasIt) combined = [seed, ...combined];
       }
 
+      // Preserve any local participating party plans that were updated locally
+      final Map<String, Map<String, dynamic>> localPlanMap = {};
+      for (final localItem in _feedItems) {
+        final pId = _extractPartyPlanId(localItem);
+        if (pId != null && pId.isNotEmpty) {
+          final cleanPId = ApiService.cleanBookingId(pId);
+          if (_planStateTimestamps.containsKey(cleanPId) ||
+              _planStateTimestamps.containsKey(pId) ||
+              localItem['isCancelled'] == true ||
+              localItem['status'] == 'cancelled' ||
+              localItem['lifecycleStatus'] == 'cancelled') {
+            localPlanMap[cleanPId] = localItem;
+          }
+        }
+      }
+
+      for (final entry in localPlanMap.entries) {
+        final cleanPId = entry.key;
+        final localItem = entry.value;
+        final int idx = combined.indexWhere((i) {
+          final iId = _extractPartyPlanId(i);
+          return iId != null && (iId == cleanPId || ApiService.cleanBookingId(iId) == cleanPId);
+        });
+        if (idx != -1) {
+          // If local state has cancellation or newer lifecycle, merge it over stale GET
+          if (localItem['isCancelled'] == true || localItem['status'] == 'cancelled') {
+            combined[idx] = {
+              ...combined[idx],
+              'status': 'cancelled',
+              'lifecycleStatus': 'cancelled',
+              'isCancelled': true,
+              'isLive': false,
+              'hostPaymentStatus': 'refunded',
+            };
+          }
+        } else {
+          // Keep the participating local item so it never disappears
+          combined.add(localItem);
+        }
+      }
+
       if (mounted &&
           requestUserId == ApiService.currentUserId &&
           requestUserId == _sessionUserId) {
@@ -1514,11 +1749,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         final List<Map<String, dynamic>> freshNotifs = notifs.map((n) {
           final nId = n['id']?.toString() ?? '';
+          final ppId = _extractPartyPlanId(n);
+          Map<String, dynamic> mapped = n;
           if (_localReadNotificationIds.contains(nId) ||
               ApiService.localReadRequestIds.contains(nId)) {
-            return {...n, 'read': true, 'isRead': true};
+            mapped = {...mapped, 'read': true, 'isRead': true};
           }
-          return n;
+          if (ppId != null) {
+            final cleanPId = ApiService.cleanBookingId(ppId);
+            if (localPlanMap.containsKey(cleanPId)) {
+              final localItem = localPlanMap[cleanPId]!;
+              if (localItem['isCancelled'] == true || localItem['status'] == 'cancelled') {
+                mapped = {
+                  ...mapped,
+                  'isCancelled': true,
+                  'status': 'cancelled',
+                  'cancellationStatus': 'approved',
+                  'read': true,
+                  'isRead': true,
+                };
+              }
+            }
+          }
+          return mapped;
         }).toList();
 
         _notifications = [...preservedRecent, ...freshNotifs];
@@ -2903,6 +3156,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (res != null) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
+        final planData = res['plan'] is Map
+            ? Map<String, dynamic>.from(res['plan'] as Map)
+            : (res['partyPlan'] is Map
+                ? Map<String, dynamic>.from(res['partyPlan'] as Map)
+                : null);
+        final planId = planData?['id']?.toString() ??
+            res['partyPlanId']?.toString() ??
+            res['planId']?.toString() ??
+            '';
+        if (planId.isNotEmpty && planData != null) {
+          _reconcilePartyPlanState(planId, planData, isAuthoritative: true);
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -2910,7 +3175,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.green,
             ),
           );
-          _loadFeed(showLoader: false, forceRefresh: true);
+          _loadFeed(showLoader: false);
         }
       } else {
         if (!mounted) return;
@@ -2921,7 +3186,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
       debugPrint('Error accepting request: $e');
@@ -2930,7 +3195,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
@@ -2958,7 +3223,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.grey,
             ),
           );
-          _loadFeed(showLoader: false, forceRefresh: true);
+          _loadFeed(showLoader: false);
         }
       } else {
         if (!mounted) return;
@@ -2969,7 +3234,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
       debugPrint('Error rejecting request: $e');
@@ -2978,7 +3243,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
@@ -3009,7 +3274,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.grey,
             ),
           );
-          _loadFeed(showLoader: false, forceRefresh: true);
+          _loadFeed(showLoader: false);
         }
       } else {
         if (!mounted) return;
@@ -3020,7 +3285,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
       debugPrint('Error revoking party plan invite: $e');
@@ -3029,7 +3294,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
@@ -3810,7 +4075,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (success) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       } else {
         if (mounted) {
           setState(() {
@@ -3861,7 +4126,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.green,
             ),
           );
-          _loadFeed(showLoader: false, forceRefresh: true);
+          _loadFeed(showLoader: false);
         }
       } else {
         if (!mounted) return;
@@ -3872,7 +4137,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } catch (e) {
       debugPrint('Error accepting invite: $e');
@@ -3881,7 +4146,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false, forceRefresh: true);
+        _loadFeed(showLoader: false);
       }
     } finally {
       if (mounted) setState(() => _activeActionKeys.remove(actionKey));
@@ -8857,14 +9122,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (planStatus == 'expired' ||
         lifecycleStatus == 'expired' ||
-        lifecycleStatus == 'payment_expired' ||
-        planStatus == 'cancelled' ||
-        lifecycleStatus == 'cancelled') {
+        lifecycleStatus == 'payment_expired') {
       isExpired = true;
     }
 
     final bool isCancelled =
-        planStatus == 'cancelled' || lifecycleStatus == 'cancelled';
+        planStatus == 'cancelled' ||
+        lifecycleStatus == 'cancelled' ||
+        planMap['isCancelled'] == true ||
+        planMap['cancellationStatus'] == 'approved';
 
     final String hostReachStatus =
         (planMap['hostReachStatus'] ??
@@ -9047,8 +9313,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     for (final e in entries) {
       final eType = (e['type'] ?? e['eventType'] ?? '').toString();
       final cat = (e['category'] ?? '').toString();
-      if (eType == 'party_plan_cancellation_requested' ||
-          cat == 'party_plan_cancellation_requested') {
+      final eStatus = (e['status'] ?? '').toString().toLowerCase();
+      final cStatus = (e['cancellationStatus'] ?? '').toString().toLowerCase();
+      if ((eType == 'party_plan_cancellation_requested' ||
+          cat == 'party_plan_cancellation_requested') &&
+          eStatus != 'approved' &&
+          eStatus != 'cancelled' &&
+          eStatus != 'rejected' &&
+          eStatus != 'declined' &&
+          cStatus != 'approved' &&
+          cStatus != 'rejected') {
         pendingCancellationEntry = e;
         break;
       }
@@ -9057,16 +9331,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final bool isCancellationRequested =
         (lifecycleStatus == 'cancellation_requested' ||
             pendingCancellationEntry != null) &&
-        !isCancelled;
+        !isCancelled &&
+        !isExpired;
 
-    if (isExpired) {
-      accent = const Color(0xFF9CA3AF);
-      badge = 'EXPIRED';
-      title = 'Party Plan Expired ⌛';
-      body = 'This Party Plan at $venueName has expired.';
-      actionsList = null;
-      statusSummary = 'Plan Expired';
-    } else if (isCancelled) {
+    if (isCancelled) {
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
       title = '❌ Party Plan Cancelled';
@@ -9096,6 +9364,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ).then((_) => _loadFeed(showLoader: false)),
         ),
       ];
+    } else if (isExpired) {
+      accent = const Color(0xFF9CA3AF);
+      badge = 'EXPIRED';
+      title = 'Party Plan Expired ⌛';
+      body = 'This Party Plan at $venueName has expired.';
+      actionsList = null;
+      statusSummary = 'Plan Expired';
     } else if (isCancellationRequested) {
       final String requestedById =
           (pendingCancellationEntry?['requestedById'] ??
@@ -9154,10 +9429,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body =
             '$requesterName has requested to cancel this Party Plan at $venueName.\nReason: "$reasonText"';
         statusSummary = 'Approval Required';
-        final acceptCancelKey = 'accept_cancel_pp_$planId';
-        final keepPlanKey = 'keep_plan_pp_$planId';
-        final isAcceptingCancel = _activeActionKeys.contains(acceptCancelKey);
-        final isKeepingPlan = _activeActionKeys.contains(keepPlanKey);
+        final isAcceptingCancel = _isPartyActionProcessing(planId, 'accept_cancellation');
+        final isKeepingPlan = _isPartyActionProcessing(planId, 'keep_plan');
 
         actionsList = [
           NotificationAction(
@@ -9169,7 +9442,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAcceptingCancel || isKeepingPlan)
                 ? () {}
                 : () async {
-                    setState(() => _activeActionKeys.add(acceptCancelKey));
+                    _setPartyActionProcessing(planId, 'accept_cancellation', true);
+                    if (mounted) setState(() {});
                     try {
                       final res =
                           await ApiService.respondToPartyPlanCancellationRequest(
@@ -9177,10 +9451,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             requestId: cancelReqId,
                             action: 'approve',
                           );
-                      if (res['success'] == true) {
-                        _optimisticallyUpdatePartyPlanRequest(
+                      final bool isSuccess = res['success'] == true ||
+                          res['alreadyProcessed'] == true ||
+                          res['alreadyCancelled'] == true;
+                      if (isSuccess) {
+                        final serverPlan = res['plan'] is Map
+                            ? Map<String, dynamic>.from(res['plan'] as Map)
+                            : (res['partyPlan'] is Map
+                                ? Map<String, dynamic>.from(res['partyPlan'] as Map)
+                                : null);
+                        _reconcilePartyPlanState(
                           planId,
-                          'cancelled',
+                          serverPlan ?? {
+                            'status': 'cancelled',
+                            'lifecycleStatus': 'cancelled',
+                            'isCancelled': true,
+                            'cancellationStatus': 'approved',
+                            'hostPaymentStatus': 'refunded',
+                            'paymentStatus': 'Refunded',
+                          },
+                          isAuthoritative: true,
                         );
                       }
                       if (mounted) {
@@ -9188,16 +9478,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                           SnackBar(
                             content: Text(
                               res['message'] ??
-                                  (res['success'] == true
+                                  (isSuccess
                                       ? 'Party Plan cancelled. Commitment deposit credited to wallet!'
                                       : 'Failed to cancel Party Plan.'),
                             ),
-                            backgroundColor: res['success'] == true
+                            backgroundColor: isSuccess
                                 ? Colors.green
                                 : Colors.red,
                           ),
                         );
-                        _loadFeed(showLoader: false, forceRefresh: true);
                       }
                     } catch (e) {
                       if (mounted) {
@@ -9209,11 +9498,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         );
                       }
                     } finally {
-                      if (mounted) {
-                        setState(
-                          () => _activeActionKeys.remove(acceptCancelKey),
-                        );
-                      }
+                      _setPartyActionProcessing(planId, 'accept_cancellation', false);
+                      if (mounted) setState(() {});
                     }
                   },
           ),
@@ -9226,7 +9512,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             onTap: (isAcceptingCancel || isKeepingPlan)
                 ? () {}
                 : () async {
-                    setState(() => _activeActionKeys.add(keepPlanKey));
+                    _setPartyActionProcessing(planId, 'keep_plan', true);
+                    if (mounted) setState(() {});
                     try {
                       final res =
                           await ApiService.respondToPartyPlanCancellationRequest(
@@ -9234,24 +9521,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                             requestId: cancelReqId,
                             action: 'reject',
                           );
-                      if (res['success'] == true) {
-                        _optimisticallyUpdatePartyPlanRequest(planId, 'active');
+                      final bool isSuccess = res['success'] == true ||
+                          res['alreadyProcessed'] == true;
+                      if (isSuccess) {
+                        final serverPlan = res['plan'] is Map
+                            ? Map<String, dynamic>.from(res['plan'] as Map)
+                            : (res['partyPlan'] is Map
+                                ? Map<String, dynamic>.from(res['partyPlan'] as Map)
+                                : null);
+                        _reconcilePartyPlanState(
+                          planId,
+                          serverPlan ?? {
+                            'status': 'active',
+                            'lifecycleStatus': 'match_confirmed',
+                            'cancellationStatus': 'rejected',
+                          },
+                          isAuthoritative: true,
+                        );
                       }
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
                               res['message'] ??
-                                  (res['success'] == true
+                                  (isSuccess
                                       ? 'Cancellation declined. Party Plan remains active.'
                                       : 'Failed to decline cancellation.'),
                             ),
-                            backgroundColor: res['success'] == true
+                            backgroundColor: isSuccess
                                 ? Colors.grey.shade800
                                 : Colors.red,
                           ),
                         );
-                        _loadFeed(showLoader: false, forceRefresh: true);
                       }
                     } catch (e) {
                       if (mounted) {
@@ -9263,9 +9564,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         );
                       }
                     } finally {
-                      if (mounted) {
-                        setState(() => _activeActionKeys.remove(keepPlanKey));
-                      }
+                      _setPartyActionProcessing(planId, 'keep_plan', false);
+                      if (mounted) setState(() {});
                     }
                   },
           ),
