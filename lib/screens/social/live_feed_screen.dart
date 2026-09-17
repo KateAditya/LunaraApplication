@@ -1344,6 +1344,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     List<Map<String, dynamic>> applyPatch(List<Map<String, dynamic>> items) {
       return items.map((item) {
         if (matchesItem(item)) {
+          final pId = (item['planId'] ?? item['partyPlanId'] ?? item['plan']?['id'] ?? item['id'] ?? item['_id'] ?? '').toString();
+          final cleanP = ApiService.cleanBookingId(pId);
+          if (_syncingPartyPlanIds.contains(pId) ||
+              _syncingPartyPlanIds.contains(cleanP) ||
+              _syncingPartyPlanIds.contains('pp_$cleanP') ||
+              _syncingPartyPlanIds.contains('pp_$pId') ||
+              _syncingPartyPlanIds.contains(cleanEntityId) ||
+              _syncingPartyPlanIds.contains(entityId)) {
+            // Do not mutate entity while it is in an active sync / action transition window
+            return item;
+          }
           matched = true;
           return {...item, ...patchFor(item)};
         }
@@ -1687,6 +1698,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (!ApiService.localReadIdsLoaded) {
         await ApiService.loadLocalReadIds();
       }
+
+      // ── FIX: Snapshot _feedItems BEFORE the async network call so that any
+      // socket events that arrive during Future.wait (and patch _feedItems via
+      // _patchEntityInFeed) do NOT corrupt the localPlanMap we build later.
+      // Without this snapshot the local cancellation state could be a socket
+      // delta stamped AFTER the user's action, not BEFORE, and would get
+      // re-injected over the fresh server response.
+      final List<Map<String, dynamic>> preFetchFeedSnapshot =
+          List<Map<String, dynamic>>.from(_feedItems);
+
       // A socket-driven refresh only invalidates live-feed and notification
       // state. Bookings, group parties and the safety check are left on their
       // own short caches so one realtime event costs two network round-trips
@@ -1737,17 +1758,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (!serverHasIt) combined = [seed, ...combined];
       }
 
-      // Preserve any local participating party plans that were updated locally
+      // ── Preserve any local participating party plans that were updated locally.
+      //
+      // Build from the pre-fetch snapshot (not from _feedItems which may have
+      // been mutated by socket events during the network await). This prevents
+      // a race condition where a late-arriving socket delta stamps wrong status
+      // on _feedItems and the next _loadFeed re-injects it over fresh server data.
       final Map<String, Map<String, dynamic>> localPlanMap = {};
-      for (final localItem in _feedItems) {
+      for (final localItem in preFetchFeedSnapshot) {
         final pId = _extractPartyPlanId(localItem);
         if (pId != null && pId.isNotEmpty) {
           final cleanPId = ApiService.cleanBookingId(pId);
-          if (_planStateTimestamps.containsKey(cleanPId) ||
-              _planStateTimestamps.containsKey(pId) ||
-              localItem['isCancelled'] == true ||
-              localItem['status'] == 'cancelled' ||
-              localItem['lifecycleStatus'] == 'cancelled') {
+
+          // ── FIX: Never add a plan to localPlanMap while it is actively syncing.
+          // _syncingPartyPlanIds marks plans where an authoritative _loadFeed is
+          // in flight to fetch the final confirmed state. Injecting stale local
+          // cancelled/intermediate state over the fresh server response is the
+          // root cause of the "CANCELLED" flash after host payment.
+          final bool isPlanSyncing =
+              _syncingPartyPlanIds.contains(cleanPId) ||
+              _syncingPartyPlanIds.contains(pId) ||
+              _syncingPartyPlanIds.contains('pp_$cleanPId') ||
+              _syncingPartyPlanIds.contains('pp_$pId');
+
+          if (!isPlanSyncing &&
+              (_planStateTimestamps.containsKey(cleanPId) ||
+                  _planStateTimestamps.containsKey(pId) ||
+                  localItem['isCancelled'] == true ||
+                  localItem['status'] == 'cancelled' ||
+                  localItem['lifecycleStatus'] == 'cancelled')) {
             localPlanMap[cleanPId] = localItem;
           }
         }
@@ -1756,13 +1795,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       for (final entry in localPlanMap.entries) {
         final cleanPId = entry.key;
         final localItem = entry.value;
+
+        // ── FIX: Skip cancelled-state injection for any plan that is currently
+        // being synced (an action was just taken, and the overlay is covering
+        // the card). We trust the fresh server data completely for syncing plans.
+        final bool isPlanSyncing =
+            _syncingPartyPlanIds.contains(cleanPId) ||
+            _syncingPartyPlanIds.contains('pp_$cleanPId');
+
         final int idx = combined.indexWhere((i) {
           final iId = _extractPartyPlanId(i);
           return iId != null && (iId == cleanPId || ApiService.cleanBookingId(iId) == cleanPId);
         });
         if (idx != -1) {
-          // If local state has cancellation or newer lifecycle, merge it over stale GET
-          if (localItem['isCancelled'] == true || localItem['status'] == 'cancelled') {
+          // If local state has cancellation or newer lifecycle, merge it over stale GET.
+          // But NEVER do this for plans that are actively syncing — those always
+          // get the raw server truth so the card can land on the correct state.
+          if (!isPlanSyncing &&
+              (localItem['isCancelled'] == true || localItem['status'] == 'cancelled')) {
             combined[idx] = {
               ...combined[idx],
               'status': 'cancelled',
@@ -1772,8 +1822,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               'hostPaymentStatus': 'refunded',
             };
           }
-        } else {
-          // Keep the participating local item so it never disappears
+        } else if (!isPlanSyncing) {
+          // Keep the participating local item so it never disappears.
+          // For syncing plans the server is the sole truth — don't re-inject.
           combined.add(localItem);
         }
       }
@@ -6639,7 +6690,29 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     // 1. Action Required / Critical / Invites first
     // 2. Unread items second
     // 3. Descending by createdAt (lastActivityAt)
+    // ── FIX: Stable sort for syncing cards ──────────────────────────────────
+    // Compute each item's sort-stable position index from the previous cached
+    // timeline so that a card undergoing an action (e.g. host paying deposit)
+    // does not jump up or down the list while the full-card overlay is shown.
+    // Without this, a card transitioning from "ACTION REQUIRED" (pinned first)
+    // to another badge drops position the moment the overlay appears, causing a
+    // visible shuffle before the authoritative state arrives.
+    final Map<String, int> previousPositions = {};
+    for (int i = 0; i < _cachedTimeline.length; i++) {
+      previousPositions[_cachedTimeline[i].id] = i;
+    }
+
     items.sort((a, b) {
+      // If either card is currently syncing, freeze its relative position so
+      // the list does not shuffle while the loader is showing.
+      final bool aSyncing = _isNotificationCardProcessing(a);
+      final bool bSyncing = _isNotificationCardProcessing(b);
+      if (aSyncing || bSyncing) {
+        final int aPos = previousPositions[a.id] ?? 999999;
+        final int bPos = previousPositions[b.id] ?? 999999;
+        return aPos.compareTo(bPos);
+      }
+
       final aAction =
           (a.badgeText == 'ACTION REQUIRED' ||
               a.badgeText == 'NEW REQUEST' ||
@@ -14060,9 +14133,14 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
         if (isCardLoading)
           Positioned.fill(
+            // ── FIX: Fully opaque overlay ──────────────────────────────────
+            // Was 0.86 alpha — semi-transparent so the underlying card body
+            // (which may momentarily show "CANCELLED" or a stale state) was
+            // visible behind the loader pill. A fully opaque white overlay
+            // guarantees nothing bleeds through during the sync window.
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.86),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Center(
@@ -14349,13 +14427,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           return;
         }
         if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
-          await onSuccess();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Host Safety Deposit Paid! Plan is live.'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          ApiService.clearBookingCache();
+          ApiService.notifyFeedNeedsRefresh();
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.add(cleanPlanId);
+              _syncingPartyPlanIds.add('pp_$cleanPlanId');
+            });
+          }
+          try {
+            await onSuccess();
+            await _loadFeed(showLoader: false, forceRefresh: true);
+          } finally {
+            await Future.delayed(const Duration(milliseconds: 300));
+            if (mounted) {
+              setState(() {
+                _syncingPartyPlanIds.remove(cleanPlanId);
+                _syncingPartyPlanIds.remove('pp_$cleanPlanId');
+              });
+            }
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Host Safety Deposit Paid! Plan is live.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         } else {
           const msg =
               'Payment verification failed. Please refresh and try again.';
@@ -14387,15 +14486,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             'test_signature',
           );
           if (mockConfirmed && mounted) {
-            await onSuccess();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  '🎉 Host Safety Deposit Paid! Plan is activated.',
+            ApiService.clearBookingCache();
+            ApiService.notifyFeedNeedsRefresh();
+            if (mounted) {
+              setState(() {
+                _syncingPartyPlanIds.add(cleanPlanId);
+                _syncingPartyPlanIds.add('pp_$cleanPlanId');
+              });
+            }
+            try {
+              await onSuccess();
+              await _loadFeed(showLoader: false, forceRefresh: true);
+            } finally {
+              await Future.delayed(const Duration(milliseconds: 300));
+              if (mounted) {
+                setState(() {
+                  _syncingPartyPlanIds.remove(cleanPlanId);
+                  _syncingPartyPlanIds.remove('pp_$cleanPlanId');
+                });
+              }
+            }
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    '🎉 Host Safety Deposit Paid! Plan is activated.',
+                  ),
+                  backgroundColor: Colors.green,
                 ),
-                backgroundColor: Colors.green,
-              ),
-            );
+              );
+            }
             return;
           }
         }
@@ -14919,14 +15039,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
           ApiService.clearBookingCache();
           ApiService.notifyFeedNeedsRefresh();
-          await onSuccess();
-          _loadFeed(showLoader: false, forceRefresh: true);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('🎉 Safety Deposit Paid! Match confirmed.'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.add(cleanPlan);
+              _syncingPartyPlanIds.add(partyPlanId);
+              _syncingPartyPlanIds.add('pp_$cleanPlan');
+            });
+          }
+          try {
+            await onSuccess();
+            await _loadFeed(showLoader: false, forceRefresh: true);
+          } finally {
+            await Future.delayed(const Duration(milliseconds: 300));
+            if (mounted) {
+              setState(() {
+                _syncingPartyPlanIds.remove(cleanPlan);
+                _syncingPartyPlanIds.remove(partyPlanId);
+                _syncingPartyPlanIds.remove('pp_$cleanPlan');
+              });
+            }
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Safety Deposit Paid! Match confirmed.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -14958,15 +15098,38 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             'test_signature',
           );
           if (mockConfirmed && mounted) {
-            await onSuccess();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+            ApiService.clearBookingCache();
+            ApiService.notifyFeedNeedsRefresh();
+            if (mounted) {
+              setState(() {
+                _syncingPartyPlanIds.add(cleanPlan);
+                _syncingPartyPlanIds.add(partyPlanId);
+                _syncingPartyPlanIds.add('pp_$cleanPlan');
+              });
+            }
+            try {
+              await onSuccess();
+              await _loadFeed(showLoader: false, forceRefresh: true);
+            } finally {
+              await Future.delayed(const Duration(milliseconds: 300));
+              if (mounted) {
+                setState(() {
+                  _syncingPartyPlanIds.remove(cleanPlan);
+                  _syncingPartyPlanIds.remove(partyPlanId);
+                  _syncingPartyPlanIds.remove('pp_$cleanPlan');
+                });
+              }
+            }
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+                  ),
+                  backgroundColor: Colors.green,
                 ),
-                backgroundColor: Colors.green,
-              ),
-            );
+              );
+            }
             return;
           }
         }
