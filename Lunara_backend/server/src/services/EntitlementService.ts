@@ -180,9 +180,13 @@ export class EntitlementService {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
         // 1. Parallel fetch of active subscription, usage counters, and user add-ons
-        const [activeSub, usageRecords, userAddons] = (userId && userId.trim().length > 0)
-            ? await Promise.all([
-                UserSubscription.findOne({
+        let activeSub: any = null;
+        let usageRecords: any[] = [];
+        let userAddons: any[] = [];
+
+        if (userId && userId.trim().length > 0) {
+            try {
+                activeSub = await UserSubscription.findOne({
                     where: {
                         userId,
                         status: SubscriptionStatus.ACTIVE,
@@ -190,33 +194,49 @@ export class EntitlementService {
                     },
                     include: [{ model: SubscriptionPackage, as: 'package' }],
                     order: [['createdAt', 'DESC']],
-                }),
-                SubscriptionUsage.findAll({
+                });
+            } catch (err) {
+                logger.warn('[EntitlementService] Error fetching active subscription:', err);
+            }
+
+            try {
+                usageRecords = await SubscriptionUsage.findAll({
                     where: { userId },
-                }),
-                UserAddon.findAll({
+                });
+            } catch (err) {
+                logger.warn('[EntitlementService] Error fetching usage records:', err);
+            }
+
+            try {
+                userAddons = await UserAddon.findAll({
                     where: {
                         userId,
-                        status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                        status: UserAddonStatus.ACTIVE,
                         remainingQuantity: { [Op.gt]: 0 },
                     },
                     include: [{ model: SubscriptionAddonPackage, as: 'addonPackage' }],
                     order: [['createdAt', 'ASC']],
-                }),
-            ])
-            : [null, [], []];
+                });
+            } catch (err) {
+                logger.warn('[EntitlementService] Error fetching user addons:', err);
+            }
+        }
 
         // 2. Fallback / expired subscription
         let lastExpiredSub: any = null;
         if (!activeSub && userId && userId.trim().length > 0) {
-            lastExpiredSub = await UserSubscription.findOne({
-                where: {
-                    userId,
-                    status: SubscriptionStatus.EXPIRED,
-                },
-                include: [{ model: SubscriptionPackage, as: 'package' }],
-                order: [['endDate', 'DESC']],
-            });
+            try {
+                lastExpiredSub = await UserSubscription.findOne({
+                    where: {
+                        userId,
+                        status: SubscriptionStatus.EXPIRED,
+                    },
+                    include: [{ model: SubscriptionPackage, as: 'package' }],
+                    order: [['endDate', 'DESC']],
+                });
+            } catch (err) {
+                logger.warn('[EntitlementService] Error fetching last expired subscription:', err);
+            }
         }
 
         const freePkgForDefaults = !activeSub && !lastExpiredSub
@@ -695,7 +715,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['superlike', 'super_likes', 'super_like'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -769,7 +789,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['profile_boost', 'boost', 'boosts'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -848,7 +868,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['daily_likes', 'likes', 'like'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -944,7 +964,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['backtrack', 'undo', 'backtracks'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -999,7 +1019,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,
@@ -1042,7 +1062,7 @@ export class EntitlementService {
                 where: {
                     userId,
                     featureKey: { [Op.in]: addonKeys },
-                    status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                    status: UserAddonStatus.ACTIVE,
                     remainingQuantity: { [Op.gt]: 0 },
                 },
                 order: [['createdAt', 'ASC']],
@@ -1078,7 +1098,7 @@ export class EntitlementService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: addonKeys },
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: t,

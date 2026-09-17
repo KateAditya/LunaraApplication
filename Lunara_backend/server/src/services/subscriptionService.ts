@@ -348,7 +348,7 @@ export class SubscriptionService {
                             where: {
                                 userId,
                                 featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
-                                status: { [Op.in]: ['ACTIVE', 'active', 'Active'] },
+                                status: UserAddonStatus.ACTIVE,
                                 remainingQuantity: { [Op.gt]: 0 },
                             },
                             transaction: options?.transaction,
@@ -447,7 +447,7 @@ export class SubscriptionService {
                         where: {
                             userId,
                             featureKey: { [Op.in]: ['party_creation', 'party_plan', 'party_plans'] },
-                            status: { [Op.in]: ['ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                         transaction: options?.transaction,
@@ -907,7 +907,7 @@ export class SubscriptionService {
                     const userAddons = await UserAddon.findAll({
                         where: {
                             userId: uid,
-                            status: { [Op.in]: [UserAddonStatus.ACTIVE, 'ACTIVE', 'active', 'Active'] },
+                            status: UserAddonStatus.ACTIVE,
                             remainingQuantity: { [Op.gt]: 0 },
                         },
                     });
