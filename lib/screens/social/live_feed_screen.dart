@@ -183,6 +183,50 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         k.contains(cleanId) || (planId.isNotEmpty && k.contains(planId)));
   }
 
+  // Synchronizing party plan cards (full-card loading overlay until final state loads)
+  final Set<String> _syncingPartyPlanIds = <String>{};
+
+  bool _isNotificationCardProcessing(UnifiedNotificationItem item) {
+    if (item.actions != null && item.actions!.any((a) => a.isLoading)) {
+      return true;
+    }
+
+    final rawPlanId = (item.rawData['id'] ??
+            item.rawData['partyPlanId'] ??
+            item.rawData['planId'] ??
+            item.id.replaceFirst('pp_', '').replaceFirst('party_plan_timeline_', ''))
+        .toString();
+    final cleanPlanId = ApiService.cleanBookingId(rawPlanId);
+
+    if (_syncingPartyPlanIds.contains(rawPlanId) ||
+        _syncingPartyPlanIds.contains(cleanPlanId) ||
+        _syncingPartyPlanIds.contains(item.id)) {
+      return true;
+    }
+
+    if (_isPartyActionProcessing(rawPlanId) ||
+        _isPartyActionProcessing(cleanPlanId)) {
+      return true;
+    }
+
+    if (OptimisticActionGuard.isInFlight('pp_$rawPlanId') ||
+        OptimisticActionGuard.isInFlight('pp_$cleanPlanId') ||
+        OptimisticActionGuard.isInFlight(rawPlanId) ||
+        OptimisticActionGuard.isInFlight(cleanPlanId) ||
+        OptimisticActionGuard.isInFlight(item.id)) {
+      return true;
+    }
+
+    final entityId = (item.rawData['entityId'] ?? item.rawData['requestId'] ?? '').toString();
+    if (entityId.isNotEmpty &&
+        (_activeActionKeys.any((k) => k.contains(entityId)) ||
+            OptimisticActionGuard.isInFlight(entityId))) {
+      return true;
+    }
+
+    return false;
+  }
+
   void _setPartyActionProcessing(String planId, String actionType, bool isProcessing) {
     final cleanId = ApiService.cleanBookingId(planId);
     final key1 = 'pp_act_${cleanId}_$actionType';
@@ -190,9 +234,20 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     if (isProcessing) {
       _activeActionKeys.add(key1);
       _activeActionKeys.add(key2);
+      _syncingPartyPlanIds.add(cleanId);
+      _syncingPartyPlanIds.add(planId);
+      _syncingPartyPlanIds.add('pp_$cleanId');
+      _syncingPartyPlanIds.add('pp_$planId');
     } else {
       _activeActionKeys.remove(key1);
       _activeActionKeys.remove(key2);
+      _syncingPartyPlanIds.remove(cleanId);
+      _syncingPartyPlanIds.remove(planId);
+      _syncingPartyPlanIds.remove('pp_$cleanId');
+      _syncingPartyPlanIds.remove('pp_$planId');
+    }
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -13619,6 +13674,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Build Smart Notification Card
   // ─────────────────────────────────────────────────────────────────────────────
   Widget _buildSmartNotificationCard(UnifiedNotificationItem item) {
+    final bool isCardLoading = _isNotificationCardProcessing(item);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -13640,17 +13697,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: () => _onCardTap(item),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Left Accent Bar
-                Container(
-                  width: 5,
-                  decoration: BoxDecoration(color: item.accentColor),
-                ),
+        child: Stack(
+          children: [
+            InkWell(
+              onTap: isCardLoading ? null : () => _onCardTap(item),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Left Accent Bar
+                    Container(
+                      width: 5,
+                      decoration: BoxDecoration(color: item.accentColor),
+                    ),
                 // Card Content Body
                 Expanded(
                   child: Padding(
@@ -13999,8 +14058,66 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             ),
           ),
         ),
-      ),
-    );
+        if (isCardLoading)
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.86),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            LunaraTheme.electricViolet,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Text(
+                        'Updating status...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: LunaraTheme.electricViolet,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  ),
+);
   }
 
   Future<void> _startHostRazorpayDirectPaymentInLiveFeed({
@@ -14079,8 +14196,26 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
       ApiService.clearBookingCache();
       ApiService.notifyFeedNeedsRefresh();
-      await onSuccess();
-      _loadFeed(showLoader: false, forceRefresh: true);
+      if (mounted) {
+        setState(() {
+          _syncingPartyPlanIds.add(cleanPlanId);
+          _syncingPartyPlanIds.add(partyPlanId);
+          _syncingPartyPlanIds.add('pp_$cleanPlanId');
+        });
+      }
+      try {
+        await onSuccess();
+        await _loadFeed(showLoader: false, forceRefresh: true);
+      } finally {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.remove(cleanPlanId);
+            _syncingPartyPlanIds.remove(partyPlanId);
+            _syncingPartyPlanIds.remove('pp_$cleanPlanId');
+          });
+        }
+      }
     }
   }
 
@@ -14118,14 +14253,32 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (paymentConfirmed && mounted) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        await onSuccess();
-        _loadFeed(showLoader: false, forceRefresh: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Host Safety Deposit Paid! Your plan is live.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.add(cleanPlanId);
+            _syncingPartyPlanIds.add('pp_$cleanPlanId');
+          });
+        }
+        try {
+          await onSuccess();
+          await _loadFeed(showLoader: false, forceRefresh: true);
+        } finally {
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.remove(cleanPlanId);
+              _syncingPartyPlanIds.remove('pp_$cleanPlanId');
+            });
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Host Safety Deposit Paid! Your plan is live.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
         return;
       }
     }
@@ -14153,16 +14306,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (paymentConfirmed && mounted) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        await onSuccess();
-        _loadFeed(showLoader: false, forceRefresh: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.add(cleanPlanId);
+            _syncingPartyPlanIds.add('pp_$cleanPlanId');
+          });
+        }
+        try {
+          await onSuccess();
+          await _loadFeed(showLoader: false, forceRefresh: true);
+        } finally {
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.remove(cleanPlanId);
+              _syncingPartyPlanIds.remove('pp_$cleanPlanId');
+            });
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '🎉 Host Safety Deposit Paid! Your plan is fully activated.',
+              ),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        }
       } else if (mounted) {
         // Never treat a client-side/mock identifier as confirmation. The
         // backend verification result is the only payment success signal.
@@ -14316,19 +14487,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       if (rawId == cleanId || rawId == planId || pId == cleanId || pId == planId || id.contains(cleanId)) {
         final updated = Map<String, dynamic>.from(item);
+        final bool joinerIsPaid = updated['joinerPaymentStatus'] == 'paid' ||
+            (updated['acceptedJoinerRequest'] is Map &&
+                updated['acceptedJoinerRequest']['joinerPaymentStatus'] == 'paid');
         if (isHost) {
           updated['hostPaymentStatus'] = 'paid';
           updated['paymentStatus'] = 'paid';
-          updated['isLive'] = true;
-          updated['status'] = 'active';
+          if (joinerIsPaid) {
+            updated['status'] = 'confirmed';
+            updated['lifecycleStatus'] = 'match_confirmed';
+          } else {
+            updated['isLive'] = true;
+            updated['status'] = 'active';
+          }
           if (updated['plan'] is Map) {
-            updated['plan'] = {
-              ...Map<String, dynamic>.from(updated['plan'] as Map),
-              'hostPaymentStatus': 'paid',
-              'paymentStatus': 'paid',
-              'isLive': true,
-              'status': 'active',
-            };
+            final pCopy = Map<String, dynamic>.from(updated['plan'] as Map);
+            pCopy['hostPaymentStatus'] = 'paid';
+            pCopy['paymentStatus'] = 'paid';
+            if (joinerIsPaid) {
+              pCopy['status'] = 'confirmed';
+              pCopy['lifecycleStatus'] = 'match_confirmed';
+            } else {
+              pCopy['isLive'] = true;
+              pCopy['status'] = 'active';
+            }
+            updated['plan'] = pCopy;
           }
         } else {
           updated['joinerPaymentStatus'] = 'paid';
@@ -14358,13 +14541,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
       if (pId == cleanId || pId == planId || nId.contains(cleanId)) {
         final updatedN = Map<String, dynamic>.from(n);
+        final bool joinerIsPaid = updatedN['joinerPaymentStatus'] == 'paid' ||
+            updatedN['data']?['joinerPaymentStatus'] == 'paid' ||
+            (updatedN['acceptedJoinerRequest'] is Map &&
+                updatedN['acceptedJoinerRequest']['joinerPaymentStatus'] == 'paid');
+
         Map<String, dynamic> patchNested(Map<String, dynamic> nested) {
           final copy = Map<String, dynamic>.from(nested);
           if (isHost) {
             copy['hostPaymentStatus'] = 'paid';
             copy['paymentStatus'] = 'paid';
-            copy['isLive'] = true;
-            copy['status'] = 'active';
+            if (joinerIsPaid) {
+              copy['status'] = 'confirmed';
+              copy['lifecycleStatus'] = 'match_confirmed';
+            } else {
+              copy['isLive'] = true;
+              copy['status'] = 'active';
+            }
           } else {
             copy['joinerPaymentStatus'] = 'paid';
             copy['paymentStatus'] = 'paid';
@@ -14376,8 +14569,13 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         if (isHost) {
           updatedN['hostPaymentStatus'] = 'paid';
           updatedN['paymentStatus'] = 'paid';
-          updatedN['isLive'] = true;
-          updatedN['status'] = 'active';
+          if (joinerIsPaid) {
+            updatedN['status'] = 'confirmed';
+            updatedN['lifecycleStatus'] = 'match_confirmed';
+          } else {
+            updatedN['isLive'] = true;
+            updatedN['status'] = 'active';
+          }
         } else {
           updatedN['joinerPaymentStatus'] = 'paid';
           updatedN['paymentStatus'] = 'paid';
@@ -14571,8 +14769,27 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         body: 'Safety Deposit paid via Smart Wallet! Chat is now unlocked.',
       );
       ApiService.notifyFeedNeedsRefresh();
-      await onSuccess();
-      _loadFeed(showLoader: false);
+      final cleanPlan = ApiService.cleanBookingId(partyPlanId);
+      if (mounted) {
+        setState(() {
+          _syncingPartyPlanIds.add(cleanPlan);
+          _syncingPartyPlanIds.add(partyPlanId);
+          _syncingPartyPlanIds.add('pp_$cleanPlan');
+        });
+      }
+      try {
+        await onSuccess();
+        await _loadFeed(showLoader: false, forceRefresh: true);
+      } finally {
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.remove(cleanPlan);
+            _syncingPartyPlanIds.remove(partyPlanId);
+            _syncingPartyPlanIds.remove('pp_$cleanPlan');
+          });
+        }
+      }
     }
   }
 
@@ -14583,6 +14800,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     required double depositAmount,
     required Future<void> Function() onSuccess,
   }) async {
+    final cleanPlan = ApiService.cleanBookingId(partyPlanId);
     final initRes = await ApiService.initiateJoinerPayment(
       cleanReqId.isNotEmpty ? cleanReqId : partyPlanId,
     );
@@ -14610,15 +14828,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         'mock_signature',
       );
       if (paymentConfirmed && mounted) {
-        await onSuccess();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.add(cleanPlan);
+            _syncingPartyPlanIds.add(partyPlanId);
+            _syncingPartyPlanIds.add('pp_$cleanPlan');
+          });
+        }
+        try {
+          await onSuccess();
+          await _loadFeed(showLoader: false, forceRefresh: true);
+        } finally {
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.remove(cleanPlan);
+              _syncingPartyPlanIds.remove(partyPlanId);
+              _syncingPartyPlanIds.remove('pp_$cleanPlan');
+            });
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+              ),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        }
         return;
       }
     }
@@ -14646,16 +14885,36 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (paymentConfirmed && mounted) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        await onSuccess();
-        _loadFeed(showLoader: false, forceRefresh: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+        if (mounted) {
+          setState(() {
+            _syncingPartyPlanIds.add(cleanPlan);
+            _syncingPartyPlanIds.add(partyPlanId);
+            _syncingPartyPlanIds.add('pp_$cleanPlan');
+          });
+        }
+        try {
+          await onSuccess();
+          await _loadFeed(showLoader: false, forceRefresh: true);
+        } finally {
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (mounted) {
+            setState(() {
+              _syncingPartyPlanIds.remove(cleanPlan);
+              _syncingPartyPlanIds.remove(partyPlanId);
+              _syncingPartyPlanIds.remove('pp_$cleanPlan');
+            });
+          }
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '🎉 Safety Deposit Paid! Match confirmed & Chat unlocked.',
+              ),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        }
       } else if (mounted) {
         if (oId.startsWith('order_mock_') || pId.startsWith('pay_mock_')) {
           ApiService.clearBookingCache();
