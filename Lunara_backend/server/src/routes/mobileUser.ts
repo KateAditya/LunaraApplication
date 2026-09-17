@@ -393,7 +393,15 @@ async function getUserNotifications(
         try {
             const enrichedCards = await batchEnrichPartyPlanNotificationCards(Array.from(partyPlanIds), uId);
             const planCardResults = enrichedCards.map((card: any) => {
-                if (!card || card.currentStatus === 'Waiting other user') return null;
+                // Never drop the enriched card for a state the plan legitimately
+                // reached. `currentStatus === 'Waiting other user'` is exactly the
+                // state a party plan lands in the moment one side's deposit clears
+                // (host paid / joiner paid, waiting on the counterpart), and
+                // dropping it there un-filtered the plan's raw notifications below
+                // — so the card silently regressed to the frozen "Pay Deposit"
+                // notification a few seconds after the payment succeeded. One plan
+                // must always resolve to exactly one authoritative card.
+                if (!card) return null;
                 const planId = card.planId || card.id;
                 // Find all DB notifications associated with this plan
                 const planNotifs = notifications.filter(n => {

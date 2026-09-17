@@ -167,6 +167,147 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   // Authoritative Party Plan State Timestamps to prevent stale GET overwrites
   final Map<String, DateTime> _planStateTimestamps = <String, DateTime>{};
 
+  // ── Monotonic Party Plan state floor ───────────────────────────────────────
+  // A handful of party-plan facts can only ever move forward: a captured
+  // deposit is never un-captured, and a cancelled plan never goes back to
+  // active. Every other source of truth on this screen (a GET that was already
+  // in flight when the action landed, a socket delta queued behind it, a
+  // notification whose metadata was frozen at dispatch time) can still be
+  // carrying the state from *before* the action, and merging one of those on
+  // top is what walked a paid deposit back to "Pay Deposit" seconds later.
+  //
+  // Once the server confirms one of those transitions we remember it here and
+  // re-assert it over anything older. It is deliberately narrow: only facts
+  // that are irreversible by the existing business rules are recorded, so this
+  // can never mask a legitimate backwards transition.
+  final Map<String, Map<String, dynamic>> _planStateFloor =
+      <String, Map<String, dynamic>>{};
+
+  static const Map<String, int> _paymentStatusRank = {
+    'unpaid': 0,
+    'pending': 0,
+    'failed': 0,
+    'paid': 1,
+    'completed': 1,
+    'refunded': 2,
+  };
+
+  /// Records the irreversible facts contained in a server-confirmed state.
+  void _recordPlanStateFloor(String rawPlanId, Map<String, dynamic> state) {
+    final cleanId = ApiService.cleanBookingId(rawPlanId);
+    if (cleanId.isEmpty) return;
+    final floor = _planStateFloor.putIfAbsent(cleanId, () => <String, dynamic>{});
+
+    void liftPayment(String field) {
+      final incoming = (state[field] ?? '').toString().trim().toLowerCase();
+      if (incoming.isEmpty) return;
+      final incomingRank = _paymentStatusRank[incoming];
+      if (incomingRank == null || incomingRank == 0) return;
+      final currentRank = _paymentStatusRank[(floor[field] ?? '').toString()] ?? -1;
+      if (incomingRank > currentRank) floor[field] = incoming;
+    }
+
+    liftPayment('hostPaymentStatus');
+    liftPayment('joinerPaymentStatus');
+
+    final status = (state['status'] ?? '').toString().toLowerCase();
+    final lifecycle = (state['lifecycleStatus'] ?? '').toString().toLowerCase();
+    if (status == 'cancelled' ||
+        lifecycle == 'cancelled' ||
+        state['isCancelled'] == true ||
+        state['cancellationStatus'] == 'approved') {
+      floor['isCancelled'] = true;
+    }
+
+    if (floor.isEmpty) _planStateFloor.remove(cleanId);
+  }
+
+  /// Re-asserts the recorded floor over a map that may predate it. Only ever
+  /// moves a value forward, never backwards, and never invents a field the
+  /// floor has nothing to say about.
+  Map<String, dynamic> _applyPlanStateFloor(Map<String, dynamic> item) {
+    final planId = _extractPartyPlanId(item);
+    if (planId == null || planId.isEmpty) return item;
+    final floor = _planStateFloor[ApiService.cleanBookingId(planId)];
+    if (floor == null || floor.isEmpty) return item;
+
+    Map<String, dynamic>? patched;
+    Map<String, dynamic> target() => patched ??= Map<String, dynamic>.from(item);
+
+    void enforcePayment(String field) {
+      final floored = (floor[field] ?? '').toString();
+      if (floored.isEmpty) return;
+      final flooredRank = _paymentStatusRank[floored] ?? 0;
+      final current = (item[field] ?? '').toString().trim().toLowerCase();
+      final currentRank = _paymentStatusRank[current] ?? -1;
+      if (currentRank >= flooredRank) return;
+      target()[field] = floored;
+    }
+
+    enforcePayment('hostPaymentStatus');
+    enforcePayment('joinerPaymentStatus');
+
+    if (floor['isCancelled'] == true && item['isCancelled'] != true) {
+      final t = target();
+      t['isCancelled'] = true;
+      t['status'] = 'cancelled';
+      t['lifecycleStatus'] = 'cancelled';
+    }
+
+    // The same facts live on the nested plan snapshot the card builder reads
+    // first, so a floor that only touched the outer map would be shadowed.
+    for (final nested in const ['plan', 'data', 'metadata']) {
+      final raw = item[nested];
+      if (raw is! Map || raw.isEmpty) continue;
+      final inner = Map<String, dynamic>.from(raw);
+      final flooredInner = _applyFloorToMap(inner, floor);
+      if (!identical(flooredInner, inner)) target()[nested] = flooredInner;
+    }
+
+    return patched ?? item;
+  }
+
+  Map<String, dynamic> _applyFloorToMap(
+    Map<String, dynamic> map,
+    Map<String, dynamic> floor,
+  ) {
+    Map<String, dynamic>? patched;
+    Map<String, dynamic> target() => patched ??= Map<String, dynamic>.from(map);
+
+    for (final field in const ['hostPaymentStatus', 'joinerPaymentStatus']) {
+      final floored = (floor[field] ?? '').toString();
+      if (floored.isEmpty) continue;
+      final flooredRank = _paymentStatusRank[floored] ?? 0;
+      final current = (map[field] ?? '').toString().trim().toLowerCase();
+      final currentRank = _paymentStatusRank[current] ?? -1;
+      if (currentRank < flooredRank) target()[field] = floored;
+    }
+
+    if (floor['isCancelled'] == true && map['isCancelled'] != true) {
+      final t = target();
+      t['isCancelled'] = true;
+      t['status'] = 'cancelled';
+      t['lifecycleStatus'] = 'cancelled';
+    }
+
+    return patched ?? map;
+  }
+
+  // ── Stable timeline ordering ───────────────────────────────────────────────
+  // Every natural sort key a card has — its badge tier, its read flag, its
+  // lastActivityAt — changes at the exact moment the user acts on it, so the
+  // timeline reordered itself under their finger on every action. A card is
+  // given a fractional rank the first time it is seen and keeps it for as long
+  // as the screen lives; only genuinely new cards are ranked, and they slot
+  // between their natural neighbours without renumbering anything on screen.
+  final Map<String, double> _timelineRank = <String, double>{};
+
+  // Date sections are derived from createdAt, so freezing the order alone was
+  // not enough: a card whose lastActivityAt jumped to "now" still hopped out of
+  // EARLIER into TODAY. The section is pinned to the time the card first
+  // appeared; `timeAgo` still tracks the live value.
+  final Map<String, DateTime> _timelineAnchorTime = <String, DateTime>{};
+
   bool _isPartyActionProcessing(String planId, [String? actionType]) {
     final cleanId = ApiService.cleanBookingId(planId);
     if (actionType != null) {
@@ -265,6 +406,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final now = DateTime.now();
     _planStateTimestamps[cleanPlanId] = now;
     _planStateTimestamps[rawPlanId] = now;
+    _recordPlanStateFloor(cleanPlanId, deltaOrFullState);
 
     final String? newStatus = deltaOrFullState['status']?.toString().toLowerCase();
     final String? newLifecycleStatus =
@@ -1356,7 +1498,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             return item;
           }
           matched = true;
-          return {...item, ...patchFor(item)};
+          // A socket delta can arrive out of order behind the action it
+          // followed, so it is merged and then held to the same monotonic floor
+          // as a GET response — it can advance a card, never rewind one.
+          return _applyPlanStateFloor({...item, ...patchFor(item)});
         }
         return item;
       }).toList();
@@ -1829,6 +1974,12 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         }
       }
 
+      // Re-assert irreversible transitions the server has already confirmed to
+      // us. A live-feed GET that started before the action, or one served from
+      // a replica that has not caught up, otherwise reinstates the pre-action
+      // state and the card visibly regresses.
+      combined = combined.map(_applyPlanStateFloor).toList();
+
       if (mounted &&
           requestUserId == ApiService.currentUserId &&
           requestUserId == _sessionUserId) {
@@ -1877,7 +2028,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               }
             }
           }
-          return mapped;
+          return _applyPlanStateFloor(mapped);
         }).toList();
 
         _notifications = [...preservedRecent, ...freshNotifs];
@@ -6686,33 +6837,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
     }
 
-    // Sort all timeline items:
+    // Natural order, used only to place cards the screen has not seen before:
     // 1. Action Required / Critical / Invites first
     // 2. Unread items second
     // 3. Descending by createdAt (lastActivityAt)
-    // ── FIX: Stable sort for syncing cards ──────────────────────────────────
-    // Compute each item's sort-stable position index from the previous cached
-    // timeline so that a card undergoing an action (e.g. host paying deposit)
-    // does not jump up or down the list while the full-card overlay is shown.
-    // Without this, a card transitioning from "ACTION REQUIRED" (pinned first)
-    // to another badge drops position the moment the overlay appears, causing a
-    // visible shuffle before the authoritative state arrives.
-    final Map<String, int> previousPositions = {};
-    for (int i = 0; i < _cachedTimeline.length; i++) {
-      previousPositions[_cachedTimeline[i].id] = i;
-    }
-
+    //
+    // This is a plain total order now. The previous version short-circuited to
+    // a "frozen position" comparison whenever either side was mid-action, which
+    // is not transitive — Dart's sort is free to produce an arbitrary
+    // permutation from an inconsistent comparator, so the very cards that were
+    // meant to stay put could end up anywhere. Position freezing is handled
+    // below instead, where it belongs: as a property of the card, not of the
+    // comparison.
     items.sort((a, b) {
-      // If either card is currently syncing, freeze its relative position so
-      // the list does not shuffle while the loader is showing.
-      final bool aSyncing = _isNotificationCardProcessing(a);
-      final bool bSyncing = _isNotificationCardProcessing(b);
-      if (aSyncing || bSyncing) {
-        final int aPos = previousPositions[a.id] ?? 999999;
-        final int bPos = previousPositions[b.id] ?? 999999;
-        return aPos.compareTo(bPos);
-      }
-
       final aAction =
           (a.badgeText == 'ACTION REQUIRED' ||
               a.badgeText == 'NEW REQUEST' ||
@@ -6733,10 +6870,79 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bUnread = (!b.isRead && !b.isExpired) ? 1 : 0;
       if (aUnread != bUnread) return bUnread - aUnread;
 
-      return b.createdAt.compareTo(a.createdAt);
+      final byTime = b.createdAt.compareTo(a.createdAt);
+      if (byTime != 0) return byTime;
+      // Ties broken by id so the natural order itself is deterministic.
+      return a.id.compareTo(b.id);
     });
+
+    _assignStableTimelineRanks(items);
+    items.sort(
+      (a, b) => (_timelineRank[a.id] ?? 0).compareTo(_timelineRank[b.id] ?? 0),
+    );
     return items;
   }
+
+  /// Gives every card a position it keeps for the lifetime of the screen.
+  ///
+  /// A card already on screen keeps the rank it was first given, so none of the
+  /// state it transitions through — losing its ACTION REQUIRED badge, being
+  /// marked read, having its lastActivityAt bumped by the very action the user
+  /// just took — can move it. New cards are slotted between whichever ranked
+  /// neighbours they land between in natural order, using a fractional rank, so
+  /// they appear where they belong without renumbering anything else.
+  void _assignStableTimelineRanks(List<UnifiedNotificationItem> naturalOrder) {
+    for (int i = 0; i < naturalOrder.length; i++) {
+      final id = naturalOrder[i].id;
+      _timelineAnchorTime.putIfAbsent(id, () => naturalOrder[i].createdAt);
+      if (_timelineRank.containsKey(id)) continue;
+
+      double? above;
+      for (int j = i - 1; j >= 0; j--) {
+        final r = _timelineRank[naturalOrder[j].id];
+        if (r != null) {
+          above = r;
+          break;
+        }
+      }
+      double? below;
+      for (int j = i + 1; j < naturalOrder.length; j++) {
+        final r = _timelineRank[naturalOrder[j].id];
+        if (r != null) {
+          below = r;
+          break;
+        }
+      }
+
+      final double rank;
+      if (above == null && below == null) {
+        rank = i.toDouble();
+      } else if (above == null) {
+        rank = below! - 1.0;
+      } else if (below == null) {
+        rank = above + 1.0;
+      } else {
+        rank = (above + below) / 2;
+      }
+      _timelineRank[id] = rank;
+    }
+
+    // Cards drop out of the timeline for reasons that are not permanent (a
+    // filter, a refresh that has not landed yet), so ranks are kept well past
+    // the card's disappearance and only trimmed when the map would otherwise
+    // grow without bound.
+    if (_timelineRank.length > 400) {
+      final live = naturalOrder.map((i) => i.id).toSet();
+      _timelineRank.removeWhere((id, _) => !live.contains(id));
+      _timelineAnchorTime.removeWhere((id, _) => !live.contains(id));
+    }
+  }
+
+  /// The time a card is filed under for date sectioning — pinned to when it was
+  /// first seen so an action cannot make it hop between TODAY / YESTERDAY /
+  /// EARLIER. The card's own `createdAt` still drives the "x ago" label.
+  DateTime _sectionTimeFor(UnifiedNotificationItem item) =>
+      _timelineAnchorTime[item.id] ?? item.createdAt;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Build Authoritative Group Party Smart Card (1 Group Party = 1 Card)
@@ -13592,18 +13798,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final todayStart = DateTime(now.year, now.month, now.day);
     final yesterdayStart = todayStart.subtract(const Duration(days: 1));
 
+    // Sectioned on the pinned anchor rather than the live createdAt, so a card
+    // the user just acted on stays in the section it was already in instead of
+    // jumping to the top of TODAY.
     final todayItems = filteredItems
-        .where((i) => i.createdAt.isAfter(todayStart))
+        .where((i) => _sectionTimeFor(i).isAfter(todayStart))
         .toList();
     final yesterdayItems = filteredItems
         .where(
           (i) =>
-              i.createdAt.isAfter(yesterdayStart) &&
-              i.createdAt.isBefore(todayStart),
+              _sectionTimeFor(i).isAfter(yesterdayStart) &&
+              _sectionTimeFor(i).isBefore(todayStart),
         )
         .toList();
     final earlierItems = filteredItems
-        .where((i) => i.createdAt.isBefore(yesterdayStart))
+        .where((i) => _sectionTimeFor(i).isBefore(yesterdayStart))
         .toList();
 
     // Flatten the three dated sections into one indexable list so the timeline
@@ -13692,6 +13901,19 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                               // every frame was the bulk of this screen's work.
                               // The trailing slot is the original SizedBox(40).
                               itemCount: timelineSlots.length + 1,
+                              // Lets the list find a keyed card that moved
+                              // rather than rebuilding it from scratch at its
+                              // new index, so scroll position and in-flight
+                              // card state survive an insertion above it.
+                              findChildIndexCallback: (Key key) {
+                                if (key is! ValueKey<String>) return null;
+                                final idx = timelineSlots.indexWhere(
+                                  (s) =>
+                                      s is UnifiedNotificationItem &&
+                                      'lf_card_${s.id}' == key.value,
+                                );
+                                return idx == -1 ? null : idx;
+                              },
                               itemBuilder: (context, index) {
                                 if (index == timelineSlots.length) {
                                   return const SizedBox(height: 40);
@@ -13750,6 +13972,10 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     final bool isCardLoading = _isNotificationCardProcessing(item);
 
     return Container(
+      // Identity, not position. Without it the ListView matches elements by
+      // index, so inserting or removing a card above this one made the card
+      // below it inherit this one's element and appear to mutate into it.
+      key: ValueKey('lf_card_${item.id}'),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: item.isRead ? Colors.white : const Color(0xFFF5F3FF),
@@ -14586,6 +14812,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }) {
     final cleanId = ApiService.cleanBookingId(planId);
     bool changed = false;
+
+    // Reached only after the backend's own payment verification returned true,
+    // so this is a confirmed, irreversible fact — record it before patching so
+    // no GET or socket delta already in flight can undo it.
+    _recordPlanStateFloor(
+      cleanId,
+      isHost
+          ? const {'hostPaymentStatus': 'paid'}
+          : const {'joinerPaymentStatus': 'paid'},
+    );
 
     // 1. Invalidate stale cached live feed
     ApiService.invalidateLiveFeedCache();
