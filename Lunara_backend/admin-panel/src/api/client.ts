@@ -1,6 +1,9 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 
 const getBaseUrl = (): string => {
+    if (typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost:5173') && !window.location.origin.includes('127.0.0.1:5173')) {
+        return window.location.origin;
+    }
     const envUrl = import.meta.env.VITE_API_URL;
     if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
         return envUrl.trim().replace(/\/+$/, '');
