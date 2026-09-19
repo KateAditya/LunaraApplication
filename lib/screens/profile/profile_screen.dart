@@ -716,64 +716,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Optimistically consume backtrack entitlement (from plan or add-on)
     subProvider.optimisticConsume(VipAction.backtrack);
 
+    _backtrackedUser = prevUser;
+
+    final backtrackWidget = ProfileDetailView(
+      key: ValueKey('backtrack_${prevUser.id}'),
+      user: prevUser,
+      isMe: prevUser.id == ApiService.currentUserId,
+      swipedAction: _swipedActions[prevUser.id],
+      isLikeDisabled: !SubscriptionProvider.instance.canLike,
+      isSuperLikeDisabled: !SubscriptionProvider.instance.canSuperLike,
+      onNope: () => _handleNope(),
+      onLike: () => _handleLike(),
+      onSuper: () => _handleSuperLike(),
+      onBacktrack: _undoLastSwipe,
+      canBacktrack: _swipeHistory.length > 1,
+    );
+
+    // Immediately trigger 3D Cube backtrack animation (zero-delay, 0 glitch)
+    _swipeController.backtrack(false, backtrackWidget);
+
+    // Run backend sync asynchronously in background
     ApiService.backtrackSwipe(prevUser.id).then((res) {
       if (res != null && res['limitReached'] == true) {
         subProvider.rollbackConsume(VipAction.backtrack);
         _showBacktrackUpgradePrompt();
         return;
       }
-
       if (mounted) {
-        setState(() {
-          _swipeHistory.removeLast();
-          if (_swipeDirections.isNotEmpty) _swipeDirections.removeLast();
-          _backtrackedUser = prevUser;
-          _swipedActions.remove(prevUser.id);
-          if (!_allProfiles.any((u) => u.id == prevUser.id)) {
-            _allProfiles.insert(0, prevUser);
-          }
-          _displayUser = prevUser;
-          _currentProfileIndex = _allProfiles.indexWhere((u) => u.id == prevUser.id);
-          if (_currentProfileIndex == -1) _currentProfileIndex = 0;
-          _outOfProfiles = false;
-        });
-
         unawaited(SubscriptionProvider.instance.refresh());
         unawaited(SubscriptionProvider.instance.fetchEntitlementsSummary());
-
-        final backtrackWidget = ProfileDetailView(
-          key: ValueKey(prevUser.id),
-          user: prevUser,
-          isMe: prevUser.id == ApiService.currentUserId,
-          swipedAction: _swipedActions[prevUser.id],
-          isLikeDisabled: !SubscriptionProvider.instance.canLike,
-          isSuperLikeDisabled: !SubscriptionProvider.instance.canSuperLike,
-          onNope: () => _handleNope(),
-          onLike: () => _handleLike(),
-          onSuper: () => _handleSuperLike(),
-          onBacktrack: _undoLastSwipe,
-          canBacktrack: _swipeHistory.isNotEmpty,
-        );
-
-        _swipeController.backtrack(false, backtrackWidget);
       }
     });
   }
 
   void _handleBacktrackComplete() {
-    if (_backtrackedUser != null) {
+    if (_backtrackedUser != null && mounted) {
+      final user = _backtrackedUser!;
       setState(() {
-        _displayUser = _backtrackedUser;
-        if (!_allProfiles.any((u) => u.id == _backtrackedUser!.id)) {
-          _allProfiles.insert(0, _backtrackedUser!);
+        if (_swipeHistory.isNotEmpty) _swipeHistory.removeLast();
+        if (_swipeDirections.isNotEmpty) _swipeDirections.removeLast();
+        _swipedActions.remove(user.id);
+        if (!_allProfiles.any((u) => u.id == user.id)) {
+          _allProfiles.insert(0, user);
         }
+        _displayUser = user;
         _currentProfileIndex = _allProfiles.indexWhere(
-          (u) => u.id == _backtrackedUser!.id,
+          (u) => u.id == user.id,
         );
         if (_currentProfileIndex == -1) {
           _currentProfileIndex = 0;
         }
-        _isMe = _backtrackedUser!.id == ApiService.currentUserId;
+        _isMe = user.id == ApiService.currentUserId;
         _backtrackedUser = null;
         _outOfProfiles = false;
       });

@@ -664,7 +664,28 @@ class _PlanHubScreenState extends State<PlanHubScreen>
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => const LiveFeedScreen()),
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const LiveFeedScreen(),
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                final curvedAnimation = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                  reverseCurve: Curves.easeInCubic,
+                );
+                return FadeTransition(
+                  opacity: curvedAnimation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0.0, 0.05),
+                      end: Offset.zero,
+                    ).animate(curvedAnimation),
+                    child: child,
+                  ),
+                );
+              },
+              transitionDuration: const Duration(milliseconds: 350),
+            ),
           );
         },
         child: Container(
@@ -4403,10 +4424,29 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                                         body: 'You need to pay ₹99 to post and activate your party plan.',
                                       );
 
-                                      // Redirect directly to Live Feed screen with instant frame-0 card hydration
+                                      // Redirect smoothly to Live Feed screen with animated transition and instant card hydration
                                       Navigator.of(parentContext).pushReplacement(
-                                        MaterialPageRoute(
-                                          builder: (_) => LiveFeedScreen(initialFeedItem: authoritativePlanData),
+                                        PageRouteBuilder(
+                                          pageBuilder: (context, animation, secondaryAnimation) =>
+                                              LiveFeedScreen(initialFeedItem: authoritativePlanData),
+                                          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                            final curvedAnimation = CurvedAnimation(
+                                              parent: animation,
+                                              curve: Curves.easeOutCubic,
+                                              reverseCurve: Curves.easeInCubic,
+                                            );
+                                            return FadeTransition(
+                                              opacity: curvedAnimation,
+                                              child: SlideTransition(
+                                                position: Tween<Offset>(
+                                                  begin: const Offset(0.0, 0.08),
+                                                  end: Offset.zero,
+                                                ).animate(curvedAnimation),
+                                                child: child,
+                                              ),
+                                            );
+                                          },
+                                          transitionDuration: const Duration(milliseconds: 380),
                                         ),
                                       );
 

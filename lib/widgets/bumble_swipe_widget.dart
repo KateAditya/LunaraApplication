@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class BumbleSwipeController {
@@ -50,8 +51,8 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
 
   // Backtrack state
   bool _isBacktracking = false;
+  bool _backtrackFromRight = false;
   Widget? _backtrackWidget;
-  double _backtrackX = 0.0;
   late Animation<double> _backtrackAnimation;
 
   @override
@@ -60,33 +61,19 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
 
     _swipeAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 350),
+      duration: const Duration(milliseconds: 360),
     );
 
     _backtrackAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 440),
     );
 
-    // Set up backtrack animation with a smooth springy/easeOut curve
-    _backtrackAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _backtrackAnimationController,
-        curve: Curves.easeOutBack,
-      ),
+    // Smooth cubic curve for 3D cube backtrack
+    _backtrackAnimation = CurvedAnimation(
+      parent: _backtrackAnimationController,
+      curve: Curves.easeOutCubic,
     );
-
-    _backtrackAnimation.addListener(() {
-      if (_isBacktracking) {
-        setState(() {
-          final double screenWidth = MediaQuery.of(context).size.width;
-          final double startOffset = _backtrackX > 0
-              ? screenWidth
-              : -screenWidth;
-          _backtrackX = startOffset * _backtrackAnimation.value;
-        });
-      }
-    });
 
     if (widget.controller != null) {
       widget.controller!._swipeCallback = _performProgrammaticSwipe;
@@ -145,7 +132,13 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
         widget.onSwipeRight();
         return;
       }
-      _animateSwipe(true);
+      _isSwipeAnimating = false;
+      setState(() {
+        _dragX = 0.0;
+        _dragY = 0.0;
+        _dragAngle = 0.0;
+      });
+      widget.onSwipeRight();
     } else if (_dragX < -swipeThreshold || velocity < -velocityThreshold) {
       _animateSwipe(false);
     } else {
@@ -189,13 +182,13 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
     final double startAngle = _dragAngle;
     final double width = MediaQuery.of(context).size.width;
     final double targetX = liked ? width * 1.3 : -width * 1.3;
-    final double targetAngle = liked ? 0.4 : -0.4;
+    final double targetAngle = liked ? 0.35 : -0.35;
 
     final Animation<double> swipeAnim = Tween<double>(begin: 0.0, end: 1.0)
         .animate(
           CurvedAnimation(
             parent: _swipeAnimationController,
-            curve: Curves.easeOut,
+            curve: Curves.easeOutCubic,
           ),
         );
 
@@ -237,46 +230,70 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
   }
 
   void _performBacktrack(bool likedFromRight, Widget backtrackWidget) {
-    if (_isSwipeAnimating || _isBacktracking) return;
+    _swipeAnimationController.stop();
+    _isSwipeAnimating = false;
 
     setState(() {
       _isBacktracking = true;
+      _backtrackFromRight = likedFromRight;
       _backtrackWidget = backtrackWidget;
-      _backtrackX = likedFromRight ? 1.0 : -1.0; // dummy value to set sign
+      _dragX = 0.0;
+      _dragY = 0.0;
+      _dragAngle = 0.0;
     });
 
     _backtrackAnimationController.reset();
     _backtrackAnimationController.forward().then((_) {
-      _isBacktracking = false;
-      _backtrackWidget = null;
-      _backtrackX = 0.0;
-      widget.onSwipePrev();
+      if (mounted) {
+        setState(() {
+          _isBacktracking = false;
+          _backtrackWidget = null;
+        });
+        widget.onSwipePrev();
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final double width = MediaQuery.of(context).size.width;
-    final double opacity = width > 0
-        ? (_dragX.abs() / (width * 0.25)).clamp(0.0, 1.0)
-        : 0.0;
+    final double dragRatio = width > 0 ? (_dragX / width).clamp(-1.0, 1.0) : 0.0;
+    final double dragProgress = dragRatio.abs();
 
     return Stack(
       fit: StackFit.expand,
+      clipBehavior: Clip.none,
       children: [
-        // 1. Bottom card (displays next profile widget scaled down)
+        // 1. Bottom card (displays next profile widget with subtle 3D depth and scale)
         if (widget.nextWidget != null && !_isBacktracking)
           Positioned.fill(
-            child: Transform.scale(
-              scale: 0.95 + (0.05 * opacity),
-              child: Opacity(
-                opacity: 0.6 + (0.4 * opacity),
-                child: widget.nextWidget!,
+            child: Transform(
+              transform: Matrix4.diagonal3Values(
+                0.94 + (0.06 * dragProgress),
+                0.94 + (0.06 * dragProgress),
+                1.0,
+              )
+                ..setEntry(3, 2, 0.001)
+                ..rotateY((_dragX > 0 ? -0.15 : 0.15) * (1.0 - dragProgress)),
+              alignment: Alignment.center,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  widget.nextWidget!,
+                  // Subtle shadow overlay that fades out as the card comes to the foreground
+                  IgnorePointer(
+                    child: Container(
+                      color: Colors.black.withValues(
+                        alpha: (0.35 * (1.0 - dragProgress)).clamp(0.0, 1.0),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
 
-        // 2. Top card (displays current profile widget with rotation/offset)
+        // 2. Top card (displays current profile widget with 3D cube rotation and translation)
         if (!_isBacktracking)
           Positioned.fill(
             child: GestureDetector(
@@ -286,6 +303,8 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
               onHorizontalDragEnd: _handleDragEnd,
               child: Transform(
                 transform: Matrix4.translationValues(_dragX, _dragY, 0.0)
+                  ..setEntry(3, 2, 0.001)
+                  ..rotateY(dragRatio * 0.28) // 3D Cube face tilt
                   ..rotateZ(_dragAngle),
                 alignment: Alignment.center,
                 child: Stack(
@@ -371,24 +390,72 @@ class _BumbleSwipeWidgetState extends State<BumbleSwipeWidget>
             ),
           )
         else
-          // Render a static copy of the current card underneath during backtrack
-          Positioned.fill(
-            child: Opacity(opacity: 0.6, child: widget.currentWidget),
-          ),
+          // 3. During Backtrack: Render 3D Cube transition between current & incoming card
+          AnimatedBuilder(
+            animation: _backtrackAnimation,
+            builder: (context, _) {
+              final double t = _backtrackAnimation.value; // 0.0 -> 1.0
+              final double screenW = width > 0 ? width : MediaQuery.of(context).size.width;
 
-        // 3. Backtracking card (slides back on top from off-screen)
-        if (_isBacktracking && _backtrackWidget != null)
-          Positioned.fill(
-            child: Transform.translate(
-              offset: Offset(_backtrackX, 0.0),
-              child: Transform.rotate(
-                angle: (_backtrackX / width) * 0.25,
-                alignment: Alignment.center,
-                child: _backtrackWidget!,
-              ),
-            ),
+              // Direction of backtrack: if previous swipe was from left, backtrack comes in from left
+              final double dir = _backtrackFromRight ? 1.0 : -1.0;
+
+              // Outgoing current card (rotates out in 3D perspective)
+              final double outgoingAngle = dir * t * (math.pi / 2.6);
+              final double outgoingTranslate = -dir * t * screenW;
+
+              // Incoming backtrack card (rotates in in 3D perspective)
+              final double incomingAngle = -dir * (1.0 - t) * (math.pi / 2.6);
+              final double incomingTranslate = dir * (1.0 - t) * screenW;
+
+              return Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
+                  // Outgoing face of cube
+                  Transform(
+                    transform: Matrix4.translationValues(outgoingTranslate, 0.0, 0.0)
+                      ..setEntry(3, 2, 0.001)
+                      ..rotateY(outgoingAngle),
+                    alignment: _backtrackFromRight ? Alignment.centerRight : Alignment.centerLeft,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        widget.currentWidget,
+                        IgnorePointer(
+                          child: Container(
+                            color: Colors.black.withValues(alpha: (t * 0.45).clamp(0.0, 1.0)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Incoming face of cube (Backtracking profile)
+                  if (_backtrackWidget != null)
+                    Transform(
+                      transform: Matrix4.translationValues(incomingTranslate, 0.0, 0.0)
+                        ..setEntry(3, 2, 0.001)
+                        ..rotateY(incomingAngle),
+                      alignment: _backtrackFromRight ? Alignment.centerLeft : Alignment.centerRight,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _backtrackWidget!,
+                          IgnorePointer(
+                            child: Container(
+                              color: Colors.black.withValues(alpha: ((1.0 - t) * 0.45).clamp(0.0, 1.0)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
       ],
     );
   }
 }
+

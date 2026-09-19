@@ -192,6 +192,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     'refunded': 2,
   };
 
+  static const Map<String, int> _requestStatusRank = {
+    'withdrawn': -1,
+    'cancelled': -1,
+    'rejected': -1,
+    'declined': -1,
+    'pending': 1,
+    'payment_pending': 2,
+    'accepted': 2,
+    'paid': 3,
+    'confirmed': 3,
+  };
+
+  static int _getRequestStatusRank(String? status) {
+    final s = (status ?? '').trim().toLowerCase();
+    return _requestStatusRank[s] ?? 0;
+  }
+
   /// Records the irreversible facts contained in a server-confirmed state.
   void _recordPlanStateFloor(String rawPlanId, Map<String, dynamic> state) {
     final cleanId = ApiService.cleanBookingId(rawPlanId);
@@ -6837,34 +6854,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       );
     }
 
-    // Natural order, used only to place cards the screen has not seen before:
-    // 1. Action Required / Critical / Invites first
-    // 2. Unread items second
-    // 3. Descending by createdAt (lastActivityAt)
-    //
-    // This is a plain total order now. The previous version short-circuited to
-    // a "frozen position" comparison whenever either side was mid-action, which
-    // is not transitive — Dart's sort is free to produce an arbitrary
-    // permutation from an inconsistent comparator, so the very cards that were
-    // meant to stay put could end up anywhere. Position freezing is handled
-    // below instead, where it belongs: as a property of the card, not of the
-    // comparison.
+    // Multi-tiered natural order for clean, prioritized, and unambiguous timeline sequencing:
+    // 1. Immediate Action Required (Accept, Pay deposit, Confirm safety, etc.)
+    // 2. Confirmed active events & tickets ready
+    // 3. Outgoing requests pending response
+    // 4. Social & Wallet updates (Likes, matches, refunds)
+    // 5. Completed history
+    // 6. Cancelled / Expired
     items.sort((a, b) {
-      final aAction =
-          (a.badgeText == 'ACTION REQUIRED' ||
-              a.badgeText == 'NEW REQUEST' ||
-              a.priority == 'CRITICAL' ||
-              a.badgeText == 'INVITE')
-          ? 1
-          : 0;
-      final bAction =
-          (b.badgeText == 'ACTION REQUIRED' ||
-              b.badgeText == 'NEW REQUEST' ||
-              b.priority == 'CRITICAL' ||
-              b.badgeText == 'INVITE')
-          ? 1
-          : 0;
-      if (aAction != bAction) return bAction - aAction;
+      final aScore = _getNotificationPriorityScore(a);
+      final bScore = _getNotificationPriorityScore(b);
+      if (aScore != bScore) return bScore - aScore;
 
       final aUnread = (!a.isRead && !a.isExpired) ? 1 : 0;
       final bUnread = (!b.isRead && !b.isExpired) ? 1 : 0;
@@ -6881,6 +6881,93 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       (a, b) => (_timelineRank[a.id] ?? 0).compareTo(_timelineRank[b.id] ?? 0),
     );
     return items;
+  }
+
+  static int _getNotificationPriorityScore(UnifiedNotificationItem item) {
+    if (item.isExpired) return 0;
+
+    final badge = (item.badgeText ?? '').toUpperCase();
+    final status = (item.rawData['status'] ??
+            item.rawData['paymentStatus'] ??
+            item.rawData['stage'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final category = item.category.toLowerCase();
+    final bool isCancelled = category == 'cancelled' ||
+        category == 'cancellation' ||
+        status.contains('cancel') ||
+        badge.contains('CANCEL') ||
+        item.rawData['isCancelled'] == true;
+    if (isCancelled) return 10;
+
+    // 1. Immediate Action Required (Accept / Pay Deposit / Complete Booking / Safety Check)
+    final bool hasActionRequired = badge == 'ACTION REQUIRED' ||
+        badge == 'NEW REQUEST' ||
+        badge == 'PAYMENT REQUIRED' ||
+        badge == 'DEPOSIT REQUIRED' ||
+        badge == 'CONFIRMATION REQUIRED' ||
+        badge == 'INVITE' ||
+        item.priority == 'CRITICAL' ||
+        (item.actions != null &&
+            item.actions!.any(
+              (a) =>
+                  a.isPrimary &&
+                  !a.label.toLowerCase().contains('ticket') &&
+                  !a.label.toLowerCase().contains('chat'),
+            ));
+    if (hasActionRequired) return 100;
+
+    // 2. Confirmed Active Events & Generated Tickets Ready
+    final bool isConfirmed = badge == 'CONFIRMED' ||
+        badge == 'TICKET READY' ||
+        badge == 'MATCH CONFIRMED' ||
+        status == 'confirmed' ||
+        status == 'paid' ||
+        status == 'match_confirmed';
+    if (isConfirmed) return 80;
+
+    // 3. Outgoing Requests / In Progress (Waiting for host or partner response)
+    final bool isPending = badge.contains('PENDING') ||
+        badge.contains('WAITING') ||
+        badge == 'INVITE SENT' ||
+        status.contains('pending') ||
+        status.contains('invite_sent') ||
+        status.contains('requested');
+    if (isPending) return 60;
+
+    // 4. Social & Wallet Activity (Likes, Matches, Wallet Credits)
+    final bool isSocialOrWallet = category.contains('like') ||
+        category.contains('match') ||
+        category.contains('wallet') ||
+        category.contains('social') ||
+        badge.contains('LIKE') ||
+        badge.contains('MATCH') ||
+        badge.contains('WALLET');
+    if (isSocialOrWallet) return 40;
+
+    // 5. Completed
+    if (badge == 'COMPLETED' || status == 'completed') return 20;
+
+    return 30;
+  }
+
+  static String _getCategoryDisplayName(
+    String category,
+    Map<String, dynamic> rawData,
+  ) {
+    final cat = category.toLowerCase();
+    if (cat.contains('party_plan') || cat == 'plan') return 'PARTY PLAN';
+    if (cat.contains('stranger') || cat.contains('meet')) return 'STRANGER MEET';
+    if (cat.contains('group') || cat.contains('large')) return 'GROUP PARTY';
+    if (cat.contains('booking')) return 'VENUE BOOKING';
+    if (cat.contains('wallet')) return 'WALLET';
+    if (cat.contains('payment') || cat.contains('pay')) return 'PAYMENT';
+    if (cat.contains('like') || cat.contains('match')) return 'MATCH & LIKE';
+    if (cat.contains('cancel')) return 'CANCELLATION';
+    if (cat.contains('system')) return 'SYSTEM';
+    if (cat.contains('promo')) return 'PROMO';
+    return category.toUpperCase().replaceAll('_', ' ');
   }
 
   /// Gives every card a position it keeps for the lifetime of the screen.
@@ -9345,7 +9432,21 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (reqType == 'my_request' ||
           requesterId == currentUserId ||
           (isInvite && recipientId == currentUserId)) {
-        myRequest = e;
+        if (myRequest == null) {
+          myRequest = e;
+        } else {
+          final bool isIncomingDirect = reqType == 'my_request' || e['type'] == 'party_plan_request';
+          final bool isExistingDirect = (myRequest['type'] ?? '') == 'my_request' || myRequest['type'] == 'party_plan_request';
+          if (isIncomingDirect && !isExistingDirect) {
+            myRequest = e;
+          } else if (isIncomingDirect == isExistingDirect) {
+            final int existingRank = _getRequestStatusRank(myRequest['status']?.toString());
+            final int incomingRank = _getRequestStatusRank(status);
+            if (incomingRank >= existingRank) {
+              myRequest = e;
+            }
+          }
+        }
       }
       if (isHost) {
         if (isInvite) {
@@ -9355,7 +9456,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               status == 'payment_pending' ||
               status == 'paid' ||
               status == 'confirmed') {
-            acceptedJoinerRequest = e;
+            if (acceptedJoinerRequest == null ||
+                _getRequestStatusRank(status) >=
+                    _getRequestStatusRank(acceptedJoinerRequest['status']?.toString())) {
+              acceptedJoinerRequest = e;
+            }
           }
         } else {
           if (status == 'pending') {
@@ -9364,7 +9469,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               status == 'payment_pending' ||
               status == 'paid' ||
               status == 'confirmed') {
-            acceptedJoinerRequest = e;
+            if (acceptedJoinerRequest == null ||
+                _getRequestStatusRank(status) >=
+                    _getRequestStatusRank(acceptedJoinerRequest['status']?.toString())) {
+              acceptedJoinerRequest = e;
+            }
           }
         }
       } else {
@@ -9376,7 +9485,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               status == 'payment_pending' ||
               status == 'paid' ||
               status == 'confirmed') {
-            acceptedJoinerRequest = e;
+            if (acceptedJoinerRequest == null ||
+                _getRequestStatusRank(status) >=
+                    _getRequestStatusRank(acceptedJoinerRequest['status']?.toString())) {
+              acceptedJoinerRequest = e;
+            }
           }
         }
       }
@@ -9600,50 +9713,50 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             parsedEventDate.difference(DateTime.now()).inMinutes <= 35 &&
             parsedEventDate.difference(DateTime.now()).inHours >= -24);
 
-    bool anyEntryConfirmed = false;
-    for (final e in entries) {
-      final eType = (e['type'] ?? e['eventType'] ?? e['requestType'] ?? '').toString();
-      final eStatus = (e['status'] ?? '').toString().toLowerCase();
-      final pStatus = (e['joinerPaymentStatus'] ?? e['paymentStatus'] ?? '').toString().toLowerCase();
-      final title = (e['title'] ?? '').toString().toLowerCase();
-      final body = (e['body'] ?? '').toString().toLowerCase();
-      if (eType == 'party_plan_match_success' ||
-          eType == 'party_plan_confirmed' ||
-          eType == 'party_plan_matched' ||
-          eStatus == 'confirmed' ||
-          eStatus == 'match_confirmed' ||
-          title.contains('booking confirmed') ||
-          title.contains('match confirmed') ||
-          body.contains('both payments are complete') ||
-          (pStatus == 'paid' && (e['requester'] != null || e['user'] != null))) {
-        anyEntryConfirmed = true;
-        break;
-      }
-    }
+    final String hostPay = hostPaymentStatus.toLowerCase();
+    final String joinerPay = (acceptedJoinerRequest?['joinerPaymentStatus'] ??
+            myRequest?['joinerPaymentStatus'] ??
+            planMap['joinerPaymentStatus'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final bool isJoinerPaid = joinerPay == 'paid' ||
+        joinerPay == 'completed' ||
+        (acceptedJoinerRequest != null &&
+            (acceptedJoinerRequest['status'] == 'confirmed' ||
+                acceptedJoinerRequest['status'] == 'paid' ||
+                acceptedJoinerRequest['joinerPaymentStatus'] == 'paid')) ||
+        (myRequest != null &&
+            (myRequest['status'] == 'confirmed' ||
+                myRequest['status'] == 'paid' ||
+                myRequest['joinerPaymentStatus'] == 'paid'));
 
-    // A plan-level lifecycleStatus/acceptedJoinerRequest reflects a confirmed match
-    // when either party or server indicates both deposits are complete.
-    // A match cannot be confirmed while the host deposit is known to be
-    // outstanding: in self-pay the guest is marked paid the moment they accept,
-    // which used to read as "confirmed" even though the host still owed ₹99.
-    final bool isConfirmed =
-        !hostDepositExplicitlyUnpaid &&
-        (anyEntryConfirmed ||
-            (isHost &&
-                (lifecycleStatus == 'match_confirmed' ||
-                    lifecycleStatus == 'chat_enabled' ||
-                    lifecycleStatus == 'plan_completed' ||
-                    planStatus == 'confirmed' ||
-                    planStatus == 'match_confirmed' ||
-                    (acceptedJoinerRequest != null &&
-                        (acceptedJoinerRequest['status'] == 'confirmed' ||
-                            acceptedJoinerRequest['status'] == 'paid' ||
-                            acceptedJoinerRequest['joinerPaymentStatus'] ==
-                                'paid')))) ||
-            (myRequest != null &&
-                (myRequest['status'] == 'confirmed' ||
-                    myRequest['status'] == 'paid' ||
-                    myRequest['joinerPaymentStatus'] == 'paid')));
+    // A match is confirmed ONLY when both parties are settled (paid/confirmed)
+    // and neither party is pending payment or waiting for deposit.
+    final bool isConfirmed = !hostDepositExplicitlyUnpaid &&
+        !isCancelled &&
+        !isExpired &&
+        ((isHost &&
+            (lifecycleStatus == 'match_confirmed' ||
+                lifecycleStatus == 'chat_enabled' ||
+                lifecycleStatus == 'plan_completed' ||
+                planStatus == 'confirmed' ||
+                planStatus == 'match_confirmed' ||
+                ((hostPay == 'paid' || hostPay == 'completed') &&
+                    acceptedJoinerRequest != null &&
+                    isJoinerPaid))) ||
+        (!isHost &&
+            myRequest != null &&
+            (myRequest['status'] == 'confirmed' ||
+                myRequest['status'] == 'paid' ||
+                myRequest['joinerPaymentStatus'] == 'paid' ||
+                ((lifecycleStatus == 'match_confirmed' ||
+                        lifecycleStatus == 'chat_enabled' ||
+                        lifecycleStatus == 'plan_completed') &&
+                    (myRequest['joinerPaymentStatus'] == 'paid' ||
+                        myRequest['status'] == 'confirmed' ||
+                        myRequest['status'] == 'paid' ||
+                        planMap['paymentType']?.toString().toLowerCase() == 'self_pay')))));
 
     // The host's own deposit is settled only when the plan itself says so. An
     // accepted joiner says nothing about it — treating it as proof is what left
@@ -14231,428 +14344,505 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           children: [
             InkWell(
               onTap: isCardLoading ? null : () => _onCardTap(item),
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Left Accent Bar
-                    Container(
-                      width: 5,
-                      decoration: BoxDecoration(color: item.accentColor),
-                    ),
-                // Card Content Body
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: KeyedSubtree(
+                  key: ValueKey('body_${item.id}_${item.badgeText}_${item.statusSummary}_${item.title}'),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Top Row: Avatar/Icon + Badge + Timestamp
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Avatar or Category Icon
-                            if (item.senderUser != null ||
-                                (item.avatarUrl != null &&
-                                    item.avatarUrl!.isNotEmpty))
-                              Builder(
-                                builder: (_) {
-                                  final String? resolvedPhoto =
-                                      item.senderUser?['profilePhotoUrl']
-                                          ?.toString() ??
-                                      item.senderUser?['profileImageUrl']
-                                          ?.toString() ??
-                                      item.senderUser?['photoUrl']
-                                          ?.toString() ??
-                                      item.senderUser?['profilePhoto']
-                                          ?.toString() ??
-                                      item.avatarUrl;
-
-                                  final Map<String, dynamic> userMap =
-                                      Map<String, dynamic>.from(
-                                        item.senderUser ?? {},
-                                      );
-                                  if (resolvedPhoto != null &&
-                                      resolvedPhoto.isNotEmpty &&
-                                      resolvedPhoto != 'null') {
-                                    userMap['profilePhotoUrl'] = resolvedPhoto;
-                                    userMap['profileImageUrl'] = resolvedPhoto;
-                                    userMap['photoUrl'] = resolvedPhoto;
-                                    userMap['profilePhoto'] = resolvedPhoto;
-                                    userMap['photos'] = [
-                                      {
-                                        'url': resolvedPhoto,
-                                        'filePath': resolvedPhoto,
-                                        'isPrimary': true,
-                                      },
-                                    ];
-                                  }
-
-                                  return LunaraProfileImage(
-                                    userData: userMap.isNotEmpty
-                                        ? userMap
-                                        : {
-                                            'profilePhotoUrl': resolvedPhoto,
-                                            'profileImageUrl': resolvedPhoto,
-                                            'firstName': item.title,
-                                          },
-                                    radius: 18,
-                                    isInteractive:
-                                        item.senderUser != null &&
-                                        item.senderUser!['id'] != null,
-                                  );
-                                },
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: item.accentColor.withValues(
-                                    alpha: 0.12,
-                                  ),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  item.categoryIcon,
-                                  size: 18,
-                                  color: item.accentColor,
-                                ),
-                              ),
-                            const SizedBox(width: 10),
-
-                            // Badge Tag
-                            if (item.badgeText != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: item.badgeText == 'EXPIRED'
-                                      ? Colors.grey[300]!
-                                      : item.accentColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  item.badgeText!,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: item.badgeText == 'EXPIRED'
-                                        ? Colors.grey[600]!
-                                        : item.accentColor,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ),
-                            const Spacer(),
-
-                            // Timestamp
-                            Text(
-                              item.timeAgo,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[500],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        // Left Accent Bar
+                        Container(
+                          width: 5,
+                          decoration: BoxDecoration(color: item.accentColor),
                         ),
-                        const SizedBox(height: 10),
-
-                        // Title / Activity Headline
-                        Text(
-                          item.title,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-
-                        // ── Role & Participant Info Box ──
-                        if (item.partnerUser != null ||
-                            item.userRoleLabel != null) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            child: Row(
+                        // Card Content Body
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (item.partnerUser != null) ...[
-                                  LunaraProfileImage(
-                                    userData: item.partnerUser!,
-                                    radius: 15,
-                                    isInteractive:
-                                        item.partnerUser!['id'] != null,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (item.userRoleLabel != null)
-                                        Text(
-                                          item.userRoleLabel!,
-                                          style: const TextStyle(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF64748B),
-                                            letterSpacing: 0.4,
+                                // Top Row: Avatar/Icon + Badge + Timestamp
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    // Avatar or Category Icon
+                                    if (item.senderUser != null ||
+                                        (item.avatarUrl != null &&
+                                            item.avatarUrl!.isNotEmpty))
+                                      Builder(
+                                        builder: (_) {
+                                          final String? resolvedPhoto =
+                                              item.senderUser?['profilePhotoUrl']
+                                                  ?.toString() ??
+                                              item.senderUser?['profileImageUrl']
+                                                  ?.toString() ??
+                                              item.senderUser?['photoUrl']
+                                                  ?.toString() ??
+                                              item.senderUser?['profilePhoto']
+                                                  ?.toString() ??
+                                              item.avatarUrl;
+
+                                          final Map<String, dynamic> userMap =
+                                              Map<String, dynamic>.from(
+                                                item.senderUser ?? {},
+                                              );
+                                          if (resolvedPhoto != null &&
+                                              resolvedPhoto.isNotEmpty &&
+                                              resolvedPhoto != 'null') {
+                                            userMap['profilePhotoUrl'] = resolvedPhoto;
+                                            userMap['profileImageUrl'] = resolvedPhoto;
+                                            userMap['photoUrl'] = resolvedPhoto;
+                                            userMap['profilePhoto'] = resolvedPhoto;
+                                            userMap['photos'] = [
+                                              {
+                                                'url': resolvedPhoto,
+                                                'filePath': resolvedPhoto,
+                                                'isPrimary': true,
+                                              },
+                                            ];
+                                          }
+
+                                          return LunaraProfileImage(
+                                            userData: userMap.isNotEmpty
+                                                ? userMap
+                                                : {
+                                                    'profilePhotoUrl': resolvedPhoto,
+                                                    'profileImageUrl': resolvedPhoto,
+                                                    'firstName': item.title,
+                                                  },
+                                            radius: 18,
+                                            isInteractive:
+                                                item.senderUser != null &&
+                                                item.senderUser!['id'] != null,
+                                          );
+                                        },
+                                      )
+                                    else
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: item.accentColor.withValues(
+                                            alpha: 0.12,
                                           ),
+                                          shape: BoxShape.circle,
                                         ),
-                                      if (item.partnerUser != null)
-                                        Text(
-                                          '${item.partnerRoleLabel ?? "With:"} ${item.partnerUser!["firstName"] ?? item.partnerUser!["name"] ?? "User"} ${item.partnerUser!["lastName"] ?? ""}'
-                                              .trim(),
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF0F172A),
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        child: Icon(
+                                          item.categoryIcon,
+                                          size: 18,
+                                          color: item.accentColor,
                                         ),
-                                    ],
-                                  ),
-                                ),
-                                if (item.statusSummary != null)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFEDE9FE),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      item.statusSummary!,
-                                      style: const TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF7C3AED),
+                                      ),
+                                    const SizedBox(width: 8),
+
+                                    // Category Tag
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 2.5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: item.accentColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        _getCategoryDisplayName(item.category, item.rawData),
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: item.accentColor,
+                                          letterSpacing: 0.4,
+                                        ),
                                       ),
                                     ),
+                                    const SizedBox(width: 6),
+
+                                    // Badge Tag (Action cue)
+                                    if (item.badgeText != null)
+                                      Builder(
+                                        builder: (_) {
+                                          final isActionReq = item.badgeText == 'ACTION REQUIRED' ||
+                                              item.badgeText == 'NEW REQUEST' ||
+                                              item.badgeText == 'PAYMENT REQUIRED' ||
+                                              item.badgeText == 'DEPOSIT REQUIRED';
+                                          final isConfirmed = item.badgeText == 'CONFIRMED' ||
+                                              item.badgeText == 'TICKET READY';
+                                          final isExpired = item.badgeText == 'EXPIRED';
+
+                                          final badgeColor = isActionReq
+                                              ? const Color(0xFFEF4444)
+                                              : (isConfirmed
+                                                  ? const Color(0xFF10B981)
+                                                  : (isExpired
+                                                      ? Colors.grey[600]!
+                                                      : item.accentColor));
+
+                                          final bgColor = isActionReq
+                                              ? const Color(0xFFEF4444).withValues(alpha: 0.12)
+                                              : (isConfirmed
+                                                  ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                                  : (isExpired
+                                                      ? Colors.grey[200]!
+                                                      : item.accentColor.withValues(alpha: 0.1)));
+
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 2.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: bgColor,
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: isActionReq
+                                                  ? Border.all(
+                                                      color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                                                      width: 0.8,
+                                                    )
+                                                  : null,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (isActionReq) ...[
+                                                  const Icon(Icons.bolt_rounded, size: 11, color: Color(0xFFEF4444)),
+                                                  const SizedBox(width: 2),
+                                                ] else if (isConfirmed) ...[
+                                                  const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF10B981)),
+                                                  const SizedBox(width: 2),
+                                                ],
+                                                Text(
+                                                  item.badgeText!,
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w900,
+                                                    color: badgeColor,
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    const Spacer(),
+
+                                    // Timestamp
+                                    Text(
+                                      item.timeAgo,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[500],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+
+                                // Title / Activity Headline
+                                Text(
+                                  item.title,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
                                   ),
+                                ),
+
+                                // ── Role & Participant Info Box ──
+                                if (item.partnerUser != null ||
+                                    item.userRoleLabel != null) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (item.partnerUser != null) ...[
+                                          LunaraProfileImage(
+                                            userData: item.partnerUser!,
+                                            radius: 15,
+                                            isInteractive:
+                                                item.partnerUser!['id'] != null,
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              if (item.userRoleLabel != null)
+                                                Text(
+                                                  item.userRoleLabel!,
+                                                  style: const TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: Color(0xFF64748B),
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                              if (item.partnerUser != null)
+                                                Text(
+                                                  '${item.partnerRoleLabel ?? "With:"} ${item.partnerUser!["firstName"] ?? item.partnerUser!["name"] ?? "User"} ${item.partnerUser!["lastName"] ?? ""}'
+                                                      .trim(),
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Color(0xFF0F172A),
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (item.statusSummary != null)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEDE9FE),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              item.statusSummary!,
+                                              style: const TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF7C3AED),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+
+                                const SizedBox(height: 6),
+
+                                // Body Description
+                                Text(
+                                  item.body,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey[700],
+                                    height: 1.3,
+                                  ),
+                                  maxLines:
+                                      (item.category == 'party_plan' ||
+                                          item.body.contains('\n'))
+                                      ? 6
+                                      : 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+
+                                // Expired notice
+                                if (item.badgeText == 'EXPIRED') ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: const [
+                                      Icon(
+                                        Icons.info_outline_rounded,
+                                        size: 14,
+                                        color: Colors.grey,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          'This event has expired. No further actions can be taken.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+
+                                // Action Buttons Wrap (Accept/Decline/Pay/View Ticket/Chat)
+                                if (item.actions != null &&
+                                    item.actions!.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      alignment: WrapAlignment.end,
+                                      children: item.actions!.map((action) {
+                                        final isPrimary = action.isPrimary;
+                                        final btnColor =
+                                            action.color ??
+                                            (isPrimary
+                                                ? item.accentColor
+                                                : Colors.grey[200]!);
+                                        final textColor = isPrimary
+                                            ? Colors.white
+                                            : Colors.black87;
+                                        final isLoading = action.isLoading;
+
+                                        return ElevatedButton.icon(
+                                          onPressed: isLoading ? null : action.onTap,
+                                          icon: isLoading
+                                              ? SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<Color>(
+                                                          isPrimary
+                                                              ? Colors.white
+                                                              : LunaraTheme
+                                                                    .electricViolet,
+                                                        ),
+                                                  ),
+                                                )
+                                              : (action.icon != null
+                                                    ? Icon(
+                                                        action.icon,
+                                                        size: 15,
+                                                        color: textColor,
+                                                      )
+                                                    : const SizedBox.shrink()),
+                                          label: Text(
+                                            action.label,
+                                            style: TextStyle(
+                                              color: isLoading
+                                                  ? textColor.withValues(alpha: 0.6)
+                                                  : textColor,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: btnColor,
+                                            foregroundColor: textColor,
+                                            disabledBackgroundColor: btnColor
+                                                .withValues(alpha: 0.7),
+                                            disabledForegroundColor: textColor
+                                                .withValues(alpha: 0.7),
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 10,
+                                            ),
+                                            minimumSize: const Size(80, 40),
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(10),
+                                              side: !isPrimary
+                                                  ? BorderSide(
+                                                      color: Colors.grey[300]!,
+                                                      width: 0.8,
+                                                    )
+                                                  : BorderSide.none,
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                        ],
-
-                        const SizedBox(height: 6),
-
-                        // Body Description
-                        Text(
-                          item.body,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[700],
-                            height: 1.3,
-                          ),
-                          maxLines:
-                              (item.category == 'party_plan' ||
-                                  item.body.contains('\n'))
-                              ? 6
-                              : 3,
-                          overflow: TextOverflow.ellipsis,
                         ),
-
-                        // Expired notice
-                        if (item.badgeText == 'EXPIRED') ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: const [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                size: 14,
-                                color: Colors.grey,
-                              ),
-                              SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'This event has expired. No further actions can be taken.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-
-                        // Action Buttons Wrap (Accept/Decline/Pay/View Ticket/Chat)
-                        if (item.actions != null &&
-                            item.actions!.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              alignment: WrapAlignment.end,
-                              children: item.actions!.map((action) {
-                                final isPrimary = action.isPrimary;
-                                final btnColor =
-                                    action.color ??
-                                    (isPrimary
-                                        ? item.accentColor
-                                        : Colors.grey[200]!);
-                                final textColor = isPrimary
-                                    ? Colors.white
-                                    : Colors.black87;
-                                final isLoading = action.isLoading;
-
-                                return ElevatedButton.icon(
-                                  onPressed: isLoading ? null : action.onTap,
-                                  icon: isLoading
-                                      ? SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                  isPrimary
-                                                      ? Colors.white
-                                                      : LunaraTheme
-                                                            .electricViolet,
-                                                ),
-                                          ),
-                                        )
-                                      : (action.icon != null
-                                            ? Icon(
-                                                action.icon,
-                                                size: 15,
-                                                color: textColor,
-                                              )
-                                            : const SizedBox.shrink()),
-                                  label: Text(
-                                    action.label,
-                                    style: TextStyle(
-                                      color: isLoading
-                                          ? textColor.withValues(alpha: 0.6)
-                                          : textColor,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: btnColor,
-                                    foregroundColor: textColor,
-                                    disabledBackgroundColor: btnColor
-                                        .withValues(alpha: 0.7),
-                                    disabledForegroundColor: textColor
-                                        .withValues(alpha: 0.7),
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
-                                    ),
-                                    minimumSize: const Size(80, 40),
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      side: !isPrimary
-                                          ? BorderSide(
-                                              color: Colors.grey[300]!,
-                                              width: 0.8,
-                                            )
-                                          : BorderSide.none,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-        if (isCardLoading)
-          Positioned.fill(
-            // ── FIX: Fully opaque overlay ──────────────────────────────────
-            // Was 0.86 alpha — semi-transparent so the underlying card body
-            // (which may momentarily show "CANCELLED" or a stale state) was
-            // visible behind the loader pill. A fully opaque white overlay
-            // guarantees nothing bleeds through during the sync window.
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
               ),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
-                      width: 1.5,
+            ),
+            if (isCardLoading)
+              Positioned.fill(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.0, end: 1.0),
+                  duration: const Duration(milliseconds: 200),
+                  builder: (context, opacity, child) {
+                    return Opacity(
+                      opacity: opacity,
+                      child: child,
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            LunaraTheme.electricViolet,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                            width: 1.5,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                              blurRadius: 14,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  LunaraTheme.electricViolet,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Updating status...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: LunaraTheme.electricViolet,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Text(
-                        'Updating status...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: LunaraTheme.electricViolet,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-      ],
-    ),
-  ),
-);
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _startHostRazorpayDirectPaymentInLiveFeed({
