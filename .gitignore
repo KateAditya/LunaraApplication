@@ -94,3 +94,7 @@ app.*.map.json
 # Heap dumps
 *.hprof
 .env
+*.dump
+*.sql
+scratch/
+**/scratch/
