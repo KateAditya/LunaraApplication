@@ -12,6 +12,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+import fs from 'fs';
 import { logger } from './config/logger';
 import { connectDatabase } from './config/database';
 import { redisService } from './config/redis';
@@ -520,15 +521,49 @@ const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || 'localhost';
 
 // Serve the Admin Panel (React frontend)
-const adminPanelPath = path.join(__dirname, '../../admin-panel/dist');
-app.use(express.static(adminPanelPath));
+const possibleAdminPaths = [
+    path.join(__dirname, '../../admin-panel/dist'),
+    path.join(process.cwd(), 'admin-dist'),
+    path.join(__dirname, '../admin-dist'),
+    path.join(process.cwd(), 'dist/admin-dist'),
+];
+
+let resolvedAdminPath: string | null = null;
+for (const p of possibleAdminPaths) {
+    if (fs.existsSync(path.join(p, 'index.html'))) {
+        resolvedAdminPath = p;
+        break;
+    }
+}
+
+if (resolvedAdminPath) {
+    app.use(express.static(resolvedAdminPath));
+}
 
 // Catch-all route to serve the React index.html for any non-API routes (React Router support)
 app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/health')) {
         return next();
     }
-    res.sendFile(path.join(adminPanelPath, 'index.html'));
+    if (resolvedAdminPath && fs.existsSync(path.join(resolvedAdminPath, 'index.html'))) {
+        return res.sendFile(path.join(resolvedAdminPath, 'index.html'));
+    }
+    res.status(200).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Lunara Platform</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="background:#0b0d14;color:#f3f4f6;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+            <div style="text-align:center;padding:2rem;background:#151824;border-radius:12px;border:1px solid #282f44;max-width:480px;">
+                <h2 style="color:#a855f7;margin-top:0;">✨ Lunara Backend & Admin API</h2>
+                <p style="color:#9ca3af;">Production API server is active and healthy.</p>
+                <div style="margin-top:1.5rem;">
+                    <a href="/api" style="color:#38bdf8;text-decoration:none;margin:0 10px;">API Status</a>
+                    <a href="/health" style="color:#38bdf8;text-decoration:none;margin:0 10px;">Health Check</a>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
 // 404 handler

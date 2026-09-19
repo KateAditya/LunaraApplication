@@ -24,17 +24,24 @@ jobs:
         with:
           node-version: '20.x'
 
+      - name: Build React Admin Panel
+        working-directory: ./Lunara_backend/admin-panel
+        run: |
+          npm install
+          npm run build
+
       - name: Build Node.js backend
         working-directory: ./Lunara_backend/server
         run: |
           npm install
           npm run build
           npm prune --production
+          cp -r ../admin-panel/dist ./admin-dist
 
       - name: Create deployment bundle
         working-directory: ./Lunara_backend/server
         run: |
-          zip -r ../../release.zip dist node_modules package.json
+          zip -r ../../release.zip dist admin-dist node_modules package.json
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
