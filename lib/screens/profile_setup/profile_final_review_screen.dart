@@ -5,7 +5,6 @@ import '../../core/theme.dart';
 import '../../widgets/action_button.dart';
 import '../../widgets/glass_card.dart';
 import '../home/dashboard.dart';
-import '../../services/app_tour_service.dart';
 
 class ProfileFinalReviewScreen extends StatefulWidget {
   final Map<String, dynamic>? collectedData;

@@ -203,6 +203,11 @@ export class PlanEligibilityService {
             return { eligible: false, reasonCode: 'PLAN_PAST_TIME', message: 'Party plan start time cannot be in the past.' };
         }
 
+        // Only enforce party plan exclusive time locks and quotas when planType is 'party_plan'
+        if (planType !== 'party_plan') {
+            return { eligible: true };
+        }
+
         // Calculate proposed lock window
         const cooldownMs = config.defaultCooldownHours * 60 * 60 * 1000;
         const proposedStart = startTime;

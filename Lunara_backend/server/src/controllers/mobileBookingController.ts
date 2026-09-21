@@ -375,9 +375,8 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        // One booking per user per event. Without this the same person could
-        // hold several pending bookings for the same night and consume capacity
-        // other people were waiting for.
+        // One confirmed booking per user per event. If a previous attempt was left
+        // unpaid/pending, cancel it so the user can proceed to pay cleanly.
         const existingBooking = await Booking.findOne({
             where: {
                 userId,
@@ -386,13 +385,20 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             },
         });
         if (existingBooking) {
-            res.status(409).json({
-                success: false,
-                code: 'USER_ALREADY_BOOKED',
-                message: 'You have already booked this event.',
-                data: { bookingId: existingBooking.id },
-            });
-            return;
+            if (existingBooking.status === BookingStatus.PENDING && (existingBooking as any).paymentStatus !== PaymentStatus.PAID) {
+                await Booking.update(
+                    { status: BookingStatus.CANCELLED },
+                    { where: { id: existingBooking.id } }
+                );
+            } else {
+                res.status(409).json({
+                    success: false,
+                    code: 'USER_ALREADY_BOOKED',
+                    message: 'You have already booked this event.',
+                    data: { bookingId: existingBooking.id },
+                });
+                return;
+            }
         }
 
         // Availability is only advisory here — the seats are actually taken

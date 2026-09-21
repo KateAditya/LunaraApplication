@@ -991,8 +991,18 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             await Promise.all(staleIds.map(id => PlanEligibilityService.releaseLock(id)));
         }
 
+        const rawEventId = (req.body?.adId || req.body?.upcomingNightId || '').toString().trim();
+        const isUpcomingNight = Boolean(req.body?.isUpcomingNight || rawEventId);
+
+        const isUpcomingNightPublicWithoutInvitees =
+            isUpcomingNight &&
+            parsedVisibility === PartyPlanVisibility.PUBLIC &&
+            prefetchedTargetIds.length === 0;
+
         const [timeLockCheck, prefetchedTargetUsers] = await Promise.all([
-            EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
+            isUpcomingNightPublicWithoutInvitees
+                ? Promise.resolve({ allowed: true })
+                : EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
             prefetchedTargetIds.length > 0
                 ? User.findAll({
                     where: { id: { [Op.in]: prefetchedTargetIds } },
@@ -1094,8 +1104,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         // A plan posted from an Upcoming Night carries that event's id. The
         // event is resolved here, from the database, so the price the plan is
         // created with is the admin's price — never a number the client sent.
-        const rawEventId = (req.body.adId || req.body.upcomingNightId || '').toString().trim();
-        const isUpcomingNight = Boolean(req.body.isUpcomingNight || rawEventId);
         let linkedEvent: Ad | null = null;
 
         if (isUpcomingNight) {
@@ -1211,7 +1219,9 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
         }
 
         // ── Create the party plan under a transaction ──
-        const planType = isUpcomingNight ? 'upcoming_night_post' : 'party_plan';
+        const planType = isUpcomingNightPublicWithoutInvitees
+            ? 'upcoming_night_public'
+            : (isUpcomingNight ? 'upcoming_night_post' : 'party_plan');
 
         // A free event has nothing to pay, so its plan goes live immediately and
         // its two seats are taken right away — there is no later payment step to
