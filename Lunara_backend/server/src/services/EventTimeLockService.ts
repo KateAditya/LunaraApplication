@@ -125,7 +125,8 @@ export class EventTimeLockService {
                             ['accepted', 'payment_pending', 'confirmed', 'paid'].includes(r.status) && !r.cancelledAt
                         ) || hostPaidStr === 'paid' || plan.matchedRequestId;
 
-                        if (hasAcceptedRequest || plan.isLive || plan.status === 'active') {
+                        const isHostUnpaidDraft = hostPaidStr === 'unpaid' && !hasAcceptedRequest && !plan.isLive;
+                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || plan.status === 'active')) {
                             const venueName = (plan as any).venue?.name;
                             activeEvents.push({
                                 id: plan.id,
@@ -533,7 +534,8 @@ export class EventTimeLockService {
                             ['accepted', 'payment_pending', 'confirmed', 'paid'].includes(r.status) && !r.cancelledAt
                         ) || hostPaidStr === 'paid' || plan.matchedRequestId;
 
-                        if (hasAcceptedRequest || plan.isLive || plan.status === 'active') {
+                        const isHostUnpaidDraft = hostPaidStr === 'unpaid' && !hasAcceptedRequest && !plan.isLive;
+                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || plan.status === 'active')) {
                             const venueName = (plan as any).venue?.name;
                             const events = userEventsMap.get(plan.userId);
                             if (events) {

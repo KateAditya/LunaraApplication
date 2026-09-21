@@ -93,6 +93,45 @@ class LunaraDateFormatter {
             final m = int.parse(dmyMatch.group(2)!);
             final y = int.parse(dmyMatch.group(3)!);
             baseDt = DateTime(y, m, d);
+          } else {
+            const patterns = [
+              'EEEE, dd MMM yyyy',
+              'EEEE, d MMM yyyy',
+              'EEEE, dd MMMM yyyy',
+              'EEEE, d MMMM yyyy',
+              'EEE, dd MMM yyyy',
+              'EEE, d MMM yyyy',
+              'dd MMM yyyy',
+              'd MMM yyyy',
+              'dd MMMM yyyy',
+              'd MMMM yyyy',
+              'EEEE, MMM dd, yyyy',
+              'EEEE, MMM d, yyyy',
+              'MMM dd, yyyy',
+              'MMM d, yyyy',
+              'MMMM dd, yyyy',
+              'MMMM d, yyyy',
+              'EEEE, MMM dd',
+              'EEE, MMM dd',
+              'MMM dd',
+              'd MMM',
+              'dd MMM',
+            ];
+            for (final p in patterns) {
+              try {
+                final df = DateFormat(p);
+                final pDate = df.parse(str);
+                int y = pDate.year;
+                if (y == 1970) {
+                  y = DateTime.now().year;
+                  if (pDate.month < DateTime.now().month - 6) {
+                    y += 1;
+                  }
+                }
+                baseDt = DateTime(y, pDate.month, pDate.day);
+                break;
+              } catch (_) {}
+            }
           }
         }
       }

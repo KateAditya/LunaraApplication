@@ -967,6 +967,30 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 .filter(Boolean)
             : [];
 
+        // Clear the user's own abandoned/unpaid party plan attempt(s) for this
+        // exact date first so retries are never blocked.
+        const staleDayStart = new Date(partyDate);
+        staleDayStart.setHours(0, 0, 0, 0);
+        const staleDayEnd = new Date(partyDate);
+        staleDayEnd.setHours(23, 59, 59, 999);
+        const staleSameDayPlans = await PartyPlan.findAll({
+            where: {
+                userId,
+                planDateTime: { [Op.between]: [staleDayStart, staleDayEnd] },
+                status: { [Op.ne]: PartyPlanStatus.CANCELLED },
+                hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
+            },
+            attributes: ['id'],
+        });
+        if (staleSameDayPlans.length > 0) {
+            const staleIds = staleSameDayPlans.map(s => s.id);
+            await PartyPlan.update(
+                { status: PartyPlanStatus.CANCELLED },
+                { where: { id: { [Op.in]: staleIds } } }
+            );
+            await Promise.all(staleIds.map(id => PlanEligibilityService.releaseLock(id)));
+        }
+
         const [timeLockCheck, prefetchedTargetUsers] = await Promise.all([
             EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
             prefetchedTargetIds.length > 0
@@ -998,30 +1022,6 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 availableAddons: entitlementConsumption.availableAddons || [],
             });
             return;
-        }
-
-        // Clear the user's own abandoned/unpaid party plan attempt(s) for this
-        // exact date first so retries are never blocked.
-        const staleDayStart = new Date(partyDate);
-        staleDayStart.setHours(0, 0, 0, 0);
-        const staleDayEnd = new Date(partyDate);
-        staleDayEnd.setHours(23, 59, 59, 999);
-        const staleSameDayPlans = await PartyPlan.findAll({
-            where: {
-                userId,
-                planDateTime: { [Op.between]: [staleDayStart, staleDayEnd] },
-                status: { [Op.ne]: PartyPlanStatus.CANCELLED },
-                hostPaymentStatus: PartyPlanPaymentStatus.UNPAID,
-            },
-            attributes: ['id'],
-        });
-        if (staleSameDayPlans.length > 0) {
-            const staleIds = staleSameDayPlans.map(s => s.id);
-            await PartyPlan.update(
-                { status: PartyPlanStatus.CANCELLED },
-                { where: { id: { [Op.in]: staleIds } } }
-            );
-            await Promise.all(staleIds.map(id => PlanEligibilityService.releaseLock(id)));
         }
 
         // ── Validate Selected Users for Private & Both Mode ───────────────────

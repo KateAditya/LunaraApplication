@@ -127,14 +127,17 @@ export class VenueBookingService {
         const isLargeParty = goingMode === GoingMode.PARTY_REQUEST && numberOfGuests > 20;
 
         // ── Universal 4-Hour Time-Lock Validation ─────────────────────────────
-        const bookingDateTime = parseBookingDateTime(bookingDate, startTime);
-        const timeLockCheck = await EventTimeLockService.validateFourHourGap(
-            userId,
-            bookingDateTime,
-            isLargeParty ? 'large_party' : 'solo_booking'
-        );
-        if (!timeLockCheck.allowed) {
-            throw new TimeLockError(timeLockCheck);
+        // Direct upcoming night / party event ticket purchases do not enforce a 4-hour time lock
+        if (!isUpcomingNight) {
+            const bookingDateTime = parseBookingDateTime(bookingDate, startTime);
+            const timeLockCheck = await EventTimeLockService.validateFourHourGap(
+                userId,
+                bookingDateTime,
+                isLargeParty ? 'large_party' : 'solo_booking'
+            );
+            if (!timeLockCheck.allowed) {
+                throw new TimeLockError(timeLockCheck);
+            }
         }
 
         const cleanBookingDate = typeof bookingDate === 'string' && bookingDate.includes('T')

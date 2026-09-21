@@ -114,8 +114,11 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
 
   String _formatDisplayDate(String rawDate) {
     try {
-      final parsed = DateTime.parse(rawDate);
-      return DateFormat('EEEE, dd MMM yyyy').format(parsed);
+      final dt = LunaraDateFormatter.parseToLocal(rawDate);
+      if (dt != null) {
+        return DateFormat('EEEE, dd MMM yyyy').format(dt);
+      }
+      return rawDate;
     } catch (_) {
       return rawDate;
     }
@@ -123,17 +126,44 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
 
   String _formatToIsoDateTime(String dateStr, String timeStr) {
     try {
-      DateTime parsedDate;
-      if (dateStr.contains('T')) {
-        parsedDate = DateTime.parse(dateStr);
-      } else {
-        final parts = dateStr.split('-');
-        parsedDate = DateTime(
-          int.parse(parts[0]),
-          int.parse(parts[1]),
-          int.parse(parts[2]),
-        );
+      DateTime? parsedDate = LunaraDateFormatter.parseToLocal(dateStr);
+      if (parsedDate == null) {
+        if (dateStr.contains('T')) {
+          parsedDate = DateTime.tryParse(dateStr);
+        } else {
+          final ymdMatch = RegExp(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})').firstMatch(dateStr);
+          if (ymdMatch != null) {
+            parsedDate = DateTime(
+              int.parse(ymdMatch.group(1)!),
+              int.parse(ymdMatch.group(2)!),
+              int.parse(ymdMatch.group(3)!),
+            );
+          } else {
+            final dmyMatch = RegExp(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})').firstMatch(dateStr);
+            if (dmyMatch != null) {
+              parsedDate = DateTime(
+                int.parse(dmyMatch.group(3)!),
+                int.parse(dmyMatch.group(2)!),
+                int.parse(dmyMatch.group(1)!),
+              );
+            }
+          }
+        }
       }
+
+      if (parsedDate == null) {
+        final rawPartyDate = widget.party['eventDate'] ??
+            widget.party['rawDate'] ??
+            widget.party['fromDate'] ??
+            widget.party['toDate'] ??
+            widget.party['bannerFromDate'] ??
+            widget.party['date'];
+        if (rawPartyDate != null && rawPartyDate.toString() != dateStr) {
+          parsedDate = LunaraDateFormatter.parseToLocal(rawPartyDate);
+        }
+      }
+
+      final effectiveDate = parsedDate ?? DateTime.now();
 
       int hour = 20;
       int minute = 0;
@@ -156,14 +186,15 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       }
 
       final combined = DateTime(
-        parsedDate.year,
-        parsedDate.month,
-        parsedDate.day,
+        effectiveDate.year,
+        effectiveDate.month,
+        effectiveDate.day,
         hour,
         minute,
       );
       return combined.toUtc().toIso8601String();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Error in _formatToIsoDateTime: $e');
       return DateTime.now().add(const Duration(hours: 3)).toUtc().toIso8601String();
     }
   }

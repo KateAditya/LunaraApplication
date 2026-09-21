@@ -26,8 +26,8 @@ import { BookingPolicyService } from '../services/BookingPolicyService';
 import { BookingPolicyType } from '../models/BookingPolicyConfig';
 import { WalletService } from '../services/walletService';
 import { WalletTransactionType } from '../models/WalletTransaction';
-import { EventTimeLockService, parseBookingDateTime } from '../services/EventTimeLockService';
 import { EventSeatService } from '../services/EventSeatService';
+import { parseBookingDateTime } from '../services/EventTimeLockService';
 import { formatTime12Hour } from '../utils/dateTimeUtils';
 
 const razorpay = new Razorpay({
@@ -449,32 +449,7 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
         const rawTime = time || req.body?.startTime || (ad as any).time || (ad as any).startTime || '20:00';
         const eventTimeStr = String(rawTime).trim() || '20:00';
 
-        const partyDateTime = parseBookingDateTime(eventDateStr, eventTimeStr);
 
-        // Validate 4-hour gap across conflicting events on the ACTUAL event date.
-        // Exclude the party event itself (ad.id) and the venue so booking multiple tickets for this event is allowed.
-        const timeLockCheck = await EventTimeLockService.validateFourHourGap(
-            userId,
-            partyDateTime,
-            'solo_booking',
-            ad.id,
-            { excludeVenueId: ad.venueId || undefined }
-        );
-
-        if (!timeLockCheck.allowed) {
-            res.status(400).json({
-                success: false,
-                code: 'FOUR_HOUR_TIME_LOCK',
-                reason: timeLockCheck.reason,
-                message: timeLockCheck.message,
-                conflictingEventType: timeLockCheck.conflictingEventType,
-                conflictingEventTitle: timeLockCheck.conflictingEventTitle,
-                conflictingDateTime: timeLockCheck.conflictingDateTime,
-                nextAvailableTime: timeLockCheck.nextAvailableTime,
-                timeLock: timeLockCheck,
-            });
-            return;
-        }
 
         const amount = (ad.entryPrice || 0) * qty;
 
