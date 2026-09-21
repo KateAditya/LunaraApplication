@@ -191,13 +191,7 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
     super.dispose();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showDiscoveryTour(context);
-    });
-  }
+
 
   Future<void> _determinePosition({
     bool requestIfNeeded = false,

@@ -89,13 +89,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> with WidgetsBindi
     super.dispose();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showVenueDetailTour(context);
-    });
-  }
+
 
   Future<void> _checkLocationAndForce({bool requestIfNeeded = false, bool showLoader = false}) async {
     if (showLoader && mounted) {

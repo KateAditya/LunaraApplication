@@ -348,13 +348,7 @@ class _PlanHubScreenState extends State<PlanHubScreen>
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showPlanHubTour(context);
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -2186,9 +2180,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          AppTourService.showCreatePlanTour(context);
-        });
         return StatefulBuilder(
           builder: (context, setSheetState) {
             _activeSheetSetState = setSheetState;
@@ -4622,9 +4613,6 @@ class _PlanHubScreenState extends State<PlanHubScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          AppTourService.showStrangersMeetTour(context);
-        });
         return StatefulBuilder(
           builder: (context, setSheetState) {
             _activeSheetSetState = setSheetState;

@@ -346,13 +346,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showDashboardTour(context);
-    });
-  }
+
 
   /// The `IndexedStack` children, with a zero-cost placeholder standing in for
   /// any tab the user has not opened yet. `_screens` holds stable widget

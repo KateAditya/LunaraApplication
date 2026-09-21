@@ -130,7 +130,6 @@ class _ProfileFinalReviewScreenState extends State<ProfileFinalReviewScreen>
 
     if (success && mounted) {
       await OnboardingService.clearProgress();
-      await AppTourService.markUserAsNew();
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,

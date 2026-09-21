@@ -54,13 +54,7 @@ class _GroupPartyBookingScreenState extends State<GroupPartyBookingScreen> {
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showGroupPartyTour(context);
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -807,9 +801,6 @@ class _BookingDetailsModalState extends State<_BookingDetailsModal> {
         _mobileController.text = clean.substring(clean.length - 10);
       }
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppTourService.showGroupPartyBookingTour(context);
-    });
   }
 
   @override

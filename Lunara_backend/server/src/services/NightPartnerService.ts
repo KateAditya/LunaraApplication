@@ -1180,15 +1180,18 @@ export class NightPartnerService {
             }
         };
 
+        let initialReq = cleanId ? await NightPartnerRequest.findByPk(cleanId).catch(() => null) : null;
+        if (!initialReq && requestIdInput && requestIdInput !== cleanId) {
+            initialReq = await NightPartnerRequest.findByPk(requestIdInput).catch(() => null);
+        }
+        let effectiveRequestId = initialReq ? initialReq.id : cleanId;
+
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!cleanId || !uuidRegex.test(cleanId)) {
+        if (!initialReq && (!cleanId || !uuidRegex.test(cleanId))) {
             const byContext = await resolveFromContext();
             if (!byContext) throw new Error('REQUEST_NOT_FOUND');
             return await this._respondToResolvedRequest(byContext, byContext.id, partnerId, action);
         }
-
-        let initialReq = await NightPartnerRequest.findByPk(cleanId);
-        let effectiveRequestId = cleanId;
 
         if (!initialReq) {
             // Check if cleanId was actually a NightPartnerMatch id
@@ -1598,11 +1601,16 @@ export class NightPartnerService {
      */
     public static async cancelRequest(requestId: string, hostId: string): Promise<boolean> {
         const cleanId = this.cleanEntityId(requestId);
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!cleanId || !uuidRegex.test(cleanId)) throw new Error('REQUEST_NOT_FOUND');
-
-        const request = await NightPartnerRequest.findByPk(cleanId);
-        if (!request) throw new Error('REQUEST_NOT_FOUND');
+        let request = cleanId ? await NightPartnerRequest.findByPk(cleanId).catch(() => null) : null;
+        if (!request && requestId && requestId !== cleanId) {
+            request = await NightPartnerRequest.findByPk(requestId).catch(() => null);
+        }
+        if (!request) {
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!cleanId || !uuidRegex.test(cleanId)) throw new Error('REQUEST_NOT_FOUND');
+            request = await NightPartnerRequest.findByPk(cleanId);
+            if (!request) throw new Error('REQUEST_NOT_FOUND');
+        }
         if (request.hostId !== hostId) throw new Error('UNAUTHORIZED');
 
         if (request.status === NightPartnerRequestStatus.ACCEPTED) {
@@ -1675,6 +1683,23 @@ export class NightPartnerService {
 
         if (match.status === NightPartnerMatchStatus.CONFIRMED) {
             throw new Error('BOOKING_ALREADY_CONFIRMED');
+        }
+
+        // ── STAGE D: 4-Hour Time-Lock Validation Before Initiating Match Payment ───────
+        const eventDateTime = parseBookingDateTime(match.eventDate, match.eventTime);
+        const isHostCaller = match.hostId === hostId;
+        const payerTimeLock = await EventTimeLockService.validateFourHourGap(
+            hostId,
+            eventDateTime,
+            'party_plan',
+            undefined,
+            isHostCaller ? { excludeVenueId: match.venueId } : undefined
+        );
+        if (!payerTimeLock.allowed) {
+            const err: any = new Error(payerTimeLock.message);
+            err.code = 'FOUR_HOUR_TIME_LOCK';
+            err.timeLock = payerTimeLock;
+            throw err;
         }
 
         // Calculate authoritative price from event / venue configuration
@@ -1847,6 +1872,86 @@ export class NightPartnerService {
                 });
 
                 return { match, isFullyPaid: false };
+            }
+
+            // ── STAGE E: FINAL 4-HOUR REVALIDATION (AFTER BOTH PAYMENTS) ───────
+            const eventDateTime = parseBookingDateTime(match.eventDate, match.eventTime);
+            const hostFinalLock = await EventTimeLockService.validateFourHourGap(
+                match.hostId,
+                eventDateTime,
+                'party_plan',
+                undefined,
+                { transaction: t, excludeVenueId: match.venueId }
+            );
+            const partnerFinalLock = await EventTimeLockService.validateFourHourGap(
+                match.partnerId,
+                eventDateTime,
+                'party_plan',
+                undefined,
+                { transaction: t }
+            );
+
+            if (!hostFinalLock.allowed || !partnerFinalLock.allowed) {
+                const activeConflict = !hostFinalLock.allowed ? hostFinalLock : (partnerFinalLock as any);
+                const conflictMessage = (!hostFinalLock.allowed ? hostFinalLock.message : (partnerFinalLock as any).message) || 'Schedule conflict detected. Payment has been refunded to your Lunara Smart Wallet.';
+                logger.warn(`[NightPartnerService] Final 4-hour schedule conflict detected for match ${match.id}: ${conflictMessage}`);
+
+                // Idempotently refund paid parties to their Smart Wallet
+                const SmartWallet = (await import('../models/SmartWallet')).default;
+                const WalletTransaction = (await import('../models/WalletTransaction')).default;
+
+                if (newHostPaid && match.hostAmount && match.hostAmount > 0) {
+                    let hostWallet = await SmartWallet.findOne({ where: { userId: match.hostId }, transaction: t });
+                    if (!hostWallet) {
+                        hostWallet = await SmartWallet.create({ userId: match.hostId, balance: 0 }, { transaction: t });
+                    }
+                    const openingBal = Number(hostWallet.balance || 0);
+                    const refundAmt = Number(match.hostAmount);
+                    const closingBal = openingBal + refundAmt;
+                    await hostWallet.increment('balance', { by: refundAmt, transaction: t });
+                    await WalletTransaction.create({
+                        walletId: hostWallet.id,
+                        userId: match.hostId,
+                        amount: refundAmt,
+                        openingBalance: openingBal,
+                        closingBalance: closingBal,
+                        transactionType: 'refund' as any,
+                        status: 'success' as any,
+                        reference: `conflict_refund_${match.id}`,
+                    }, { transaction: t });
+                }
+
+                if (newPartnerPaid && match.partnerAmount && match.partnerAmount > 0) {
+                    let partnerWallet = await SmartWallet.findOne({ where: { userId: match.partnerId }, transaction: t });
+                    if (!partnerWallet) {
+                        partnerWallet = await SmartWallet.create({ userId: match.partnerId, balance: 0 }, { transaction: t });
+                    }
+                    const openingBal = Number(partnerWallet.balance || 0);
+                    const refundAmt = Number(match.partnerAmount);
+                    const closingBal = openingBal + refundAmt;
+                    await partnerWallet.increment('balance', { by: refundAmt, transaction: t });
+                    await WalletTransaction.create({
+                        walletId: partnerWallet.id,
+                        userId: match.partnerId,
+                        amount: refundAmt,
+                        openingBalance: openingBal,
+                        closingBalance: closingBal,
+                        transactionType: 'refund' as any,
+                        status: 'success' as any,
+                        reference: `conflict_refund_${match.id}`,
+                    }, { transaction: t });
+                }
+
+                await match.update({
+                    status: NightPartnerMatchStatus.CANCELLED,
+                    hostPaid: newHostPaid,
+                    partnerPaid: newPartnerPaid,
+                }, { transaction: t });
+
+                const conflictErr: any = new Error(conflictMessage);
+                conflictErr.code = 'FOUR_HOUR_TIME_LOCK';
+                conflictErr.timeLock = activeConflict;
+                throw conflictErr;
             }
 
             // 1. Create or Find Booking

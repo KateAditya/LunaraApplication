@@ -419,7 +419,14 @@ export const initiateMatchPayment = async (req: Request, res: Response): Promise
         });
     } catch (err: any) {
         logger.error('initiateMatchPayment error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to initiate payment' });
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to initiate payment',
+            ...(err.timeLock || {}),
+        });
     }
 };
 
@@ -453,7 +460,14 @@ export const verifyMatchPayment = async (req: Request, res: Response): Promise<v
         });
     } catch (err: any) {
         logger.error('verifyMatchPayment error:', err);
-        res.status(err.statusCode || 400).json({ success: false, message: err.message || 'Failed to verify payment' });
+        const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
+        res.status(err.statusCode || 400).json({
+            success: false,
+            code,
+            reason: code,
+            message: err.message || 'Failed to verify payment',
+            ...(err.timeLock || {}),
+        });
     }
 };
 
