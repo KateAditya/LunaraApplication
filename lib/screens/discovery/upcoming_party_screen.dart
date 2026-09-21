@@ -23,6 +23,7 @@ class UpcomingPartyScreen extends StatefulWidget {
 class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   bool _isInterested = false;
   bool _isToggling = false;
+  bool _isInterestLoading = true;
   // Re-enabled: the event-linked plan flow behind this button now resolves the
   // event's real ticket price server-side, holds seats against the event's
   // capacity, and refunds through the existing cancellation path.
@@ -134,6 +135,13 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
       if (mounted) {
         setState(() {
           _isInterested = isInt;
+          _isInterestLoading = false;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isInterestLoading = false;
         });
       }
     }
@@ -660,7 +668,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                       Expanded(
                         flex: 4,
                         child: InkWell(
-                          onTap: _toggleInterest,
+                          onTap: (_isToggling || _isInterestLoading) ? null : _toggleInterest,
                           borderRadius: BorderRadius.circular(16),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
@@ -690,45 +698,50 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                       ),
                                     ],
                             ),
-                            child: _isToggling
-                                ? const Center(
-                                    child: SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: LunaraTheme.electricViolet,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              child: (_isToggling || _isInterestLoading)
+                                  ? const Center(
+                                      key: ValueKey('interest_loading'),
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: LunaraTheme.electricViolet,
+                                        ),
                                       ),
-                                    ),
-                                  )
-                                : FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            _isInterested
-                                                ? Icons.favorite_rounded
-                                                : Icons.favorite_border_rounded,
-                                            color: LunaraTheme.electricViolet,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
-                                            style: const TextStyle(
+                                    )
+                                  : FittedBox(
+                                      key: ValueKey('interest_loaded_$_isInterested'),
+                                      fit: BoxFit.scaleDown,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              _isInterested
+                                                  ? Icons.favorite_rounded
+                                                  : Icons.favorite_border_rounded,
                                               color: LunaraTheme.electricViolet,
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: 12,
-                                              letterSpacing: 0.8,
+                                              size: 18,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              _isInterested ? 'INTERESTED ✓' : 'INTERESTED',
+                                              style: const TextStyle(
+                                                color: LunaraTheme.electricViolet,
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 12,
+                                                letterSpacing: 0.8,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),

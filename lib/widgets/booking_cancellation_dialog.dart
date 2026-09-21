@@ -473,6 +473,48 @@ class _BookingCancellationDialogState extends State<BookingCancellationDialog> {
                   const SizedBox(height: 10),
                 ],
 
+                if (_previewData?['requiresAdminReview'] == true || _previewData?['isLargeParty'] == true) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.shield_outlined, color: Colors.amber, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Large Party Admin Review Required',
+                                style: TextStyle(
+                                  color: isDark ? Colors.amber[300] : Colors.amber[900],
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Large Party cancellations are submitted to Lunara Admin for review and direct payout refund.',
+                                style: TextStyle(
+                                  color: isDark ? Colors.amber[200] : Colors.amber[800],
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
                 // Action Buttons
                 const SizedBox(height: 8),
                 if (_isProcessing)
@@ -486,15 +528,19 @@ class _BookingCancellationDialogState extends State<BookingCancellationDialog> {
                   ElevatedButton(
                     onPressed: _confirmCancellation,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade600,
+                      backgroundColor: (_previewData?['requiresAdminReview'] == true || _previewData?['isLargeParty'] == true)
+                          ? const Color(0xFFE11D48)
+                          : Colors.red.shade600,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text(
-                      'CONFIRM CANCELLATION',
-                      style: TextStyle(
+                    child: Text(
+                      (_previewData?['requiresAdminReview'] == true || _previewData?['isLargeParty'] == true)
+                          ? 'SUBMIT CANCELLATION REQUEST'
+                          : 'CONFIRM CANCELLATION',
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.2,

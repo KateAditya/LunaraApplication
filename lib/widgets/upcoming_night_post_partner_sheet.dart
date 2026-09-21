@@ -225,15 +225,32 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
         return;
       }
 
+      final flyer = widget.bannerImage ??
+          widget.party['bannerUrl'] ??
+          widget.party['bannerImage'] ??
+          widget.party['posterUrl'] ??
+          widget.party['flyer'] ??
+          widget.party['imageUrl'] ??
+          widget.party['coverImageUrl'] ??
+          widget.party['image'] ??
+          widget.party['imagePath'];
+
+      final eventTitle = widget.eventTitle ??
+          widget.party['title'] ??
+          widget.party['name'] ??
+          widget.party['eventTitle'] ??
+          widget.venueName;
+
       final response = await ApiService.post(
         '/api/mobile/party-plans',
         body: {
           'userId': userId,
           'venueId': widget.venueId,
+          'venueName': widget.venueName,
           'message': _messageController.text.trim(),
           'planDateTime': isoPlanDateTime,
           'privacyType': _selectedPrivacy.toLowerCase(),
-          'paymentStatus': 'pending',
+          'paymentStatus': _hostPaysNow > 0 ? 'pending' : 'paid',
           'paymentType': _selectedPaymentType,
           'selectedUserIds': _selectedUserIds,
           'mobileNumber': '',
@@ -248,6 +265,17 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
           'upcomingNightId': adId,
           'adId': adId,
           'bannerToDate': widget.party['bannerToDate'] ?? widget.party['toDate'],
+          'imageUrl': flyer,
+          'coverImageUrl': flyer,
+          'bannerUrl': flyer,
+          'posterUrl': flyer,
+          'flyer': flyer,
+          'eventTitle': eventTitle,
+          'title': eventTitle,
+          'entryPrice': _entryPrice,
+          'totalAmount': _hostPaysNow,
+          'depositAmount': _hostPaysNow,
+          'amountPaid': _hostPaysNow,
         },
         timeout: const Duration(seconds: 25),
       );
@@ -258,7 +286,10 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
         ApiService.planPostedNotifier.value++;
         ApiService.notifyFeedNeedsRefresh();
 
-        Navigator.pop(context);
+        Navigator.pop(context, true);
+
+        // Smoothly redirect to Live Feed tab so user instantly views their card
+        ApiService.switchDashboardTab(1);
 
         TopNotificationBanner.show(
           title: 'Partner Search Posted! 🚀',

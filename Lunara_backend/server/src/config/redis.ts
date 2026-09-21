@@ -49,6 +49,7 @@ class RedisService {
                 this.client = new Redis.Cluster(
                     [{ host, port }],
                     {
+                        lazyConnect: true,
                         redisOptions,
                         scaleReads: 'all',
                         dnsLookup: (hostname, callback) => callback(null, hostname),

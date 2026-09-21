@@ -21,6 +21,7 @@ class PartyEventBookingSheet extends StatefulWidget {
 class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   int _quantity = 1;
   bool _isProcessing = false;
+  bool _isDetailsLoading = true;
   late Map<String, dynamic> _liveEvent;
   String? _inlineWarning;
 
@@ -48,7 +49,10 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
 
   Future<void> _fetchFreshEventDetails() async {
     final eventId = widget.event['eventId'] ?? widget.event['id'];
-    if (eventId == null) return;
+    if (eventId == null) {
+      if (mounted) setState(() => _isDetailsLoading = false);
+      return;
+    }
     try {
       final res = await ApiService.get('/api/ads/active?type=Party');
       if (res.statusCode == 200 && mounted) {
@@ -82,12 +86,16 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                 'seatLimit': seatLimit,
                 'filledSeats': filledSeats,
               };
+              _isDetailsLoading = false;
             });
+            return;
           }
         }
       }
+      if (mounted) setState(() => _isDetailsLoading = false);
     } catch (e) {
       debugPrint('Error fetching fresh event details in booking sheet: $e');
+      if (mounted) setState(() => _isDetailsLoading = false);
     }
   }
 
@@ -648,9 +656,9 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
     final int maxSeats = isUnlimited ? 100 : (remainingSeats > 0 ? remainingSeats : 0);
 
     return Container(
-      decoration: BoxDecoration(
-        color: LunaraTheme.darkBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -664,14 +672,14 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                 child: Text(
                   'Book $title',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF0F172A),
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
+                icon: const Icon(Icons.close, color: Color(0xFF0F172A)),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -685,7 +693,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                 children: [
                   const Text(
                     'Number of Tickets',
-                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                    style: TextStyle(color: Color(0xFF475569), fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   if (!isUnlimited && remainingSeats < 999999)
                     Padding(
@@ -695,7 +703,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                             ? 'Sold Out' 
                             : '($remainingSeats ${remainingSeats == 1 ? "seat" : "seats"} left)',
                         style: TextStyle(
-                          color: remainingSeats <= 3 ? Colors.amber : Colors.white54,
+                          color: remainingSeats <= 3 ? Colors.amber[800] : const Color(0xFF64748B),
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -708,7 +716,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                   IconButton(
                     icon: Icon(
                       Icons.remove_circle_outline, 
-                      color: _quantity > 1 ? Colors.white : Colors.white24,
+                      color: _quantity > 1 ? const Color(0xFF0F172A) : Colors.black26,
                     ),
                     onPressed: _quantity > 1
                         ? () {
@@ -721,12 +729,12 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                   ),
                   Text(
                     '$_quantity',
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
                     icon: Icon(
                       Icons.add_circle_outline, 
-                      color: (maxSeats > 0 && _quantity < maxSeats) ? Colors.white : Colors.white24,
+                      color: (maxSeats > 0 && _quantity < maxSeats) ? const Color(0xFF0F172A) : Colors.black26,
                     ),
                     onPressed: maxSeats <= 0
                         ? null
@@ -766,8 +774,8 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
                   Expanded(
                     child: Text(
                       _inlineWarning!,
-                      style: const TextStyle(
-                        color: Colors.amber,
+                      style: TextStyle(
+                        color: Colors.amber[900],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -783,7 +791,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
             children: [
               const Text(
                 'Total Amount',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold),
               ),
               Text(
                 entryPrice == 0 ? 'FREE' : '₹${(entryPrice * _quantity).toStringAsFixed(2)}',
@@ -793,12 +801,15 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
           ),
           const SizedBox(height: 32),
           LunaraActionButton(
-            text: _isProcessing 
-                ? 'PROCESSING...' 
-                : (!isUnlimited && remainingSeats <= 0)
-                    ? 'SOLD OUT'
-                    : (entryPrice == 0 ? 'CONFIRM BOOKING' : 'PROCEED TO PAY'),
-            onPressed: (_isProcessing || (!isUnlimited && remainingSeats <= 0))
+            text: _isDetailsLoading
+                ? 'CHECKING AVAILABILITY...'
+                : (_isProcessing 
+                    ? 'PROCESSING...' 
+                    : (!isUnlimited && remainingSeats <= 0)
+                        ? 'SOLD OUT'
+                        : (entryPrice == 0 ? 'CONFIRM BOOKING' : 'PROCEED TO PAY')),
+            isLoading: _isDetailsLoading || _isProcessing,
+            onPressed: (_isDetailsLoading || _isProcessing || (!isUnlimited && remainingSeats <= 0))
                 ? () {} 
                 : _processBooking,
           ),

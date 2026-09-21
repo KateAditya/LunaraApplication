@@ -2895,14 +2895,55 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ?.toString() ??
               '';
 
-          // Try to get cover image from all possible fields and venue lookup
-          String? rawCover =
-              feed['coverImageUrl']?.toString().isNotEmpty == true
-              ? feed['coverImageUrl']
-              : (feed['venueImageUrl'] ??
-                    feed['venueImage'] ??
-                    feed['bannerUrl'] ??
-                    feed['bannerImage']);
+          // Prioritize actual upcoming night/event banner/flyer/poster image over venue photos
+          String? rawCover;
+          final List<dynamic> possibleBannerKeys = [
+            feed['bannerUrl'],
+            feed['bannerImage'],
+            feed['banner'],
+            feed['posterUrl'],
+            feed['poster'],
+            feed['flyer'],
+            feed['eventBanner'],
+            feed['coverImageUrl'],
+            feed['imageUrl'],
+            feed['image'],
+            if (feed['upcomingNight'] is Map) ...[
+              feed['upcomingNight']['bannerUrl'],
+              feed['upcomingNight']['bannerImage'],
+              feed['upcomingNight']['posterUrl'],
+              feed['upcomingNight']['flyer'],
+              feed['upcomingNight']['imageUrl'],
+            ],
+            if (feed['event'] is Map) ...[
+              feed['event']['bannerUrl'],
+              feed['event']['bannerImage'],
+              feed['event']['posterUrl'],
+              feed['event']['flyer'],
+              feed['event']['imageUrl'],
+            ],
+            if (feed['party'] is Map) ...[
+              feed['party']['bannerUrl'],
+              feed['party']['bannerImage'],
+              feed['party']['posterUrl'],
+              feed['party']['flyer'],
+              feed['party']['imageUrl'],
+            ],
+          ];
+
+          for (final key in possibleBannerKeys) {
+            if (key != null &&
+                key.toString().trim().isNotEmpty &&
+                key.toString() != 'null' &&
+                !key.toString().startsWith('Instance of')) {
+              rawCover = key.toString();
+              break;
+            }
+          }
+
+          if (rawCover == null || rawCover.isEmpty) {
+            rawCover = feed['venueImageUrl']?.toString() ?? feed['venueImage']?.toString();
+          }
 
           // Check venue map from feed['venueMap'] or feed['venue']
           Map? vMap;
@@ -3145,7 +3186,56 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                               const SizedBox(height: 10),
                               Row(
                                 children: [
-                                  if (feed['type'] == 'strangers_meet')
+                                  if (feed['isUpcomingNight'] == true ||
+                                      feed['type'] == 'upcoming_night' ||
+                                      feed['category'] == 'upcoming_night' ||
+                                      feed['upcomingNightId'] != null ||
+                                      feed['adId'] != null ||
+                                      feed['eventId'] != null ||
+                                      feed['isEvent'] == true ||
+                                      feed['isPartyPlan'] == true ||
+                                      feed['partyPlanId'] != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      margin: const EdgeInsets.only(right: 6),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFFFF5722).withValues(alpha: 0.4),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.local_fire_department_rounded,
+                                            size: 11,
+                                            color: Colors.white,
+                                          ),
+                                          SizedBox(width: 3),
+                                          Text(
+                                            'UPCOMING NIGHT',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 8.5,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else if (feed['type'] == 'strangers_meet')
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 10,

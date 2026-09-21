@@ -5492,6 +5492,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   String? _extractUpcomingNightId(Map<String, dynamic> item) {
     if (_isLikeItem(item)) return null;
+    if (_isPartyPlanItem(item) || _isStrangerMeetItem(item)) return null;
+    if (item['type'] == 'party_plan' || item['isPartyPlan'] == true || item['partyPlanId'] != null) return null;
 
     // 1. Authoritative Event Key (ONE EVENT = ONE CARD)
     final eventId = item['eventId'] ??
@@ -6952,10 +6954,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return 30;
   }
 
-  static String _getCategoryDisplayName(
-    String category,
-    Map<String, dynamic> rawData,
-  ) {
+  static String _getCategoryDisplayName(String category) {
     final cat = category.toLowerCase();
     if (cat.contains('party_plan') || cat == 'plan') return 'PARTY PLAN';
     if (cat.contains('stranger') || cat.contains('meet')) return 'STRANGER MEET';
@@ -9867,8 +9866,23 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
       title = '❌ Party Plan Cancelled';
+      
+      final rawRefund = planMap['refundAmount'] ??
+          planMap['amountPaid'] ??
+          planMap['totalAmount'] ??
+          planMap['depositAmount'] ??
+          planMap['amount'] ??
+          planMap['entryPrice'] ??
+          99;
+      final double refundAmt = (rawRefund is num)
+          ? rawRefund.toDouble()
+          : (double.tryParse(rawRefund?.toString() ?? '') ?? 99.0);
+      final String refundLabel = refundAmt == refundAmt.roundToDouble()
+          ? '₹${refundAmt.toInt()}'
+          : '₹${refundAmt.toStringAsFixed(2)}';
+
       body =
-          'Party Plan at $venueName was cancelled. ₹99 Commitment Deposit has been credited to your Lunara Wallet.';
+          'Party Plan at $venueName was cancelled. $refundLabel Commitment Deposit has been credited to your Lunara Wallet.';
       statusSummary = 'Cancelled • Deposit Credited';
       actionsList = [
         NotificationAction(
@@ -13774,7 +13788,25 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           body.contains('cancel') ||
           item.rawData['isCancelled'] == true;
 
-      if (item.isExpired && !isCancelled) return false;
+      final bool isNoLongerAvailable = badge.contains('NO LONGER AVAILABLE') ||
+          badge.contains('UNAVAILABLE') ||
+          badge == 'EXPIRED' ||
+          badge == 'DECLINED' ||
+          title.contains('no longer available') ||
+          title.contains('unavailable') ||
+          body.contains('no longer available') ||
+          body.contains('unavailable') ||
+          item.rawData['reason'] == 'partner_already_selected' ||
+          item.rawData['cancellationReason'] == 'partner_already_selected' ||
+          item.rawData['status'] == 'NO_LONGER_AVAILABLE' ||
+          item.rawData['eventType'] == 'plan_unavailable' ||
+          item.isExpired;
+
+      if (pillId == 'EXPIRED') {
+        return isNoLongerAvailable && !isCancelled && !item.isRead;
+      }
+
+      if (isNoLongerAvailable && !isCancelled) return false;
       final isLike = category.contains('like') ||
           badge.contains('LIKE') ||
           title.contains('liked') ||
@@ -14025,10 +14057,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           body.contains('cancel') ||
           item.rawData['isCancelled'] == true;
 
+      final bool isNoLongerAvailable = badge.contains('NO LONGER AVAILABLE') ||
+          badge.contains('UNAVAILABLE') ||
+          badge == 'EXPIRED' ||
+          badge == 'DECLINED' ||
+          title.contains('no longer available') ||
+          title.contains('unavailable') ||
+          body.contains('no longer available') ||
+          body.contains('unavailable') ||
+          item.rawData['reason'] == 'partner_already_selected' ||
+          item.rawData['cancellationReason'] == 'partner_already_selected' ||
+          item.rawData['status'] == 'NO_LONGER_AVAILABLE' ||
+          item.rawData['eventType'] == 'plan_unavailable' ||
+          item.isExpired;
+
       if (_selectedStatusPill == 'EXPIRED' ||
           _selectedCategoryFilter == 'EXPIRED') {
-        // Expired tab must ONLY show truly expired items, NEVER cancelled items
-        return item.isExpired && !isCancelled;
+        // Expired tab shows expired + no longer available items, NEVER cancelled items
+        return isNoLongerAvailable && !isCancelled;
       }
 
       if (_selectedStatusPill == 'CANCELLED' ||
@@ -14036,8 +14082,8 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         return isCancelled;
       }
 
-      // Expired items must NOT show in 'ALL' or other active tabs
-      if (item.isExpired && !isCancelled) {
+      // Expired & No Longer Available items must NOT show in 'ALL' or other active tabs
+      if (isNoLongerAvailable && !isCancelled) {
         return false;
       }
 
@@ -14179,11 +14225,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               _buildSafetyCheckBanner(),
             Expanded(
               child: _isLoading && filteredItems.isEmpty
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: LunaraTheme.electricViolet,
-                      ),
-                    )
+                  ? _buildLiveFeedSkeletonLoader()
                   : RefreshIndicator(
                       onRefresh: () async {
                         await _loadFeed(forceRefresh: true);
@@ -14275,6 +14317,162 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLiveFeedSkeletonLoader() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 4,
+      itemBuilder: (context, index) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFF1F5F9)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 5,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 75,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 85,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              width: 40,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFF1F5F9)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 180,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE2E8F0),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                width: 120,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -14437,98 +14635,108 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                                           color: item.accentColor,
                                         ),
                                       ),
-                                    const SizedBox(width: 8),
-
-                                    // Category Tag
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 2.5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: item.accentColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        _getCategoryDisplayName(item.category, item.rawData),
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: item.accentColor,
-                                          letterSpacing: 0.4,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-
-                                    // Badge Tag (Action cue)
-                                    if (item.badgeText != null)
-                                      Builder(
-                                        builder: (_) {
-                                          final isActionReq = item.badgeText == 'ACTION REQUIRED' ||
-                                              item.badgeText == 'NEW REQUEST' ||
-                                              item.badgeText == 'PAYMENT REQUIRED' ||
-                                              item.badgeText == 'DEPOSIT REQUIRED';
-                                          final isConfirmed = item.badgeText == 'CONFIRMED' ||
-                                              item.badgeText == 'TICKET READY';
-                                          final isExpired = item.badgeText == 'EXPIRED';
-
-                                          final badgeColor = isActionReq
-                                              ? const Color(0xFFEF4444)
-                                              : (isConfirmed
-                                                  ? const Color(0xFF10B981)
-                                                  : (isExpired
-                                                      ? Colors.grey[600]!
-                                                      : item.accentColor));
-
-                                          final bgColor = isActionReq
-                                              ? const Color(0xFFEF4444).withValues(alpha: 0.12)
-                                              : (isConfirmed
-                                                  ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                                                  : (isExpired
-                                                      ? Colors.grey[200]!
-                                                      : item.accentColor.withValues(alpha: 0.1)));
-
-                                          return Container(
+                                    // Category Tag + Badge wrapped in Expanded row to prevent any overflow
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          // Category Pill
+                                          Container(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
-                                              vertical: 2.5,
+                                              horizontal: 8,
+                                              vertical: 3,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: bgColor,
+                                              color: item.accentColor.withValues(
+                                                alpha: 0.1,
+                                              ),
                                               borderRadius: BorderRadius.circular(6),
-                                              border: isActionReq
-                                                  ? Border.all(
-                                                      color: const Color(0xFFEF4444).withValues(alpha: 0.35),
-                                                      width: 0.8,
-                                                    )
-                                                  : null,
                                             ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                if (isActionReq) ...[
-                                                  const Icon(Icons.bolt_rounded, size: 11, color: Color(0xFFEF4444)),
-                                                  const SizedBox(width: 2),
-                                                ] else if (isConfirmed) ...[
-                                                  const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF10B981)),
-                                                  const SizedBox(width: 2),
-                                                ],
-                                                Text(
-                                                  item.badgeText!,
-                                                  style: TextStyle(
-                                                    fontSize: 9.5,
-                                                    fontWeight: FontWeight.w900,
-                                                    color: badgeColor,
-                                                    letterSpacing: 0.4,
-                                                  ),
-                                                ),
-                                              ],
+                                            child: Text(
+                                              _getCategoryDisplayName(item.category),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: item.accentColor,
+                                                letterSpacing: 0.5,
+                                              ),
                                             ),
-                                          );
-                                        },
+                                          ),
+
+                                          if (item.badgeText != null && item.badgeText!.isNotEmpty) ...[
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Builder(
+                                                builder: (context) {
+                                                  final isActionReq = item.badgeText == 'ACTION REQUIRED';
+                                                  final isConfirmed = item.badgeText == 'CONFIRMED' ||
+                                                      item.badgeText == 'TICKET READY';
+                                                  final isExpired = item.badgeText == 'EXPIRED';
+
+                                                  final badgeColor = isActionReq
+                                                      ? const Color(0xFFEF4444)
+                                                      : (isConfirmed
+                                                          ? const Color(0xFF10B981)
+                                                          : (isExpired
+                                                              ? Colors.grey[600]!
+                                                              : item.accentColor));
+
+                                                  final bgColor = isActionReq
+                                                      ? const Color(0xFFEF4444).withValues(alpha: 0.12)
+                                                      : (isConfirmed
+                                                          ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                                          : (isExpired
+                                                              ? Colors.grey[200]!
+                                                              : item.accentColor.withValues(alpha: 0.1)));
+
+                                                  return Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 2.5,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: bgColor,
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: isActionReq
+                                                          ? Border.all(
+                                                              color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                                                              width: 0.8,
+                                                            )
+                                                          : null,
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        if (isActionReq) ...[
+                                                          const Icon(Icons.bolt_rounded, size: 11, color: Color(0xFFEF4444)),
+                                                          const SizedBox(width: 2),
+                                                        ] else if (isConfirmed) ...[
+                                                          const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF10B981)),
+                                                          const SizedBox(width: 2),
+                                                        ],
+                                                        Flexible(
+                                                          child: Text(
+                                                            item.badgeText!,
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 9.5,
+                                                              fontWeight: FontWeight.w900,
+                                                              color: badgeColor,
+                                                              letterSpacing: 0.4,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
-                                    const Spacer(),
+                                    ),
+                                    const SizedBox(width: 8),
 
                                     // Timestamp
                                     Text(

@@ -137,22 +137,30 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     }
 
+    // Extract cancellation request if already present
+    final rawCancelReq = widget.plan['cancellationRequest'] ?? widget.plan['activeCancellationRequest'];
+    if (rawCancelReq is Map) {
+      _cancellationRequest = Map<String, dynamic>.from(rawCancelReq);
+    }
+
     final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
     final effectiveReqData = syncReqData ?? embeddedReq;
     final syncRawStatus = (effectiveReqData?['status'] ?? (isPartnerByPlan ? 'payment_pending' : 'pending'))?.toString().toLowerCase();
     final syncJoinerPaid = _isJoinerPaid(widget.plan, effectiveReqData);
-    String? initialReqStatus = syncJoinerPaid ? 'confirmed' : (syncRawStatus == 'accepted' ? 'payment_pending' : syncRawStatus);
-    bool initialRequested = syncRequested || isPartnerByPlan || embeddedReq != null;
+    final bool hasInitialCancel = (_cancellationRequest != null && (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((widget.plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending');
+    String? initialReqStatus = (syncJoinerPaid || hasInitialCancel) ? 'confirmed' : (syncRawStatus == 'accepted' ? 'payment_pending' : syncRawStatus);
+    bool initialRequested = syncRequested || isPartnerByPlan || embeddedReq != null || hasInitialCancel;
     if (initialReqStatus == 'cancelled' || initialReqStatus == 'rejected' || initialReqStatus == 'declined' || initialReqStatus == 'payment_failed') {
-      if (!isPartnerByPlan) {
+      if (!isPartnerByPlan && !hasInitialCancel) {
         initialRequested = false;
         ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
       }
     }
 
-    _alreadyRequested = (widget.plan['hasRequested'] == true || initialRequested) &&
-        (isPartnerByPlan || (initialReqStatus != 'payment_failed' && initialReqStatus != 'cancelled'));
-    if (effectiveReqData != null || isPartnerByPlan) {
+    _alreadyRequested = (widget.plan['hasRequested'] == true || initialRequested || hasInitialCancel) &&
+        (isPartnerByPlan || hasInitialCancel || (initialReqStatus != 'payment_failed' && initialReqStatus != 'cancelled'));
+    if (effectiveReqData != null || isPartnerByPlan || hasInitialCancel) {
       _activeRequestId = effectiveReqData?['id']?.toString() ??
           effectiveReqData?['requestId']?.toString() ??
           widget.plan['requestId']?.toString() ??
@@ -185,11 +193,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         _alreadyRequested = true;
       }
     }
-    _checkRequestStatus();
-    _loadVenueDetailsIfNeeded();
-    _refreshPlanDetails();
-    _fetchCurrentUserAndCancellationState();
-    _fetchRequestsIfNeeded();
+    _initializeScreenData();
     _initListeners();
 
     if (widget.autoOpenPaymentSheet && !_isHostPlan(widget.plan) && !_isJoinerPaid(widget.plan)) {
@@ -481,6 +485,209 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  Future<void> _initializeScreenData() async {
+    final targetPlanId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
+    if (targetPlanId.isEmpty) {
+      if (mounted) setState(() => _isStatusLoading = false);
+      return;
+    }
+
+    try {
+      final results = await Future.wait([
+        ApiService.getCurrentUserId(),
+        ApiService.fetchPartyPlanDetail(targetPlanId),
+        ApiService.getPartyPlanCancellationRequest(targetPlanId),
+        ApiService.fetchMyPartyPlanRequests(),
+      ]);
+
+      if (!mounted) return;
+
+      final uid = results[0] as String?;
+      final freshPlan = results[1] as Map<String, dynamic>?;
+      final cancelRes = results[2] as Map<String, dynamic>?;
+      final myRequests = results[3] as List<dynamic>? ?? [];
+
+      if (freshPlan != null) {
+        widget.plan.addAll(freshPlan);
+        widget.plan['planId'] = targetPlanId;
+      }
+
+      final currentUid = uid ?? ApiService.currentUserId ?? '';
+      _currentUserId = currentUid;
+
+      if (cancelRes != null) {
+        if (cancelRes['isWindowClosed'] == true) {
+          _isWindowClosed = true;
+        }
+        final cancelReq = cancelRes['cancellationRequest'];
+        _cancellationRequest = cancelReq is Map<String, dynamic>
+            ? cancelReq
+            : (cancelReq is Map ? Map<String, dynamic>.from(cancelReq) : null);
+      } else {
+        final rawCancelReq = widget.plan['cancellationRequest'] ?? widget.plan['activeCancellationRequest'];
+        if (rawCancelReq is Map) {
+          _cancellationRequest = Map<String, dynamic>.from(rawCancelReq);
+        }
+      }
+
+      final rawDateTime = widget.plan['planDateTime'] ??
+          widget.plan['eventDateTime'] ??
+          widget.plan['planDate'] ??
+          widget.plan['partyDate'] ??
+          widget.plan['bookingDate'];
+      if (rawDateTime != null) {
+        try {
+          final eventTime = DateTime.parse(rawDateTime.toString()).toLocal();
+          final diff = eventTime.difference(DateTime.now());
+          if (diff.inMinutes < 180) {
+            _isWindowClosed = true;
+          }
+        } catch (_) {}
+      }
+
+      final bool isHost = _isHostPlan(widget.plan);
+      if (isHost) {
+        try {
+          final res = await ApiService.get('/api/mobile/party-plans/$targetPlanId/requests');
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            if (data is Map && data['success'] == true && data['data'] is List) {
+              _pendingRequests = (data['data'] as List)
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .where((r) => (r['status'] ?? '').toString().toLowerCase() == 'pending')
+                  .toList();
+            }
+          }
+        } catch (e) {
+          debugPrint('Error fetching incoming requests for host: $e');
+        }
+      } else {
+        final bool isPartnerByPlan = _isPartnerPlan(widget.plan);
+        final bool isPaidInitial = _isJoinerPaid(widget.plan);
+
+        bool requested = isPartnerByPlan || _alreadyRequested;
+        bool isInvited = _isInvitedUser;
+        String? reqStatus = (isPartnerByPlan && isPaidInitial) ? 'confirmed' : (_requestStatus ?? 'payment_pending');
+        String? reqId = _activeRequestId ??
+            widget.plan['requestId']?.toString() ??
+            widget.plan['activeRequestId']?.toString() ??
+            widget.plan['matchedRequestId']?.toString();
+        bool foundInFreshList = false;
+
+        if (widget.plan['requests'] is List) {
+          for (final r in widget.plan['requests']) {
+            if (r is Map) {
+              final requesterId = (r['requesterId'] ?? r['requester']?['id'] ?? r['userId'] ?? '').toString();
+              if (currentUid.isNotEmpty && requesterId == currentUid) {
+                foundInFreshList = true;
+                reqId = r['id']?.toString() ?? reqId;
+                final rawStatus = (r['status'] ?? 'pending').toString().toLowerCase();
+                final joinerPaid = _isJoinerPaid(widget.plan, Map<String, dynamic>.from(r));
+                reqStatus = joinerPaid ? 'confirmed' : (rawStatus == 'accepted' ? 'payment_pending' : rawStatus);
+                if (rawStatus != 'cancelled' && rawStatus != 'rejected' && rawStatus != 'declined') {
+                  requested = true;
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        for (final req in myRequests) {
+          if (req is! Map) continue;
+          final planId = req['partyPlanId']?.toString() ?? req['planId']?.toString() ?? req['plan']?['id']?.toString();
+          if (planId == targetPlanId) {
+            foundInFreshList = true;
+            reqId = req['id']?.toString() ?? reqId;
+            final rawStatus = (req['status'] ?? 'pending').toString().toLowerCase();
+            final joinerPaid = _isJoinerPaid(widget.plan, Map<String, dynamic>.from(req));
+            reqStatus = joinerPaid ? 'confirmed' : (rawStatus == 'accepted' ? 'payment_pending' : rawStatus);
+
+            bool isPaymentExpired = false;
+            final paymentTimeoutAtStr = req['paymentTimeoutAt'] ?? req['paymentDeadlineAt'];
+            if (paymentTimeoutAtStr != null) {
+              try {
+                final timeout = DateTime.parse(paymentTimeoutAtStr.toString()).toUtc();
+                if (timeout.isBefore(DateTime.now().toUtc())) {
+                  isPaymentExpired = true;
+                }
+              } catch (_) {}
+            }
+
+            if (rawStatus != 'cancelled' &&
+                rawStatus != 'rejected' &&
+                rawStatus != 'declined' &&
+                rawStatus != 'payment_failed' &&
+                !isPaymentExpired) {
+              requested = true;
+            } else if (!isPartnerByPlan) {
+              ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+              requested = false;
+              reqId = null;
+              reqStatus = isPaymentExpired ? 'payment_failed' : rawStatus;
+            }
+
+            final reqIsInvite = req['isInvite'] == true ||
+                req['requestType'] == 'private_invite' ||
+                req['isPrivateInvite'] == true ||
+                req['invitedBy'] != null ||
+                req['type'] == 'party_plan_invitation' ||
+                req['type'] == 'invitation';
+            if (reqIsInvite) {
+              isInvited = true;
+            }
+            break;
+          }
+        }
+
+        if (isPartnerByPlan) {
+          requested = true;
+          reqStatus = (isPaidInitial || _isJoinerPaid(widget.plan)) ? 'confirmed' : 'payment_pending';
+        } else if (!foundInFreshList && _activeRequestId != null && _alreadyRequested) {
+          requested = true;
+          reqStatus = _requestStatus;
+          reqId = _activeRequestId;
+        }
+
+        final hostId = (widget.plan['userId'] ?? widget.plan['hostId'] ?? widget.plan['user']?['id'] ?? '').toString();
+        final selectedUsers = widget.plan['selectedUsers'] ?? widget.plan['selectedUserIds'];
+        final bool inSelectedUsers = selectedUsers is List && selectedUsers.any((u) => u?.toString() == currentUid);
+        if (currentUid.isNotEmpty && currentUid != hostId && (inSelectedUsers || widget.plan['isInvite'] == true || widget.plan['requestType'] == 'private_invite')) {
+          isInvited = true;
+        }
+
+        if (isInvited && reqId == null) {
+          reqId = targetPlanId;
+        }
+
+        _alreadyRequested = requested;
+        _isInvitedUser = isInvited;
+        _activeRequestId = reqId ?? _activeRequestId;
+        _requestStatus = reqStatus ?? (_isInvitedUser ? 'pending' : null);
+      }
+
+      final freshImg = _getVenueImageUrl();
+      if (freshImg != null && freshImg.isNotEmpty) {
+        _fetchedVenueImageUrl = freshImg;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isStatusLoading = false;
+        });
+      }
+      _loadVenueDetailsIfNeeded();
+    } catch (e) {
+      debugPrint('Error in _initializeScreenData: $e');
+      if (mounted) {
+        setState(() {
+          _isStatusLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> _refreshPlanDetails() async {
     final planId = widget.plan['planId']?.toString() ?? widget.plan['id']?.toString() ?? '';
     if (planId.isEmpty) return;
@@ -546,46 +753,91 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  bool _isPlanFullyConfirmed() {
+    final plan = widget.plan;
+    final bool isHost = _isHostPlan(plan);
+    final String pLife = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
+    final String pStatus = (plan['status'] ?? '').toString().toLowerCase();
+    final bool joinerPaid = _isJoinerPaid(plan);
+    final bool isPartner = _isPartnerPlan(plan);
+    final bool hasPendingCancel = (_cancellationRequest != null &&
+            (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending') ||
+        (plan['cancellationRequest'] != null &&
+            ((plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' ||
+                (plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
+
+    if (hasPendingCancel) return true;
+    if (plan['hasConfirmedBooking'] == true || plan['isConfirmed'] == true || plan['matchConfirmed'] == true) return true;
+    if (pLife == 'match_confirmed' ||
+        pLife == 'chat_enabled' ||
+        pLife == 'arrival_confirmation' ||
+        pLife == 'both_arrived' ||
+        pLife == 'event_reminder' ||
+        pLife == 'plan_completed') {
+      return true;
+    }
+    if (pStatus == 'matched' || pStatus == 'confirmed') return true;
+
+    final String hostPay = (plan['hostPaymentStatus'] ?? plan['host_payment_status'] ?? '').toString().toLowerCase();
+    final bool isHostPaid = hostPay == 'paid' || hostPay == 'completed' || (plan['paymentStatus'] ?? '').toString().toLowerCase() == 'confirmed';
+    final bool isHostPaysOnly = (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'host_pays' ||
+        (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'i_pay' ||
+        (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'free';
+
+    if (isHost) {
+      if (isHostPaid && (joinerPaid || isHostPaysOnly) && (plan['matchedPartner'] != null || plan['partner'] != null || plan['acceptedJoinerRequest'] != null || plan['partnerId'] != null || plan['matchedUserId'] != null || plan['matchedRequestId'] != null)) {
+        return true;
+      }
+    } else {
+      if ((isPartner && joinerPaid) || _requestStatus == 'confirmed' || _requestStatus == 'paid') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   void _showCancellationStep1Dialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A24),
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
             SizedBox(width: 10),
-            Text('CANCEL THIS PLAN?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
+            Text('CANCEL THIS PLAN?', style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 17)),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'This action will notify the other participant. Both participants must confirm the cancellation before the Party Plan is cancelled.',
-              style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+              style: TextStyle(color: Color(0xFF334155), fontSize: 13, height: 1.4),
             ),
             SizedBox(height: 12),
             Text(
               'Frequent cancellations may affect your Commitment Deposit / Reliability Score.',
-              style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.w600, height: 1.3),
+              style: TextStyle(color: Color(0xFFD97706), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3),
             ),
             SizedBox(height: 14),
-            Text('If approved:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-            SizedBox(height: 6),
-            Text('• Commitment Deposit (₹99) will be returned to both users\' Lunara Wallets.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            const Text('If approved:', style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 6),
+            Text('• Commitment Deposit (${_getEffectiveRefundText()}) will be returned to both users\' Lunara Wallets.', style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
             SizedBox(height: 4),
-            Text('• Chat will become read-only (archived after 24h).', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('• Chat will become read-only (archived after 24h).', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
             SizedBox(height: 4),
-            Text('• Reliability Score may decrease for initiator (-5 pts).', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('• Reliability Score may decrease for initiator (-5 pts).', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+            child: const Text('KEEP PLAN', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -620,7 +872,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141F),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
         return StatefulBuilder(
@@ -638,12 +890,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Center(
-                      child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                      child: Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFCBD5E1), borderRadius: BorderRadius.circular(2))),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Why are you cancelling?', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('Why are you cancelling?', style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 6),
-                    const Text('Select a reason for internal record. This is never displayed publicly.', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const Text('Select a reason for internal record. This is never displayed publicly.', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
                     const SizedBox(height: 16),
                     ...reasonOptions.entries.map((entry) {
                       final isSelected = selectedReason == entry.key;
@@ -653,19 +905,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.redAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+                            color: isSelected ? Colors.redAccent.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: isSelected ? Colors.redAccent : Colors.white10),
+                            border: Border.all(color: isSelected ? Colors.redAccent : const Color(0xFFE2E8F0)),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                                color: isSelected ? Colors.redAccent : Colors.white38,
+                                color: isSelected ? Colors.redAccent : const Color(0xFF94A3B8),
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
-                              Expanded(child: Text(entry.value, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal))),
+                              Expanded(child: Text(entry.value, style: TextStyle(color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569), fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal))),
                             ],
                           ),
                         ),
@@ -676,12 +928,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       TextField(
                         controller: otherController,
                         maxLength: 150,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
                         decoration: InputDecoration(
                           hintText: 'Enter reason (max 150 characters)',
-                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                          hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
                           filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.06),
+                          fillColor: const Color(0xFFF1F5F9),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         ),
                       ),
@@ -697,13 +949,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                                 Navigator.pop(ctx);
                                 final otherText = selectedReason == 'other' ? otherController.text.trim() : null;
                                 final bool isHost = _isHostPlan(widget.plan);
-                                final String planLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
-                                final bool isPlanConfirmed = isHost
-                                    ? (widget.plan['hasConfirmedBooking'] == true ||
-                                        planLife == 'match_confirmed' ||
-                                        planLife == 'chat_enabled' ||
-                                        planLife == 'plan_completed')
-                                    : (_requestStatus == 'confirmed' || _requestStatus == 'paid');
+                                final bool isPlanConfirmed = _isPlanFullyConfirmed();
                                 if (isHost && !isPlanConfirmed) {
                                   _showHostCancellationChoiceDialog(selectedReason, otherText);
                                 } else {
@@ -738,88 +984,89 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF14141F),
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Row(
           children: [
-            Icon(Icons.help_outline_rounded, color: LunaraTheme.electricViolet, size: 24),
+            Icon(Icons.help_outline_rounded, color: LunaraTheme.electricViolet, size: 26),
             SizedBox(width: 10),
-            Text('CANCEL OR REPOST?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
+            Expanded(
+              child: Text(
+                'Cancel Party Plan',
+                style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 17),
+              ),
+            ),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Select an action for your Party Plan at ',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
             Text(
-              venueName,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              'Select an action for your Party Plan at $venueName:',
+              style: const TextStyle(color: Color(0xFF334155), fontSize: 13, height: 1.4),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.1),
+                color: const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                border: Border.all(color: const Color(0xFFFECACA)),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 18),
+                      Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 18),
                       SizedBox(width: 8),
-                      Text('Option A: Cancel & Refund', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('Option A: Cancel & Refund', style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 13)),
                     ],
                   ),
                   SizedBox(height: 4),
                   Text(
-                    '• Party Plan permanently ends.\n• ₹99 Commitment Deposit refunded to your Lunara Wallet.\n• All pending requests are cancelled.',
-                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                    '• Party Plan permanently ends.\n• ${_getEffectiveRefundText()} Commitment Deposit refunded to your Lunara Wallet.\n• All pending requests are cancelled.',
+                    style: const TextStyle(color: Color(0xFF4B5563), fontSize: 11.5, height: 1.3),
                   ),
                 ],
               ),
             ),
             if (isPrivateOrBoth) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.tealAccent.withValues(alpha: 0.1),
+                  color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.3)),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
                 ),
-                child: const Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        Icon(Icons.public_rounded, color: Colors.tealAccent, size: 18),
+                        Icon(Icons.public_rounded, color: Color(0xFF059669), size: 18),
                         SizedBox(width: 8),
-                        Text('Option B: Repost Publicly', style: TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('Option B: Repost Publicly', style: TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold, fontSize: 13)),
                       ],
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
-                      '• Makes your plan public in the Live Feed.\n• Anyone nearby can discover and join.\n• Your ₹99 deposit remains active.',
-                      style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                      '• Makes your plan public in the Live Feed.\n• Anyone nearby can discover and join.\n• Your ${_getEffectiveRefundText()} deposit remains active.',
+                      style: const TextStyle(color: Color(0xFF4B5563), fontSize: 11.5, height: 1.3),
                     ),
                   ],
                 ),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: LunaraTheme.electricViolet.withValues(alpha: 0.1),
+                color: const Color(0xFFF5F3FF),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.3)),
+                border: Border.all(color: const Color(0xFFDDD6FE)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -834,7 +1081,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   const SizedBox(height: 4),
                   const Text(
                     '• Reschedule for a new date & time.\n• Remains active & live in feed (no refund).\n• Prior requests cleared for new schedule.',
-                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                    style: TextStyle(color: Color(0xFF4B5563), fontSize: 11.5, height: 1.3),
                   ),
                 ],
               ),
@@ -844,7 +1091,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold)),
+            child: const Text('KEEP PLAN', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -864,7 +1111,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 _handleHostMakePublic(planId);
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
+                backgroundColor: const Color(0xFF059669),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('REPOST PUBLICLY', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
@@ -934,7 +1181,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (res?['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(res?['message'] ?? 'Party Plan cancelled. ₹99 has been refunded to your Lunara Wallet.'),
+          content: Text(res?['message'] ?? 'Party Plan cancelled. ${_getEffectiveRefundText()} has been refunded to your Lunara Wallet.'),
           backgroundColor: Colors.green,
         ),
       );
@@ -1091,7 +1338,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(res['message'] ?? (action == 'approve' ? 'Party Plan cancelled. ₹99 Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.')),
+          content: Text(res['message'] ?? (action == 'approve' ? 'Party Plan cancelled. ${_getEffectiveRefundText()} Commitment Deposit credited to your Lunara Wallet!' : 'Cancellation request declined.')),
           backgroundColor: action == 'approve' ? Colors.green : Colors.grey.shade800,
         ),
       );
@@ -1103,33 +1350,36 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
-  Widget _buildCancellationSection() {
-    final status = widget.plan['status']?.toString();
-    final isCancelled = status == 'cancelled';
+  bool _isCancelledPlan(Map<String, dynamic> plan) {
+    final status = (plan['status'] ?? '').toString().toLowerCase();
+    final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
+    return status == 'cancelled' || lifecycleStatus == 'cancelled' || plan['isCancelled'] == true;
+  }
 
-    // Before host acceptance, this user owns a request rather than a booking.
-    // Its only cancellation action is the request-level action in the bottom CTA.
-    if (_alreadyRequested && _requestStatus == 'pending' && !_isInvitedUser) {
+  Widget _buildCancellationSection() {
+    if (_isStatusLoading) {
       return const SizedBox.shrink();
     }
+    final bool isCancelled = _isCancelledPlan(widget.plan);
+    final bool isConfirmed = _isPlanFullyConfirmed();
 
     if (_isExpired) {
       return Container(
         margin: const EdgeInsets.only(top: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.grey.withValues(alpha: 0.1),
+          color: const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+          border: Border.all(color: const Color(0xFFCBD5E1)),
         ),
         child: const Row(
           children: [
-            Icon(Icons.timer_off_rounded, color: Colors.grey, size: 20),
+            Icon(Icons.timer_off_rounded, color: Color(0xFF64748B), size: 20),
             SizedBox(width: 12),
             Expanded(
               child: Text(
                 'This Party Plan has expired. No further actions or join requests can be made.',
-                style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1142,18 +1392,56 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         margin: const EdgeInsets.only(top: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.1),
+          color: const Color(0xFFFEF2F2),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+          border: Border.all(color: const Color(0xFFFECACA)),
         ),
         child: const Row(
           children: [
-            Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 22),
+            Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 22),
             SizedBox(width: 12),
             Expanded(
               child: Text(
                 'This Party Plan has been cancelled. Commitment deposits have been credited to Lunara Wallets.',
-                style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Color(0xFFDC2626), fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool hasPendingCancellation = (_cancellationRequest != null && (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((widget.plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending') ||
+        (widget.plan['cancellationRequest'] != null && ((widget.plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' || (widget.plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
+
+    final planStatus = (widget.plan['status'] ?? '').toString().toLowerCase();
+    final isInactive = planStatus == 'inactive' ||
+        widget.plan['isLive'] == false ||
+        widget.plan['isActive'] == false ||
+        widget.plan['isAvailable'] == false ||
+        widget.plan['status'] == 'inactive' ||
+        widget.plan['lifecycleStatus'] == 'completed' ||
+        widget.plan['status'] == 'completed';
+
+    // If the plan is matched/confirmed, it is NOT "no longer available" for the participants!
+    if (isInactive && !isCancelled && !_isExpired && !hasPendingCancellation && !isConfirmed) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFECACA)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: Color(0xFFDC2626), size: 22),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'This Party Plan is no longer available.',
+                style: TextStyle(color: Color(0xFFDC2626), fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1166,27 +1454,27 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         margin: const EdgeInsets.only(top: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.amber.withValues(alpha: 0.1),
+          color: const Color(0xFFFFFBEB),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+          border: Border.all(color: const Color(0xFFFDE68A)),
         ),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.lock_rounded, color: Colors.amber, size: 18),
+                Icon(Icons.lock_rounded, color: Color(0xFFD97706), size: 18),
                 SizedBox(width: 8),
                 Text(
                   'BOOKING LOCKED',
-                  style: TextStyle(color: Colors.amber, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1),
+                  style: TextStyle(color: Color(0xFFD97706), fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1),
                 ),
               ],
             ),
             SizedBox(height: 6),
             Text(
               'This Party Plan can no longer be cancelled because the cancellation window has closed (less than 3 hours before event start time).',
-              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+              style: TextStyle(color: Color(0xFF4B5563), fontSize: 12, height: 1.4),
             ),
           ],
         ),
@@ -1220,21 +1508,21 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           margin: const EdgeInsets.only(top: 16),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1F1D2B),
+            color: const Color(0xFFFFFBEB),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.4), width: 1.2),
+            border: Border.all(color: const Color(0xFFFDE68A), width: 1.2),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Row(
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 20),
+                  Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Cancellation Request Received',
-                      style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                      style: TextStyle(color: Color(0xFFD97706), fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                   ),
                 ],
@@ -1242,18 +1530,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               const SizedBox(height: 8),
               Text(
                 '$requesterName wants to cancel this Party Plan.',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                style: const TextStyle(color: Color(0xFF1F2937), fontWeight: FontWeight.bold, fontSize: 13),
               ),
               const SizedBox(height: 4),
               Text(
                 'Reason: "$reasonText"',
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontStyle: FontStyle.italic),
+                style: const TextStyle(color: Color(0xFF4B5563), fontSize: 12, fontStyle: FontStyle.italic),
               ),
               const SizedBox(height: 12),
-              const Text('If you approve:', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+              const Text('If you approve:', style: TextStyle(color: Color(0xFF1F2937), fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(height: 4),
-              const Text('• Both Commitment Deposits (₹99) will be credited to each user\'s Lunara Wallet.', style: TextStyle(color: Colors.white54, fontSize: 11)),
-              const Text('• Chat becomes read-only.', style: TextStyle(color: Colors.white54, fontSize: 11)),
+              Text('• Both Commitment Deposits (${_getEffectiveRefundText()}) will be credited to each user\'s Lunara Wallet.', style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+              const Text('• Chat becomes read-only.', style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -1261,10 +1549,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     child: OutlinedButton(
                       onPressed: _isLoadingCancellation ? null : () => _respondToCancellation(reqId, 'reject'),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white30),
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text('KEEP PLAN', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text('KEEP PLAN', style: TextStyle(color: Color(0xFF4B5563), fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1288,18 +1576,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           margin: const EdgeInsets.only(top: 16),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.orange.withValues(alpha: 0.1),
+            color: const Color(0xFFFFFBEB),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+            border: Border.all(color: const Color(0xFFFDE68A)),
           ),
           child: const Row(
             children: [
-              Icon(Icons.hourglass_top_rounded, color: Colors.orangeAccent, size: 20),
+              Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 20),
               SizedBox(width: 12),
               Expanded(
                 child: Text(
                   'Cancellation Request Pending — Waiting for the other participant to approve.',
-                  style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: Color(0xFFD97706), fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -1310,18 +1598,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
     final bool isHost = _isHostPlan(widget.plan);
-    final bool isPartner = _isPartnerPlan(widget.plan);
-    final bool joinerPaid = _isJoinerPaid(widget.plan);
-    final String pLife = widget.plan['lifecycleStatus']?.toString().toLowerCase() ?? '';
-    final bool isConfirmed = isHost
-        ? (widget.plan['hasConfirmedBooking'] == true ||
-            pLife == 'match_confirmed' ||
-            pLife == 'chat_enabled' ||
-            pLife == 'arrival_confirmation' ||
-            pLife == 'event_reminder' ||
-            pLife == 'plan_completed')
-        : ((isPartner && joinerPaid) || _requestStatus == 'confirmed' || _requestStatus == 'paid');
-
     if (!isHost && !isConfirmed) return const SizedBox.shrink();
 
     return Container(
@@ -1330,15 +1606,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       height: 46,
       child: OutlinedButton.icon(
         onPressed: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
-        icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 18),
+        icon: const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 18),
         label: const Text(
           'Cancel Party Plan',
-          style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.5),
+          style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.5),
         ),
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5), width: 1.2),
+          side: const BorderSide(color: Color(0xFFFECACA), width: 1.2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          backgroundColor: Colors.redAccent.withValues(alpha: 0.05),
+          backgroundColor: const Color(0xFFFEF2F2),
         ),
       ),
     );
@@ -1424,6 +1700,28 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
   }
 
+  double _getEffectivePaidAmount() {
+    final dynamic rawAmt = widget.plan['refundAmount'] ??
+        widget.plan['amountPaid'] ??
+        widget.plan['paidAmount'] ??
+        widget.plan['totalAmount'] ??
+        widget.plan['depositAmount'] ??
+        widget.plan['paymentAmount'] ??
+        widget.plan['amount'] ??
+        widget.plan['entryPrice'] ??
+        widget.plan['chargesPerHead'];
+    if (rawAmt != null) {
+      final parsed = double.tryParse(rawAmt.toString());
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 99.0;
+  }
+
+  String _getEffectiveRefundText() {
+    final amt = _getEffectivePaidAmount();
+    return '₹${amt.toInt() == amt ? amt.toInt() : amt.toStringAsFixed(0)}';
+  }
+
   String? _getVenueImageUrl() {
     if (_fetchedVenueImageUrl != null && _fetchedVenueImageUrl!.isNotEmpty) {
       return _fetchedVenueImageUrl;
@@ -1431,22 +1729,56 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = _extractVenue(widget.plan);
     final plan = widget.plan;
 
-    dynamic rawCandidate = venue['coverImage'] ??
-        venue['coverImageUrl'] ??
-        venue['cover_image_url'] ??
-        venue['imageUrl'] ??
-        venue['image'] ??
-        venue['images'] ??
-        venue['gallery'] ??
-        plan['venueImageUrl'] ??
-        plan['venue_image_url'] ??
-        plan['venueImage'] ??
-        plan['imageUrl'] ??
-        plan['image'];
+    // Prioritize actual event banner/flyer/poster image over venue interior photos
+    final List<dynamic> possibleBannerKeys = [
+      plan['bannerUrl'],
+      plan['bannerImage'],
+      plan['banner'],
+      plan['posterUrl'],
+      plan['poster'],
+      plan['flyer'],
+      plan['eventBanner'],
+      plan['coverImageUrl'],
+      plan['imageUrl'],
+      plan['image'],
+      if (plan['upcomingNight'] is Map) ...[
+        plan['upcomingNight']['bannerUrl'],
+        plan['upcomingNight']['bannerImage'],
+        plan['upcomingNight']['posterUrl'],
+        plan['upcomingNight']['flyer'],
+        plan['upcomingNight']['imageUrl'],
+      ],
+      if (plan['event'] is Map) ...[
+        plan['event']['bannerUrl'],
+        plan['event']['bannerImage'],
+        plan['event']['posterUrl'],
+        plan['event']['flyer'],
+        plan['event']['imageUrl'],
+      ],
+      if (plan['party'] is Map) ...[
+        plan['party']['bannerUrl'],
+        plan['party']['bannerImage'],
+        plan['party']['posterUrl'],
+        plan['party']['flyer'],
+        plan['party']['imageUrl'],
+      ],
+      venue['coverImage'],
+      venue['coverImageUrl'],
+      venue['cover_image_url'],
+      venue['imageUrl'],
+      venue['image'],
+      venue['images'],
+      venue['gallery'],
+      plan['venueImageUrl'],
+      plan['venue_image_url'],
+      plan['venueImage'],
+    ];
 
-    final formatted = _extractImageUrlFromAny(rawCandidate);
-    if (formatted != null && formatted.isNotEmpty) {
-      return formatted;
+    for (final candidate in possibleBannerKeys) {
+      final formatted = _extractImageUrlFromAny(candidate);
+      if (formatted != null && formatted.isNotEmpty) {
+        return formatted;
+      }
     }
     return null;
   }
@@ -1976,14 +2308,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = _extractVenue(widget.plan);
     final venueName = venue['name']?.toString() ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : 'Venue');
 
+    final double depositAmt = _getEffectivePaidAmount();
     final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Party Plan Safety Deposit',
       subtitle: 'Safety commitment deposit for Party Plan at $venueName',
-      itemPrice: 99.0,
+      itemPrice: depositAmt,
       onWalletPayment: () async {
         final res = await ApiService.payWithWallet(
-          amount: 99.0,
+          amount: depositAmt,
           planId: widget.plan['id']?.toString() ?? widget.plan['planId']?.toString(),
           paymentType: 'commitment_deposit',
         );
@@ -2070,14 +2403,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final venue = _extractVenue(widget.plan);
     final venueName = venue['name']?.toString() ?? (widget.plan['venue'] is String ? widget.plan['venue'] as String : 'Venue');
 
+    final double hostDepositAmt = _getEffectivePaidAmount();
     final bool? sheetSuccess = await SmartCheckoutSheet.show(
       context: context,
       title: 'Host Safety Deposit',
       subtitle: 'Publish & activate your Party Plan at $venueName',
-      itemPrice: 99.0,
+      itemPrice: hostDepositAmt,
       onWalletPayment: () async {
         final res = await ApiService.payWithWallet(
-          amount: 99.0,
+          amount: hostDepositAmt,
           planId: cleanPlanId,
           paymentType: 'host_deposit',
         );
@@ -2103,10 +2437,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         return false;
       },
       onDirectPayment: () async {
-        await _launchHostRazorpay(cleanPlanId, venueName, 99.0);
+        await _launchHostRazorpay(cleanPlanId, venueName, hostDepositAmt);
       },
       onHybridPayment: (shortfall) async {
-        await _launchHostRazorpay(cleanPlanId, venueName, shortfall > 0 ? shortfall : 99.0);
+        await _launchHostRazorpay(cleanPlanId, venueName, shortfall > 0 ? shortfall : hostDepositAmt);
       },
     );
 
@@ -2383,7 +2717,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
-            color: Color(0xFF1F003A),
+            color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
@@ -2393,7 +2727,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: const Color(0xFFCBD5E1),
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
@@ -2408,7 +2742,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               Text(
                 hostAge != null ? '$hostName, $hostAge' : hostName,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF0F172A),
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
@@ -2417,7 +2751,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 const SizedBox(height: 4),
                 Text(
                   hostOccupation,
-                  style: const TextStyle(color: Colors.white60, fontSize: 13),
+                  style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                 ),
               ],
               if (hostBio.isNotEmpty) ...[
@@ -2426,7 +2760,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   hostBio,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: Colors.white54,
+                    color: Color(0xFF334155),
                     fontSize: 13,
                     height: 1.5,
                   ),
@@ -2527,25 +2861,33 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   bool _isJoinerPaid(Map<String, dynamic> plan, [Map<String, dynamic>? request]) {
+    // If cancellation request is pending or approved, both parties are confirmed/paid
+    final bool hasPendingCancellation = (_cancellationRequest != null && (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending') ||
+        (plan['cancellationRequest'] != null && ((plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' || (plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
+    if (hasPendingCancellation) return true;
+
     // If self_pay and host is paid, joiner doesn't need to pay deposit
     final paymentType = (plan['paymentType'] ?? '').toString().toLowerCase();
     final hostPaid = (plan['hostPaymentStatus'] ?? '').toString().toLowerCase() == 'paid' ||
         (plan['paymentStatus'] ?? '').toString().toLowerCase() == 'confirmed';
     if (paymentType == 'self_pay' && hostPaid) return true;
 
-    // Check request joinerPaymentStatus
-    final reqJoinerPay = (request?['joinerPaymentStatus'] ?? '').toString().toLowerCase();
-    if (reqJoinerPay == 'paid') return true;
+    // Check request joinerPaymentStatus / isPaid
+    if (request?['isPaid'] == true || request?['paid'] == true || request?['hasPaid'] == true) return true;
+    final reqJoinerPay = (request?['joinerPaymentStatus'] ?? request?['paymentStatus'] ?? '').toString().toLowerCase();
+    if (reqJoinerPay == 'paid' || reqJoinerPay == 'completed') return true;
     if (reqJoinerPay == 'unpaid' || reqJoinerPay == 'pending') return false;
 
     // Check plan-level joiner payment status
-    final planJoinerPay = (plan['joinerPaymentStatus'] ?? plan['guestPaymentStatus'] ?? '').toString().toLowerCase();
-    if (planJoinerPay == 'paid') return true;
+    if (plan['isPaid'] == true || plan['paid'] == true || plan['hasPaid'] == true) return true;
+    final planJoinerPay = (plan['joinerPaymentStatus'] ?? plan['guestPaymentStatus'] ?? plan['userPaymentStatus'] ?? '').toString().toLowerCase();
+    if (planJoinerPay == 'paid' || planJoinerPay == 'completed') return true;
     if (planJoinerPay == 'unpaid' || planJoinerPay == 'pending') return false;
 
     final reqStatus = (request?['status'] ?? _requestStatus ?? plan['requestStatus'] ?? '').toString().toLowerCase();
     if (reqStatus == 'payment_pending' || reqStatus == 'accepted' || reqStatus == 'pending') return false;
-    if (reqStatus == 'confirmed' || reqStatus == 'paid') return true;
+    if (reqStatus == 'confirmed' || reqStatus == 'paid' || reqStatus == 'approved') return true;
 
     final life = (plan['lifecycleStatus'] ?? '').toString().toLowerCase();
     if (life == 'payment_pending' || life == 'host_payment_completed' || life == 'user_accepted') return false;
@@ -2612,21 +2954,49 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     final venueImageUrl = _getVenueImageUrl();
 
+    final hasBasicData = plan['title'] != null ||
+        plan['venue'] != null ||
+        plan['venueName'] != null ||
+        plan['user'] != null ||
+        plan['userId'] != null ||
+        plan['hostId'] != null ||
+        plan['hostName'] != null ||
+        plan['description'] != null;
+
+    if (_isStatusLoading && !hasBasicData) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final bool isConfirmed = _isPlanFullyConfirmed();
+    final bool isCancelled = _isCancelledPlan(plan);
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0014),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: CustomScrollView(
         slivers: [
           // ── App Bar ──────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 300,
             pinned: true,
-            backgroundColor: const Color(0xFF1F003A),
+            backgroundColor: Colors.white,
             leading: Padding(
               padding: const EdgeInsets.all(8),
               child: CircleAvatar(
-                backgroundColor: Colors.black45,
+                backgroundColor: Colors.white.withValues(alpha: 0.9),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                  icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1E293B)),
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
@@ -2635,9 +3005,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: CircleAvatar(
-                  backgroundColor: Colors.black45,
+                  backgroundColor: Colors.white.withValues(alpha: 0.9),
                   child: IconButton(
-                    icon: const Icon(Icons.person_rounded, color: Colors.white),
+                    icon: const Icon(Icons.person_rounded, color: Color(0xFF1E293B)),
                     onPressed: () => _showHostDetails(context, host),
                   ),
                 ),
@@ -2675,8 +3045,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.4),
-                          Colors.black.withValues(alpha: 0.88),
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.black.withValues(alpha: 0.85),
                         ],
                       ),
                     ),
@@ -2725,7 +3095,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                                 Text(
                                   hostOccupation,
                                   style: const TextStyle(
-                                    color: Colors.white60,
+                                    color: Colors.white70,
                                     fontSize: 12,
                                   ),
                                 ),
@@ -2769,17 +3139,35 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   Row(
                     children: [
                       _chip(
-                        icon: _isExpired ? Icons.timer_off_rounded : Icons.circle,
-                        label: _isExpired ? 'EXPIRED' : status,
-                        color: _isExpired ? Colors.grey : (status == 'ACTIVE' ? Colors.green : Colors.grey),
+                        icon: _isStatusLoading
+                            ? Icons.hourglass_top_rounded
+                            : (_isExpired
+                                ? Icons.timer_off_rounded
+                                : (isConfirmed
+                                    ? Icons.verified_rounded
+                                    : (isCancelled ? Icons.cancel_rounded : Icons.circle))),
+                        label: _isStatusLoading
+                            ? 'CHECKING...'
+                            : (_isExpired
+                                ? 'EXPIRED'
+                                : (isConfirmed
+                                    ? 'CONFIRMED'
+                                    : (isCancelled ? 'CANCELLED' : status))),
+                        color: _isStatusLoading
+                            ? const Color(0xFF94A3B8)
+                            : (_isExpired
+                                ? const Color(0xFF94A3B8)
+                                : (isConfirmed
+                                    ? const Color(0xFF10B981)
+                                    : (isCancelled ? const Color(0xFFDC2626) : (status == 'ACTIVE' ? const Color(0xFF10B981) : const Color(0xFF94A3B8))))),
                       ),
                       const SizedBox(width: 8),
                       _chip(
-                        icon: Icons.lock_open_rounded,
+                        icon: visibility == 'PUBLIC' ? Icons.public_rounded : Icons.lock_rounded,
                         label: visibility,
                         color: visibility == 'PUBLIC'
                             ? LunaraTheme.accentVivid
-                            : Colors.orange,
+                            : const Color(0xFFD97706),
                       ),
                     ],
                   ),
@@ -2791,19 +3179,20 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     const Text(
                       'ABOUT THIS PLAN',
                       style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 10,
+                        color: Color(0xFF64748B),
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
+                        letterSpacing: 1.5,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       description,
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        height: 1.6,
+                        color: Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        height: 1.5,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -2814,19 +3203,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     const Text(
                       'HOST BIO',
                       style: TextStyle(
-                        color: Colors.white38,
-                        fontSize: 10,
+                        color: Color(0xFF64748B),
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
+                        letterSpacing: 1.5,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       hostBio,
                       style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        height: 1.5,
+                        color: Color(0xFF334155),
+                        fontSize: 13.5,
+                        height: 1.4,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -2851,7 +3240,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     title: 'FOOD & DRINK PREFERENCES',
                     value: 'Food: ${plan['foodPreference'] ?? 'Both'}',
                     subtitle: 'Drink: ${plan['drinkPreference'] ?? 'Both'}',
-                    iconColor: Colors.amber,
+                    iconColor: const Color(0xFFD97706),
                   ),
                   const SizedBox(height: 12),
 
@@ -2865,7 +3254,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     subtitle: hideVenueDetails
                         ? 'Locality: ${venue['area'] ?? venue['city'] ?? 'Local Area'}'
                         : venueAddress,
-                    iconColor: hideVenueDetails ? Colors.amber : LunaraTheme.electricViolet,
+                    iconColor: hideVenueDetails ? const Color(0xFFD97706) : LunaraTheme.electricViolet,
                   ),
 
                   // Mutual Cancellation Section
@@ -2881,11 +3270,44 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       ),
 
       // ── Bottom CTA ───────────────────────────────────────────────────────
-      bottomNavigationBar: _buildBottomCTA(isMyPost),
+      bottomNavigationBar: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: _buildBottomCTA(isMyPost) ?? const SizedBox.shrink(key: ValueKey('empty_cta')),
+      ),
     );
   }
 
   Widget? _buildBottomCTA(bool isMyPost) {
+    if (_isStatusLoading) {
+      return SafeArea(
+        key: const ValueKey('cta_status_loading'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Container(
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final plan = widget.plan;
     final planStatus = (plan['status'] ?? '').toString().toLowerCase();
     final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
@@ -2893,6 +3315,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
 
     if (isPlanCancelled) {
       return SafeArea(
+        key: const ValueKey('cta_plan_cancelled'),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           child: Container(
@@ -2934,7 +3357,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final String partnerId = (plan['partnerId'] ?? plan['partner_id'] ?? '').toString();
     final bool isPartnerByPlan = _isPartnerPlan(plan);
     final bool joinerPaid = _isJoinerPaid(plan);
-    final bool isMyRequestConfirmed = joinerPaid && (isPartnerByPlan || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid')));
+    final bool hasPendingCancellation = (_cancellationRequest != null && (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending') ||
+        (plan['cancellationRequest'] != null && ((plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' || (plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
+    final bool isMyRequestConfirmed = hasPendingCancellation || (joinerPaid && (isPartnerByPlan || (_alreadyRequested && (_requestStatus == 'confirmed' || _requestStatus == 'paid'))));
 
     // Only show "partner already selected" to viewers who had an active request
     // that was displaced. A fresh user with no request should see "Request to Join".
@@ -2957,24 +3383,37 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     if (isMatchedWithAnother) {
       return _partnerAlreadySelectedBanner();
     }
-    if (_isStatusLoading && !isMyRequestConfirmed) {
+
+    final bool isPlanInactive = planStatus == 'inactive' ||
+        plan['isLive'] == false ||
+        plan['isActive'] == false ||
+        plan['isAvailable'] == false ||
+        plan['status'] == 'inactive' ||
+        plan['lifecycleStatus'] == 'completed' ||
+        plan['status'] == 'completed';
+
+    final bool isConfirmed = _isPlanFullyConfirmed();
+
+    if (isPlanInactive && !isMyRequestConfirmed && !hasPendingCancellation && !isConfirmed) {
       return SafeArea(
+        key: const ValueKey('cta_plan_inactive'),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           child: Container(
             height: 58,
             decoration: BoxDecoration(
-              color: Colors.grey.withValues(alpha: 0.12),
+              color: const Color(0xFFFEF2F2),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+              border: Border.all(color: const Color(0xFFFECACA)),
             ),
             child: const Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+              child: Text(
+                'THIS PARTY PLAN IS NO LONGER AVAILABLE',
+                style: TextStyle(
+                  color: Color(0xFFDC2626),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  letterSpacing: 0.5,
                 ),
               ),
             ),
@@ -3089,8 +3528,17 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
                         ),
-                        child: const Center(
-                          child: Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
+                        child: Center(
+                          child: _isLoadingCancellation
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                                  ),
+                                )
+                              : const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
                         ),
                       ),
                     ),
@@ -3107,7 +3555,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
                 ),
               )
-            : ((_alreadyRequested || isPartnerByPlan) && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
+            : (!hasPendingCancellation && !joinerPaid && (_alreadyRequested || isPartnerByPlan) && (_requestStatus == 'accepted' || _requestStatus == 'payment_pending'))
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -3130,14 +3578,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.payment_rounded, color: Colors.white, size: 22),
-                      SizedBox(width: 10),
+                      const Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                      const SizedBox(width: 10),
                       Text(
-                        'PAY SAFETY DEPOSIT (₹99)',
-                        style: TextStyle(
+                        'PAY SAFETY DEPOSIT (${_getEffectiveRefundText()})',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -3343,13 +3791,16 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     final hostPaymentStatus = plan['hostPaymentStatus']?.toString() ?? plan['host_payment_status']?.toString() ?? '';
     final chatEnabled = plan['chatEnabled'] == true || plan['chat_enabled'] == true;
     final joinerPaid = _isJoinerPaid(plan);
+    final bool hasPendingCancellation = (_cancellationRequest != null && (_cancellationRequest!['status'] == 'pending' || _cancellationRequest!['status'] == 'approved')) ||
+        ((plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'pending') ||
+        (plan['cancellationRequest'] != null && ((plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' || (plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
     final isHostPaid = hostPaymentStatus == 'paid' || hostPaymentStatus == 'completed';
     final isHostPaysOnly = (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'host_pays' ||
         (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'i_pay' ||
         (plan['paymentType'] ?? plan['payment_type'] ?? '').toString().toLowerCase() == 'free';
 
     // Determine if the plan is fully confirmed (match locked and payments completed)
-    final isConfirmed = isHostPaid && (joinerPaid || isHostPaysOnly) && (
+    final isConfirmed = hasPendingCancellation || (isHostPaid && (joinerPaid || isHostPaysOnly) && (
         chatEnabled ||
         lifecycleStatus == 'match_confirmed' ||
         lifecycleStatus == 'chat_enabled' ||
@@ -3357,7 +3808,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         lifecycleStatus == 'arrival_confirmation' ||
         lifecycleStatus == 'both_arrived' ||
         lifecycleStatus == 'plan_completed'
-    );
+    ));
 
     if (isConfirmed) {
       // Host sees: Ticket + Chat + Cancel after plan is matched
@@ -3493,14 +3944,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   ),
                 ],
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.payment_rounded, color: Colors.white, size: 22),
-                  SizedBox(width: 10),
+                  const Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                  const SizedBox(width: 10),
                   Text(
-                    'PAY SAFETY DEPOSIT (₹99)',
-                    style: TextStyle(
+                    'PAY SAFETY DEPOSIT (${_getEffectiveRefundText()})',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -3662,14 +4113,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: const Color(0xFF161622),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+            border: Border.all(color: const Color(0xFFFECACA)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 16,
-                offset: const Offset(0, 8),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -3682,14 +4133,14 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.redAccent.withValues(alpha: 0.2),
+                      color: const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                      border: Border.all(color: const Color(0xFFFECACA)),
                     ),
                     child: const Text(
                       'NO LONGER AVAILABLE',
                       style: TextStyle(
-                        color: Colors.redAccent,
+                        color: Color(0xFFDC2626),
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.8,
@@ -3702,7 +4153,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               const Text(
                 'Party Plan Unavailable',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Color(0xFF0F172A),
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -3710,8 +4161,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               const SizedBox(height: 8),
               Text(
                 'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
+                style: const TextStyle(
+                  color: Color(0xFF475569),
                   fontSize: 13,
                   height: 1.4,
                 ),
@@ -3753,8 +4204,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                           );
                         },
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                          foregroundColor: const Color(0xFF475569),
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: const Text(
@@ -3788,12 +4239,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         });
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E2A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: LunaraTheme.electricViolet.withValues(alpha: 0.4)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3821,7 +4279,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       ? 'PRIVATELY INVITED (${_pendingRequests.length})'
                       : 'JOIN REQUESTS (${_pendingRequests.length})',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Color(0xFF0F172A),
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0.5,
@@ -3836,7 +4294,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: _pendingRequests.length,
-            separatorBuilder: (context, index) => const Divider(color: Color(0xFF2E2E3E), height: 20),
+            separatorBuilder: (context, index) => const Divider(color: Color(0xFFF1F5F9), height: 20),
             itemBuilder: (context, index) {
               final req = _pendingRequests[index];
               final reqUser = (req['requester'] is Map)
@@ -3878,7 +4336,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                             Text(
                               reqUserName.isNotEmpty ? reqUserName : 'Lunara Member',
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: Color(0xFF0F172A),
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -3889,7 +4347,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                                 child: Text(
                                   userBio,
                                   style: const TextStyle(
-                                    color: Colors.white60,
+                                    color: Color(0xFF64748B),
                                     fontSize: 11,
                                   ),
                                   maxLines: 1,
@@ -3902,9 +4360,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                                 child: Text(
                                   'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
                                   style: const TextStyle(
-                                    color: Color(0xFFA855F7),
+                                    color: Color(0xFF7C3AED),
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
@@ -3919,19 +4377,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        color: const Color(0xFFECFDF5),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                        border: Border.all(color: const Color(0xFFA7F3D0)),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                        children: [
+                          Icon(Icons.check_circle_rounded, color: Color(0xFF059669), size: 16),
                           SizedBox(width: 6),
                           Text(
                             'Request Accepted • Awaiting Deposit',
                             style: TextStyle(
-                              color: Color(0xFF10B981),
+                              color: Color(0xFF059669),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -3944,19 +4402,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.12),
+                        color: const Color(0xFFFEF2F2),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                        border: Border.all(color: const Color(0xFFFECACA)),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 16),
+                        children: [
+                          Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 16),
                           SizedBox(width: 6),
                           Text(
                             'Request Declined',
                             style: TextStyle(
-                              color: Colors.redAccent,
+                              color: Color(0xFFDC2626),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -3969,19 +4427,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.12),
+                        color: const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      child: Row(
+                      child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.block_rounded, color: Colors.grey, size: 16),
+                        children: [
+                          Icon(Icons.block_rounded, color: Color(0xFF64748B), size: 16),
                           SizedBox(width: 6),
                           Text(
                             'Invitation Cancelled',
                             style: TextStyle(
-                              color: Colors.white70,
+                              color: Color(0xFF475569),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -3994,18 +4452,18 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () => _handleCancelPrivateRequest(reqId),
-                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFDC2626)),
                         label: const Text(
                           'Cancel Private Request',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
-                            color: Colors.redAccent,
+                            color: Color(0xFFDC2626),
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0x55EF4444)),
-                          backgroundColor: Colors.redAccent.withValues(alpha: 0.08),
+                          side: const BorderSide(color: Color(0xFFFECACA)),
+                          backgroundColor: const Color(0xFFFEF2F2),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -4035,10 +4493,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () => _handleRejectPartyPlanRequest(reqId),
-                            icon: const Icon(Icons.cancel_rounded, size: 15, color: Colors.redAccent),
-                            label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.redAccent)),
+                            icon: const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
+                            label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFDC2626))),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0x40EF4444)),
+                              side: const BorderSide(color: Color(0xFFFECACA)),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -4066,22 +4524,22 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 10),
+          Icon(icon, color: color, size: 11),
           const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(
               color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
             ),
           ),
         ],
@@ -4099,16 +4557,23 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.15),
+              color: iconColor.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 20),
@@ -4121,19 +4586,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 Text(
                   title,
                   style: const TextStyle(
-                    color: Colors.white38,
-                    fontSize: 9,
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
+                    letterSpacing: 1.5,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   value,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 if (subtitle != null && subtitle.isNotEmpty)
@@ -4142,8 +4607,8 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     child: Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
                       ),
                     ),
                   ),

@@ -172,6 +172,12 @@ class ApiService {
 
   static final ValueNotifier<int> profileUpdateNotifier = ValueNotifier<int>(0);
   static final ValueNotifier<int> planPostedNotifier = ValueNotifier<int>(0);
+  static final ValueNotifier<int?> dashboardTabNotifier = ValueNotifier<int?>(null);
+
+  /// Requests the main Dashboard to switch to a specific tab index (0=Discovery, 1=LiveFeed, 3=Chat, 4=Profile).
+  static void switchDashboardTab(int index) {
+    dashboardTabNotifier.value = index;
+  }
 
   /// Centralized trigger to instantly refresh the Live Feed and associated views across the app.
   static void notifyFeedNeedsRefresh() {

@@ -66,6 +66,7 @@ export async function attachRedisAdapter(io: SocketIOServer): Promise<boolean> {
     const build = (): Redis | Cluster =>
         isClusterPolicy
             ? new Redis.Cluster([{ host, port }], {
+                  lazyConnect: true,
                   redisOptions,
                   dnsLookup: (hostname, callback) => callback(null, hostname),
                   natMap: { [`${host}:${port}`]: { host, port } },
@@ -75,11 +76,24 @@ export async function attachRedisAdapter(io: SocketIOServer): Promise<boolean> {
     let pubClient: Redis | Cluster | undefined;
     let subClient: Redis | Cluster | undefined;
 
+    const safeConnect = async (client: Redis | Cluster) => {
+        if (client.status === 'connecting' || client.status === 'connect' || client.status === 'ready') {
+            return;
+        }
+        try {
+            await client.connect();
+        } catch (e: any) {
+            if (!e?.message?.includes('already connecting') && !e?.message?.includes('already connected')) {
+                throw e;
+            }
+        }
+    };
+
     try {
         pubClient = build();
         subClient = build();
 
-        await Promise.all([pubClient.connect(), subClient.connect()]);
+        await Promise.all([safeConnect(pubClient), safeConnect(subClient)]);
 
         io.adapter(createAdapter(pubClient as any, subClient as any));
         logger.info(

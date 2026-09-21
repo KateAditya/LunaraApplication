@@ -49,6 +49,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     ApiService.profileUpdateNotifier.addListener(_onProfileNotify);
+    ApiService.dashboardTabNotifier.addListener(_onDashboardTabSwitch);
     _screens = [
       const DiscoveryScreen(),
       LiveFeedScreen(key: _liveFeedKey, isTab: true, onCountChanged: _onLiveFeedCountChanged),
@@ -60,6 +61,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _initApp();
     _startBadgeTimer();
     _initSocketListeners();
+  }
+
+  void _onDashboardTabSwitch() {
+    final targetTab = ApiService.dashboardTabNotifier.value;
+    if (targetTab != null && mounted) {
+      if (targetTab == 1) {
+        _liveFeedKey.currentState?.refreshFeed();
+      }
+      setState(() {
+        _activatedTabs.add(targetTab);
+        _currentIndex = targetTab;
+      });
+      if (targetTab == 1) {
+        _onLiveFeedRead();
+      }
+    }
   }
 
   void _onProfileNotify() {
@@ -247,6 +264,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   @override
   void dispose() {
     ApiService.profileUpdateNotifier.removeListener(_onProfileNotify);
+    ApiService.dashboardTabNotifier.removeListener(_onDashboardTabSwitch);
     ApiService.chatBadgeNotifier.removeListener(_onChatBadgeNotifier);
     _disposeSocketListeners();
     WidgetsBinding.instance.removeObserver(this);

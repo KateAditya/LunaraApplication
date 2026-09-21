@@ -11,6 +11,7 @@ import { RealtimeEventBroker } from './RealtimeEventBroker';
 import { formatTime12Hour, formatDateFull } from '../utils/dateTimeUtils';
 import { parseBookingDateTime } from './EventTimeLockService';
 import { sanitizeBookingId } from '../controllers/mobileBookingController';
+import { LargePartyCancellationService } from './LargePartyCancellationService';
 
 export interface BookingTimeValidationResult {
     allowed: boolean;
@@ -52,7 +53,9 @@ export interface RefundPayoutDetails {
 
 export interface CancellationPreviewResult {
     bookingId: string;
-    bookingType: 'SOLO_BOOKING' | 'GROUP_PARTY';
+    bookingType: 'SOLO_BOOKING' | 'GROUP_PARTY' | 'LARGE_PARTY';
+    isLargeParty?: boolean;
+    requiresAdminReview?: boolean;
     venueName: string;
     venueAddress?: string;
     eventDate: string;
@@ -64,6 +67,8 @@ export interface CancellationPreviewResult {
         refundEnabled: boolean;
         refundPercentage: number;
         cancellationCutoffHours: number;
+        adminReviewRequired?: boolean;
+        policyNote?: string;
     };
     refundAmount: number;
     nonRefundableAmount: number;
@@ -297,8 +302,38 @@ export class BookingPolicyService {
             throw new Error('Solo booking not found');
         }
 
-        if (booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20)) {
-            throw new Error('This policy applies exclusively to Solo Bookings and small group parties.');
+        const isLargeParty = booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20) || (booking.numberOfGuests || 1) > 20;
+
+        if (isLargeParty) {
+            const venueName = (booking as any)?.venue?.name || 'Venue';
+            const venueAddress = (booking as any)?.venue?.addressLine1 || (booking as any)?.venue?.city || '';
+            const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
+            const paidAmount = Number(booking.totalAmount || booking.adminPaymentAmount || 0);
+
+            return {
+                bookingId: booking.id,
+                bookingType: 'LARGE_PARTY',
+                isLargeParty: true,
+                requiresAdminReview: true,
+                venueName,
+                venueAddress,
+                eventDate: formatDateFull(eventDateTime),
+                eventTime: formatTime12Hour(eventDateTime),
+                canCancel: true,
+                cancellationReason: undefined,
+                paidAmount,
+                refundPolicy: {
+                    refundEnabled: true,
+                    refundPercentage: 100,
+                    cancellationCutoffHours: 0,
+                    adminReviewRequired: true,
+                    policyNote: 'Large Party cancellations require Admin Approval & manual refund processing.',
+                },
+                refundAmount: paidAmount,
+                nonRefundableAmount: 0,
+                refundMethod: 'UPI / Bank Transfer (Admin Payout)',
+                requiresPayoutDetails: true,
+            };
         }
 
         if (booking.status === BookingStatus.CANCELLED) {
@@ -381,8 +416,31 @@ export class BookingPolicyService {
             throw new Error('Solo booking not found');
         }
 
-        if (booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20)) {
-            throw new Error('This cancellation policy does not apply to Large Parties (>20 guests).');
+        const isLargeParty = booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20) || (booking.numberOfGuests || 1) > 20;
+
+        if (isLargeParty) {
+            const res = await LargePartyCancellationService.requestCancellation({
+                bookingId: booking.id,
+                userId,
+                reason: cancellationReason || 'Host cancelled Large Party booking',
+                upiId: payoutDetails?.upiId,
+                mobileNumber: payoutDetails?.upiNumber,
+                accountHolderName: payoutDetails?.bankHolderName,
+                accountNumber: payoutDetails?.bankAccountNumber,
+                ifscCode: payoutDetails?.bankIfsc,
+            });
+
+            if (!res.success) {
+                throw new Error(res.message || 'Failed to submit cancellation request for Large Party.');
+            }
+
+            return {
+                success: true,
+                message: res.message,
+                booking: booking,
+                refundAmount: Number(booking.totalAmount || booking.adminPaymentAmount || 0),
+                refundMethod: 'UPI / Bank Transfer (Admin Review)',
+            };
         }
 
         if (booking.status === BookingStatus.CANCELLED) {
@@ -582,13 +640,41 @@ export class BookingPolicyService {
                 throw new Error('Group party is already cancelled.');
             }
 
-            const eventDateTime = parseBookingDateTime(party.partyDate as any, party.startTime);
-            const validation = await this.validateCancellationTime(BookingPolicyType.GROUP_PARTY, eventDateTime);
-            const paidAmount = party.paymentStatus === GroupPartyPaymentStatus.PAID ? Number(party.totalAmount || 0) : 0;
-            const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
-
+            const isLargeGroupParty = (party as any).isLargeParty || ((party.numberOfFriends || 1) > 20);
             const venueName = (party as any)?.venue?.name || 'Venue';
             const venueAddress = (party as any)?.venue?.addressLine1 || (party as any)?.venue?.city || '';
+            const eventDateTime = parseBookingDateTime(party.partyDate as any, party.startTime);
+            const paidAmount = party.paymentStatus === GroupPartyPaymentStatus.PAID ? Number(party.totalAmount || 0) : 0;
+
+            if (isLargeGroupParty) {
+                return {
+                    bookingId: party.id,
+                    bookingType: 'LARGE_PARTY',
+                    isLargeParty: true,
+                    requiresAdminReview: true,
+                    venueName,
+                    venueAddress,
+                    eventDate: formatDateFull(eventDateTime),
+                    eventTime: formatTime12Hour(eventDateTime),
+                    canCancel: true,
+                    cancellationReason: undefined,
+                    paidAmount,
+                    refundPolicy: {
+                        refundEnabled: true,
+                        refundPercentage: 100,
+                        cancellationCutoffHours: 0,
+                        adminReviewRequired: true,
+                        policyNote: 'Large Party cancellations require Admin Approval & manual refund processing.',
+                    },
+                    refundAmount: paidAmount,
+                    nonRefundableAmount: 0,
+                    refundMethod: 'UPI / Bank Transfer (Admin Payout)',
+                    requiresPayoutDetails: true,
+                };
+            }
+
+            const validation = await this.validateCancellationTime(BookingPolicyType.GROUP_PARTY, eventDateTime);
+            const refundCalc = await this.calculateRefund(BookingPolicyType.GROUP_PARTY, paidAmount);
             const isLargeRefund = refundCalc.refundAmount > 1500;
 
             return {
@@ -620,8 +706,38 @@ export class BookingPolicyService {
         });
 
         if (booking) {
-            if (booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20)) {
-                throw new Error('This cancellation policy does not apply to Large Parties (>20 guests).');
+            const isLargeParty = booking.isLargePartyRequest || (booking.goingMode === GoingMode.PARTY_REQUEST && (booking.numberOfGuests || 1) > 20) || (booking.numberOfGuests || 1) > 20;
+
+            if (isLargeParty) {
+                const venueName = (booking as any)?.venue?.name || 'Venue';
+                const venueAddress = (booking as any)?.venue?.addressLine1 || (booking as any)?.venue?.city || '';
+                const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
+                const paidAmount = Number(booking.totalAmount || booking.adminPaymentAmount || 0);
+
+                return {
+                    bookingId: booking.id,
+                    bookingType: 'LARGE_PARTY',
+                    isLargeParty: true,
+                    requiresAdminReview: true,
+                    venueName,
+                    venueAddress,
+                    eventDate: formatDateFull(eventDateTime),
+                    eventTime: formatTime12Hour(eventDateTime),
+                    canCancel: true,
+                    cancellationReason: undefined,
+                    paidAmount,
+                    refundPolicy: {
+                        refundEnabled: true,
+                        refundPercentage: 100,
+                        cancellationCutoffHours: 0,
+                        adminReviewRequired: true,
+                        policyNote: 'Large Party cancellations require Admin Approval & manual refund processing.',
+                    },
+                    refundAmount: paidAmount,
+                    nonRefundableAmount: 0,
+                    refundMethod: 'UPI / Bank Transfer (Admin Payout)',
+                    requiresPayoutDetails: true,
+                };
             }
 
             if (booking.status === BookingStatus.CANCELLED) {
@@ -708,6 +824,32 @@ export class BookingPolicyService {
 
         if (party.status === GroupPartyStatus.CANCELLED) {
             throw new Error('Group party has already been cancelled.');
+        }
+
+        const isLargeParty = (party as any).isLargeParty || ((party.numberOfFriends || 1) > 20);
+        if (isLargeParty) {
+            const res = await LargePartyCancellationService.requestCancellation({
+                bookingId: party.id,
+                userId,
+                reason: cancellationReason || 'Host cancelled Large Party',
+                upiId: payoutDetails?.upiId,
+                mobileNumber: payoutDetails?.upiNumber,
+                accountHolderName: payoutDetails?.bankHolderName,
+                accountNumber: payoutDetails?.bankAccountNumber,
+                ifscCode: payoutDetails?.bankIfsc,
+            });
+
+            if (!res.success) {
+                throw new Error(res.message || 'Failed to submit cancellation request for Large Party.');
+            }
+
+            return {
+                success: true,
+                message: res.message,
+                party: party,
+                refundAmount: Number(party.totalAmount || 0),
+                refundMethod: 'UPI / Bank Transfer (Admin Review)',
+            };
         }
 
         const eventDateTime = parseBookingDateTime(party.partyDate as any, party.startTime);

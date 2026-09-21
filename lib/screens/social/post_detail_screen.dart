@@ -93,7 +93,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _onStrangersMeetUpdated,
       );
     } else {
-      _isLoading = false;
       _loadPartyPlanDetails();
     }
   }
@@ -114,6 +113,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (mounted) {
           setState(() {
             _isPartyPlanStatusLoading = false;
+            _isLoading = false;
           });
         }
         return;
@@ -126,6 +126,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ]);
 
       final planDetail = results[0] as Map<String, dynamic>?;
+      if (planDetail != null) {
+        widget.post.addAll(planDetail);
+      }
       final myRequests = results[1] as List<Map<String, dynamic>>? ?? [];
 
       bool requested = false;
@@ -212,6 +215,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _partyPlanRequestStatus = reqStatus ?? (_isInvitedUser ? 'pending' : null);
           _partyPlanActiveRequestId = reqId;
           _isPartyPlanStatusLoading = false;
+          _isLoading = false;
         });
       }
     } catch (e) {
@@ -219,6 +223,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         setState(() {
           _isPartyPlanStatusLoading = false;
+          _isLoading = false;
         });
       }
     }
@@ -1630,14 +1635,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: _buildStrangersMeetActionButton(
-            isMyPost,
-            myJoinerInfo,
-            slotsFilled,
-            maxPersons,
-            req.status,
-            req.eventDateTime,
-            charges,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            child: _buildStrangersMeetActionButton(
+              isMyPost,
+              myJoinerInfo,
+              slotsFilled,
+              maxPersons,
+              req.status,
+              req.eventDateTime,
+              charges,
+            ),
           ),
         ),
       ),
@@ -3358,225 +3369,116 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: _isPartyPlanStatusLoading
-                    ? Container(
-                        width: double.infinity,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.grey.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: const Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  transitionBuilder: (Widget child, Animation<double> animation) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  child: _isPartyPlanStatusLoading
+                      ? Container(
+                          key: const ValueKey('pp_btn_loading'),
+                          width: double.infinity,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.grey.withValues(alpha: 0.2),
                             ),
                           ),
-                        ),
-                      )
-                    : (widget.post['status']?.toString().toLowerCase() == 'inactive' ||
-                            widget.post['status']?.toString().toLowerCase() == 'closed' ||
-                            widget.post['status']?.toString().toLowerCase() == 'cancelled' ||
-                            widget.post['status']?.toString().toLowerCase() == 'completed' ||
-                            widget.post['isLive'] == false)
-                        ? Container(
-                            width: double.infinity,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.grey[300]!),
-                            ),
-                            child: const Center(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.lock_rounded, color: Colors.grey),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'PLAN CLOSED / CONFIRMED WITH ANOTHER USER',
-                                    style: TextStyle(
-                                      fontFamily: 'AllroundGothic',
-                                      color: Colors.grey,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(LunaraTheme.electricViolet),
                               ),
                             ),
-                          )
-                        : (_isInvitedUser && (_partyPlanRequestStatus == 'pending' || _partyPlanRequestStatus == 'invited' || _partyPlanRequestStatus == null))
-                            ? Row(
-                                children: [
-                                  // Decline Button
-                                  Expanded(
-                                    flex: 2,
-                                    child: SizedBox(
-                                      height: 60,
-                                      child: OutlinedButton(
-                                        onPressed: (_isDecliningInvite || _isAcceptingInvite)
-                                            ? null
-                                            : _handleRejectPartyPlanInvite,
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Colors.redAccent,
-                                          side: BorderSide(
-                                            color: Colors.redAccent.withValues(alpha: 0.6),
-                                            width: 1.5,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(20),
-                                          ),
-                                        ),
-                                        child: _isDecliningInvite
-                                            ? const SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
-                                                ),
-                                              )
-                                            : const Text(
-                                                'DECLINE',
-                                                style: TextStyle(
-                                                  fontFamily: 'AllroundGothic',
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  letterSpacing: 0.5,
-                                                ),
-                                              ),
+                          ),
+                        )
+                      : (widget.post['status']?.toString().toLowerCase() == 'inactive' ||
+                              widget.post['status']?.toString().toLowerCase() == 'closed' ||
+                              widget.post['status']?.toString().toLowerCase() == 'cancelled' ||
+                              widget.post['status']?.toString().toLowerCase() == 'completed' ||
+                              widget.post['isLive'] == false)
+                          ? Container(
+                              key: const ValueKey('pp_btn_closed'),
+                              width: double.infinity,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.grey[300]!),
+                              ),
+                              child: const Center(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.lock_rounded, color: Colors.grey),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'PLAN CLOSED / CONFIRMED WITH ANOTHER USER',
+                                      style: TextStyle(
+                                        fontFamily: 'AllroundGothic',
+                                        color: Colors.grey,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Accept Button
-                                  Expanded(
-                                    flex: 3,
-                                    child: Container(
-                                      height: 60,
-                                      decoration: BoxDecoration(
-                                        gradient: LunaraTheme.purpleGradient,
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(0xFFb952eb).withValues(alpha: 0.35),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 8),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : (_isInvitedUser && (_partyPlanRequestStatus == 'pending' || _partyPlanRequestStatus == 'invited' || _partyPlanRequestStatus == null))
+                              ? Row(
+                                  key: const ValueKey('pp_btn_invited'),
+                                  children: [
+                                    // Decline Button
+                                    Expanded(
+                                      flex: 2,
+                                      child: SizedBox(
+                                        height: 60,
+                                        child: OutlinedButton(
+                                          onPressed: (_isDecliningInvite || _isAcceptingInvite)
+                                              ? null
+                                              : _handleRejectPartyPlanInvite,
+                                          style: OutlinedButton.styleFrom(
+                                            side: BorderSide(
+                                              color: Colors.redAccent.withValues(alpha: 0.6),
+                                              width: 1.5,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
                                           ),
-                                        ],
-                                      ),
-                                      child: ElevatedButton(
-                                        onPressed: (_isAcceptingInvite || _isDecliningInvite)
-                                            ? null
-                                            : _handleAcceptPartyPlanInvite,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.transparent,
-                                          shadowColor: Colors.transparent,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(20),
-                                          ),
-                                        ),
-                                        child: _isAcceptingInvite
-                                            ? const SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                                ),
-                                              )
-                                            : const Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                                                  SizedBox(width: 8),
-                                                  Flexible(
-                                                    child: Text(
-                                                      'ACCEPT INVITE',
-                                                      style: TextStyle(
-                                                        fontFamily: 'AllroundGothic',
-                                                        color: Colors.white,
-                                                        fontSize: 14,
-                                                        fontWeight: FontWeight.bold,
-                                                        letterSpacing: 0.5,
-                                                      ),
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
+                                          child: _isDecliningInvite
+                                              ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
                                                   ),
-                                                ],
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : (_partyPlanRequestStatus == 'accepted' || _partyPlanRequestStatus == 'payment_pending')
-                                ? Container(
-                                    width: double.infinity,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [Color(0xFF00C853), Color(0xFF69F0AE)],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFF00C853).withValues(alpha: 0.35),
-                                          blurRadius: 16,
-                                          offset: const Offset(0, 8),
-                                        ),
-                                      ],
-                                    ),
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => PartyPlanDetailScreen(
-                                              plan: Map<String, dynamic>.from(widget.post),
-                                              autoOpenPaymentSheet: true,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.transparent,
-                                        shadowColor: Colors.transparent,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(20),
+                                                )
+                                              : const Text(
+                                                  'DECLINE',
+                                                  style: TextStyle(
+                                                    fontFamily: 'AllroundGothic',
+                                                    color: Colors.redAccent,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
                                         ),
                                       ),
-                                      child: const Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.payment_rounded, color: Colors.white, size: 22),
-                                          SizedBox(width: 10),
-                                          Text(
-                                            'PAY SAFETY DEPOSIT (₹99)',
-                                            style: TextStyle(
-                                              fontFamily: 'AllroundGothic',
-                                              color: Colors.white,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ),
-                                  )
-                                : (_partyPlanRequestStatus == 'confirmed' || _partyPlanRequestStatus == 'paid')
-                                    ? Container(
-                                        width: double.infinity,
+                                    const SizedBox(width: 12),
+                                    // Accept Button
+                                    Expanded(
+                                      flex: 3,
+                                      child: Container(
                                         height: 60,
                                         decoration: BoxDecoration(
                                           gradient: LunaraTheme.purpleGradient,
@@ -3590,16 +3492,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           ],
                                         ),
                                         child: ElevatedButton(
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => PartyPlanDetailScreen(
-                                                  plan: Map<String, dynamic>.from(widget.post),
-                                                ),
-                                              ),
-                                            );
-                                          },
+                                          onPressed: (_isDecliningInvite || _isAcceptingInvite)
+                                              ? null
+                                              : _handleAcceptPartyPlanInvite,
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.transparent,
                                             shadowColor: Colors.transparent,
@@ -3607,239 +3502,357 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                               borderRadius: BorderRadius.circular(20),
                                             ),
                                           ),
-                                          child: const Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.celebration_rounded, color: Colors.white, size: 22),
-                                              SizedBox(width: 10),
-                                              Text(
-                                                'JOINED & CONFIRMED 🎉',
-                                                style: TextStyle(
-                                                  fontFamily: 'AllroundGothic',
-                                                  color: Colors.white,
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: 0.5,
+                                          child: _isAcceptingInvite
+                                              ? const SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                                  ),
+                                                )
+                                              : const Text(
+                                                  'ACCEPT INVITE 🎉',
+                                                  style: TextStyle(
+                                                    fontFamily: 'AllroundGothic',
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                    letterSpacing: 0.5,
+                                                  ),
                                                 ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : (_partyPlanRequestStatus == 'payment_pending' || _partyPlanRequestStatus == 'accepted')
+                                  ? Container(
+                                      key: const ValueKey('pp_btn_pay_deposit'),
+                                      width: double.infinity,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [Color(0xFF10B981), Color(0xFF059669)],
+                                        ),
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => PartyPlanDetailScreen(
+                                                plan: Map<String, dynamic>.from(widget.post),
+                                                autoOpenPaymentSheet: true,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.transparent,
+                                          shadowColor: Colors.transparent,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(20),
+                                          ),
+                                        ),
+                                        child: const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+                                            SizedBox(width: 10),
+                                            Text(
+                                              'PAY SAFETY DEPOSIT (₹99)',
+                                              style: TextStyle(
+                                                fontFamily: 'AllroundGothic',
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  : (_partyPlanRequestStatus == 'confirmed' || _partyPlanRequestStatus == 'paid')
+                                      ? Container(
+                                          key: const ValueKey('pp_btn_confirmed'),
+                                          width: double.infinity,
+                                          height: 60,
+                                          decoration: BoxDecoration(
+                                            gradient: LunaraTheme.purpleGradient,
+                                            borderRadius: BorderRadius.circular(20),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: LunaraTheme.electricViolet.withValues(alpha: 0.35),
+                                                blurRadius: 16,
+                                                offset: const Offset(0, 8),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      )
-                                    : _alreadyRequested
-                                        ? Container(
-                                            width: double.infinity,
-                                            height: 60,
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.withValues(alpha: 0.15),
-                                              borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: Colors.green.withValues(alpha: 0.4),
+                                          child: ElevatedButton(
+                                            onPressed: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => PartyPlanDetailScreen(
+                                                    plan: Map<String, dynamic>.from(widget.post),
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.transparent,
+                                              shadowColor: Colors.transparent,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(20),
                                               ),
                                             ),
-                                            child: const FittedBox(
-                                              fit: BoxFit.scaleDown,
-                                              child: Padding(
-                                                padding: EdgeInsets.symmetric(
-                                                  horizontal: 16.0,
-                                                ),
-                                                child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Icon(
-                                                      Icons.check_circle_rounded,
-                                                      color: Colors.green,
-                                                    ),
-                                                    SizedBox(width: 12),
-                                                    Text(
-                                                      'REQUEST SENT — AWAITING HOST APPROVAL',
-                                                      style: TextStyle(
-                                                        fontFamily: 'AllroundGothic',
-                                                        color: Colors.green,
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 12,
-                                                        letterSpacing: 0.5,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                        : Container(
-                                            width: double.infinity,
-                                            height: 60,
-                                            decoration: BoxDecoration(
-                                              gradient: LunaraTheme.purpleGradient,
-                                              borderRadius: BorderRadius.circular(20),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: const Color(0xFFb952eb).withValues(alpha: 0.35),
-                                                  blurRadius: 16,
-                                                  offset: const Offset(0, 8),
+                                            child: const Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 22),
+                                                SizedBox(width: 10),
+                                                Text(
+                                                  'VIEW TICKET & CHAT',
+                                                  style: TextStyle(
+                                                    fontFamily: 'AllroundGothic',
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                    letterSpacing: 0.5,
+                                                  ),
                                                 ),
                                               ],
                                             ),
-                                            child: ElevatedButton(
-                                              onPressed: (_alreadyRequested || _isProcessing)
-                                                  ? null
-                                                  : () async {
-                                                      if (_alreadyRequested) return;
-                                                      final planId = widget.post['id']?.toString() ?? '';
-                                                      if (planId.isEmpty) return;
+                                          ),
+                                        )
+                                      : _alreadyRequested
+                                          ? Container(
+                                              key: const ValueKey('pp_btn_already_req'),
+                                              width: double.infinity,
+                                              height: 60,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: Colors.green.withValues(alpha: 0.4),
+                                                ),
+                                              ),
+                                              child: const FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Padding(
+                                                  padding: EdgeInsets.symmetric(
+                                                    horizontal: 16.0,
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.check_circle_rounded,
+                                                        color: Colors.green,
+                                                      ),
+                                                      SizedBox(width: 12),
+                                                      Text(
+                                                        'REQUEST SENT — AWAITING HOST APPROVAL',
+                                                        style: TextStyle(
+                                                          fontFamily: 'AllroundGothic',
+                                                          color: Colors.green,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 12,
+                                                          letterSpacing: 0.5,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                          : Container(
+                                              key: const ValueKey('pp_btn_join'),
+                                              width: double.infinity,
+                                              height: 60,
+                                              decoration: BoxDecoration(
+                                                gradient: LunaraTheme.purpleGradient,
+                                                borderRadius: BorderRadius.circular(20),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: const Color(0xFFb952eb).withValues(alpha: 0.35),
+                                                    blurRadius: 16,
+                                                    offset: const Offset(0, 8),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: ElevatedButton(
+                                                onPressed: (_alreadyRequested || _isProcessing)
+                                                    ? null
+                                                    : () async {
+                                                        if (_alreadyRequested) return;
+                                                        final planId = widget.post['id']?.toString() ?? '';
+                                                        if (planId.isEmpty) return;
 
-                                                      if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
+                                                        if (!OptimisticActionGuard.start('JOIN_PARTY_PLAN:$planId')) return;
 
-                                                      final prevAlreadyRequested = _alreadyRequested;
+                                                        final prevAlreadyRequested = _alreadyRequested;
 
-                                                      setState(() {
-                                                        _isProcessing = true;
-                                                      });
+                                                        setState(() {
+                                                          _isProcessing = true;
+                                                        });
 
-                                                      final messenger = ScaffoldMessenger.of(context);
+                                                        final messenger = ScaffoldMessenger.of(context);
 
-                                                      try {
-                                                        final result = await ApiService.requestToJoinPartyPlanDetailed(planId);
-                                                        if (!mounted) return;
+                                                        try {
+                                                          final result = await ApiService.requestToJoinPartyPlanDetailed(planId);
+                                                          if (!mounted) return;
 
-                                                        if (result.alreadyRequested || result.success) {
-                                                          setState(() {
-                                                            _alreadyRequested = true;
-                                                            _isProcessing = false;
-                                                          });
-                                                          if (result.isNewRequest) {
-                                                            messenger.showSnackBar(
-                                                              SnackBar(
-                                                                backgroundColor: Colors.transparent,
-                                                                elevation: 0,
-                                                                behavior: SnackBarBehavior.floating,
-                                                                content: Container(
-                                                                  padding: const EdgeInsets.symmetric(
-                                                                    horizontal: 20,
-                                                                    vertical: 16,
-                                                                  ),
-                                                                  decoration: BoxDecoration(
-                                                                    gradient: LunaraTheme.purpleGradient,
-                                                                    borderRadius: BorderRadius.circular(16),
-                                                                    boxShadow: [
-                                                                      BoxShadow(
-                                                                        color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
-                                                                        blurRadius: 15,
-                                                                        offset: const Offset(0, 8),
-                                                                      ),
-                                                                    ],
-                                                                  ),
-                                                                  child: const Row(
-                                                                    children: [
-                                                                      Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                                                                      SizedBox(width: 12),
-                                                                      Expanded(
-                                                                        child: Text(
-                                                                          'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
-                                                                          style: TextStyle(
-                                                                            color: Colors.white,
-                                                                            fontSize: 12,
-                                                                            fontWeight: FontWeight.bold,
-                                                                            letterSpacing: 0.5,
+                                                          if (result.alreadyRequested || result.success) {
+                                                            if (mounted) {
+                                                              setState(() {
+                                                                _alreadyRequested = true;
+                                                                _isInvitedUser = false;
+                                                                _partyPlanActiveRequestId = result.requestId;
+                                                                _partyPlanRequestStatus = result.status ?? 'pending';
+                                                                _isProcessing = false;
+                                                              });
+                                                            }
+                                                            if (result.isNewRequest) {
+                                                              messenger.showSnackBar(
+                                                                SnackBar(
+                                                                  backgroundColor: Colors.transparent,
+                                                                  elevation: 0,
+                                                                  behavior: SnackBarBehavior.floating,
+                                                                  content: Container(
+                                                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                                                    decoration: BoxDecoration(
+                                                                      gradient: LunaraTheme.purpleGradient,
+                                                                      borderRadius: BorderRadius.circular(16),
+                                                                      boxShadow: [
+                                                                        BoxShadow(
+                                                                          color: LunaraTheme.electricViolet.withValues(alpha: 0.3),
+                                                                          blurRadius: 15,
+                                                                          offset: const Offset(0, 8),
+                                                                        ),
+                                                                      ],
+                                                                    ),
+                                                                    child: const Row(
+                                                                      children: [
+                                                                        Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+                                                                        SizedBox(width: 12),
+                                                                        Expanded(
+                                                                          child: Text(
+                                                                            'JOIN REQUEST SENT! THE HOST WILL REVIEW IT.',
+                                                                            style: TextStyle(
+                                                                              color: Colors.white,
+                                                                              fontSize: 12,
+                                                                              fontWeight: FontWeight.bold,
+                                                                              letterSpacing: 0.5,
+                                                                            ),
                                                                           ),
                                                                         ),
-                                                                      ),
-                                                                    ],
+                                                                      ],
+                                                                    ),
                                                                   ),
                                                                 ),
-                                                              ),
-                                                            );
+                                                              );
+                                                            }
+                                                          } else {
+                                                            if (mounted) {
+                                                              setState(() {
+                                                                _alreadyRequested = prevAlreadyRequested;
+                                                                _isProcessing = false;
+                                                              });
+                                                            }
+                                                            if (TimeLockBlockedDialog.isConflictError(result.message) ||
+                                                                (result.rawData != null && result.rawData!['allowed'] == false)) {
+                                                              TimeLockBlockedDialog.show(
+                                                                context,
+                                                                errorData: result.rawData ?? {'message': result.message},
+                                                              );
+                                                            } else {
+                                                              messenger.showSnackBar(
+                                                                SnackBar(
+                                                                  content: Text(TimeLockBlockedDialog.cleanErrorMessage(result.message)),
+                                                                  backgroundColor: Colors.red,
+                                                                ),
+                                                              );
+                                                            }
                                                           }
-                                                        } else {
+                                                        } catch (e) {
                                                           if (mounted) {
                                                             setState(() {
                                                               _alreadyRequested = prevAlreadyRequested;
                                                               _isProcessing = false;
                                                             });
+                                                            if (TimeLockBlockedDialog.isConflictError(e)) {
+                                                              TimeLockBlockedDialog.showWithMessage(context, e.toString());
+                                                            } else {
+                                                              messenger.showSnackBar(
+                                                                SnackBar(
+                                                                  content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
+                                                                  backgroundColor: Colors.red,
+                                                                ),
+                                                              );
+                                                            }
                                                           }
-                                                          if (TimeLockBlockedDialog.isConflictError(result.message) ||
-                                                              (result.rawData != null && result.rawData!['allowed'] == false)) {
-                                                            TimeLockBlockedDialog.show(
-                                                              context,
-                                                              errorData: result.rawData ?? {'message': result.message},
-                                                            );
-                                                          } else {
-                                                            messenger.showSnackBar(
-                                                              SnackBar(
-                                                                content: Text(TimeLockBlockedDialog.cleanErrorMessage(result.message)),
-                                                                backgroundColor: Colors.red,
-                                                              ),
-                                                            );
-                                                          }
+                                                        } finally {
+                                                          OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
                                                         }
-                                                      } catch (e) {
-                                                        if (mounted) {
-                                                          setState(() {
-                                                            _alreadyRequested = prevAlreadyRequested;
-                                                            _isProcessing = false;
-                                                          });
-                                                          if (TimeLockBlockedDialog.isConflictError(e)) {
-                                                            TimeLockBlockedDialog.showWithMessage(context, e.toString());
-                                                          } else {
-                                                            messenger.showSnackBar(
-                                                              SnackBar(
-                                                                content: Text(TimeLockBlockedDialog.cleanErrorMessage(e)),
-                                                                backgroundColor: Colors.red,
-                                                              ),
-                                                            );
-                                                          }
-                                                        }
-                                                      } finally {
-                                                        OptimisticActionGuard.end('JOIN_PARTY_PLAN:$planId');
-                                                      }
-                                                    },
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.transparent,
-                                                shadowColor: Colors.transparent,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius: BorderRadius.circular(20),
+                                                      },
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.transparent,
+                                                  shadowColor: Colors.transparent,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(20),
+                                                  ),
                                                 ),
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                                child: Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    _isProcessing
-                                                        ? const SizedBox(
-                                                            width: 20,
-                                                            height: 20,
-                                                            child: CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                                            ),
-                                                          )
-                                                        : Icon(hideVenue ? Icons.lock_rounded : Icons.bolt, color: Colors.white),
-                                                    const SizedBox(width: 12),
-                                                    Flexible(
-                                                      child: Text(
-                                                        _isProcessing
-                                                            ? 'SENDING REQUEST...'
-                                                            : (hideVenue
-                                                                ? 'SEND REQUEST TO SEE VENUE & DETAILS'
-                                                                : 'JOIN THE VIBE'),
-                                                        textAlign: TextAlign.center,
-                                                        maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: TextStyle(
-                                                          fontFamily: 'AllroundGothic',
-                                                          color: Colors.white,
-                                                          fontSize: hideVenue ? 13 : 16,
-                                                          fontWeight: FontWeight.bold,
-                                                          letterSpacing: 1,
+                                                child: Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    children: [
+                                                      _isProcessing
+                                                          ? const SizedBox(
+                                                              width: 20,
+                                                              height: 20,
+                                                              child: CircularProgressIndicator(
+                                                                strokeWidth: 2,
+                                                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                                              ),
+                                                            )
+                                                          : const Icon(Icons.person_add_rounded, color: Colors.white),
+                                                      const SizedBox(width: 8),
+                                                      Flexible(
+                                                        child: Text(
+                                                          _isProcessing
+                                                              ? 'SENDING REQUEST...'
+                                                              : (hideVenue
+                                                                  ? 'REQUEST TO JOIN SECRET VENUE'
+                                                                  : 'REQUEST TO JOIN PARTY PLAN'),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: TextStyle(
+                                                            fontFamily: 'AllroundGothic',
+                                                            color: Colors.white,
+                                                            fontSize: hideVenue ? 13 : 16,
+                                                            fontWeight: FontWeight.bold,
+                                                            letterSpacing: 1,
+                                                          ),
                                                         ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
+                ),
               ),
             ),
     );
@@ -3883,33 +3896,78 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             (post['venueMap'] as Map)['name']?.toString().toUpperCase().contains('SECRET VENUE') == true);
     final bool hideVenue = isSecretVenue && !isMyPost && !hasConfirmedBooking;
 
-    // Determine venue/banner photo (prefer venue or event banner image, avoid host profile photo taking over full banner)
+    // Determine venue/banner photo (prefer actual event banner/flyer/poster image first, then venue interior photo)
     String? bannerPhoto;
     if (!hideVenue) {
-      final venueMap =
-          widget.venue ??
-          (post['venue'] is Map ? post['venue'] as Map<String, dynamic> : null);
-      if (venueMap != null) {
-        if (venueMap['images'] is List &&
-            (venueMap['images'] as List).isNotEmpty) {
-          final firstImg = (venueMap['images'] as List).first;
-          if (firstImg is Map) {
-            final u =
-                firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'];
-            if (u != null && u.toString().isNotEmpty) bannerPhoto = u.toString();
-          } else if (firstImg is String && firstImg.isNotEmpty) {
-            bannerPhoto = firstImg;
+      final List<dynamic> possibleBannerKeys = [
+        post['bannerUrl'],
+        post['bannerImage'],
+        post['banner'],
+        post['posterUrl'],
+        post['poster'],
+        post['flyer'],
+        post['eventBanner'],
+        post['coverImageUrl'],
+        post['imageUrl'],
+        post['image'],
+        if (post['upcomingNight'] is Map) ...[
+          post['upcomingNight']['bannerUrl'],
+          post['upcomingNight']['bannerImage'],
+          post['upcomingNight']['posterUrl'],
+          post['upcomingNight']['flyer'],
+          post['upcomingNight']['imageUrl'],
+        ],
+        if (post['event'] is Map) ...[
+          post['event']['bannerUrl'],
+          post['event']['bannerImage'],
+          post['event']['posterUrl'],
+          post['event']['flyer'],
+          post['event']['imageUrl'],
+        ],
+        if (post['party'] is Map) ...[
+          post['party']['bannerUrl'],
+          post['party']['bannerImage'],
+          post['party']['posterUrl'],
+          post['party']['flyer'],
+          post['party']['imageUrl'],
+        ],
+      ];
+
+      for (final key in possibleBannerKeys) {
+        if (key != null &&
+            key.toString().trim().isNotEmpty &&
+            key.toString() != 'null' &&
+            !key.toString().startsWith('Instance of')) {
+          bannerPhoto = key.toString();
+          break;
+        }
+      }
+
+      if (bannerPhoto == null || bannerPhoto.isEmpty) {
+        final venueMap =
+            widget.venue ??
+            (post['venue'] is Map ? post['venue'] as Map<String, dynamic> : null);
+        if (venueMap != null) {
+          if (venueMap['images'] is List &&
+              (venueMap['images'] as List).isNotEmpty) {
+            final firstImg = (venueMap['images'] as List).first;
+            if (firstImg is Map) {
+              final u =
+                  firstImg['url'] ?? firstImg['imageUrl'] ?? firstImg['filePath'];
+              if (u != null && u.toString().isNotEmpty) bannerPhoto = u.toString();
+            } else if (firstImg is String && firstImg.isNotEmpty) {
+              bannerPhoto = firstImg;
+            }
           }
+          bannerPhoto ??=
+              venueMap['imageUrl']?.toString() ??
+              venueMap['coverImage']?.toString() ??
+              venueMap['photoUrl']?.toString();
         }
         bannerPhoto ??=
-            venueMap['imageUrl']?.toString() ??
-            venueMap['coverImage']?.toString() ??
-            venueMap['photoUrl']?.toString();
+            post['venueImageUrl']?.toString() ??
+            post['venueImage']?.toString();
       }
-      bannerPhoto ??=
-          post['venueImage']?.toString() ??
-          post['bannerUrl']?.toString() ??
-          post['bannerImage']?.toString();
 
       if (bannerPhoto != null &&
           bannerPhoto.startsWith('/') &&

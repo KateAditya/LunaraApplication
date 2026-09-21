@@ -616,8 +616,16 @@ const forkCronWorker = (): void => {
         return;
     }
 
-    const workerPath = path.join(__dirname, 'cronWorker.js');
-    const child = fork(workerPath, [], { env: process.env });
+    const isTs = __filename.endsWith('.ts') || !fs.existsSync(path.join(__dirname, 'cronWorker.js'));
+    const workerFileName = isTs ? 'cronWorker.ts' : 'cronWorker.js';
+    const workerPath = path.join(__dirname, workerFileName);
+    const execArgv = isTs
+        ? ['-r', 'ts-node/register/transpile-only', ...process.execArgv.filter(a => a !== '-r' && !a.includes('ts-node'))]
+        : process.execArgv;
+    const child = fork(workerPath, [], {
+        env: { ...process.env, TS_NODE_TRANSPILE_ONLY: 'true' },
+        execArgv,
+    });
     logger.info(`[CronWorker] Forked background job process ${child.pid}.`);
 
     child.on('exit', (code, signal) => {
