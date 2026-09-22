@@ -36,9 +36,10 @@ app.set('trust proxy', 1);
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
     cors: {
-        origin: process.env.SOCKET_IO_CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+        origin: true,
         credentials: true,
     },
+    transports: ['websocket', 'polling'],
 });
 
 /// Resolves once the cross-process socket adapter has been attached (or has been
@@ -143,7 +144,7 @@ if (process.env.NODE_ENV !== 'development') {
         max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000'),
         message: { success: false, message: 'Too many requests from this IP, please try again later.' },
         keyGenerator: safeIpKeyGenerator,
-        skip: (req) => req.path === '/health',
+        skip: (req) => req.path === '/health' || req.path.startsWith('/socket.io') || req.baseUrl?.startsWith('/socket.io'),
     });
     app.use('/api/', limiter);
 }

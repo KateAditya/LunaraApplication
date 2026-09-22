@@ -1842,7 +1842,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                   ? ad['venue']['category']?.toString() ?? ''
                   : '';
 
-              return GestureDetector(
+              return RepaintBoundary(
+                child: GestureDetector(
                 onTap: () {
                   Venue? matchingVenue;
                   try {
@@ -2006,7 +2007,8 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                     ],
                   ),
                 ),
-              );
+              ),
+            );
             },
           ),
           if (_activeAds.length > 1)

@@ -452,11 +452,13 @@ class ApiService {
     socket = socket_io.io(
       baseUrl,
       socket_io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .enableAutoConnect()
           .enableReconnection()
-          .setReconnectionDelay(1000)
-          .setReconnectionAttempts(99999)
+          .setReconnectionDelay(2000)
+          .setReconnectionDelayMax(10000)
+          .setRandomizationFactor(0.5)
+          .setReconnectionAttempts(15)
           .build(),
     );
 
@@ -479,6 +481,8 @@ class ApiService {
       RealtimeSyncManager.instance.reconcileDelta();
     });
 
+    socket!.onConnectError((err) => debugPrint('[SocketIO] Connection error: $err'));
+    socket!.onError((err) => debugPrint('[SocketIO] Error: $err'));
     socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }
 

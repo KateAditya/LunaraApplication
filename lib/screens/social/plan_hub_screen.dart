@@ -769,7 +769,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
             itemCount: _upcomingNights.length,
             itemBuilder: (context, index) {
               final night = _upcomingNights[index];
-              return Container(
+              return RepaintBoundary(
+                child: Container(
                 width: 280,
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
@@ -970,7 +971,8 @@ class _PlanHubScreenState extends State<PlanHubScreen>
                     ],
                   ),
                 ),
-              );
+              ),
+            );
             },
           ),
         ),
