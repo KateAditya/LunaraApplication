@@ -1,7 +1,9 @@
 // ignore_for_file: use_build_context_synchronously
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../core/theme.dart';
 import '../services/api_service.dart';
 import '../widgets/top_notification_banner.dart';
@@ -81,6 +83,12 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
   List<Map<String, dynamic>> _candidateInvitees = [];
   bool _isLoadingInvitees = false;
 
+  late Razorpay _razorpay;
+  String? _pendingPlanId;
+  String? _pendingOrderId;
+  double? _pendingAmount;
+  bool _isHybridFlow = false;
+
   @override
   void initState() {
     super.initState();
@@ -89,13 +97,153 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       text: "Looking for a fun party partner for $title at ${widget.venueName}! ✨ Let's vibe!",
     );
     _loadInvitees();
+    if (!kIsWeb) {
+      try {
+        _razorpay = Razorpay();
+        _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpaySuccess);
+        _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayError);
+        _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+      } catch (e) {
+        debugPrint('Razorpay init error in UpcomingNightPostPartnerSheet: $e');
+      }
+    }
   }
 
   @override
   void dispose() {
+    if (!kIsWeb) {
+      try {
+        _razorpay.clear();
+      } catch (e) {
+        debugPrint('Razorpay clear error: $e');
+      }
+    }
     _messageController.dispose();
     _inviteeSearchController.dispose();
     super.dispose();
+  }
+
+  void _onPostSuccess() {
+    if (!mounted) return;
+    ApiService.planPostedNotifier.value++;
+    ApiService.notifyFeedNeedsRefresh();
+
+    Navigator.pop(context, true);
+    ApiService.switchDashboardTab(1);
+
+    TopNotificationBanner.show(
+      title: 'Partner Search Posted! 🚀',
+      body: 'Your Upcoming Night post is now live on the Live Feed! Anyone interested can request to join you.',
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Posted to Live Feed! ✨'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _handleRazorpaySuccess(PaymentSuccessResponse response) async {
+    final userId = ApiService.currentUserId;
+    if (_pendingPlanId == null || userId == null) return;
+
+    if (_isHybridFlow) {
+      _isHybridFlow = false;
+      try {
+        await ApiService.verifyWalletRecharge(
+          amount: _pendingAmount ?? 0.0,
+          razorpayPaymentId: response.paymentId ?? '',
+          razorpayOrderId: response.orderId ?? _pendingOrderId ?? '',
+          razorpaySignature: response.signature ?? '',
+        );
+
+        final payRes = await ApiService.payWithWallet(
+          amount: _hostPaysNow,
+          planId: _pendingPlanId!,
+          paymentType: 'party_partner_post',
+        );
+
+        if (payRes != null && payRes['success'] == true) {
+          final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
+          final confirmRes = await ApiService.post(
+            '/api/mobile/party-plans/$_pendingPlanId/host-pay',
+            body: {
+              'userId': userId,
+              'razorpay_order_id': 'order_mock_wallet_$_pendingPlanId',
+              'razorpay_payment_id': 'wallet_$transactionId',
+              'razorpay_signature': 'mock_signature',
+            },
+          );
+          if (confirmRes.statusCode == 200) {
+            _onPostSuccess();
+            return;
+          }
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recharge succeeded. Please tap to complete payment with wallet.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Hybrid post completion error: $e');
+      }
+      return;
+    }
+
+    try {
+      final confirmRes = await ApiService.post(
+        '/api/mobile/party-plans/$_pendingPlanId/host-pay',
+        body: {
+          'userId': userId,
+          'razorpay_order_id': response.orderId ?? _pendingOrderId,
+          'razorpay_payment_id': response.paymentId,
+          'razorpay_signature': response.signature,
+        },
+      );
+      if (confirmRes.statusCode == 200) {
+        _onPostSuccess();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment verification failed. Please check your plans.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Direct gateway host-pay error: $e');
+    }
+  }
+
+  void _handleRazorpayError(PaymentFailureResponse response) {
+    _isHybridFlow = false;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Payment Failed: ${response.message ?? "Transaction Cancelled"}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('External Wallet: ${response.walletName}'),
+          backgroundColor: Colors.blueAccent,
+        ),
+      );
+    }
   }
 
   Future<void> _loadInvitees([String? query]) async {
@@ -315,10 +463,26 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       return;
     }
 
+    final isoPlanDateTime = _formatToIsoDateTime(widget.date, widget.time);
+    final dt = DateTime.tryParse(isoPlanDateTime);
+    if (dt != null) {
+      final now = DateTime.now().toUtc();
+      final diff = dt.difference(now);
+      if (diff.inMinutes < 240) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Partner searches for upcoming night events must be posted at least 4 hours before event start time.'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _isPosting = true);
 
     try {
-      final isoPlanDateTime = _formatToIsoDateTime(widget.date, widget.time);
       // The same event reaches this sheet under three different key names
       // depending on where it came from: `adId` from the Event Posts feed,
       // `eventId` from the Discovery upcoming-nights strip, and a raw `id` from
@@ -409,6 +573,7 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                 planData['hostRazorpayOrderId'] ??
                 'order_mock_${DateTime.now().millisecondsSinceEpoch}')
             .toString();
+        final String razorpayKeyId = (body['razorpayKeyId'] ?? 'rzp_test_123').toString();
 
         if (_hostPaysNow > 0 && planId.isNotEmpty) {
           final double amountToPay = _hostPaysNow;
@@ -445,7 +610,49 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
               }
             },
             onDirectPayment: () async {
+              _pendingPlanId = planId;
+              _pendingOrderId = razorpayOrderId;
+              _pendingAmount = amountToPay;
+              _isHybridFlow = false;
+
+              final isMock = kIsWeb ||
+                  razorpayOrderId.isEmpty ||
+                  razorpayOrderId.startsWith('order_mock_') ||
+                  razorpayKeyId == 'rzp_test_123';
+
+              if (isMock) {
+                try {
+                  final confirmRes = await ApiService.post(
+                    '/api/mobile/party-plans/$planId/host-pay',
+                    body: {
+                      'userId': userId,
+                      'razorpay_order_id': razorpayOrderId,
+                      'razorpay_payment_id': 'pay_${DateTime.now().millisecondsSinceEpoch}',
+                      'razorpay_signature': 'mock_signature',
+                    },
+                  );
+                  return confirmRes.statusCode == 200;
+                } catch (err) {
+                  debugPrint('Direct host-pay error: $err');
+                  return false;
+                }
+              }
+
+              final options = {
+                'key': razorpayKeyId,
+                'amount': (amountToPay * 100).toInt(),
+                'name': 'Lunara',
+                'description': 'Post to Live Feed: $eventTitle',
+                'order_id': razorpayOrderId.isNotEmpty ? razorpayOrderId : null,
+                'timeout': 300,
+                'theme': {'color': '#7c3aed'},
+              };
+
               try {
+                _razorpay.open(options);
+                return 'gateway_launched';
+              } catch (rzpErr) {
+                debugPrint('Razorpay open error: $rzpErr');
                 final confirmRes = await ApiService.post(
                   '/api/mobile/party-plans/$planId/host-pay',
                   body: {
@@ -456,31 +663,78 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                   },
                 );
                 return confirmRes.statusCode == 200;
-              } catch (err) {
-                debugPrint('Direct host-pay error: $err');
-                return false;
               }
             },
             onHybridPayment: (shortfallAmount) async {
-              try {
-                final confirmRes = await ApiService.post(
-                  '/api/mobile/party-plans/$planId/host-pay',
-                  body: {
-                    'userId': userId,
-                    'razorpay_order_id': razorpayOrderId,
-                    'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
-                    'razorpay_signature': 'mock_signature',
-                  },
-                );
-                return confirmRes.statusCode == 200;
-              } catch (err) {
-                debugPrint('Hybrid host-pay error: $err');
-                return false;
+              _pendingPlanId = planId;
+              _pendingAmount = shortfallAmount;
+              _isHybridFlow = true;
+
+              final isMock = kIsWeb;
+              if (isMock) {
+                try {
+                  await ApiService.verifyWalletRecharge(
+                    amount: shortfallAmount,
+                    razorpayPaymentId: 'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
+                    razorpayOrderId: 'order_mock_${DateTime.now().millisecondsSinceEpoch}',
+                    razorpaySignature: 'mock_signature',
+                  );
+                  final payRes = await ApiService.payWithWallet(
+                    amount: amountToPay,
+                    planId: planId,
+                    paymentType: 'party_partner_post',
+                  );
+                  if (payRes != null && payRes['success'] == true) {
+                    final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
+                    final confirmRes = await ApiService.post(
+                      '/api/mobile/party-plans/$planId/host-pay',
+                      body: {
+                        'userId': userId,
+                        'razorpay_order_id': 'order_mock_wallet_$planId',
+                        'razorpay_payment_id': 'wallet_$transactionId',
+                        'razorpay_signature': 'mock_signature',
+                      },
+                    );
+                    return confirmRes.statusCode == 200;
+                  }
+                  return false;
+                } catch (err) {
+                  debugPrint('Hybrid host-pay mock error: $err');
+                  return false;
+                }
               }
+
+              final orderData = await ApiService.createWalletRechargeOrder(shortfallAmount);
+              if (orderData != null) {
+                final String orderId = orderData['orderId'] ?? orderData['id'] ?? '';
+                _pendingOrderId = orderId;
+                final options = {
+                  'key': orderData['keyId'] ?? razorpayKeyId,
+                  'amount': (shortfallAmount * 100).toInt(),
+                  'name': 'Lunara Wallet Recharge',
+                  'description': 'Shortfall ₹${shortfallAmount.toStringAsFixed(0)} for $eventTitle',
+                  'order_id': orderId.isNotEmpty ? orderId : null,
+                  'timeout': 300,
+                  'theme': {'color': '#7c3aed'},
+                };
+                try {
+                  _razorpay.open(options);
+                  return 'gateway_launched';
+                } catch (e) {
+                  debugPrint('Hybrid Razorpay error: $e');
+                  return false;
+                }
+              }
+              return false;
             },
           );
 
-          if (sheetSuccess != true) {
+          if (sheetSuccess == true) {
+            _onPostSuccess();
+            return;
+          }
+
+          if (sheetSuccess != null && sheetSuccess == false && !_isHybridFlow) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Payment cancelled. Your post is saved as unpaid and not yet live on the feed.'),
@@ -490,28 +744,10 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
             );
             return;
           }
+          return;
         }
 
-        ApiService.planPostedNotifier.value++;
-        ApiService.notifyFeedNeedsRefresh();
-
-        Navigator.pop(context, true);
-
-        // Smoothly redirect to Live Feed tab so user instantly views their card
-        ApiService.switchDashboardTab(1);
-
-        TopNotificationBanner.show(
-          title: 'Partner Search Posted! 🚀',
-          body: 'Your Upcoming Night post is now live on the Live Feed! Anyone interested can request to join you.',
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Posted to Live Feed! ✨'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _onPostSuccess();
       } else {
         final body = jsonDecode(response.body);
         final msg = body['message'] ?? 'Failed to create partner search post.';

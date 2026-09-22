@@ -95,11 +95,12 @@ describe('Upcoming Nights Architecture & Payment Logic', () => {
 
     describe('Evolving Notification Timeline Card Dynamic Generation', () => {
         it('should enrich pending request card for partner with Accept / Decline actions', async () => {
+            const futureEventDate = new Date(Date.now() + 7 * 86400000);
             const mockRequest = {
                 id: 'req_123',
                 hostId: 'host_user_1',
                 partnerId: 'partner_user_2',
-                eventDate: new Date('2026-09-10'),
+                eventDate: futureEventDate,
                 status: NightPartnerRequestStatus.PENDING,
                 venue: { name: 'Skyline Club' },
                 reminder2hSent: false,
@@ -122,11 +123,12 @@ describe('Upcoming Nights Architecture & Payment Logic', () => {
         });
 
         it('should enrich confirmed match card with View Ticket, Open Chat & Cancel actions', async () => {
+            const futureEventDate = new Date(Date.now() + 7 * 86400000);
             const mockMatch = {
                 id: 'match_123',
                 hostId: 'host_user_1',
                 partnerId: 'partner_user_2',
-                eventDate: new Date('2026-09-10'),
+                eventDate: futureEventDate,
                 status: NightPartnerMatchStatus.CONFIRMED,
                 conversationId: 'conv_789',
                 bookingId: 'bk_456',
@@ -158,11 +160,12 @@ describe('Upcoming Nights Architecture & Payment Logic', () => {
         });
 
         it('should enrich cancelled match card with Cancelled status text', async () => {
+            const futureEventDate = new Date(Date.now() + 7 * 86400000);
             const mockCancelledMatch = {
                 id: 'match_cancelled',
                 hostId: 'host_user_1',
                 partnerId: 'partner_user_2',
-                eventDate: new Date('2026-09-10'),
+                eventDate: futureEventDate,
                 status: NightPartnerMatchStatus.CANCELLED,
                 venue: { name: 'Illuzion Club' },
                 updatedAt: new Date(),

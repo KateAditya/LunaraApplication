@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import ctrl from '../controllers/mobileBookingController';
+import partyEventCtrl from '../controllers/mobilePartyEventBookingController';
 
 const router = Router();
 
@@ -81,7 +82,7 @@ router.post(
         body('quantity').isInt({ min: 1 }).withMessage('quantity must be at least 1'),
         validate,
     ],
-    ctrl.createPartyBooking
+    partyEventCtrl.createPartyBooking
 );
 
 router.get('/', optionalAuth, ctrl.listMyBookings);

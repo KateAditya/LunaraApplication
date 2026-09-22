@@ -1002,9 +1002,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             prefetchedTargetIds.length === 0;
 
         const [timeLockCheck, prefetchedTargetUsers] = await Promise.all([
-            isUpcomingNightPublicWithoutInvitees
-                ? Promise.resolve({ allowed: true })
-                : EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
+            EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
             prefetchedTargetIds.length > 0
                 ? User.findAll({
                     where: { id: { [Op.in]: prefetchedTargetIds } },
@@ -1127,14 +1125,28 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
                 return;
             }
 
-            // The event must still be ahead of us. Posting a partner search for
-            // a night that has already happened would take real seats and real
-            // money for something nobody can attend.
+            // The event must still be ahead of us and meet the booking cutoff lead time (e.g. 4 hours).
             if (linkedEvent.eventDate && new Date(linkedEvent.eventDate).getTime() < Date.now()) {
                 res.status(409).json({
                     success: false,
                     code: 'EVENT_ALREADY_PASSED',
                     message: 'This event has already taken place.',
+                });
+                return;
+            }
+
+            const effectiveEventTime = linkedEvent.eventDate ? new Date(linkedEvent.eventDate) : new Date(planDateTime);
+            const leadTimeValidation = await BookingPolicyService.validateBookingTime(
+                BookingPolicyType.EVENT_BOOKING,
+                effectiveEventTime
+            );
+            if (!leadTimeValidation.allowed) {
+                res.status(400).json({
+                    success: false,
+                    code: 'EVENT_BOOKING_CUTOFF_EXCEEDED',
+                    message: leadTimeValidation.reason || 'Partner posts must be created at least 4 hours before the event start time.',
+                    hoursRemaining: leadTimeValidation.hoursRemaining,
+                    minBookingLeadTimeHours: leadTimeValidation.minBookingLeadTimeHours,
                 });
                 return;
             }
