@@ -34,6 +34,8 @@ import { EventSeatService } from '../services/EventSeatService';
 import { EventPlanNoMatchService } from '../services/EventPlanNoMatchService';
 import { formatTime12Hour, formatDateFull, extractDateParts, DEFAULT_TIMEZONE } from '../utils/dateTimeUtils';
 import { EntitlementService } from '../services/EntitlementService';
+import { BookingPolicyService } from '../services/BookingPolicyService';
+import { BookingPolicyType } from '../models/BookingPolicyConfig';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // logDepositLedgerEntry — Party Plan host/joiner deposit payments verified via
@@ -4541,20 +4543,27 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
         // of them (₹99). On an event-linked SELF_PAY plan they bought both
         // tickets, so refunding a single unit would hand back half of what they
         // actually paid.
-        const hostUnitsPaid = (plan as any).partyEventId &&
+        const isEventPlan = Boolean((plan as any).partyEventId);
+        const hostUnitsPaid = isEventPlan &&
             plan.paymentType === PartyPlanPaymentType.SELF_PAY
             ? EVENT_PLAN_SEATS
             : 1;
-        const hostRefundAmount = (plan as any).partyEventId
+        const totalPaidByHost = isEventPlan
             ? (Number(plan.depositAmount) || 0) * hostUnitsPaid
             : (Number(plan.depositAmount) || 99.00);
 
-        if (hostRefundAmount > 0) {
+        let finalHostRefund = totalPaidByHost;
+        if (isEventPlan) {
+            const refundCalc = await BookingPolicyService.calculateRefund(BookingPolicyType.EVENT_BOOKING, totalPaidByHost);
+            finalHostRefund = refundCalc.refundAmount;
+        }
+
+        if (finalHostRefund > 0) {
             await WalletService.creditRefund({
                 userId: plan.userId,
-                amount: hostRefundAmount,
+                amount: finalHostRefund,
                 referenceId: hostRefundRef,
-                reason: 'Party Plan Cancelled by Host',
+                reason: isEventPlan ? 'Party Partner Event Post Cancelled by Host' : 'Party Plan Cancelled by Host',
                 partyPlanId: plan.id,
                 transaction,
             });
@@ -4771,6 +4780,19 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
             return;
         }
 
+        // Validate event cancellation cutoff window
+        if ((plan as any).partyEventId && plan.planDateTime) {
+            const timeVal = await BookingPolicyService.validateCancellationTime(BookingPolicyType.EVENT_BOOKING, new Date(plan.planDateTime));
+            if (!timeVal.canCancel) {
+                await transaction.rollback();
+                res.status(400).json({
+                    success: false,
+                    message: timeVal.reason || 'Cancellation cutoff window has passed for this event.',
+                });
+                return;
+            }
+        }
+
         const wasHostPaid = plan.hostPaymentStatus === PartyPlanPaymentStatus.PAID;
         await cancelPartyPlanInternal(plan, transaction);
 
@@ -4781,6 +4803,15 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
             const venue = await Venue.findByPk(plan.venueId);
             if (venue) venueName = venue.name;
         } catch (_) { }
+
+        // Calculate refund amount for response & notification
+        let calculatedRefund = wasHostPaid ? 99.0 : 0.0;
+        if (wasHostPaid && (plan as any).partyEventId) {
+            const hostUnits = plan.paymentType === PartyPlanPaymentType.SELF_PAY ? EVENT_PLAN_SEATS : 1;
+            const totalPaid = (Number(plan.depositAmount) || 0) * hostUnits;
+            const refundRes = await BookingPolicyService.calculateRefund(BookingPolicyType.EVENT_BOOKING, totalPaid);
+            calculatedRefund = refundRes.refundAmount;
+        }
 
         // Post-commit notification & socket broadcast
         setImmediate(async () => {
@@ -4794,12 +4825,12 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
                     entityId: plan.id,
                     title: 'Party Plan Cancelled',
                     body: wasHostPaid
-                        ? `Your Party Plan at ${venueName} has been cancelled. ₹99 has been refunded to your Lunara Wallet.`
+                        ? `Your Party Plan at ${venueName} has been cancelled. ₹${calculatedRefund.toFixed(0)} has been refunded to your Lunara Wallet.`
                         : `Your Party Plan at ${venueName} has been cancelled.`,
                     metadata: {
                         partyPlanId: plan.id,
                         planId: plan.id,
-                        refundAmount: wasHostPaid ? 99.0 : 0.0,
+                        refundAmount: calculatedRefund,
                     },
                     idempotencyKey: `host_plan_cancelled_${plan.id}`,
                 });
@@ -4819,7 +4850,7 @@ export const cancelPartyPlan = async (req: Request, res: Response): Promise<void
         res.json({
             success: true,
             message: wasHostPaid
-                ? 'Party plan cancelled. ₹99 has been refunded to your Lunara Wallet.'
+                ? `Party plan cancelled. ₹${calculatedRefund.toFixed(0)} has been refunded to your Lunara Wallet.`
                 : 'Party plan cancelled.'
         });
     } catch (err: any) {

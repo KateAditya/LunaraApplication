@@ -48,6 +48,14 @@ const defaultStrangerPolicy: PolicyFormState = {
   isActive: true,
 };
 
+const defaultEventPolicy: PolicyFormState = {
+  minBookingLeadTimeHours: 4.0,
+  cancellationCutoffHours: 4.0,
+  refundEnabled: true,
+  refundPercentage: 80.0,
+  isActive: true,
+};
+
 export const BookingPolicySettings: React.FC = () => {
   const [soloForm, setSoloForm] = useState<PolicyFormState>(defaultSoloPolicy);
   const [soloOriginal, setSoloOriginal] = useState<PolicyFormState>(defaultSoloPolicy);
@@ -58,7 +66,10 @@ export const BookingPolicySettings: React.FC = () => {
   const [strangerForm, setStrangerForm] = useState<PolicyFormState>(defaultStrangerPolicy);
   const [strangerOriginal, setStrangerOriginal] = useState<PolicyFormState>(defaultStrangerPolicy);
 
-  const [activeTab, setActiveTab] = useState<'SOLO_BOOKING' | 'GROUP_PARTY' | 'STRANGERS_MEET'>('SOLO_BOOKING');
+  const [eventForm, setEventForm] = useState<PolicyFormState>(defaultEventPolicy);
+  const [eventOriginal, setEventOriginal] = useState<PolicyFormState>(defaultEventPolicy);
+
+  const [activeTab, setActiveTab] = useState<'SOLO_BOOKING' | 'GROUP_PARTY' | 'STRANGERS_MEET' | 'EVENT_BOOKING'>('SOLO_BOOKING');
   const [loading, setLoading] = useState(true);
   const [savingType, setSavingType] = useState<BookingPolicyType | 'ALL' | null>(null);
 
@@ -66,6 +77,7 @@ export const BookingPolicySettings: React.FC = () => {
   const [simPriceSolo, setSimPriceSolo] = useState<number>(1000);
   const [simPriceGroup, setSimPriceGroup] = useState<number>(2500);
   const [simPriceStranger, setSimPriceStranger] = useState<number>(1500);
+  const [simPriceEvent, setSimPriceEvent] = useState<number>(2000);
 
   useEffect(() => {
     fetchPolicies();
@@ -112,6 +124,18 @@ export const BookingPolicySettings: React.FC = () => {
           setStrangerForm(smState);
           setStrangerOriginal(smState);
         }
+        if (res.data.EVENT_BOOKING) {
+          const eb = res.data.EVENT_BOOKING;
+          const ebState: PolicyFormState = {
+            minBookingLeadTimeHours: Number(eb.minBookingLeadTimeHours) || 4.0,
+            cancellationCutoffHours: Number(eb.cancellationCutoffHours) || 4.0,
+            refundEnabled: eb.refundEnabled !== false,
+            refundPercentage: Number(eb.refundPercentage) || 80.0,
+            isActive: eb.isActive !== false,
+          };
+          setEventForm(ebState);
+          setEventOriginal(ebState);
+        }
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to load booking & refund policies');
@@ -125,6 +149,7 @@ export const BookingPolicySettings: React.FC = () => {
     let form = soloForm;
     if (type === 'GROUP_PARTY') form = groupForm;
     if (type === 'STRANGERS_MEET') form = strangerForm;
+    if (type === 'EVENT_BOOKING') form = eventForm;
 
     try {
       const res = await bookingPolicyApi.updatePolicy({
@@ -143,8 +168,17 @@ export const BookingPolicySettings: React.FC = () => {
           setGroupOriginal(form);
         } else if (type === 'STRANGERS_MEET') {
           setStrangerOriginal(form);
+        } else if (type === 'EVENT_BOOKING') {
+          setEventOriginal(form);
         }
-        const label = type === 'SOLO_BOOKING' ? 'Solo Booking' : type === 'GROUP_PARTY' ? 'Group Party' : 'Strangers Meet';
+        const label =
+          type === 'SOLO_BOOKING'
+            ? 'Solo Booking'
+            : type === 'GROUP_PARTY'
+            ? 'Group Party'
+            : type === 'STRANGERS_MEET'
+            ? 'Strangers Meet'
+            : 'Event Booking & Party Partner';
         toast.success(
           `✅ ${label} Refund & Cancellation Policy Settings updated successfully!`
         );
@@ -172,10 +206,15 @@ export const BookingPolicySettings: React.FC = () => {
           bookingType: 'STRANGERS_MEET',
           ...strangerForm,
         }),
+        bookingPolicyApi.updatePolicy({
+          bookingType: 'EVENT_BOOKING',
+          ...eventForm,
+        }),
       ]);
       setSoloOriginal(soloForm);
       setGroupOriginal(groupForm);
       setStrangerOriginal(strangerForm);
+      setEventOriginal(eventForm);
       toast.success('🎉 All Refund & Booking Policy Settings updated successfully!');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to save all settings');
@@ -191,6 +230,8 @@ export const BookingPolicySettings: React.FC = () => {
       setGroupForm(groupOriginal);
     } else if (type === 'STRANGERS_MEET') {
       setStrangerForm(strangerOriginal);
+    } else if (type === 'EVENT_BOOKING') {
+      setEventForm(eventOriginal);
     }
     toast('Settings reset to saved values', { icon: '↩️' });
   };
@@ -216,7 +257,14 @@ export const BookingPolicySettings: React.FC = () => {
     strangerForm.refundPercentage !== strangerOriginal.refundPercentage ||
     strangerForm.isActive !== strangerOriginal.isActive;
 
-  const isAnyDirty = isSoloDirty || isGroupDirty || isStrangerDirty;
+  const isEventDirty =
+    eventForm.minBookingLeadTimeHours !== eventOriginal.minBookingLeadTimeHours ||
+    eventForm.cancellationCutoffHours !== eventOriginal.cancellationCutoffHours ||
+    eventForm.refundEnabled !== eventOriginal.refundEnabled ||
+    eventForm.refundPercentage !== eventOriginal.refundPercentage ||
+    eventForm.isActive !== eventOriginal.isActive;
+
+  const isAnyDirty = isSoloDirty || isGroupDirty || isStrangerDirty || isEventDirty;
 
   if (loading) {
     return (
@@ -469,6 +517,26 @@ export const BookingPolicySettings: React.FC = () => {
               >
                 <span>Strangers Meet Policy</span>
                 {isStrangerDirty && (
+                  <span className="badge bg-warning text-dark" style={{ fontSize: '0.65rem' }}>
+                    Unsaved
+                  </span>
+                )}
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link px-4 py-3 fw-bold d-flex align-items-center gap-2 ${
+                  activeTab === 'EVENT_BOOKING' ? 'active' : ''
+                }`}
+                onClick={() => setActiveTab('EVENT_BOOKING')}
+                style={{
+                  borderRadius: '10px 10px 0 0',
+                  color: activeTab === 'EVENT_BOOKING' ? '#7F00FF' : 'var(--vz-text-muted)',
+                  borderBottom: activeTab === 'EVENT_BOOKING' ? '3px solid #7F00FF' : 'none',
+                }}
+              >
+                <span>Event & Party Partner Policy</span>
+                {isEventDirty && (
                   <span className="badge bg-warning text-dark" style={{ fontSize: '0.65rem' }}>
                     Unsaved
                   </span>
@@ -1294,6 +1362,291 @@ export const BookingPolicySettings: React.FC = () => {
                       <BiShieldQuarter className="text-warning mt-1 flex-shrink-0" />
                       <span>
                         Tickets for cancelled participants are immediately revoked and marked invalid in Ticket Pocket.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: EVENT & PARTY PARTNER POLICY */}
+          {activeTab === 'EVENT_BOOKING' && (
+            <div className="row g-4">
+              <div className="col-12 col-lg-7">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="fw-bold m-0 text-primary">Event Booking & Party Partner Cancellation Policy</h5>
+                  <div className="form-check form-switch d-flex align-items-center gap-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="eventIsActive"
+                      checked={eventForm.isActive}
+                      onChange={(e) => setEventForm({ ...eventForm, isActive: e.target.checked })}
+                      style={{ cursor: 'pointer', width: '2.5em', height: '1.3em' }}
+                    />
+                    <label className="form-check-label fw-bold text-muted small" htmlFor="eventIsActive">
+                      {eventForm.isActive ? 'Policy Active' : 'Policy Disabled'}
+                    </label>
+                  </div>
+                </div>
+
+                <p className="text-muted small mb-4">
+                  Governs ticket cancellation and refund terms for upcoming party events and "Post to Find Partner" / Live Feed posts.
+                  When host or invited participants pay for party passes, payments are locked and non-refundable unless cancelled
+                  in compliance with this cutoff lead-time window and refund policy.
+                </p>
+
+                {/* Refund Toggle */}
+                <div className="p-3 mb-4 rounded-3 border bg-light d-flex justify-content-between align-items-center">
+                  <div>
+                    <h6 className="fw-bold mb-1">Allow Event & Partner Cancellation Refunds</h6>
+                    <small className="text-muted">
+                      If enabled, cancellations before cutoff will automatically credit refunds to the user's Smart Wallet.
+                    </small>
+                  </div>
+                  <div className="form-check form-switch">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="eventRefundEnabled"
+                      checked={eventForm.refundEnabled}
+                      onChange={(e) => setEventForm({ ...eventForm, refundEnabled: e.target.checked })}
+                      style={{ cursor: 'pointer', width: '2.5em', height: '1.3em' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Refund Percentage Slider */}
+                <div className="mb-4">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <label className="form-label fw-bold m-0">Default Refund Percentage (%)</label>
+                    <span className="badge bg-primary fs-6 px-3 py-1">{eventForm.refundPercentage}% Refund</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="form-range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={eventForm.refundPercentage}
+                    disabled={!eventForm.refundEnabled}
+                    onChange={(e) => setEventForm({ ...eventForm, refundPercentage: parseFloat(e.target.value) || 0 })}
+                  />
+                  <div className="d-flex justify-content-between text-muted small mt-1">
+                    {[0, 25, 50, 75, 80, 90, 100].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary py-0 px-2"
+                        style={{ fontSize: '0.75rem' }}
+                        disabled={!eventForm.refundEnabled}
+                        onClick={() => setEventForm({ ...eventForm, refundPercentage: pct })}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  <small className="text-muted d-block mt-2">
+                    Standard policy is 80% or 100% refund upon host/guest cancellation prior to the event cutoff window.
+                  </small>
+                </div>
+
+                {/* Cancellation Cutoff Hours */}
+                <div className="mb-4">
+                  <label className="form-label fw-bold mb-1">
+                    Cancellation Cutoff Window (Before Event Start Time)
+                  </label>
+                  <p className="text-muted small mb-2">
+                    How much time before the event start can a party creator/partner request cancellation with refund.
+                  </p>
+
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    {[
+                      { hours: 1, label: '1 Hour' },
+                      { hours: 2, label: '2 Hours' },
+                      { hours: 4, label: '4 Hours (Standard)' },
+                      { hours: 6, label: '6 Hours' },
+                      { hours: 12, label: '12 Hours' },
+                      { hours: 24, label: '1 Day (24h)' },
+                      { hours: 48, label: '2 Days (48h)' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.hours}
+                        type="button"
+                        className={`btn btn-sm fw-semibold ${
+                          eventForm.cancellationCutoffHours === preset.hours ? 'btn-primary' : 'btn-outline-secondary'
+                        }`}
+                        onClick={() => setEventForm({ ...eventForm, cancellationCutoffHours: preset.hours })}
+                        style={{
+                          borderRadius: 10,
+                          fontSize: '0.85rem',
+                          background: eventForm.cancellationCutoffHours === preset.hours ? 'linear-gradient(135deg, #7F00FF, #6B21A8)' : undefined,
+                          borderColor: eventForm.cancellationCutoffHours === preset.hours ? '#7F00FF' : undefined,
+                        }}
+                      >
+                        ⏱️ {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom Cutoff Input */}
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="720"
+                      className="form-control form-control-lg"
+                      value={eventForm.cancellationCutoffHours}
+                      onChange={(e) =>
+                        setEventForm({ ...eventForm, cancellationCutoffHours: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                    <span className="input-group-text fw-semibold">
+                      Hours Before Event ({eventForm.cancellationCutoffHours >= 24 ? `${(eventForm.cancellationCutoffHours / 24).toFixed(1)} Days` : `${eventForm.cancellationCutoffHours} Hours`})
+                    </span>
+                  </div>
+                  <small className="text-muted d-block mt-2">
+                    Current Cutoff: <strong>{eventForm.cancellationCutoffHours >= 24 ? `${(eventForm.cancellationCutoffHours / 24).toFixed(1)} Day(s) (${eventForm.cancellationCutoffHours} Hours)` : `${eventForm.cancellationCutoffHours} Hour(s)`}</strong> prior to event date & time.
+                  </small>
+                </div>
+
+                {/* Minimum Booking Lead Time Hours */}
+                <div className="mb-4">
+                  <label className="form-label fw-bold mb-1">
+                    Minimum Event Posting Lead Time (Hours)
+                  </label>
+                  <p className="text-muted small mb-2">
+                    Party partner posts must be scheduled at least this many hours in advance of the event start date.
+                  </p>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="168"
+                      className="form-control form-control-lg"
+                      value={eventForm.minBookingLeadTimeHours}
+                      onChange={(e) =>
+                        setEventForm({ ...eventForm, minBookingLeadTimeHours: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                    <span className="input-group-text fw-semibold">Hours Lead Time</span>
+                  </div>
+                  <div className="d-flex gap-2 mt-2">
+                    {[1, 2, 4, 6, 12, 24, 48].map((hrs) => (
+                      <button
+                        key={hrs}
+                        type="button"
+                        className={`btn btn-sm ${
+                          eventForm.minBookingLeadTimeHours === hrs ? 'btn-primary' : 'btn-outline-secondary'
+                        }`}
+                        onClick={() => setEventForm({ ...eventForm, minBookingLeadTimeHours: hrs })}
+                        style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                      >
+                        {hrs}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Form Buttons */}
+                <div className="d-flex align-items-center gap-2 mt-4 pt-2">
+                  <button
+                    type="button"
+                    className="btn btn-primary px-4 py-2 fw-bold d-flex align-items-center gap-2"
+                    onClick={() => handleSavePolicy('EVENT_BOOKING')}
+                    disabled={!isEventDirty || savingType !== null}
+                    style={{ background: 'linear-gradient(135deg, #7F00FF, #6B21A8)', borderColor: '#7F00FF' }}
+                  >
+                    {savingType === 'EVENT_BOOKING' ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" /> Saving Event Policy...
+                      </>
+                    ) : (
+                      <>
+                        <BiSave size={18} /> Save Event Policy
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-light px-3 py-2 fw-semibold d-flex align-items-center gap-1"
+                    onClick={() => handleReset('EVENT_BOOKING')}
+                    disabled={!isEventDirty || savingType !== null}
+                  >
+                    <BiReset size={18} /> Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* SIMULATOR & POLICY EXPLANATION */}
+              <div className="col-12 col-lg-5">
+                <div className="card border-0 shadow-sm p-4 mb-4" style={{ background: 'rgba(127, 0, 255, 0.03)', border: '1px solid rgba(127, 0, 255, 0.2)', borderRadius: 16 }}>
+                  <div className="d-flex align-items-center gap-2 mb-3">
+                    <BiCalculator size={22} style={{ color: '#7F00FF' }} />
+                    <h6 className="fw-bold m-0">Live Event & Party Partner Refund Simulation</h6>
+                  </div>
+
+                  <label className="form-label small fw-semibold text-muted mb-1">Simulate Ticket / Post Pass Price (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    className="form-control mb-3"
+                    value={simPriceEvent}
+                    onChange={(e) => setSimPriceEvent(Number(e.target.value) || 0)}
+                  />
+
+                  <div className="p-3 bg-white rounded-3 border mb-3 shadow-sm">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-muted small">Total Paid Amount:</span>
+                      <span className="fw-bold">₹{simPriceEvent.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-success small fw-semibold">
+                        Refund Amount ({eventForm.refundPercentage}%):
+                      </span>
+                      <span className="fw-bold text-success fs-5">
+                        {eventForm.refundEnabled
+                          ? `₹${((simPriceEvent * eventForm.refundPercentage) / 100).toFixed(0)}`
+                          : '₹0 (Refunds Disabled)'}
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="text-muted small">Refund Routing:</span>
+                      <span className="badge bg-primary-subtle text-primary fw-bold">
+                        Lunara Smart Wallet Instant Credit
+                      </span>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+                      <span className="text-danger small">Cancellation Fee:</span>
+                      <span className="fw-semibold text-danger">
+                        {eventForm.refundEnabled
+                          ? `₹${(simPriceEvent - (simPriceEvent * eventForm.refundPercentage) / 100).toFixed(0)}`
+                          : `₹${simPriceEvent.toFixed(0)} (100% Fee)`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="small text-muted">
+                    <div className="d-flex align-items-start gap-2 mb-2">
+                      <BiCheckCircle className="text-success mt-1 flex-shrink-0" />
+                      <span>
+                        Cancellations submitted at least <strong>{eventForm.cancellationCutoffHours >= 24 ? `${(eventForm.cancellationCutoffHours / 24).toFixed(0)} day(s)` : `${eventForm.cancellationCutoffHours} hour(s)`}</strong> before start time are eligible for refund.
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-start gap-2 mb-2">
+                      <BiInfoCircle className="text-primary mt-1 flex-shrink-0" />
+                      <span>
+                        Payments for Live Feed partner posts remain locked and confirmed; funds are strictly refunded only when a cancellation request is accepted within cutoff.
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-start gap-2">
+                      <BiShieldQuarter className="text-warning mt-1 flex-shrink-0" />
+                      <span>
+                        Upon cancellation, the Live Feed post is archived and party partner passes are invalidated.
                       </span>
                     </div>
                   </div>

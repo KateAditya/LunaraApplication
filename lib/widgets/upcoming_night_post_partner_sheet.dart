@@ -9,6 +9,7 @@ import '../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../utils/lunara_date_formatter.dart';
 import 'lunara_cached_image.dart';
 import 'lunara_profile_image.dart';
+import 'smart_checkout_sheet.dart';
 
 class UpcomingNightPostPartnerSheet extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -401,6 +402,96 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       setState(() => _isPosting = false);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        final body = jsonDecode(response.body);
+        final planData = body['data'] ?? body['partyPlan'] ?? body;
+        final String planId = (planData['id'] ?? body['id'] ?? '').toString();
+        final String razorpayOrderId = (body['razorpayOrderId'] ??
+                planData['hostRazorpayOrderId'] ??
+                'order_mock_${DateTime.now().millisecondsSinceEpoch}')
+            .toString();
+
+        if (_hostPaysNow > 0 && planId.isNotEmpty) {
+          final double amountToPay = _hostPaysNow;
+          final bool? sheetSuccess = await SmartCheckoutSheet.show(
+            context: context,
+            title: 'Confirm & Post to Live Feed',
+            subtitle:
+                '${_selectedPaymentType == 'self_pay' ? "I'll pay for both tickets" : "Split Ticket (My Share)"} for $eventTitle',
+            itemPrice: amountToPay,
+            onWalletPayment: () async {
+              try {
+                final payRes = await ApiService.payWithWallet(
+                  amount: amountToPay,
+                  planId: planId,
+                  paymentType: 'party_partner_post',
+                );
+                if (payRes != null && payRes['success'] == true) {
+                  final transactionId = payRes['data']?['transactionId']?.toString() ?? 'wallet';
+                  final confirmRes = await ApiService.post(
+                    '/api/mobile/party-plans/$planId/host-pay',
+                    body: {
+                      'userId': userId,
+                      'razorpay_order_id': 'order_mock_wallet_$planId',
+                      'razorpay_payment_id': 'wallet_$transactionId',
+                      'razorpay_signature': 'mock_signature',
+                    },
+                  );
+                  return confirmRes.statusCode == 200;
+                }
+                return false;
+              } catch (err) {
+                debugPrint('Wallet host-pay error: $err');
+                return false;
+              }
+            },
+            onDirectPayment: () async {
+              try {
+                final confirmRes = await ApiService.post(
+                  '/api/mobile/party-plans/$planId/host-pay',
+                  body: {
+                    'userId': userId,
+                    'razorpay_order_id': razorpayOrderId,
+                    'razorpay_payment_id': 'pay_${DateTime.now().millisecondsSinceEpoch}',
+                    'razorpay_signature': 'mock_signature',
+                  },
+                );
+                return confirmRes.statusCode == 200;
+              } catch (err) {
+                debugPrint('Direct host-pay error: $err');
+                return false;
+              }
+            },
+            onHybridPayment: (shortfallAmount) async {
+              try {
+                final confirmRes = await ApiService.post(
+                  '/api/mobile/party-plans/$planId/host-pay',
+                  body: {
+                    'userId': userId,
+                    'razorpay_order_id': razorpayOrderId,
+                    'razorpay_payment_id': 'pay_hybrid_${DateTime.now().millisecondsSinceEpoch}',
+                    'razorpay_signature': 'mock_signature',
+                  },
+                );
+                return confirmRes.statusCode == 200;
+              } catch (err) {
+                debugPrint('Hybrid host-pay error: $err');
+                return false;
+              }
+            },
+          );
+
+          if (sheetSuccess != true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Payment cancelled. Your post is saved as unpaid and not yet live on the feed.'),
+                backgroundColor: Colors.amber,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            return;
+          }
+        }
+
         ApiService.planPostedNotifier.value++;
         ApiService.notifyFeedNeedsRefresh();
 
