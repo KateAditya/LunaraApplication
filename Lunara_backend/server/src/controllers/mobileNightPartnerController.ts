@@ -9,15 +9,20 @@ import { logger } from '../config/logger';
 
 export const checkUserInterest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, eventDate } = req.query;
-        const userId = req.user!.id;
+        const venueId = req.query?.venueId || req.body?.venueId;
+        const eventDate = req.query?.eventDate || req.body?.eventDate;
+        const userId = req.user?.id || req.query?.userId || req.body?.userId;
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
         const isInterested = await NightPartnerService.checkUserInterest(
-            userId,
+            String(userId),
             String(venueId),
             String(eventDate)
         );
@@ -30,14 +35,25 @@ export const checkUserInterest = async (req: Request, res: Response): Promise<vo
 
 export const markInterested = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, eventDate, eventTime } = req.body;
-        const userId = req.user!.id;
+        const venueId = req.body?.venueId || req.query?.venueId;
+        const eventDate = req.body?.eventDate || req.query?.eventDate;
+        const eventTime = req.body?.eventTime || req.query?.eventTime;
+        const userId = req.user?.id || req.body?.userId || req.query?.userId;
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
-        const interest = await NightPartnerService.markInterested(userId, venueId, eventDate, eventTime);
+        const interest = await NightPartnerService.markInterested(
+            String(userId),
+            String(venueId),
+            String(eventDate),
+            eventTime ? String(eventTime) : undefined
+        );
         res.json({ success: true, message: 'Marked as interested', data: interest });
     } catch (err: any) {
         logger.error('markInterested error:', err);
@@ -47,14 +63,19 @@ export const markInterested = async (req: Request, res: Response): Promise<void>
 
 export const removeInterest = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { venueId, eventDate } = req.body;
-        const userId = req.user!.id;
+        const venueId = req.body?.venueId || req.query?.venueId;
+        const eventDate = req.body?.eventDate || req.query?.eventDate;
+        const userId = req.user?.id || req.body?.userId || req.query?.userId;
+        if (!userId) {
+            res.status(401).json({ success: false, message: 'Unauthorized' });
+            return;
+        }
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate are required' });
             return;
         }
 
-        await NightPartnerService.removeInterest(userId, venueId, eventDate);
+        await NightPartnerService.removeInterest(String(userId), String(venueId), String(eventDate));
         res.json({ success: true, message: 'Interest removed successfully' });
     } catch (err: any) {
         logger.error('removeInterest error:', err);

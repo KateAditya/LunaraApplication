@@ -3683,10 +3683,18 @@ class ApiService {
 
   static Future<http.Response> delete(
     String endpoint, {
+    Map<String, dynamic>? queryParameters,
     Map<String, dynamic>? body,
     Duration? timeout,
   }) async {
-    final uri = Uri.parse('$baseUrl$endpoint');
+    var uri = Uri.parse('$baseUrl$endpoint');
+    if (queryParameters != null && queryParameters.isNotEmpty) {
+      final mergedParams = Map<String, String>.from(uri.queryParameters);
+      queryParameters.forEach((k, v) {
+        if (v != null) mergedParams[k] = v.toString();
+      });
+      uri = uri.replace(queryParameters: mergedParams);
+    }
     debugPrint('DELETE $uri');
     final headers = {
       'Content-Type': 'application/json',
@@ -5081,6 +5089,11 @@ class ApiService {
     try {
       final response = await delete(
         '/api/mobile/nights/interested',
+        queryParameters: {
+          'userId': userId,
+          'venueId': venueId,
+          'eventDate': date,
+        },
         body: {'userId': userId, 'venueId': venueId, 'eventDate': date},
       );
       if (response.statusCode == 200) {

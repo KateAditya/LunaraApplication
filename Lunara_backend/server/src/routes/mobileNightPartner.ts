@@ -14,10 +14,6 @@ router.get(
     '/check-interest',
     [
         authenticate,
-        query('userId').notEmpty().withMessage('userId is required'),
-        query('venueId').notEmpty().withMessage('venueId is required'),
-        query('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
-        validate,
     ],
     ctrl.checkUserInterest
 );
@@ -30,10 +26,6 @@ router.post(
     '/interested',
     [
         authenticate,
-        body('userId').notEmpty().withMessage('userId is required'),
-        body('venueId').notEmpty().withMessage('venueId is required'),
-        body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
-        validate,
     ],
     ctrl.markInterested
 );
@@ -46,10 +38,6 @@ router.delete(
     '/interested',
     [
         authenticate,
-        body('userId').notEmpty().withMessage('userId is required'),
-        body('venueId').notEmpty().withMessage('venueId is required'),
-        body('eventDate').isISO8601().withMessage('eventDate must be YYYY-MM-DD'),
-        validate,
     ],
     ctrl.removeInterest
 );
