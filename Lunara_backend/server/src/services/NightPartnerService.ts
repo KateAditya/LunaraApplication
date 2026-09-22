@@ -222,6 +222,39 @@ export class NightPartnerService {
         return 500;
     }
 
+    public static async getVenueIdList(venueId: string): Promise<string[]> {
+        if (!venueId) return [];
+        const rawId = String(venueId).trim();
+        const cleanId = rawId.replace(/^ad_event_/, '').trim();
+        const list = new Set<string>([rawId, cleanId]);
+        if (cleanId) {
+            list.add(`ad_event_${cleanId}`);
+        }
+
+        try {
+            const venue = await this.resolveVenue(venueId);
+            if (venue) {
+                list.add(venue.id);
+                list.add(String(venue.id));
+                list.add(`ad_event_${venue.id}`);
+                // Fetch all Ad IDs associated with this venue
+                try {
+                    const Ad = (await import('../models/Ad')).default;
+                    const ads = await Ad.findAll({
+                        where: { venueId: venue.id },
+                        attributes: ['id'],
+                    });
+                    for (const ad of ads) {
+                        list.add(String(ad.id));
+                        list.add(`ad_event_${ad.id}`);
+                    }
+                } catch (_) { }
+            }
+        } catch (_) { }
+
+        return Array.from(list).filter(Boolean);
+    }
+
     /**
      * Check if a user has marked interest in an upcoming night
      */
@@ -230,16 +263,19 @@ export class NightPartnerService {
         venueId: string,
         eventDate: string
     ): Promise<boolean> {
-        const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
+        const venueIdList = await this.getVenueIdList(venueId);
         const formattedDate = this.normalizeDateString(eventDate);
-        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
+        const dateVariants = Array.from(new Set([
+            formattedDate,
+            String(eventDate).split('T')[0],
+            String(eventDate).trim(),
+        ].filter(Boolean)));
 
         const interest = await NightInterest.findOne({
             where: {
                 userId,
                 venueId: { [Op.in]: venueIdList },
-                eventDate: formattedDate,
+                eventDate: { [Op.in]: dateVariants },
                 status: NightInterestStatus.INTERESTED,
             },
         });
@@ -258,23 +294,28 @@ export class NightPartnerService {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
-        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
+        const venueIdList = await this.getVenueIdList(venueId);
+        const dateVariants = Array.from(new Set([
+            formattedDate,
+            String(eventDate).split('T')[0],
+            String(eventDate).trim(),
+        ].filter(Boolean)));
 
         let interest = await NightInterest.findOne({
             where: {
                 userId,
                 venueId: { [Op.in]: venueIdList },
-                eventDate: formattedDate as any,
+                eventDate: { [Op.in]: dateVariants },
             },
         });
 
         if (interest) {
-            if (interest.status !== NightInterestStatus.INTERESTED) {
-                await interest.update({
-                    status: NightInterestStatus.INTERESTED,
-                    eventTime: eventTime || interest.eventTime || '20:00',
-                });
-            }
+            await interest.update({
+                status: NightInterestStatus.INTERESTED,
+                venueId: resolvedVenueId,
+                eventDate: formattedDate as any,
+                eventTime: eventTime || interest.eventTime || '20:00',
+            });
         } else {
             interest = await NightInterest.create({
                 userId,
@@ -289,7 +330,14 @@ export class NightPartnerService {
         try {
             const { io } = require('../server');
             if (io) {
-                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate: formattedDate, timestamp: new Date().toISOString() });
+                io.emit('live_feed_update', {
+                    type: 'upcoming_night_interest_updated',
+                    venueId: resolvedVenueId,
+                    venueIdList,
+                    eventDate: formattedDate,
+                    userId,
+                    timestamp: new Date().toISOString()
+                });
             }
         } catch (_) { }
 
@@ -307,7 +355,12 @@ export class NightPartnerService {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
-        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
+        const venueIdList = await this.getVenueIdList(venueId);
+        const dateVariants = Array.from(new Set([
+            formattedDate,
+            String(eventDate).split('T')[0],
+            String(eventDate).trim(),
+        ].filter(Boolean)));
 
         await NightInterest.update(
             { status: NightInterestStatus.REMOVED },
@@ -315,7 +368,7 @@ export class NightPartnerService {
                 where: {
                     userId,
                     venueId: { [Op.in]: venueIdList },
-                    eventDate: formattedDate,
+                    eventDate: { [Op.in]: dateVariants },
                 },
             }
         );
@@ -324,7 +377,14 @@ export class NightPartnerService {
         try {
             const { io } = require('../server');
             if (io) {
-                io.to('live_feed').emit('live_feed_update', { type: 'upcoming_night_interest_updated', venueId: resolvedVenueId, eventDate: formattedDate, timestamp: new Date().toISOString() });
+                io.emit('live_feed_update', {
+                    type: 'upcoming_night_interest_updated',
+                    venueId: resolvedVenueId,
+                    venueIdList,
+                    eventDate: formattedDate,
+                    userId,
+                    timestamp: new Date().toISOString()
+                });
             }
         } catch (_) { }
         return true;
@@ -338,21 +398,27 @@ export class NightPartnerService {
         venueId: string,
         eventDate: string
     ): Promise<SafePartnerProfile[]> {
-        const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
+        const venueIdList = await this.getVenueIdList(venueId);
+        const dateVariants = Array.from(new Set([
+            formattedDate,
+            String(eventDate).split('T')[0],
+            String(eventDate).trim(),
+        ].filter(Boolean)));
 
         const interests = await NightInterest.findAll({
             where: {
-                venueId: resolvedVenueId,
-                eventDate: formattedDate,
+                venueId: { [Op.in]: venueIdList },
+                eventDate: { [Op.in]: dateVariants },
                 status: NightInterestStatus.INTERESTED,
-                userId: { [Op.ne]: hostId },
+                ...(hostId ? { userId: { [Op.ne]: hostId } } : {}),
             },
             include: [
                 {
                     model: User,
                     as: 'user',
+                    where: { [Op.or]: [{ isDeleted: false }, { isDeleted: { [Op.is]: null } }] } as any,
+                    required: true,
                     attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
                     include: [
                         { model: UserProfile, as: 'profile' },
@@ -393,7 +459,8 @@ export class NightPartnerService {
                 primaryPhoto: primaryPhotoObj?.filePath || null,
                 isVerified: !!u.isVerified,
                 trustScore: u.isVerified ? 4.9 : 4.5,
-                compatibilityScore: 85 + Math.floor(Math.random() * 14), // Dynamic transparent score calculation
+                compatibilityScore: 94,
+                isInterested: true,
                 interestId: item.id,
             });
         }
@@ -410,30 +477,38 @@ export class NightPartnerService {
         eventDate: string,
         search?: string
     ): Promise<SafePartnerProfile[]> {
-        const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
+        const venueIdList = await this.getVenueIdList(venueId);
+        const dateVariants = Array.from(new Set([
+            formattedDate,
+            String(eventDate).split('T')[0],
+            String(eventDate).trim(),
+        ].filter(Boolean)));
 
         const userWhere: any = {
-            id: { [Op.ne]: hostId },
-            [Op.or]: [{ isDeleted: false }, { isDeleted: null }],
+            ...(hostId ? { id: { [Op.ne]: hostId } } : {}),
+            [Op.or]: [{ isDeleted: false }, { isDeleted: { [Op.is]: null } }],
         };
 
         if (search && search.trim().length > 0) {
             const cleanSearch = `%${search.trim()}%`;
-            userWhere[Op.or] = [
-                { firstName: { [Op.iLike]: cleanSearch } },
-                { lastName: { [Op.iLike]: cleanSearch } },
+            userWhere[Op.and] = [
+                {
+                    [Op.or]: [
+                        { firstName: { [Op.iLike]: cleanSearch } },
+                        { lastName: { [Op.iLike]: cleanSearch } },
+                    ]
+                }
             ];
         }
 
-        // 1. Fetch interested users in 1 query
+        // 1. Fetch interested users in 1 query across all possible venueId representations & date variants
         const interestedRecords = await NightInterest.findAll({
             where: {
-                venueId: resolvedVenueId,
-                eventDate: formattedDate,
+                venueId: { [Op.in]: venueIdList },
+                eventDate: { [Op.in]: dateVariants },
                 status: NightInterestStatus.INTERESTED,
-                userId: { [Op.ne]: hostId },
+                ...(hostId ? { userId: { [Op.ne]: hostId } } : {}),
             },
             attributes: ['id', 'userId', 'eventTime'],
         });
@@ -448,7 +523,7 @@ export class NightPartnerService {
         // 2. Fetch existing active matches on this date in 1 query
         const existingMatches = await NightPartnerMatch.findAll({
             where: {
-                eventDate: formattedDate,
+                eventDate: { [Op.in]: dateVariants },
                 status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
             },
             attributes: ['hostId', 'partnerId'],
@@ -460,15 +535,17 @@ export class NightPartnerService {
         }
 
         // 3. Fetch existing pending/accepted requests from this host for this venue & date in 1 query
-        const existingRequests = await NightPartnerRequest.findAll({
-            where: {
-                hostId,
-                venueId: resolvedVenueId,
-                eventDate: formattedDate,
-                status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
-            },
-            attributes: ['partnerId'],
-        });
+        const existingRequests = hostId
+            ? await NightPartnerRequest.findAll({
+                where: {
+                    hostId,
+                    venueId: { [Op.in]: venueIdList },
+                    eventDate: { [Op.in]: dateVariants },
+                    status: { [Op.in]: [NightPartnerRequestStatus.PENDING, NightPartnerRequestStatus.ACCEPTED] },
+                },
+                attributes: ['partnerId'],
+            })
+            : [];
         const pendingInvitePartnerIds = new Set<string>(existingRequests.map(r => r.partnerId));
 
         // 4. Fetch candidate users (Ensuring ALL interested users are ALWAYS loaded)
@@ -477,9 +554,9 @@ export class NightPartnerService {
             interestedUserList.length > 0
                 ? User.findAll({
                     where: {
-                        id: { [Op.in]: interestedUserList, [Op.ne]: hostId },
-                        isDeleted: { [Op.ne]: true },
-                    },
+                        id: { [Op.in]: interestedUserList, ...(hostId ? { [Op.ne]: hostId } : {}) },
+                        [Op.or]: [{ isDeleted: false }, { isDeleted: { [Op.is]: null } }],
+                    } as any,
                     attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
                     include: [
                         { model: UserProfile, as: 'profile' },
@@ -516,13 +593,18 @@ export class NightPartnerService {
         const available: SafePartnerProfile[] = [];
 
         for (const u of candidates) {
-            if (busyUserIds.has(u.id)) {
+            const isInterested = interestedMap.has(u.id);
+            const interestId = interestedMap.get(u.id);
+            const hasPendingInvite = pendingInvitePartnerIds.has(u.id);
+
+            // If user is busy with another match, skip UNLESS interested
+            if (busyUserIds.has(u.id) && !isInterested) {
                 continue;
             }
 
-            // Respect user's hidden profile preference
+            // Respect user's hidden profile preference UNLESS they marked interest
             const prefs = (u as any).preferences;
-            if (prefs && prefs.showMeInMatching === false) {
+            if (prefs && prefs.showMeInMatching === false && !isInterested) {
                 continue;
             }
 
@@ -537,10 +619,6 @@ export class NightPartnerService {
                 const ageDate = new Date(ageDifMs);
                 age = Math.abs(ageDate.getUTCFullYear() - 1970);
             }
-
-            const isInterested = interestedMap.has(u.id);
-            const interestId = interestedMap.get(u.id);
-            const hasPendingInvite = pendingInvitePartnerIds.has(u.id);
 
             available.push({
                 userId: u.id,

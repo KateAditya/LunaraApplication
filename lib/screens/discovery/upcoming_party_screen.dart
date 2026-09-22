@@ -39,7 +39,11 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   }
 
   Future<void> _loadFullVenueDetails() async {
-    final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+    final venueId = widget.venueMap?['id']?.toString() ??
+        widget.party['venueId']?.toString() ??
+        widget.party['adId']?.toString() ??
+        widget.party['id']?.toString() ??
+        '';
     if (venueId.isEmpty) return;
     try {
       final res = await ApiService.get('/api/venues/$venueId');
@@ -131,6 +135,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     final venueId =
         widget.venueMap?['id']?.toString() ??
         widget.party['venueId']?.toString() ??
+        widget.party['adId']?.toString() ??
+        widget.party['id']?.toString() ??
         '';
     final date = _getEffectiveEventDate();
     if (venueId.isNotEmpty) {
@@ -172,6 +178,8 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
     final venueId =
         widget.venueMap?['id']?.toString() ??
         widget.party['venueId']?.toString() ??
+        widget.party['adId']?.toString() ??
+        widget.party['id']?.toString() ??
         '';
     final date = _getEffectiveEventDate();
 
@@ -772,7 +780,11 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                 ...widget.party,
                                 if (currentVenue != null) 'venueMap': currentVenue,
                               },
-                              venueId: widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '',
+                              venueId: widget.venueMap?['id']?.toString() ??
+                                  widget.party['venueId']?.toString() ??
+                                  widget.party['adId']?.toString() ??
+                                  widget.party['id']?.toString() ??
+                                  '',
                               venueName: venueName,
                               date: _getEffectiveEventDate(),
                               time: widget.party['time']?.toString() ?? '20:00',

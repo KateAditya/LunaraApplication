@@ -90,14 +90,14 @@ export const removeInterest = async (req: Request, res: Response): Promise<void>
 export const getInterestedPartners = async (req: Request, res: Response): Promise<void> => {
     try {
         const { venueId, eventDate } = req.query;
-        const hostId = req.user!.id;
+        const hostId = req.user?.id || (req.query?.hostId as string) || (req.body?.hostId as string) || '';
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate query parameters are required' });
             return;
         }
 
         const partners = await NightPartnerService.getInterestedPartners(
-            hostId,
+            String(hostId),
             String(venueId),
             String(eventDate)
         );
@@ -111,14 +111,14 @@ export const getInterestedPartners = async (req: Request, res: Response): Promis
 export const getAvailableInvitees = async (req: Request, res: Response): Promise<void> => {
     try {
         const { venueId, eventDate, search } = req.query;
-        const hostId = req.user!.id;
+        const hostId = req.user?.id || (req.query?.hostId as string) || (req.body?.hostId as string) || '';
         if (!venueId || !eventDate) {
             res.status(400).json({ success: false, message: 'venueId and eventDate query parameters are required' });
             return;
         }
 
         const invitees = await NightPartnerService.getAvailableInvitees(
-            hostId,
+            String(hostId),
             String(venueId),
             String(eventDate),
             search ? String(search) : undefined

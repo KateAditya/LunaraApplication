@@ -5,6 +5,7 @@ import Razorpay from 'razorpay';
 import Ad from '../models/Ad';
 import Booking, { BookingStatus, PaymentStatus, BookingPaymentMode } from '../models/Booking';
 import Venue from '../models/Venue';
+import VenueImage from '../models/VenueImage';
 import User from '../models/User';
 import { logger } from '../config/logger';
 import { EventSeatService } from '../services/EventSeatService';
@@ -235,9 +236,19 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             partyEventId: ad.id,
         });
 
-        const venueDetails = await Venue.findByPk(ad.venueId, {
-            attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'images', 'coverImageUrl', 'profilePhotoUrl'],
-        });
+        const venueDetails = ad.venueId
+            ? await Venue.findByPk(ad.venueId, {
+                attributes: ['id', 'name', 'addressLine1', 'area', 'city', 'latitude', 'longitude'],
+                include: [
+                    {
+                        model: VenueImage,
+                        as: 'images',
+                        attributes: ['id', 'filePath', 'imageType', 'isPrimary', 'displayOrder'],
+                        required: false,
+                    },
+                ],
+            })
+            : null;
 
         if (amount === 0) {
             // Free event flow — take seat under atomic row lock

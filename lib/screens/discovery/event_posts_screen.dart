@@ -42,8 +42,8 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
 
   Future<void> _toggleInterest(Map<String, dynamic> event) async {
     final eventKey = event['id']?.toString() ?? event['venueId']?.toString() ?? '';
-    final venueId = event['venueId']?.toString() ?? '';
-    final date = event['rawDate']?.toString() ?? '2026-09-06';
+    final venueId = event['venueId']?.toString() ?? event['id']?.toString() ?? event['adId']?.toString() ?? '';
+    final date = event['rawDate']?.toString() ?? event['eventDate']?.toString() ?? event['date']?.toString() ?? '2026-09-06';
 
     if (venueId.isEmpty || _togglingInterestIds.contains(eventKey)) return;
 
