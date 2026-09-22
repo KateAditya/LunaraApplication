@@ -507,18 +507,30 @@ export const createPartyBooking = async (req: Request, res: Response): Promise<v
             setImmediate(async () => {
                 try {
                     await generateTicketForBookingHelper(booking.id);
+                    const guestCount = booking.numberOfGuests || 1;
+                    const ticketWord = guestCount === 1 ? 'pass' : 'passes';
+                    const titleLabel = ad.title || 'Party Event';
+                    const vName = venueDetails?.name || 'the venue';
                     await NotificationService.dispatch({
                         recipientUserId: booking.userId,
                         eventType: 'booking_confirmed',
                         category: 'bookings',
                         entityType: 'Booking',
                         entityId: booking.id,
-                        title: '🎉 Free Booking Confirmed!',
-                        body: `Your booking for ${ad.title || 'Party Event'} is confirmed!`,
+                        title: `🎉 Free Event Pass Confirmed: ${titleLabel}!`,
+                        body: `Your free entry ${ticketWord} (${guestCount}) for ${titleLabel} at ${vName} is confirmed! Digital pass ready in Ticket Pocket.`,
                         priority: 'HIGH',
                         idempotencyKey: `booking_free_${booking.id}`,
                         actionType: 'view_ticket',
                         deepLink: `/ticket/${booking.id}`,
+                        metadata: {
+                            bookingId: booking.id,
+                            partyEventId: ad.id,
+                            eventTitle: ad.title,
+                            venueName: vName,
+                            numberOfGuests: guestCount,
+                            isFree: true,
+                        },
                     });
                 } catch (ticketErr) {
                     logger.error(`Background ticket processing failed for free booking ${booking.id}:`, ticketErr);
@@ -749,9 +761,29 @@ export const payNow = async (req: Request, res: Response) => {
             try {
                 await generateTicketForBookingHelper(booking.id);
                 const vName = venue?.name || 'Venue';
-                const isSolo = booking.goingMode === ('solo' as any) || (booking.numberOfGuests || 1) <= 1;
-                const notifTitle = isSolo ? `Solo Booking at ${vName} 🎟` : `Table Booking (${booking.numberOfGuests || 1} Guests) at ${vName} 🎟`;
-                const notifBody = `Your reservation at ${vName} is fully confirmed. Digital ticket is ready!`;
+                let notifTitle = '';
+                let notifBody = '';
+                let eventTitle = '';
+
+                if (booking.partyEventId) {
+                    try {
+                        const eventAd = await Ad.findByPk(booking.partyEventId, { attributes: ['id', 'title'] });
+                        if (eventAd && eventAd.title) {
+                            eventTitle = eventAd.title;
+                        }
+                    } catch (_) { }
+
+                    const titleLabel = eventTitle || 'Party Event';
+                    const guestCount = booking.numberOfGuests || 1;
+                    const ticketWord = guestCount === 1 ? 'pass' : 'passes';
+                    notifTitle = `🎉 Event Pass Confirmed: ${titleLabel}!`;
+                    notifBody = `Your ${guestCount} ${ticketWord} for ${titleLabel} at ${vName} is confirmed! Digital pass is ready in Ticket Pocket.`;
+                } else {
+                    const isSolo = booking.goingMode === ('solo' as any) || (booking.numberOfGuests || 1) <= 1;
+                    notifTitle = isSolo ? `Solo Booking at ${vName} 🎟` : `Table Booking (${booking.numberOfGuests || 1} Guests) at ${vName} 🎟`;
+                    notifBody = `Your reservation at ${vName} is fully confirmed. Digital ticket is ready!`;
+                }
+
                 await NotificationService.dispatch({
                     recipientUserId: booking.userId,
                     eventType: 'booking_confirmed',
@@ -764,6 +796,14 @@ export const payNow = async (req: Request, res: Response) => {
                     idempotencyKey: `booking_paynow_${booking.id}`,
                     actionType: 'view_ticket',
                     deepLink: `/ticket/${booking.id}`,
+                    metadata: {
+                        bookingId: booking.id,
+                        partyEventId: booking.partyEventId || undefined,
+                        eventTitle: eventTitle || undefined,
+                        venueName: vName,
+                        numberOfGuests: booking.numberOfGuests || 1,
+                        totalAmount: booking.totalAmount,
+                    },
                 });
 
                 const enrichedCard = await VenueBookingService.enrichVenueBookingNotificationCard(booking.id, booking.userId);

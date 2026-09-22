@@ -340,9 +340,12 @@ export class BookingPolicyService {
             throw new Error('Booking is already cancelled.');
         }
 
-        const isGroupBooking = booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1;
+        const isEventBooking = Boolean(booking.partyEventId || (booking as any).isUpcomingNight);
+        const isGroupBooking = !isEventBooking && (booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1);
+        const policyType = isEventBooking
+            ? BookingPolicyType.EVENT_BOOKING
+            : (isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING);
         const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
-        const policyType = isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING;
         const validation = await this.validateCancellationTime(policyType, eventDateTime);
         const paidAmount = booking.paymentStatus === PaymentStatus.PAID ? Number(booking.totalAmount || 0) : 0;
         const refundCalc = await this.calculateRefund(policyType, paidAmount);
@@ -353,7 +356,7 @@ export class BookingPolicyService {
 
         return {
             bookingId: booking.id,
-            bookingType: isGroupBooking ? 'GROUP_PARTY' : 'SOLO_BOOKING',
+            bookingType: (isEventBooking ? 'EVENT_BOOKING' : (isGroupBooking ? 'GROUP_PARTY' : 'SOLO_BOOKING')) as any,
             venueName,
             venueAddress,
             eventDate: formatDateFull(eventDateTime),
@@ -447,8 +450,11 @@ export class BookingPolicyService {
             throw new Error('Booking has already been cancelled.');
         }
 
-        const isGroupBooking = isGroupPartyContext || booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1;
-        const policyType = isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING;
+        const isEventBooking = Boolean(booking.partyEventId || (booking as any).isUpcomingNight);
+        const isGroupBooking = !isEventBooking && (isGroupPartyContext || booking.isGroupBooking || booking.goingMode === GoingMode.PARTY_REQUEST || (booking.numberOfGuests || 1) > 1);
+        const policyType = isEventBooking
+            ? BookingPolicyType.EVENT_BOOKING
+            : (isGroupBooking ? BookingPolicyType.GROUP_PARTY : BookingPolicyType.SOLO_BOOKING);
         const eventDateTime = parseBookingDateTime(booking.bookingDate as any, booking.startTime);
         const validation = await this.validateCancellationTime(policyType, eventDateTime);
         if (!validation.canCancel) {
@@ -523,23 +529,32 @@ export class BookingPolicyService {
 
             // Process Wallet Refund if eligible (<= ₹1500)
             if (wasPaid && refundAmount > 0 && !isLargeRefund) {
+                const txLabel = isEventBooking
+                    ? 'EVENT BOOKING CANCELLED'
+                    : ((booking as any)?.goingMode === GoingMode.PLAN
+                        ? 'PARTY PLAN CANCELLED'
+                        : (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED'));
+                const txRef = isEventBooking
+                    ? `REFUND_EVENT_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                    : ((booking as any)?.goingMode === GoingMode.PLAN
+                        ? `REFUND_PP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                        : (isGroupBooking
+                            ? `REFUND_GP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
+                            : `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`));
+
                 const refundResult = await WalletService.refundToWallet({
                     userId,
                     amount: refundAmount,
                     bookingId: booking.id,
-                    reference: (booking as any)?.goingMode === GoingMode.PLAN
-                        ? `REFUND_PP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
-                        : (isGroupBooking
-                            ? `REFUND_GP_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`
-                            : `REFUND_SOLO_${booking.id.substring(0, 8).toUpperCase()}_${Date.now()}`),
-                    reason: cancellationReason || ((booking as any)?.goingMode === GoingMode.PLAN ? 'PARTY PLAN CANCELLED' : (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED')),
+                    reference: txRef,
+                    reason: cancellationReason || txLabel,
                     metadata: {
                         originalAmountPaid: paidAmount,
                         refundPercentage: refundCalc.refundPercentage,
                         nonRefundableAmount: refundCalc.nonRefundableAmount,
                         refundAmount,
                         bookingId: booking.id,
-                        transactionLabel: (booking as any)?.goingMode === GoingMode.PLAN ? 'PARTY PLAN CANCELLED' : (isGroupBooking ? 'GROUP PARTY CANCELLED' : 'SOLO BOOKING CANCELLED'),
+                        transactionLabel: txLabel,
                     },
                 }, t);
                 walletTxId = refundResult.transaction.id;
@@ -553,8 +568,8 @@ export class BookingPolicyService {
 
         const venueName = (booking as any)?.venue?.name || 'Venue';
         const isPlan = (booking as any)?.goingMode === GoingMode.PLAN;
-        const entityLabel = isPlan ? 'Party Plan' : (isGroupBooking ? 'Group Party' : 'Booking');
-        const notifTitle = isPlan ? 'Party Plan Cancelled' : (isGroupBooking ? 'Group Party Cancelled' : 'Booking Cancelled');
+        const entityLabel = isEventBooking ? 'Event Booking' : (isPlan ? 'Party Plan' : (isGroupBooking ? 'Group Party' : 'Booking'));
+        const notifTitle = isEventBooking ? 'Event Booking Cancelled' : (isPlan ? 'Party Plan Cancelled' : (isGroupBooking ? 'Group Party Cancelled' : 'Booking Cancelled'));
         const notifBody = refundAmount > 0
             ? (isLargeRefund
                 ? `Your ${entityLabel} at ${venueName} has been cancelled.\nAmount Paid: ₹${paidAmount}\nRefund Percentage: ${refundCalc.refundPercentage}%\nRefund Amount: ₹${refundAmount}\nA refund of ₹${refundAmount} will be transferred to your provided payout account within 24-48 hours.`
@@ -566,14 +581,14 @@ export class BookingPolicyService {
             recipientUserId: userId,
             eventType: 'booking_cancelled',
             category: 'bookings',
-            entityType: isGroupBooking ? 'GroupParty' : 'Booking',
+            entityType: isEventBooking ? 'EventBooking' : (isGroupBooking ? 'GroupParty' : 'Booking'),
             entityId: booking.id,
             title: notifTitle,
             body: notifBody,
             priority: 'HIGH',
-            idempotencyKey: `${isGroupBooking ? 'gp' : 'solo'}_cancel_${booking.id}`,
+            idempotencyKey: `${isEventBooking ? 'event' : (isGroupBooking ? 'gp' : 'solo')}_cancel_${booking.id}`,
             actionType: 'view_details',
-            deepLink: isGroupBooking ? '/group-parties' : '/bookings',
+            deepLink: isEventBooking ? `/ticket/${booking.id}` : (isGroupBooking ? '/group-parties' : '/bookings'),
         }).catch(() => {});
 
         RealtimeEventBroker.emitToUser(userId, 'booking_updated', 'ticket', booking.id, {
