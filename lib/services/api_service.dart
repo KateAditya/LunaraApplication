@@ -5053,13 +5053,15 @@ class ApiService {
     return false;
   }
 
-  static Future<bool> markNightInterested({
+  static Future<Map<String, dynamic>> markNightInterestedDetailed({
     required String venueId,
     required String date,
     String? time,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) {
+      return {'success': false, 'message': 'Please login to continue.'};
+    }
     try {
       final response = await post(
         '/api/mobile/nights/interested',
@@ -5070,26 +5072,36 @@ class ApiService {
           'eventTime': time ?? '20:00',
         },
       );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          notifyFeedNeedsRefresh();
-          RealtimeSyncManager.instance.triggerLiveFeedSync();
-          return true;
-        }
+      final data = jsonDecode(response.body);
+      if ((response.statusCode == 200 || response.statusCode == 201) && data['success'] == true) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerLiveFeedSync();
+        return {'success': true, 'message': data['message'] ?? 'Marked as interested'};
       }
+      return {'success': false, 'message': data['message'] ?? 'Failed to mark interest'};
     } catch (e) {
       debugPrint('markNightInterested error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
-    return false;
   }
 
-  static Future<bool> removeNightInterest({
+  static Future<bool> markNightInterested({
+    required String venueId,
+    required String date,
+    String? time,
+  }) async {
+    final res = await markNightInterestedDetailed(venueId: venueId, date: date, time: time);
+    return res['success'] == true;
+  }
+
+  static Future<Map<String, dynamic>> removeNightInterestDetailed({
     required String venueId,
     required String date,
   }) async {
     final userId = currentUserId;
-    if (userId == null) return false;
+    if (userId == null) {
+      return {'success': false, 'message': 'Please login to continue.'};
+    }
     try {
       final response = await delete(
         '/api/mobile/nights/interested',
@@ -5100,18 +5112,29 @@ class ApiService {
         },
         body: {'userId': userId, 'venueId': venueId, 'eventDate': date},
       );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          notifyFeedNeedsRefresh();
-          RealtimeSyncManager.instance.triggerLiveFeedSync();
-          return true;
-        }
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200 && data['success'] == true) {
+        notifyFeedNeedsRefresh();
+        RealtimeSyncManager.instance.triggerLiveFeedSync();
+        return {'success': true, 'message': data['message'] ?? 'Interest removed.'};
       }
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Could not update interest.',
+        'code': data['code'],
+      };
     } catch (e) {
       debugPrint('removeNightInterest error: $e');
+      return {'success': false, 'message': 'Network error: $e'};
     }
-    return false;
+  }
+
+  static Future<bool> removeNightInterest({
+    required String venueId,
+    required String date,
+  }) async {
+    final res = await removeNightInterestDetailed(venueId: venueId, date: date);
+    return res['success'] == true;
   }
 
   static Future<List<Map<String, dynamic>>> fetchInterestedPartners({

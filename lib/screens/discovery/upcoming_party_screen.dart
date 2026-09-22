@@ -196,42 +196,47 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
 
     if (previousState) {
       // Reverting interest (removing)
-      final success = await ApiService.removeNightInterest(
+      final res = await ApiService.removeNightInterestDetailed(
         venueId: venueId,
         date: date,
       );
       if (mounted) {
         setState(() => _isToggling = false);
-        if (success) {
+        if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Interest removed.'),
+            SnackBar(
+              content: Text(res['message'] ?? 'Interest removed.'),
               backgroundColor: Colors.black87,
               behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 2),
+              duration: const Duration(seconds: 2),
             ),
           );
         } else {
           // Revert state on failure
           setState(() => _isInterested = previousState);
+          final rawMsg = res['message']?.toString() ?? '';
+          final msg = rawMsg.contains('MATCHED_USER_CANNOT_REMOVE_INTEREST') || res['code'] == 'MATCHED_USER_CANNOT_REMOVE_INTEREST'
+              ? 'You have an active partner match for this night. Please cancel your match first.'
+              : (rawMsg.isNotEmpty ? rawMsg : 'Could not update interest. Please try again.');
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not update interest. Please try again.'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: Colors.red.shade800,
               behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
       }
     } else {
       // Adding interest
-      final success = await ApiService.markNightInterested(
+      final res = await ApiService.markNightInterestedDetailed(
         venueId: venueId,
         date: date,
       );
       if (mounted) {
         setState(() => _isToggling = false);
-        if (success) {
+        if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -246,10 +251,11 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
           // Revert state on failure
           setState(() => _isInterested = previousState);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not update interest. Please try again.'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: Text(res['message'] ?? 'Could not update interest. Please try again.'),
+              backgroundColor: Colors.red.shade800,
               behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
             ),
           );
         }

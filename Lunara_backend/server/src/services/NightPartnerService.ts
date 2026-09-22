@@ -320,7 +320,22 @@ export class NightPartnerService {
         });
 
         if (existingMatch) {
-            throw new Error('MATCHED_USER_CANNOT_REMOVE_INTEREST');
+            const now = new Date();
+            let isStale = false;
+            if (existingMatch.paymentExpiresAt && new Date(existingMatch.paymentExpiresAt) < now && existingMatch.status === NightPartnerMatchStatus.PAYMENT_PENDING) {
+                await existingMatch.update({ status: NightPartnerMatchStatus.EXPIRED });
+                isStale = true;
+            } else if (existingMatch.bookingId) {
+                const booking = await Booking.findByPk(existingMatch.bookingId);
+                if (booking && booking.status === BookingStatus.CANCELLED) {
+                    await existingMatch.update({ status: NightPartnerMatchStatus.CANCELLED });
+                    isStale = true;
+                }
+            }
+
+            if (!isStale) {
+                throw new Error('MATCHED_USER_CANNOT_REMOVE_INTEREST');
+            }
         }
 
         await NightInterest.update(

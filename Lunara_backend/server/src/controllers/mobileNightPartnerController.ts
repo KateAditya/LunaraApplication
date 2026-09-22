@@ -79,7 +79,15 @@ export const removeInterest = async (req: Request, res: Response): Promise<void>
         res.json({ success: true, message: 'Interest removed successfully' });
     } catch (err: any) {
         logger.error('removeInterest error:', err);
-        res.status(400).json({ success: false, message: err.message || 'Failed to remove interest' });
+        const isMatchedErr = err?.message === 'MATCHED_USER_CANNOT_REMOVE_INTEREST';
+        const msg = isMatchedErr
+            ? 'You have an active partner match for this night. Please cancel your match first before removing interest.'
+            : (err.message || 'Failed to remove interest');
+        res.status(400).json({
+            success: false,
+            message: msg,
+            code: isMatchedErr ? 'MATCHED_USER_CANNOT_REMOVE_INTEREST' : 'REMOVE_INTEREST_FAILED',
+        });
     }
 };
 
