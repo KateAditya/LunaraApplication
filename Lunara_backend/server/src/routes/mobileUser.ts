@@ -1358,11 +1358,14 @@ router.patch('/requests/:id/read', authenticate, async (req, res) => {
 /**
  * GET /api/mobile/user/badge-counts
  */
-router.get('/badge-counts', authenticate, async (req, res) => {
+router.get('/badge-counts', optionalAuth, async (req, res) => {
     try {
         const { userId, readRequestIds: clientReadReqIds, readNotificationIds: clientReadNotifIds } = req.query;
-        const uId = req.user!.id;
-        if (userId && userId !== uId) {
+        const uId = (req.user?.id || (typeof userId === 'string' ? userId : ''))?.toString();
+        if (!uId) {
+            return res.status(401).json({ success: false, message: 'Authentication required. Please provide a token or userId.' });
+        }
+        if (req.user?.id && userId && userId !== req.user.id) {
             return res.status(403).json({ success: false, message: 'You cannot access another user\'s badge counts.' });
         }
 
