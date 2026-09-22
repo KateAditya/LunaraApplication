@@ -233,11 +233,12 @@ export class NightPartnerService {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
+        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
 
         const interest = await NightInterest.findOne({
             where: {
                 userId,
-                venueId: resolvedVenueId,
+                venueId: { [Op.in]: venueIdList },
                 eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
             },
@@ -255,32 +256,32 @@ export class NightPartnerService {
         eventTime?: string
     ): Promise<NightInterest> {
         const venue = await this.resolveVenue(venueId);
-        if (!venue) {
-            throw new Error('VENUE_NOT_FOUND');
-        }
-
-        const resolvedVenueId = venue.id;
+        const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
+        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
 
-        const [interest, created] = await NightInterest.findOrCreate({
+        let interest = await NightInterest.findOne({
             where: {
                 userId,
-                venueId: resolvedVenueId,
+                venueId: { [Op.in]: venueIdList },
                 eventDate: formattedDate as any,
             },
-            defaults: {
+        });
+
+        if (interest) {
+            if (interest.status !== NightInterestStatus.INTERESTED) {
+                await interest.update({
+                    status: NightInterestStatus.INTERESTED,
+                    eventTime: eventTime || interest.eventTime || '20:00',
+                });
+            }
+        } else {
+            interest = await NightInterest.create({
                 userId,
                 venueId: resolvedVenueId,
                 eventDate: formattedDate as any,
                 eventTime: eventTime || '20:00',
                 status: NightInterestStatus.INTERESTED,
-            },
-        });
-
-        if (!created && interest.status !== NightInterestStatus.INTERESTED) {
-            await interest.update({
-                status: NightInterestStatus.INTERESTED,
-                eventTime: eventTime || interest.eventTime || '20:00',
             });
         }
 
@@ -306,24 +307,13 @@ export class NightPartnerService {
         const venue = await this.resolveVenue(venueId);
         const resolvedVenueId = venue ? venue.id : venueId;
         const formattedDate = this.normalizeDateString(eventDate);
-
-        const interest = await NightInterest.findOne({
-            where: {
-                userId,
-                venueId: resolvedVenueId,
-                eventDate: formattedDate,
-            },
-        });
-
-        if (!interest) {
-            return true;
-        }
+        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
 
         // Prevent interest removal if a match has already been formed
         const existingMatch = await NightPartnerMatch.findOne({
             where: {
                 [Op.or]: [{ hostId: userId }, { partnerId: userId }],
-                venueId: resolvedVenueId,
+                venueId: { [Op.in]: venueIdList },
                 eventDate: formattedDate,
                 status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
             },
@@ -333,7 +323,17 @@ export class NightPartnerService {
             throw new Error('MATCHED_USER_CANNOT_REMOVE_INTEREST');
         }
 
-        await interest.update({ status: NightInterestStatus.REMOVED });
+        await NightInterest.update(
+            { status: NightInterestStatus.REMOVED },
+            {
+                where: {
+                    userId,
+                    venueId: { [Op.in]: venueIdList },
+                    eventDate: formattedDate,
+                },
+            }
+        );
+
         this.invalidateUpcomingNightCaches();
         try {
             const { io } = require('../server');
