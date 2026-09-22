@@ -167,6 +167,31 @@ if (!accountName && process.env.AZURE_STORAGE_CONNECTION_STRING) {
 if (accountName) {
     const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
     const blobBaseUrl = `https://${accountName}.blob.core.windows.net/${containerName}`;
+
+    // Ensure Azure Blob Storage CORS rules allow web browser access
+    if (process.env.AZURE_STORAGE_CONNECTION_STRING) {
+        try {
+            const { BlobServiceClient } = require('@azure/storage-blob');
+            const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
+            blobServiceClient.setProperties({
+                cors: [
+                    {
+                        allowedOrigins: '*',
+                        allowedMethods: 'GET,HEAD,OPTIONS,PUT,POST,DELETE,PATCH',
+                        allowedHeaders: '*',
+                        exposedHeaders: '*',
+                        maxAgeInSeconds: 86400,
+                    },
+                ],
+            }).then(() => {
+                logger.info('Azure Blob Storage CORS rules ensured.');
+            }).catch((err: any) => {
+                logger.warn('Azure Blob Storage CORS check warning:', err?.message || err);
+            });
+        } catch (err: any) {
+            logger.warn('Azure Blob Storage init warning:', err?.message || err);
+        }
+    }
     
     app.use('/uploads', (req, res) => {
         // req.path starts with a slash, e.g., /venues/123/img.jpg
