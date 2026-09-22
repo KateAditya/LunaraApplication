@@ -309,35 +309,6 @@ export class NightPartnerService {
         const formattedDate = this.normalizeDateString(eventDate);
         const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
 
-        // Prevent interest removal if a match has already been formed
-        const existingMatch = await NightPartnerMatch.findOne({
-            where: {
-                [Op.or]: [{ hostId: userId }, { partnerId: userId }],
-                venueId: { [Op.in]: venueIdList },
-                eventDate: formattedDate,
-                status: { [Op.in]: [NightPartnerMatchStatus.MATCHED, NightPartnerMatchStatus.PAYMENT_PENDING, NightPartnerMatchStatus.CONFIRMED] },
-            },
-        });
-
-        if (existingMatch) {
-            const now = new Date();
-            let isStale = false;
-            if (existingMatch.paymentExpiresAt && new Date(existingMatch.paymentExpiresAt) < now && existingMatch.status === NightPartnerMatchStatus.PAYMENT_PENDING) {
-                await existingMatch.update({ status: NightPartnerMatchStatus.EXPIRED });
-                isStale = true;
-            } else if (existingMatch.bookingId) {
-                const booking = await Booking.findByPk(existingMatch.bookingId);
-                if (booking && booking.status === BookingStatus.CANCELLED) {
-                    await existingMatch.update({ status: NightPartnerMatchStatus.CANCELLED });
-                    isStale = true;
-                }
-            }
-
-            if (!isStale) {
-                throw new Error('MATCHED_USER_CANNOT_REMOVE_INTEREST');
-            }
-        }
-
         await NightInterest.update(
             { status: NightInterestStatus.REMOVED },
             {

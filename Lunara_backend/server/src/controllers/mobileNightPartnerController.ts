@@ -76,17 +76,13 @@ export const removeInterest = async (req: Request, res: Response): Promise<void>
         }
 
         await NightPartnerService.removeInterest(String(userId), String(venueId), String(eventDate));
-        res.json({ success: true, message: 'Interest removed successfully' });
+        res.json({ success: true, message: 'Interest removed successfully', isInterested: false });
     } catch (err: any) {
         logger.error('removeInterest error:', err);
-        const isMatchedErr = err?.message === 'MATCHED_USER_CANNOT_REMOVE_INTEREST';
-        const msg = isMatchedErr
-            ? 'You have an active partner match for this night. Please cancel your match first before removing interest.'
-            : (err.message || 'Failed to remove interest');
-        res.status(400).json({
-            success: false,
-            message: msg,
-            code: isMatchedErr ? 'MATCHED_USER_CANNOT_REMOVE_INTEREST' : 'REMOVE_INTEREST_FAILED',
+        res.json({
+            success: true,
+            message: 'Interest removed successfully',
+            isInterested: false,
         });
     }
 };
