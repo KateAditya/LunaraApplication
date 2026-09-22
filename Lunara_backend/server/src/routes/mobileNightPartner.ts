@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import ctrl from '../controllers/mobileNightPartnerController';
 
 const router = Router();
@@ -13,7 +13,19 @@ const router = Router();
 router.get(
     '/check-interest',
     [
-        authenticate,
+        optionalAuth,
+    ],
+    ctrl.checkUserInterest
+);
+
+/**
+ * GET /api/mobile/nights/interested?userId=<uuid>&venueId=<uuid>&eventDate=YYYY-MM-DD
+ * Check if user is interested in an upcoming night (alias)
+ */
+router.get(
+    '/interested',
+    [
+        optionalAuth,
     ],
     ctrl.checkUserInterest
 );
@@ -25,7 +37,7 @@ router.get(
 router.post(
     '/interested',
     [
-        authenticate,
+        optionalAuth,
     ],
     ctrl.markInterested
 );
@@ -37,7 +49,7 @@ router.post(
 router.delete(
     '/interested',
     [
-        authenticate,
+        optionalAuth,
     ],
     ctrl.removeInterest
 );
