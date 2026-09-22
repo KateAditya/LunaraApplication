@@ -106,6 +106,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isLoadingCancellation = false;
   String? _currentUserId;
   List<Map<String, dynamic>> _pendingRequests = [];
+  final Set<String> _processingReqIds = {};
 
   @override
   void initState() {
@@ -308,7 +309,10 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   }
 
   Future<void> _handleAcceptPartyPlanRequest(String reqId) async {
+    if (_processingReqIds.contains(reqId)) return;
     if (!OptimisticActionGuard.start('ACCEPT_PARTY_REQ:$reqId')) return;
+
+    setState(() => _processingReqIds.add(reqId));
 
     // Optimistic UI: update status in place to keep the profile visible with status badge
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
@@ -367,11 +371,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     } finally {
       OptimisticActionGuard.end('ACCEPT_PARTY_REQ:$reqId');
+      if (mounted) setState(() => _processingReqIds.remove(reqId));
     }
   }
 
   Future<void> _handleRejectPartyPlanRequest(String reqId) async {
+    if (_processingReqIds.contains(reqId)) return;
     if (!OptimisticActionGuard.start('REJECT_PARTY_REQ:$reqId')) return;
+
+    setState(() => _processingReqIds.add(reqId));
 
     // Optimistic UI: update status in place to keep the profile visible with status badge
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
@@ -424,11 +432,15 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     } finally {
       OptimisticActionGuard.end('REJECT_PARTY_REQ:$reqId');
+      if (mounted) setState(() => _processingReqIds.remove(reqId));
     }
   }
 
   Future<void> _handleCancelPrivateRequest(String reqId) async {
+    if (_processingReqIds.contains(reqId)) return;
     if (!OptimisticActionGuard.start('CANCEL_PARTY_REQ:$reqId')) return;
+
+    setState(() => _processingReqIds.add(reqId));
 
     final prevPending = List<Map<String, dynamic>>.from(_pendingRequests);
     final reqIndex = _pendingRequests.indexWhere((r) => (r['id'] ?? r['requestId'])?.toString() == reqId);
@@ -482,6 +494,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     } finally {
       OptimisticActionGuard.end('CANCEL_PARTY_REQ:$reqId');
+      if (mounted) setState(() => _processingReqIds.remove(reqId));
     }
   }
 
@@ -622,7 +635,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                 !isPaymentExpired) {
               requested = true;
             } else if (!isPartnerByPlan) {
-              ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
               requested = false;
               reqId = null;
               reqStatus = isPaymentExpired ? 'payment_failed' : rawStatus;
@@ -1353,15 +1365,22 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
   bool _isCancelledPlan(Map<String, dynamic> plan) {
     final status = (plan['status'] ?? '').toString().toLowerCase();
     final lifecycleStatus = (plan['lifecycleStatus'] ?? plan['lifecycle_status'] ?? '').toString().toLowerCase();
-    return status == 'cancelled' || lifecycleStatus == 'cancelled' || plan['isCancelled'] == true;
+    final bool cancelApproved = (_cancellationRequest != null && _cancellationRequest!['status'] == 'approved') ||
+        ((plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'approved') ||
+        (plan['cancellationRequest'] != null && (plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved');
+    return status == 'cancelled' || lifecycleStatus == 'cancelled' || plan['isCancelled'] == true || cancelApproved;
   }
 
   Widget _buildCancellationSection() {
     if (_isStatusLoading) {
       return const SizedBox.shrink();
     }
-    final bool isCancelled = _isCancelledPlan(widget.plan);
+    final bool isHost = _isHostPlan(widget.plan);
     final bool isConfirmed = _isPlanFullyConfirmed();
+    final bool hasApprovedCancellation = (_cancellationRequest != null && _cancellationRequest!['status'] == 'approved') ||
+        ((widget.plan['cancellationStatus'] ?? '').toString().toLowerCase() == 'approved') ||
+        (widget.plan['cancellationRequest'] != null && (widget.plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved');
+    final bool isCancelled = _isCancelledPlan(widget.plan) && (!isConfirmed || hasApprovedCancellation);
 
     if (_isExpired) {
       return Container(
@@ -1416,16 +1435,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         (widget.plan['cancellationRequest'] != null && ((widget.plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'pending' || (widget.plan['cancellationRequest']['status'] ?? '').toString().toLowerCase() == 'approved'));
 
     final planStatus = (widget.plan['status'] ?? '').toString().toLowerCase();
-    final isInactive = planStatus == 'inactive' ||
-        widget.plan['isLive'] == false ||
-        widget.plan['isActive'] == false ||
-        widget.plan['isAvailable'] == false ||
-        widget.plan['status'] == 'inactive' ||
+    final isExplicitlyClosedOrCompleted = planStatus == 'closed' ||
         widget.plan['lifecycleStatus'] == 'completed' ||
         widget.plan['status'] == 'completed';
 
-    // If the plan is matched/confirmed, it is NOT "no longer available" for the participants!
-    if (isInactive && !isCancelled && !_isExpired && !hasPendingCancellation && !isConfirmed) {
+    // A party plan is NEVER "no longer available" for the host or if it's confirmed or active/newly created!
+    if (!isHost && isExplicitlyClosedOrCompleted && !isCancelled && !_isExpired && !hasPendingCancellation && !isConfirmed && !_alreadyRequested && !_isInvitedUser) {
       return Container(
         margin: const EdgeInsets.only(top: 16),
         padding: const EdgeInsets.all(16),
@@ -1597,7 +1612,6 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
     }
 
     // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
-    final bool isHost = _isHostPlan(widget.plan);
     if (!isHost && !isConfirmed) return const SizedBox.shrink();
 
     return Container(
@@ -1860,8 +1874,7 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
               !isPaymentExpired) {
             requested = true;
           } else if (!isPartnerByPlan) {
-            // Cleared or expired request: clean up local cache so user can send a fresh request
-            ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
+            // Cleared or expired request: clean up request reference so user can send a fresh request
             requested = false;
             reqId = null;
             reqStatus = isPaymentExpired ? 'payment_failed' : rawStatus;
@@ -3384,17 +3397,13 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       return _partnerAlreadySelectedBanner();
     }
 
-    final bool isPlanInactive = planStatus == 'inactive' ||
-        plan['isLive'] == false ||
-        plan['isActive'] == false ||
-        plan['isAvailable'] == false ||
-        plan['status'] == 'inactive' ||
+    final bool isExplicitlyClosedOrCompleted = planStatus == 'closed' ||
         plan['lifecycleStatus'] == 'completed' ||
         plan['status'] == 'completed';
 
     final bool isConfirmed = _isPlanFullyConfirmed();
 
-    if (isPlanInactive && !isMyRequestConfirmed && !hasPendingCancellation && !isConfirmed) {
+    if (!isMyPost && isExplicitlyClosedOrCompleted && !isMyRequestConfirmed && !hasPendingCancellation && !isConfirmed && !_alreadyRequested && !_isInvitedUser) {
       return SafeArea(
         key: const ValueKey('cta_plan_inactive'),
         child: Padding(
@@ -4451,11 +4460,19 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () => _handleCancelPrivateRequest(reqId),
-                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFDC2626)),
-                        label: const Text(
-                          'Cancel Private Request',
-                          style: TextStyle(
+                        onPressed: _processingReqIds.contains(reqId)
+                            ? null
+                            : () => _handleCancelPrivateRequest(reqId),
+                        icon: _processingReqIds.contains(reqId)
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                              )
+                            : const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFDC2626)),
+                        label: Text(
+                          _processingReqIds.contains(reqId) ? 'Cancelling...' : 'Cancel Private Request',
+                          style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
                             color: Color(0xFFDC2626),
@@ -4476,9 +4493,20 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () => _handleAcceptPartyPlanRequest(reqId),
-                            icon: const Icon(Icons.check_circle_rounded, size: 15),
-                            label: const Text('Approve', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            onPressed: _processingReqIds.contains(reqId)
+                                ? null
+                                : () => _handleAcceptPartyPlanRequest(reqId),
+                            icon: _processingReqIds.contains(reqId)
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.check_circle_rounded, size: 15),
+                            label: Text(
+                              _processingReqIds.contains(reqId) ? 'Approving...' : 'Approve',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7C3AED),
                               foregroundColor: Colors.white,
@@ -4492,9 +4520,20 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => _handleRejectPartyPlanRequest(reqId),
-                            icon: const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
-                            label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFDC2626))),
+                            onPressed: _processingReqIds.contains(reqId)
+                                ? null
+                                : () => _handleRejectPartyPlanRequest(reqId),
+                            icon: _processingReqIds.contains(reqId)
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFDC2626)),
+                                  )
+                                : const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
+                            label: Text(
+                              _processingReqIds.contains(reqId) ? 'Declining...' : 'Decline',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFDC2626)),
+                            ),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Color(0xFFFECACA)),
                               shape: RoundedRectangleBorder(

@@ -75,25 +75,32 @@ export class NightPartnerService {
         return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
 
+    public static isUuid(id?: any): boolean {
+        if (!id || typeof id !== 'string') return false;
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
+    }
+
     private static async resolveVenue(venueId: string): Promise<Venue | null> {
         if (!venueId) return null;
         const cleanId = String(venueId).replace(/^ad_event_/, '').trim();
         if (!cleanId) return null;
 
-        try {
-            const venue = await Venue.findByPk(cleanId);
-            if (venue) return venue;
-        } catch (_) { }
-
-        // Check if cleanId is an Ad id
-        try {
-            const Ad = (await import('../models/Ad')).default;
-            const ad = await Ad.findByPk(cleanId);
-            if (ad && ad.venueId) {
-                const venue = await Venue.findByPk(ad.venueId);
+        if (this.isUuid(cleanId)) {
+            try {
+                const venue = await Venue.findByPk(cleanId);
                 if (venue) return venue;
-            }
-        } catch (_) { }
+            } catch (_) { }
+
+            // Check if cleanId is an Ad id
+            try {
+                const Ad = (await import('../models/Ad')).default;
+                const ad = await Ad.findByPk(cleanId);
+                if (ad && ad.venueId && this.isUuid(ad.venueId)) {
+                    const venue = await Venue.findByPk(ad.venueId);
+                    if (venue) return venue;
+                }
+            } catch (_) { }
+        }
 
         try {
             const found = await Venue.findOne({
@@ -114,8 +121,11 @@ export class NightPartnerService {
     ): Promise<NightPartnerMatch | null> {
         const formattedDate = this.normalizeDateString(eventDate);
         const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
-        const venueIdList = Array.from(new Set([resolvedVenueId, venueId].filter(Boolean)));
+        const venueIdList = await this.getVenueIdList(venueId);
+        if (venue && venue.id && this.isUuid(venue.id) && !venueIdList.includes(venue.id)) {
+            venueIdList.push(venue.id);
+        }
+        if (venueIdList.length === 0) return null;
 
         const existingMatches = await NightPartnerMatch.findAll({
             where: {
@@ -226,33 +236,20 @@ export class NightPartnerService {
         if (!venueId) return [];
         const rawId = String(venueId).trim();
         const cleanId = rawId.replace(/^ad_event_/, '').trim();
-        const list = new Set<string>([rawId, cleanId]);
-        if (cleanId) {
-            list.add(`ad_event_${cleanId}`);
+        const list = new Set<string>();
+
+        if (this.isUuid(cleanId)) {
+            list.add(cleanId);
         }
 
         try {
             const venue = await this.resolveVenue(venueId);
-            if (venue) {
+            if (venue && venue.id && this.isUuid(venue.id)) {
                 list.add(venue.id);
-                list.add(String(venue.id));
-                list.add(`ad_event_${venue.id}`);
-                // Fetch all Ad IDs associated with this venue
-                try {
-                    const Ad = (await import('../models/Ad')).default;
-                    const ads = await Ad.findAll({
-                        where: { venueId: venue.id },
-                        attributes: ['id'],
-                    });
-                    for (const ad of ads) {
-                        list.add(String(ad.id));
-                        list.add(`ad_event_${ad.id}`);
-                    }
-                } catch (_) { }
             }
         } catch (_) { }
 
-        return Array.from(list).filter(Boolean);
+        return Array.from(list).filter(id => this.isUuid(id));
     }
 
     /**
@@ -264,6 +261,7 @@ export class NightPartnerService {
         eventDate: string
     ): Promise<boolean> {
         const venueIdList = await this.getVenueIdList(venueId);
+        if (venueIdList.length === 0) return false;
         const formattedDate = this.normalizeDateString(eventDate);
         const dateVariants = Array.from(new Set([
             formattedDate,
@@ -291,10 +289,17 @@ export class NightPartnerService {
         eventDate: string,
         eventTime?: string
     ): Promise<NightInterest> {
+        const cleanId = String(venueId).replace(/^ad_event_/, '').trim();
         const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
+        const resolvedVenueId = venue ? venue.id : (this.isUuid(cleanId) ? cleanId : null);
+        if (!resolvedVenueId || !this.isUuid(resolvedVenueId)) {
+            throw new Error(`Valid venue could not be resolved for ID: ${venueId}`);
+        }
         const formattedDate = this.normalizeDateString(eventDate);
         const venueIdList = await this.getVenueIdList(venueId);
+        if (!venueIdList.includes(resolvedVenueId)) {
+            venueIdList.push(resolvedVenueId);
+        }
         const dateVariants = Array.from(new Set([
             formattedDate,
             String(eventDate).split('T')[0],
@@ -352,10 +357,16 @@ export class NightPartnerService {
         venueId: string,
         eventDate: string
     ): Promise<boolean> {
+        const cleanId = String(venueId).replace(/^ad_event_/, '').trim();
         const venue = await this.resolveVenue(venueId);
-        const resolvedVenueId = venue ? venue.id : venueId;
+        const resolvedVenueId = venue ? venue.id : (this.isUuid(cleanId) ? cleanId : null);
         const formattedDate = this.normalizeDateString(eventDate);
         const venueIdList = await this.getVenueIdList(venueId);
+        if (resolvedVenueId && this.isUuid(resolvedVenueId) && !venueIdList.includes(resolvedVenueId)) {
+            venueIdList.push(resolvedVenueId);
+        }
+        if (venueIdList.length === 0) return true;
+
         const dateVariants = Array.from(new Set([
             formattedDate,
             String(eventDate).split('T')[0],
@@ -379,7 +390,7 @@ export class NightPartnerService {
             if (io) {
                 io.emit('live_feed_update', {
                     type: 'upcoming_night_interest_updated',
-                    venueId: resolvedVenueId,
+                    venueId: resolvedVenueId || venueId,
                     venueIdList,
                     eventDate: formattedDate,
                     userId,
@@ -400,6 +411,7 @@ export class NightPartnerService {
     ): Promise<SafePartnerProfile[]> {
         const formattedDate = this.normalizeDateString(eventDate);
         const venueIdList = await this.getVenueIdList(venueId);
+        if (venueIdList.length === 0) return [];
         const dateVariants = Array.from(new Set([
             formattedDate,
             String(eventDate).split('T')[0],
@@ -503,15 +515,18 @@ export class NightPartnerService {
         }
 
         // 1. Fetch interested users in 1 query across all possible venueId representations & date variants
-        const interestedRecords = await NightInterest.findAll({
-            where: {
-                venueId: { [Op.in]: venueIdList },
-                eventDate: { [Op.in]: dateVariants },
-                status: NightInterestStatus.INTERESTED,
-                ...(hostId ? { userId: { [Op.ne]: hostId } } : {}),
-            },
-            attributes: ['id', 'userId', 'eventTime'],
-        });
+        let interestedRecords: NightInterest[] = [];
+        if (venueIdList.length > 0) {
+            interestedRecords = await NightInterest.findAll({
+                where: {
+                    venueId: { [Op.in]: venueIdList },
+                    eventDate: { [Op.in]: dateVariants },
+                    status: NightInterestStatus.INTERESTED,
+                    ...(hostId ? { userId: { [Op.ne]: hostId } } : {}),
+                },
+                attributes: ['id', 'userId', 'eventTime'],
+            });
+        }
 
         const interestedMap = new Map<string, string>();
         const interestedUserIds = new Set<string>();
@@ -1040,8 +1055,9 @@ export class NightPartnerService {
             throw new Error('CANNOT_REQUEST_SELF');
         }
 
-        const venue = await Venue.findByPk(venueId);
+        const venue = await this.resolveVenue(venueId);
         if (!venue) throw new Error('VENUE_NOT_FOUND');
+        const resolvedVenueId = venue.id;
 
         const formattedDate = this.normalizeDateString(eventDate);
 
@@ -1049,21 +1065,21 @@ export class NightPartnerService {
         const interest = await NightInterest.findOne({
             where: {
                 userId: partnerId,
-                venueId,
+                venueId: resolvedVenueId,
                 eventDate: formattedDate,
                 status: NightInterestStatus.INTERESTED,
             },
         });
 
         // Check if host already has an active match for this night
-        const activeMatch = await this.findActiveMatchForNight(hostId, venueId, formattedDate);
+        const activeMatch = await this.findActiveMatchForNight(hostId, resolvedVenueId, formattedDate);
         if (activeMatch) {
             throw new Error('HOST_ALREADY_HAS_ACTIVE_MATCH');
         }
 
         // ── 4-Hour Time-Lock & Existing Plan Validation (Host & Partner) ───────
         const eventDateTime = parseBookingDateTime(eventDate, eventTime);
-        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: venueId });
+        const hostTimeLock = await EventTimeLockService.validateFourHourGap(hostId, eventDateTime, 'party_plan', undefined, { excludeVenueId: resolvedVenueId });
         if (!hostTimeLock.allowed) {
             const err: any = new Error(hostTimeLock.message);
             err.code = 'FOUR_HOUR_TIME_LOCK';
@@ -1087,13 +1103,13 @@ export class NightPartnerService {
             where: {
                 hostId,
                 partnerId,
-                venueId,
+                venueId: resolvedVenueId,
                 eventDate: formattedDate as any,
             },
             defaults: {
                 hostId,
                 partnerId,
-                venueId,
+                venueId: resolvedVenueId,
                 eventDate: formattedDate as any,
                 eventTime: eventTime || '20:00',
                 paymentMode,

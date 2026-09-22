@@ -794,12 +794,20 @@ async function getUserNotifications(
         // 5. Fetch Booking records
         (async () => {
             try {
+                const Ad = (await import('../models/Ad')).default;
                 const bookings = await Booking.findAll({
                     where: {
                         userId: uId,
-                        goingMode: { [Op.in]: ['solo', 'party_request'] },
+                        [Op.or]: [
+                            { goingMode: { [Op.in]: ['solo', 'party_request'] } },
+                            { partyEventId: { [Op.ne]: null as any } },
+                            { isUpcomingNight: true }
+                        ]
                     },
-                    include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }],
+                    include: [
+                        { model: Venue, as: 'venue', attributes: ['id', 'name', 'addressLine1', 'city'] },
+                        { model: Ad, as: 'partyEvent', required: false }
+                    ],
                     order: [['createdAt', 'DESC']],
                     limit: 30
                 });
@@ -913,13 +921,14 @@ async function getUserNotifications(
                     NightPartnerRequest.findAll({
                         where: {
                             partnerId: uId,
+                            hostId: { [Op.ne]: uId },
                             status: { [Op.in]: ['PENDING', 'ACCEPTED'] },
                             [Op.or]: [
                                 { expiresAt: null as any },
                                 { expiresAt: { [Op.gt]: new Date() } }
                             ]
                         },
-                        attributes: ['id', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
+                        attributes: ['id', 'hostId', 'partnerId', 'venueId', 'eventDate', 'status', 'createdAt', 'updatedAt'],
                         order: [['updatedAt', 'DESC']]
                     }),
                     NightPartnerMatch.findAll({

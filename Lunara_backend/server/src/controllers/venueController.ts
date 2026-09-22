@@ -783,9 +783,29 @@ export const getVenueById = async (req: Request, res: Response) => {
             return res.status(200).json(cached);
         }
 
-        const venue = await Venue.findByPk(id, {
-            include: [{ model: VenueImage, as: 'images' }],
-        });
+        const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+        const cleanId = String(id).replace(/^ad_event_/, '').trim();
+
+        let venue = null;
+        if (isUuid(cleanId)) {
+            venue = await Venue.findByPk(cleanId, {
+                include: [{ model: VenueImage, as: 'images' }],
+            });
+
+            if (!venue) {
+                // Try finding via Ad
+                try {
+                    const Ad = (await import('../models/Ad')).default;
+                    const ad = await Ad.findByPk(cleanId);
+                    if (ad && ad.venueId && isUuid(ad.venueId)) {
+                        venue = await Venue.findByPk(ad.venueId, {
+                            include: [{ model: VenueImage, as: 'images' }],
+                        });
+                    }
+                } catch (_) {}
+            }
+        }
+
         if (!venue) return res.status(404).json({ success: false, message: 'Venue not found' });
 
         const images: VenueImage[] = (venue as any).images ?? [];

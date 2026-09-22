@@ -31,6 +31,17 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   Map<String, dynamic>? _venueData;
   Map<String, dynamic>? get currentVenue => _venueData ?? widget.venueMap;
 
+  String _getVenueId() {
+    final raw = widget.venueMap?['id']?.toString() ??
+        widget.party['venueId']?.toString() ??
+        widget.party['venue_id']?.toString() ??
+        (widget.party['venue'] is Map ? (widget.party['venue'] as Map)['id']?.toString() : null) ??
+        widget.party['adId']?.toString() ??
+        widget.party['id']?.toString() ??
+        '';
+    return raw.replaceFirst(RegExp(r'^ad_event_'), '').trim();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,11 +50,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   }
 
   Future<void> _loadFullVenueDetails() async {
-    final venueId = widget.venueMap?['id']?.toString() ??
-        widget.party['venueId']?.toString() ??
-        widget.party['adId']?.toString() ??
-        widget.party['id']?.toString() ??
-        '';
+    final venueId = _getVenueId();
     if (venueId.isEmpty) return;
     try {
       final res = await ApiService.get('/api/venues/$venueId');
@@ -102,42 +109,36 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
       'EEEE, MMM dd',
       'EEE, MMM dd',
       'MMM dd',
+      'MMMM d, yyyy',
+      'MMM d, yyyy',
+      'MMMM dd, yyyy',
+      'MMM dd, yyyy',
     ];
     for (final p in patterns) {
       try {
-        final parsed = DateFormat(p).parse(clean);
-        int year = parsed.year;
-        if (year == 1970) {
-          year = DateTime.now().year;
-        }
-        final yyyy = year;
+        final parsed = DateFormat(p, 'en_US').parseLoose(clean);
+        final yyyy = parsed.year;
         final mm = parsed.month.toString().padLeft(2, '0');
         final dd = parsed.day.toString().padLeft(2, '0');
         return '$yyyy-$mm-$dd';
       } catch (_) {}
     }
-
     return clean;
   }
 
   String _getEffectiveEventDate() {
-    final raw = widget.party['eventDate'] ??
-        widget.party['rawDate'] ??
-        widget.party['fromDate'] ??
-        widget.party['toDate'] ??
-        widget.party['bannerFromDate'] ??
+    final raw =
         widget.party['date'] ??
+        widget.party['eventDate'] ??
+        widget.party['bookingDate'] ??
+        widget.party['rawDate'] ??
+        widget.party['bannerFromDate'] ??
         '';
     return _formatDateIso(raw);
   }
 
   Future<void> _checkInitialInterest() async {
-    final venueId =
-        widget.venueMap?['id']?.toString() ??
-        widget.party['venueId']?.toString() ??
-        widget.party['adId']?.toString() ??
-        widget.party['id']?.toString() ??
-        '';
+    final venueId = _getVenueId();
     final date = _getEffectiveEventDate();
     if (venueId.isNotEmpty) {
       final isInt = await ApiService.checkNightInterest(
@@ -175,12 +176,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
   }
 
   Future<void> _toggleInterest() async {
-    final venueId =
-        widget.venueMap?['id']?.toString() ??
-        widget.party['venueId']?.toString() ??
-        widget.party['adId']?.toString() ??
-        widget.party['id']?.toString() ??
-        '';
+    final venueId = _getVenueId();
     final date = _getEffectiveEventDate();
 
     if (venueId.isEmpty) {
@@ -619,7 +615,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                   if (_showPostPartnerButton) ...[
                     InkWell(
                       onTap: () {
-                        final venueId = widget.venueMap?['id']?.toString() ?? widget.party['venueId']?.toString() ?? '';
+                        final venueId = _getVenueId();
                         final vName = venueName;
                         final eventDate = _getEffectiveEventDate();
                         final eventTime = LunaraDateFormatter.normalizeTimeTo12Hour(widget.party['time']?.toString() ?? '8:00 PM');
@@ -780,11 +776,7 @@ class _UpcomingPartyScreenState extends State<UpcomingPartyScreen> {
                                 ...widget.party,
                                 if (currentVenue != null) 'venueMap': currentVenue,
                               },
-                              venueId: widget.venueMap?['id']?.toString() ??
-                                  widget.party['venueId']?.toString() ??
-                                  widget.party['adId']?.toString() ??
-                                  widget.party['id']?.toString() ??
-                                  '',
+                              venueId: _getVenueId(),
                               venueName: venueName,
                               date: _getEffectiveEventDate(),
                               time: widget.party['time']?.toString() ?? '20:00',

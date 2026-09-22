@@ -1732,41 +1732,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         final cleanDelId = ApiService.cleanBookingId(delId);
         final currentUid = ApiService.currentUserId ?? '';
 
-        // Check if the current user is host, partner, joiner, or has request/notif for this plan
-        bool isMyPlan = false;
-        for (final item in _feedItems) {
-          if (_matchesId(item, delId, cleanTarget: cleanDelId)) {
-            final hostId = (item['userId'] ?? item['hostId'] ?? item['creatorId'] ?? item['creator']?['id'] ?? '').toString();
-            final partnerId = (item['partnerId'] ?? item['matchedUserId'] ?? '').toString();
-            if (currentUid.isNotEmpty && (hostId == currentUid || partnerId == currentUid || item['isHost'] == true || item['role'] == 'host' || item['myRequest'] != null)) {
-              isMyPlan = true;
-              break;
-            }
-          }
-        }
-        if (!isMyPlan) {
-          for (final notif in _notifications) {
-            final ppId = _extractPartyPlanId(notif);
-            if (ppId != null && (ppId == delId || ApiService.cleanBookingId(ppId) == cleanDelId || _matchesId(notif, delId, cleanTarget: cleanDelId))) {
-              isMyPlan = true;
-              break;
-            }
-          }
-        }
-
-        if (isMyPlan) {
-          // Keep card mounted and reconcile to cancelled/terminal state
-          _reconcilePartyPlanState(delId, {
-            'status': 'cancelled',
-            'lifecycleStatus': 'cancelled',
-            'isLive': false,
-            'isCancelled': true,
-          });
-          return;
-        }
-
         setState(() {
-          _feedItems = _feedItems.where((item) => !_matchesId(item, delId, cleanTarget: cleanDelId)).toList();
+          _feedItems = _feedItems.where((item) {
+            final matches = _matchesId(item, delId, cleanTarget: cleanDelId);
+            if (!matches) return true;
+            // If the plan is already confirmed for this user, keep it
+            final life = (item['lifecycleStatus'] ?? '').toString().toLowerCase();
+            final st = (item['status'] ?? '').toString().toLowerCase();
+            final isConf = life == 'match_confirmed' || life == 'chat_enabled' || life == 'plan_completed' || st == 'confirmed';
+            return isConf;
+          }).toList();
           _cachedTimeline = _buildUnifiedTimeline();
         });
         return;

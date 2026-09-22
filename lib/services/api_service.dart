@@ -5034,12 +5034,13 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return false;
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await get(
         '/api/mobile/nights/check-interest',
         queryParameters: {
           'userId': userId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
         },
       );
@@ -5062,12 +5063,13 @@ class ApiService {
     if (userId == null) {
       return {'success': false, 'message': 'Please login to continue.'};
     }
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await post(
         '/api/mobile/nights/interested',
         body: {
           'userId': userId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
         },
@@ -5102,15 +5104,16 @@ class ApiService {
     if (userId == null) {
       return {'success': false, 'message': 'Please login to continue.'};
     }
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await delete(
         '/api/mobile/nights/interested',
         queryParameters: {
           'userId': userId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
         },
-        body: {'userId': userId, 'venueId': venueId, 'eventDate': date},
+        body: {'userId': userId, 'venueId': cleanVenueId, 'eventDate': date},
       );
       final data = jsonDecode(response.body);
       if (response.statusCode == 200 && data['success'] == true) {
@@ -5143,12 +5146,13 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return [];
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await get(
         '/api/mobile/nights/interested-partners',
         queryParameters: {
           'hostId': userId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
         },
       );
@@ -5171,10 +5175,11 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return [];
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final queryParams = <String, String>{
         'hostId': userId,
-        'venueId': venueId,
+        'venueId': cleanVenueId,
         'eventDate': date,
       };
       if (search != null && search.trim().isNotEmpty) {
@@ -5224,13 +5229,14 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await post(
         '/api/mobile/nights/requests',
         body: {
           'hostId': userId,
           'partnerId': partnerId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
           'paymentMode': paymentMode,
@@ -5262,12 +5268,13 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final response = await post(
         '/api/mobile/nights/invite-payment/initiate',
         body: {
           'hostId': userId,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
           'paymentMode': paymentMode,
@@ -5307,6 +5314,7 @@ class ApiService {
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
+    final cleanVenueId = venueId.replaceFirst(RegExp(r'^ad_event_'), '').trim();
     try {
       final resolvedPartnerIds =
           partnerIds ?? (partnerId != null ? [partnerId] : <String>[]);
@@ -5319,7 +5327,7 @@ class ApiService {
           'hostId': userId,
           'partnerId': primaryPartnerId,
           if (resolvedPartnerIds.isNotEmpty) 'partnerIds': resolvedPartnerIds,
-          'venueId': venueId,
+          'venueId': cleanVenueId,
           'eventDate': date,
           'eventTime': time ?? '20:00',
           'paymentMode': paymentMode,

@@ -28,6 +28,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   late Razorpay _razorpay;
   String? _pendingBookingId;
   double? _pendingTotalPrice;
+  double? _pendingShortfallAmount;
   bool _isHybridFlow = false;
 
   @override
@@ -114,7 +115,18 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
   void _handleRazorpaySuccess(PaymentSuccessResponse response) async {
     if (_isHybridFlow) {
       _isHybridFlow = false;
-      // Hybrid shortfall recharge completed, now execute wallet payment
+      // 1. Verify and credit shortfall to Lunara Wallet first
+      final recharged = await ApiService.verifyWalletRecharge(
+        amount: _pendingShortfallAmount ?? _pendingTotalPrice ?? 0,
+        razorpayPaymentId: response.paymentId ?? '',
+        razorpayOrderId: response.orderId ?? '',
+        razorpaySignature: response.signature ?? '',
+      );
+      if (!recharged) {
+        debugPrint('Warning: verifyWalletRecharge returned false');
+      }
+
+      // 2. Complete the party event booking payment using the credited wallet balance
       if (_pendingBookingId != null && _pendingTotalPrice != null) {
         final walletRes = await ApiService.payWithWallet(
           amount: _pendingTotalPrice!,
@@ -129,7 +141,12 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
             transactionId: txId,
           );
           if (confirmRes != null && mounted) {
-            _navigateToTicket(confirmRes['ticketCode'] ?? '', _pendingTotalPrice!);
+            final ticketCode = confirmRes['ticketCode']?.toString() ??
+                confirmRes['data']?['ticketCode']?.toString() ??
+                confirmRes['ticket']?['ticketCode']?.toString() ??
+                confirmRes['id']?.toString() ??
+                '';
+            _navigateToTicket(ticketCode, _pendingTotalPrice!);
             return;
           }
         }
@@ -137,7 +154,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Recharge succeeded. Please complete booking with wallet.'),
+            content: Text('Payment completed. Please check your tickets in Ticket Pocket.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -574,6 +591,7 @@ class _PartyEventBookingSheetState extends State<PartyEventBookingSheet> {
         }
         _pendingBookingId = bookingId;
         _pendingTotalPrice = totalPrice;
+        _pendingShortfallAmount = shortfallAmount;
         _isHybridFlow = true;
 
         final isMock = kIsWeb;

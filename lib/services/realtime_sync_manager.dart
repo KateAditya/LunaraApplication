@@ -191,10 +191,7 @@ class RealtimeSyncManager with WidgetsBindingObserver {
             eventType == 'party_plan_request_updated' ||
             eventType == 'party_plan_match_success') {
           ApiService.markPartyPlanAsRequestedLocal(targetPlanId, data);
-        } else if (eventType == 'party_plan_request_cancelled' ||
-            eventType == 'party_plan_request_rejected' ||
-            eventType == 'party_plan_cancelled' ||
-            eventType == 'party_plan_deleted') {
+        } else if (eventType == 'party_plan_cancelled') {
           ApiService.markPartyPlanAsCancelledLocal(targetPlanId);
         }
       }

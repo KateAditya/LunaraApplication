@@ -5952,15 +5952,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     final venueMap = bookingData['venue'] is Map
                         ? Map<String, dynamic>.from(bookingData['venue'])
                         : {'name': bookingData['venueName'] ?? 'Venue'};
-                    final isGroupOrLarge = (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1) > 1 ||
+                    final isEventBooking = bookingData['isUpcomingNight'] == true ||
+                        bookingData['partyEventId'] != null ||
+                        bookingData['partyEvent'] != null ||
+                        item['eventDetails']?['isUpcomingNight'] == true ||
+                        item['data']?['isUpcomingNight'] == true;
+                    final isGroupOrLarge = !isEventBooking && (
                         bookingData['isGroupParty'] == true ||
                         bookingData['isLargePartyRequest'] == true ||
                         bookingData['goingMode'] == 'party_request' ||
                         bookingData['type'] == 'group_party_timeline' ||
                         bookingData['type'] == 'large_party_timeline' ||
-                        bookingData['isGroupBooking'] == true ||
                         (item['id']?.toString().startsWith('group_party_') ?? false) ||
-                        (item['id']?.toString().startsWith('large_party_') ?? false);
+                        (item['id']?.toString().startsWith('large_party_') ?? false));
 
                     if (isGroupOrLarge) {
                       Navigator.push(
@@ -5975,6 +5979,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         if (mounted) setState(() => _navigatingCardIds.remove(cardId));
                       });
                     } else {
+                      final eventTitle = bookingData['partyEvent']?['title'] ??
+                          bookingData['partySubject'] ??
+                          bookingData['eventTitle'] ??
+                          item['eventDetails']?['title'] ??
+                          item['eventDetails']?['subject'];
+                      final bannerUrl = bookingData['partyEvent']?['imagePath'] ??
+                          bookingData['partyEvent']?['bannerImageUrl'] ??
+                          bookingData['bannerImageUrl'] ??
+                          item['eventDetails']?['bannerImageUrl'];
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -5982,14 +5996,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                             venue: venueMap,
                             date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString(),
                             time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString(),
-                            table: 'Confirmed Entry',
+                            table: isEventBooking ? (eventTitle?.toString() ?? 'Event Entry') : 'Confirmed Entry',
                             guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 1).toString(),
-                            package: 'Confirmed Entry',
+                            package: isEventBooking ? (eventTitle?.toString() ?? 'Party Ticket') : 'Confirmed Entry',
                             totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
                             ticketId: (bookingData['ticketCode'] ?? bookingData['id'] ?? item['id'])?.toString(),
                             status: 'CONFIRMED',
                             booking: bookingData,
                             user: ApiService.cachedCurrentUser,
+                            eventTitle: eventTitle?.toString(),
+                            bannerImageUrl: bannerUrl?.toString(),
+                            isUpcomingNight: isEventBooking,
                           ),
                         ),
                       ).then((_) {

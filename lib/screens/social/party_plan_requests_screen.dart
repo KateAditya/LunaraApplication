@@ -89,11 +89,11 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
   }
 
   String _getTimeRemaining(String? timeoutStr) {
-    if (timeoutStr == null) return '';
+    if (timeoutStr == null || timeoutStr.isEmpty) return '';
     try {
       final timeout = DateTime.parse(timeoutStr).toLocal();
       final diff = timeout.difference(DateTime.now());
-      if (diff.isNegative) return 'Expired';
+      if (diff.isNegative) return '';
       final mins = diff.inMinutes;
       final secs = diff.inSeconds % 60;
       return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')} left';
@@ -582,7 +582,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Deposit Required ($timerText)',
+                        timerText.isNotEmpty ? 'Deposit Required ($timerText)' : 'Deposit Required',
                         style: TextStyle(
                           color: Colors.red[400],
                           fontSize: 11,
@@ -648,7 +648,7 @@ class _PartyPlanRequestsScreenState extends State<PartyPlanRequestsScreen> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'WAITING FOR HOST DEPOSIT ($timerText)',
+                      timerText.isNotEmpty ? 'WAITING FOR HOST DEPOSIT ($timerText)' : 'WAITING FOR HOST DEPOSIT',
                       style: const TextStyle(
                         color: Colors.blue,
                         fontWeight: FontWeight.bold,

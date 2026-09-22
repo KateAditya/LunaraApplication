@@ -467,13 +467,23 @@ export class VenueBookingService {
                 include: [{ model: Venue, as: 'venue', attributes: ['name', 'addressLine1', 'city'] }]
             });
 
-            if (!bookingRecord || bookingRecord.isLargePartyRequest || bookingRecord.isGroupBooking) {
+            let partyEvent = (bookingRecord as any).partyEvent;
+            if (!partyEvent && bookingRecord.partyEventId) {
+                try {
+                    const Ad = (await import('../models/Ad')).default;
+                    partyEvent = await Ad.findByPk(bookingRecord.partyEventId);
+                } catch (_) { }
+            }
+            const isEventBooking = Boolean(bookingRecord.partyEventId || (bookingRecord as any).isUpcomingNight || partyEvent);
+
+            if (!bookingRecord || (bookingRecord.isLargePartyRequest && !isEventBooking)) {
                 return null;
             }
 
             const venueName = (bookingRecord as any)?.venue?.name || 'Venue';
-            const guestCount = bookingRecord.numberOfGuests;
+            const guestCount = bookingRecord.numberOfGuests || 1;
             const bookingDate = bookingRecord.bookingDate;
+            const eventTitle = partyEvent?.title || bookingRecord.partySubject || (isEventBooking ? 'Party Event' : null);
 
             const isCreated = true;
             const isRequested = true;
@@ -504,8 +514,8 @@ export class VenueBookingService {
             const progressPercentage = Math.round((completedCount / timelineSteps.length) * 100);
 
             const isPlan = bookingRecord.goingMode === GoingMode.PLAN;
-            const isSolo = !isPlan && (bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1);
-            const isLarge = !isPlan && (guestCount > 20 || bookingRecord.isLargePartyRequest);
+            const isSolo = !isPlan && !isEventBooking && (bookingRecord.goingMode === GoingMode.SOLO || guestCount === 1);
+            const isLarge = !isPlan && !isEventBooking && (guestCount > 20 || bookingRecord.isLargePartyRequest);
 
             const refundAmt = Number(bookingRecord.refundAmount || 0);
             const totalAmt = Number(bookingRecord.totalAmount || bookingRecord.depositAmount || 0);
@@ -513,40 +523,58 @@ export class VenueBookingService {
                 ? Math.round((refundAmt / totalAmt) * 100)
                 : ((bookingRecord as any).refundPercentage || 100);
 
-            let title = isPlan
-                ? `Party Plan at ${venueName} 🎟`
-                : (isLarge
-                    ? `Large Party at ${venueName} 🎉`
-                    : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Group Party at ${venueName} 🎉`));
-            let body = `Your reservation for ${guestCount} guests at ${venueName} is being processed.`;
+            let title = isEventBooking
+                ? `${eventTitle || 'Party Event'} at ${venueName} 🎟`
+                : (isPlan
+                    ? `Party Plan at ${venueName} 🎟`
+                    : (isLarge
+                        ? `Large Party at ${venueName} 🎉`
+                        : (isSolo ? `Solo Booking at ${venueName} 🎟` : `Table Booking (${guestCount} Guests) at ${venueName} 🎟`)));
+            let body = isEventBooking
+                ? `Your booking for ${guestCount > 1 ? `${guestCount} tickets` : '1 ticket'} at ${venueName} is being processed.`
+                : `Your reservation for ${guestCount} guests at ${venueName} is being processed.`;
             let statusText = 'Booking Requested';
 
             if (isCompleted) {
-                title = isPlan
-                    ? `Party Plan Completed ✨`
-                    : (isLarge
-                        ? `Large Party Completed ✨`
-                        : (isSolo ? `Solo Booking Completed ✨` : `Group Party Completed ✨`));
+                title = isEventBooking
+                    ? `${eventTitle || 'Party Event'} Completed ✨`
+                    : (isPlan
+                        ? `Party Plan Completed ✨`
+                        : (isLarge
+                            ? `Large Party Completed ✨`
+                            : (isSolo ? `Solo Booking Completed ✨` : `Booking Completed ✨`)));
                 body = `Hope you enjoyed your experience at ${venueName}!`;
                 statusText = 'Completed';
             } else if (isConfirmed && !isCancelled) {
-                title = isPlan
-                    ? `Party Plan Confirmed! 🎉`
-                    : (isLarge
-                        ? `Large Party Confirmed! 🎉`
-                        : (isSolo ? `Solo Booking Confirmed! 🎉` : `Group Party Confirmed! 🎉`));
-                body = `Your reservation for ${guestCount} guests at ${venueName} is fully confirmed. Your ticket is ready!`;
+                title = isEventBooking
+                    ? `${eventTitle || 'Party Event'} Confirmed! 🎉`
+                    : (isPlan
+                        ? `Party Plan Confirmed! 🎉`
+                        : (isLarge
+                            ? `Large Party Confirmed! 🎉`
+                            : (isSolo ? `Solo Booking Confirmed! 🎉` : `Table Booking Confirmed! 🎉`)));
+                body = isEventBooking
+                    ? `Your ${guestCount > 1 ? `${guestCount} tickets` : 'ticket'} for ${eventTitle || venueName} is fully confirmed. Digital ticket is ready!`
+                    : `Your reservation for ${guestCount} guests at ${venueName} is fully confirmed. Digital ticket is ready!`;
                 statusText = 'Confirmed';
             } else if (isCancelled) {
-                title = isPlan
-                    ? `Party Plan Cancelled ❌`
-                    : (isLarge
-                        ? `Large Party Cancelled ❌`
-                        : (isSolo ? `Solo Booking Cancelled ❌` : `Group Party Cancelled ❌`));
+                title = isEventBooking
+                    ? `${eventTitle || 'Party Event'} Cancelled ❌`
+                    : (isPlan
+                        ? `Party Plan Cancelled ❌`
+                        : (isLarge
+                            ? `Large Party Cancelled ❌`
+                            : (isSolo ? `Solo Booking Cancelled ❌` : `Booking Cancelled ❌`)));
                 body = (isRefunded || refundAmt > 0)
                     ? `Your booking for ${venueName} was cancelled. ${refundPct}% (₹${refundAmt.toFixed(0)}) refunded to your Lunara Wallet.`
                     : `Your booking for ${venueName} was cancelled.`;
                 statusText = 'Cancelled';
+            } else if (!isPaid && !isCancelled) {
+                title = isEventBooking
+                    ? `${eventTitle || 'Party Event'} - Payment Pending 💳`
+                    : title;
+                body = `Complete payment of ₹${totalAmt} to secure your ${isEventBooking ? (guestCount > 1 ? `${guestCount} tickets` : 'ticket') : 'reservation'}.`;
+                statusText = 'Payment Pending';
             }
 
             const actionButtons = [];
@@ -595,8 +623,26 @@ export class VenueBookingService {
                 refundMethod: bookingRecord.refundMethod,
                 ticketCode: bookingRecord.ticketCode || undefined,
                 ticketUrl: (bookingRecord as any).ticketUrl || undefined,
+                eventDetails: {
+                    subject: eventTitle || venueName,
+                    title: eventTitle || venueName,
+                    venue: venueName,
+                    venueName,
+                    eventDate: bookingDate,
+                    bookingDate,
+                    eventTime: bookingRecord.startTime,
+                    startTime: bookingRecord.startTime,
+                    guestCount,
+                    numberOfGuests: guestCount,
+                    isUpcomingNight: isEventBooking,
+                    isEventBooking,
+                    bannerImageUrl: partyEvent?.imagePath || null,
+                    ticketCode: bookingRecord.ticketCode || null,
+                    status: bookingRecord.status,
+                    paymentStatus: bookingRecord.paymentStatus,
+                },
                 data: {
-                    type: 'venue_booking_timeline',
+                    type: isEventBooking ? 'upcoming_night_booking' : 'venue_booking_timeline',
                     bookingId,
                     venueName,
                     guestCount,
@@ -612,6 +658,34 @@ export class VenueBookingService {
                     refundMethod: bookingRecord.refundMethod,
                     ticketCode: bookingRecord.ticketCode || undefined,
                     ticketUrl: (bookingRecord as any).ticketUrl || undefined,
+                    isUpcomingNight: isEventBooking,
+                    isEventBooking,
+                    eventTitle,
+                    bannerImageUrl: partyEvent?.imagePath || null,
+                    booking: {
+                        id: bookingRecord.id,
+                        bookingNumber: bookingRecord.bookingNumber,
+                        ticketCode: bookingRecord.ticketCode,
+                        venueId: bookingRecord.venueId,
+                        venue: (bookingRecord as any).venue,
+                        venueName,
+                        bookingDate,
+                        startTime: bookingRecord.startTime,
+                        numberOfGuests: guestCount,
+                        totalAmount: rawTotal,
+                        status: bookingRecord.status,
+                        paymentStatus: bookingRecord.paymentStatus,
+                        isUpcomingNight: isEventBooking,
+                        isEventBooking,
+                        partyEventId: bookingRecord.partyEventId,
+                        partyEvent: partyEvent ? {
+                            id: partyEvent.id,
+                            title: partyEvent.title,
+                            imagePath: partyEvent.imagePath,
+                            bannerImageUrl: partyEvent.imagePath,
+                            aboutEvent: partyEvent.aboutEvent,
+                        } : null,
+                    },
                     venue: (bookingRecord as any).venue ? {
                         id: (bookingRecord as any).venue.id || bookingRecord.venueId,
                         name: (bookingRecord as any).venue.name || venueName,
