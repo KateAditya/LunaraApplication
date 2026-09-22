@@ -8,6 +8,7 @@ import '../widgets/top_notification_banner.dart';
 import '../widgets/dialogs/time_lock_blocked_dialog.dart';
 import '../utils/lunara_date_formatter.dart';
 import 'lunara_cached_image.dart';
+import 'lunara_profile_image.dart';
 
 class UpcomingNightPostPartnerSheet extends StatefulWidget {
   final Map<String, dynamic> party;
@@ -66,6 +67,7 @@ class UpcomingNightPostPartnerSheet extends StatefulWidget {
 
 class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartnerSheet> {
   late TextEditingController _messageController;
+  final TextEditingController _inviteeSearchController = TextEditingController();
   bool _isPosting = false;
   String _selectedPrivacy = 'PUBLIC'; // 'PUBLIC', 'PRIVATE' or 'BOTH'
   // SELF_PAY: the host buys both tickets now. SPLIT: the host buys one and the
@@ -75,6 +77,9 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
   String _selectedFoodPref = 'ANY'; // 'ANY', 'VEG', 'NON_VEG'
   String _selectedDrinkPref = 'COCKTAILS'; // 'COCKTAILS', 'BEER', 'NON_ALCOHOLIC', 'ANY'
 
+  List<Map<String, dynamic>> _candidateInvitees = [];
+  bool _isLoadingInvitees = false;
+
   @override
   void initState() {
     super.initState();
@@ -82,12 +87,93 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
     _messageController = TextEditingController(
       text: "Looking for a fun party partner for $title at ${widget.venueName}! ✨ Let's vibe!",
     );
+    _loadInvitees();
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _inviteeSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInvitees([String? query]) async {
+    setState(() => _isLoadingInvitees = true);
+    try {
+      List<Map<String, dynamic>> results = await ApiService.fetchAvailableInvitees(
+        venueId: widget.venueId,
+        date: widget.date,
+        search: query,
+      );
+
+      // If results are empty, gracefully fall back to active profiles so user never sees an empty list
+      if (results.isEmpty) {
+        try {
+          final customers = await ApiService.fetchCustomers();
+          final currentUserId = ApiService.currentUserId;
+          if (customers.isNotEmpty) {
+            results = customers
+                .where((u) => u['id']?.toString() != currentUserId)
+                .where((u) {
+                  if (query == null || query.trim().isEmpty) return true;
+                  final q = query.trim().toLowerCase();
+                  final name = '${u['firstName'] ?? ''} ${u['lastName'] ?? ''}'.toLowerCase();
+                  final city = (u['city'] ?? '').toString().toLowerCase();
+                  return name.contains(q) || city.contains(q);
+                })
+                .map((u) => {
+                      'userId': u['id']?.toString(),
+                      'firstName': u['firstName'] ?? 'User',
+                      'age': u['age'],
+                      'city': u['city'] ?? 'Pune',
+                      'gender': u['gender'],
+                      'bio': u['bio'] ?? '',
+                      'primaryPhoto': u['profilePhotoUrl'] ?? u['profilePhoto'] ?? u['photoUrl'],
+                      'isVerified': u['isVerified'] == true,
+                      'compatibilityScore': 90,
+                      'isInterested': false,
+                    })
+                .toList();
+          }
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _candidateInvitees = results;
+        _isLoadingInvitees = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingInvitees = false);
+    }
+  }
+
+  void _toggleUserSelection(String userId) {
+    setState(() {
+      if (_selectedUserIds.contains(userId)) {
+        _selectedUserIds.remove(userId);
+      } else {
+        _selectedUserIds.add(userId);
+      }
+    });
+  }
+
+  void _selectAllInvitees() {
+    setState(() {
+      for (final item in _candidateInvitees) {
+        final id = item['userId']?.toString();
+        if (id != null && id.isNotEmpty && !_selectedUserIds.contains(id)) {
+          _selectedUserIds.add(id);
+        }
+      }
+    });
+  }
+
+  void _clearAllInvitees() {
+    setState(() {
+      _selectedUserIds.clear();
+    });
   }
 
   /// The event's ticket price, per person. The server resolves this again from
@@ -215,13 +301,14 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       return;
     }
 
-    // An invite-only plan with no one invited can never be seen or joined, so
+    // An invite-only or both plan with no one invited cannot be joined via invites, so
     // it is refused here rather than posted into a dead end.
-    if (_selectedPrivacy == 'PRIVATE' && _selectedUserIds.isEmpty) {
+    if ((_selectedPrivacy == 'PRIVATE' || _selectedPrivacy == 'BOTH') && _selectedUserIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pick at least one person to invite, or switch to Public Feed.'),
+          content: Text('Please select at least one person to invite, or switch to Public Feed.'),
           backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
         ),
       );
       return;
@@ -683,7 +770,12 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                           title: 'Invite Only',
                           subtitle: 'Only people you invite',
                           isSelected: _selectedPrivacy == 'PRIVATE',
-                          onTap: () => setState(() => _selectedPrivacy = 'PRIVATE'),
+                          onTap: () {
+                            setState(() => _selectedPrivacy = 'PRIVATE');
+                            if (_candidateInvitees.isEmpty && !_isLoadingInvitees) {
+                              _loadInvitees();
+                            }
+                          },
                           isDark: isDark,
                         ),
                       ),
@@ -693,41 +785,161 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
                           title: 'Both',
                           subtitle: 'Public + direct invites',
                           isSelected: _selectedPrivacy == 'BOTH',
-                          onTap: () => setState(() => _selectedPrivacy = 'BOTH'),
+                          onTap: () {
+                            setState(() => _selectedPrivacy = 'BOTH');
+                            if (_candidateInvitees.isEmpty && !_isLoadingInvitees) {
+                              _loadInvitees();
+                            }
+                          },
                           isDark: isDark,
                         ),
                       ),
                     ],
                   ),
 
-                  // Invite-only and Both both need someone to invite. Posting a
-                  // PRIVATE plan with nobody selected used to be possible and
-                  // produced a plan no one could ever see or join.
+                  // ── Profile selection for Invite-Only and Both ──────────────
                   if (_selectedPrivacy != 'PUBLIC') ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Text(
+                          'SELECT PEOPLE TO INVITE',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_selectedUserIds.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${_selectedUserIds.length} Selected',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: LunaraTheme.electricViolet,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: _clearAllInvitees,
+                            child: const Text(
+                              'Clear',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                        ] else if (_candidateInvitees.isNotEmpty) ...[
+                          GestureDetector(
+                            onTap: _selectAllInvitees,
+                            child: const Text(
+                              'Select All',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: LunaraTheme.electricViolet,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Invitee Search Bar
+                    TextField(
+                      controller: _inviteeSearchController,
+                      onChanged: (val) => _loadInvitees(val),
+                      style: const TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Search people by name or city...',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[400],
+                          fontSize: 12.5,
+                        ),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: LunaraTheme.electricViolet),
+                        suffixIcon: _inviteeSearchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 16),
+                                onPressed: () {
+                                  _inviteeSearchController.clear();
+                                  _loadInvitees();
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey[100],
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: isDark ? Colors.white12 : Colors.grey[300]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: isDark ? Colors.white12 : Colors.grey[300]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: LunaraTheme.electricViolet, width: 1.5),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
+
+                    // Invitee Profiles List Box
+                    _buildInviteesSection(isDark),
+
+                    const SizedBox(height: 8),
+
+                    // Status / Guidance banner
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.10),
+                        color: _selectedUserIds.isEmpty
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.10)
+                            : const Color(0xFF10B981).withValues(alpha: 0.10),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.35),
+                          color: _selectedUserIds.isEmpty
+                              ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                              : const Color(0xFF10B981).withValues(alpha: 0.35),
                         ),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline_rounded,
-                              size: 16, color: Color(0xFFB45309)),
+                          Icon(
+                            _selectedUserIds.isEmpty
+                                ? Icons.info_outline_rounded
+                                : Icons.check_circle_outline_rounded,
+                            size: 16,
+                            color: _selectedUserIds.isEmpty
+                                ? const Color(0xFFB45309)
+                                : const Color(0xFF059669),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _selectedUserIds.isEmpty
-                                  ? 'Pick at least one person to invite, or switch to Public Feed.'
-                                  : '${_selectedUserIds.length} guest(s) will be invited.',
-                              style: const TextStyle(
+                                  ? 'Tap on cards above to select people to invite.'
+                                  : '${_selectedUserIds.length} guest(s) will receive direct invitations.',
+                              style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFFB45309),
+                                color: _selectedUserIds.isEmpty
+                                    ? const Color(0xFFB45309)
+                                    : const Color(0xFF047857),
                               ),
                             ),
                           ),
@@ -1004,6 +1216,324 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInviteesSection(bool isDark) {
+    if (_isLoadingInvitees) {
+      return Container(
+        height: 140,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.grey[50],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? Colors.white12 : Colors.grey[200]!,
+          ),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: LunaraTheme.electricViolet,
+              ),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Finding available guests...',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_candidateInvitees.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.grey[50],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? Colors.white12 : Colors.grey[200]!,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.people_outline_rounded,
+              size: 32,
+              color: isDark ? Colors.white38 : Colors.grey[400],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _inviteeSearchController.text.isNotEmpty
+                  ? 'No matching users found for "${_inviteeSearchController.text}"'
+                  : 'No available guests found right now.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white60 : Colors.black54,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Switch to "Public Feed" to let anyone request to join!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.white38 : Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final interestedList = _candidateInvitees.where((u) => u['isInterested'] == true).toList();
+    final recommendedList = _candidateInvitees.where((u) => u['isInterested'] != true).toList();
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 260),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.02) : const Color(0xFFFAFAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(8),
+          physics: const BouncingScrollPhysics(),
+          children: [
+            if (interestedList.isNotEmpty) ...[
+              _buildSectionHeader('INTERESTED IN THIS NIGHT', isHighlight: true),
+              const SizedBox(height: 6),
+              ...interestedList.map((u) => _buildInviteeCard(u, isDark)),
+              const SizedBox(height: 8),
+            ],
+            if (recommendedList.isNotEmpty) ...[
+              _buildSectionHeader(
+                interestedList.isNotEmpty ? 'RECOMMENDED GUESTS' : 'AVAILABLE GUESTS',
+                isHighlight: false,
+              ),
+              const SizedBox(height: 6),
+              ...recommendedList.map((u) => _buildInviteeCard(u, isDark)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, {required bool isHighlight}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        children: [
+          if (isHighlight) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'HOT',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            title,
+            style: TextStyle(
+              color: isHighlight ? const Color(0xFFFF5722) : const Color(0xFF64748B),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInviteeCard(Map<String, dynamic> user, bool isDark) {
+    final userId = user['userId']?.toString() ?? user['id']?.toString() ?? '';
+    final isSelected = _selectedUserIds.contains(userId);
+    final name = user['firstName'] ?? user['name'] ?? 'User';
+    final age = user['age'];
+    final city = user['city'] ?? '';
+    final photo = user['primaryPhoto'] ?? user['profilePhotoUrl'] ?? user['photoUrl'];
+    final isVerified = user['isVerified'] == true;
+    final isInterested = user['isInterested'] == true;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _toggleUserSelection(userId),
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? LunaraTheme.electricViolet.withValues(alpha: isDark ? 0.18 : 0.08)
+                  : (isInterested
+                      ? (isDark ? const Color(0xFF231E2A) : const Color(0xFFFFF7ED))
+                      : (isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white)),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isSelected
+                    ? LunaraTheme.electricViolet
+                    : (isInterested
+                        ? const Color(0xFFFFB74D).withValues(alpha: 0.4)
+                        : (isDark ? Colors.white10 : const Color(0xFFE2E8F0))),
+                width: isSelected ? 1.8 : 1.0,
+              ),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                Stack(
+                  children: [
+                    LunaraProfileImage(
+                      userData: {'profilePhotoUrl': photo},
+                      radius: 20,
+                    ),
+                    if (isVerified)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(1.5),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.verified,
+                            color: LunaraTheme.cyberCyan,
+                            size: 11,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              age != null ? '$name, $age' : name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isInterested) ...[
+                            const SizedBox(width: 5),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'INTERESTED 🔥',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 7.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (city.toString().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          city.toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white54 : Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? LunaraTheme.electricViolet
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? LunaraTheme.electricViolet
+                          : (isDark ? Colors.white38 : Colors.grey[400]!),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
