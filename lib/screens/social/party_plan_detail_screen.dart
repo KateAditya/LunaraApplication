@@ -8,6 +8,7 @@ import '../../widgets/lunara_profile_image.dart';
 import '../../widgets/smart_checkout_sheet.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
+import '../discovery/digital_ticket_screen.dart';
 import 'plan_hub_screen.dart';
 import '../../widgets/top_notification_banner.dart';
 import '../../widgets/dialogs/time_lock_blocked_dialog.dart';
@@ -1611,8 +1612,9 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       }
     }
 
-    // Default: Show subtle red outline "Cancel Party Plan" button — for Host OR confirmed participant
+    // Default: Show subtle red outline "Cancel Party Plan" button — for confirmed participant only (Host already has CANCEL in bottom CTA)
     if (!isHost && !isConfirmed) return const SizedBox.shrink();
+    if (isHost || _isSoloConverted) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.only(top: 16),
@@ -3183,25 +3185,31 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                       _chip(
                         icon: _isStatusLoading
                             ? Icons.hourglass_top_rounded
-                            : (_isExpired
-                                ? Icons.timer_off_rounded
-                                : (isConfirmed
-                                    ? Icons.verified_rounded
-                                    : (isCancelled ? Icons.cancel_rounded : Icons.circle))),
+                            : (_isSoloConverted
+                                ? Icons.confirmation_number_rounded
+                                : (_isExpired
+                                    ? Icons.timer_off_rounded
+                                    : (isConfirmed
+                                        ? Icons.verified_rounded
+                                        : (isCancelled ? Icons.cancel_rounded : Icons.circle)))),
                         label: _isStatusLoading
                             ? 'CHECKING...'
-                            : (_isExpired
-                                ? 'EXPIRED'
-                                : (isConfirmed
-                                    ? 'CONFIRMED'
-                                    : (isCancelled ? 'CANCELLED' : status))),
+                            : (_isSoloConverted
+                                ? 'SOLO TICKET'
+                                : (_isExpired
+                                    ? 'EXPIRED'
+                                    : (isConfirmed
+                                        ? 'CONFIRMED'
+                                        : (isCancelled ? 'CANCELLED' : status)))),
                         color: _isStatusLoading
                             ? const Color(0xFF94A3B8)
-                            : (_isExpired
-                                ? const Color(0xFF94A3B8)
-                                : (isConfirmed
-                                    ? const Color(0xFF10B981)
-                                    : (isCancelled ? const Color(0xFFDC2626) : (status == 'ACTIVE' ? const Color(0xFF10B981) : const Color(0xFF94A3B8))))),
+                            : (_isSoloConverted
+                                ? const Color(0xFF8B5CF6)
+                                : (_isExpired
+                                    ? const Color(0xFF94A3B8)
+                                    : (isConfirmed
+                                        ? const Color(0xFF10B981)
+                                        : (isCancelled ? const Color(0xFFDC2626) : (status == 'ACTIVE' ? const Color(0xFF10B981) : const Color(0xFF94A3B8)))))),
                       ),
                       const SizedBox(width: 8),
                       _chip(
@@ -3298,6 +3306,12 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
                         : venueAddress,
                     iconColor: hideVenueDetails ? const Color(0xFFD97706) : LunaraTheme.electricViolet,
                   ),
+
+                  // 24-hour "no partner yet" prompt for event-linked plans
+                  if (isMyPost && _hasNoMatchPrompt && !isCancelled && !_isExpired && !_isSoloConverted) ...[
+                    _buildNoMatchActionPromptSection(),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Mutual Cancellation Section
                   if (!_isExpired) ...[
@@ -4004,6 +4018,122 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
       );
     }
 
+    if (_isSoloConverted) {
+      final venue = _extractVenue(widget.plan);
+      final rawDate = widget.plan['planDateTime'] ?? widget.plan['bookingDate'] ?? widget.plan['date'];
+      final rawTime = widget.plan['startTime'] ?? widget.plan['time'];
+      final bookingData = widget.plan['booking'] is Map
+          ? Map<dynamic, dynamic>.from(widget.plan['booking'])
+          : <dynamic, dynamic>{
+              'id': widget.plan['bookingId'] ?? widget.plan['id'],
+              'venueId': widget.plan['venueId'],
+              'venue': venue,
+              'bookingDate': rawDate?.toString(),
+              'startTime': rawTime?.toString() ?? '20:00',
+              'ticketCode': widget.plan['ticketCode'] ?? widget.plan['ticketId'] ?? widget.plan['bookingId'] ?? widget.plan['id'],
+              'ticketUrl': widget.plan['ticketUrl'],
+              'totalAmount': _getEffectivePaidAmount(),
+              'isUpcomingNight': true,
+              'isSolo': true,
+              'status': 'CONFIRMED',
+            };
+
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DigitalTicketScreen(
+                          venue: venue,
+                          date: rawDate?.toString(),
+                          time: rawTime?.toString() ?? '20:00',
+                          table: 'Solo Entry',
+                          package: 'Solo Entry',
+                          guests: '1',
+                          totalPrice: '₹${_getEffectivePaidAmount().toStringAsFixed(0)}',
+                          ticketId: (widget.plan['ticketCode'] ?? widget.plan['bookingId'] ?? widget.plan['id'])?.toString(),
+                          ticketUrl: widget.plan['ticketUrl']?.toString(),
+                          status: 'CONFIRMED',
+                          booking: bookingData,
+                          isUpcomingNight: true,
+                          user: ApiService.cachedCurrentUser,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: LunaraTheme.purpleGradient,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: LunaraTheme.electricViolet.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.confirmation_number_rounded, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'VIEW TICKET',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (!_isWindowClosed) ...[
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _isLoadingCancellation ? null : _showCancellationStep1Dialog,
+                  child: Container(
+                    height: 54,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 20),
+                        SizedBox(width: 6),
+                        Text(
+                          'CANCEL',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
     // Host Paid — show host label (+ CANCEL PLAN button only if window not closed)
     return SafeArea(
       child: Padding(
@@ -4069,6 +4199,205 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  bool get _isSoloConverted {
+    final p = widget.plan;
+    final paymentStatus = (p['paymentStatus'] ?? '').toString().toLowerCase();
+    final isSoloFlag = p['isSolo'] == true || p['goingMode'] == 'solo';
+    final bookingId = p['bookingId'] ?? p['booking']?['id'];
+    return isSoloFlag ||
+        paymentStatus.contains('converted to solo') ||
+        paymentStatus.contains('solo ticket') ||
+        (p['partyEventId'] != null && bookingId != null);
+  }
+
+  bool get _hasNoMatchPrompt {
+    final p = widget.plan;
+    final isEventLinked = (p['partyEventId'] ?? p['adId'] ?? p['upcomingNightId']) != null;
+    return isEventLinked &&
+        (p['eventNoMatchPrompt'] == true ||
+            p['eventNoMatchNotifiedAt'] != null ||
+            p['metadata']?['eventNoMatchPrompt'] == true ||
+            p['metadata']?['type'] == 'event_plan_no_match');
+  }
+
+  bool _isLoadingNoMatchAction = false;
+
+  Future<void> _handleNoMatchResponse(String planId, String action) async {
+    setState(() => _isLoadingNoMatchAction = true);
+    try {
+      final res = await ApiService.respondToEventPlanNoMatch(
+        planId: planId,
+        action: action,
+      );
+      if (!mounted) return;
+      setState(() => _isLoadingNoMatchAction = false);
+
+      if (res['success'] == true) {
+        if (action == 'cancel') {
+          setState(() {
+            widget.plan['status'] = 'cancelled';
+            widget.plan['lifecycleStatus'] = 'cancelled';
+            widget.plan['isLive'] = false;
+            widget.plan['eventNoMatchPrompt'] = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message']?.toString() ?? 'Plan cancelled and refunded.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else if (action == 'solo') {
+          setState(() {
+            widget.plan['status'] = 'inactive';
+            widget.plan['lifecycleStatus'] = 'completed';
+            widget.plan['isSolo'] = true;
+            widget.plan['paymentStatus'] = 'Converted to solo ticket';
+            widget.plan['bookingId'] = res['data']?['bookingId'];
+            widget.plan['ticketCode'] = res['data']?['ticketCode'];
+            widget.plan['eventNoMatchPrompt'] = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message']?.toString() ?? 'Solo ticket confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          setState(() {
+            widget.plan['eventNoMatchPrompt'] = false;
+            widget.plan['eventNoMatchNotifiedAt'] = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message']?.toString() ?? 'Your plan will remain active.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        ApiService.notifyFeedNeedsRefresh();
+        await _refreshPlanDetails();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message']?.toString() ?? 'Could not process request.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingNoMatchAction = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildNoMatchActionPromptSection() {
+    final cleanPlanId = widget.plan['id']?.toString() ?? '';
+    final venue = _extractVenue(widget.plan);
+    final venueName = venue['name']?.toString() ?? 'the venue';
+    final bool isSelfPay = (widget.plan['paymentType'] ?? '').toString().toLowerCase() == 'self_pay';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFDE68A), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'No Partner Joined Yet',
+                  style: TextStyle(
+                    color: Color(0xFFD97706),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Nobody has joined your plan at $venueName yet. You can keep waiting for someone, convert your ticket to go solo, or cancel for a full refund.',
+            style: const TextStyle(
+              color: Color(0xFF1F2937),
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoadingNoMatchAction
+                      ? null
+                      : () => _handleNoMatchResponse(cleanPlanId, 'keep'),
+                  icon: const Icon(Icons.schedule_rounded, size: 16),
+                  label: const Text('KEEP WAITING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF4B5563),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isLoadingNoMatchAction
+                      ? null
+                      : () => _handleNoMatchResponse(cleanPlanId, 'solo'),
+                  icon: const Icon(Icons.person_rounded, size: 16),
+                  label: Text(
+                    isSelfPay ? 'GO SOLO (+REFUND)' : 'GO SOLO',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: LunaraTheme.electricViolet,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoadingNoMatchAction
+                      ? null
+                      : () => _handleNoMatchResponse(cleanPlanId, 'cancel'),
+                  icon: const Icon(Icons.cancel_outlined, size: 16),
+                  label: const Text('CANCEL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

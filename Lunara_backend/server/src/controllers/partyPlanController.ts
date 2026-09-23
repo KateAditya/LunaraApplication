@@ -2216,6 +2216,25 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
             return reqData;
         });
 
+        let soloBooking: any = null;
+        if (plan.partyEventId && plan.userId) {
+            try {
+                soloBooking = await Booking.findOne({
+                    where: {
+                        userId: plan.userId,
+                        partyEventId: plan.partyEventId,
+                        status: { [Op.ne]: 'cancelled' },
+                    },
+                    order: [['createdAt', 'DESC']],
+                });
+            } catch (bkgErr) {
+                logger.warn('[getPartyPlanById] Could not fetch solo booking:', bkgErr);
+            }
+        }
+
+        const viewerId = (req as any).user?.id;
+        const isHost = Boolean(viewerId && viewerId === plan.userId);
+
         res.json({
             success: true,
             data: {
@@ -2236,6 +2255,22 @@ export const getPartyPlanById = async (req: Request, res: Response): Promise<voi
                 hostRazorpayOrderId: plan.hostRazorpayOrderId,
                 isLive: plan.isLive,
                 depositAmount: plan.depositAmount,
+                partyEventId: plan.partyEventId || null,
+                paymentType: plan.paymentType,
+                eventSeatsReserved: plan.eventSeatsReserved || 0,
+                eventNoMatchNotifiedAt: (plan as any).eventNoMatchNotifiedAt || null,
+                eventNoMatchPrompt: Boolean(
+                    plan.partyEventId &&
+                    isHost &&
+                    (plan as any).eventNoMatchNotifiedAt &&
+                    !plan.matchedRequestId &&
+                    plan.status === PartyPlanStatus.ACTIVE
+                ),
+                bookingId: soloBooking?.id || null,
+                ticketCode: soloBooking?.ticketCode || null,
+                ticketUrl: soloBooking?.ticketUrl || null,
+                booking: soloBooking ? soloBooking.toJSON() : null,
+                isSolo: Boolean(soloBooking || plan.paymentStatus === 'Converted to solo ticket'),
                 mobileNumber: plan.mobileNumber,
                 optionalMobileNumber: plan.optionalMobileNumber,
                 expiresAt: plan.expiresAt,
@@ -4602,7 +4637,7 @@ async function cancelPartyPlanInternal(plan: PartyPlan, transaction: Transaction
     // ordinary party plan, and idempotent, so it is safe alongside the other
     // cancellation routes that also call it.
     if ((plan as any).partyEventId) {
-        await EventSeatService.releaseForPlan(plan.id);
+        await EventSeatService.releaseForPlan(plan.id, transaction);
     }
 
     // Dispatch 🔓 Schedule Unlocked notification for Host

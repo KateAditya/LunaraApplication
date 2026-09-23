@@ -10510,25 +10510,101 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       final bool isPrivatePlan = planVis == 'PRIVATE';
       final bool isBothPlan = planVis == 'BOTH';
 
-      // ── 24-hour "no partner yet" prompt on an event-linked plan ────────────
-      // The server raises this once a day has passed with nobody accepted. It
-      // only ever reaches the host, and only for a plan posted from an event,
-      // so it is checked before the ordinary host states below.
-      // Read from the plan's own enriched card, not from a standalone
-      // notification: the notifications endpoint folds every raw party-plan
-      // notification into this card, so a separate one would be filtered away
-      // before it ever reached here.
+      // ── Converted Solo Ticket on an event-linked plan ──────────────────────
       bool readNoMatchFlag(dynamic src) =>
           src is Map && src['eventNoMatchPrompt'] == true;
 
-      final bool hasNoMatchPrompt = readNoMatchFlag(planMap) ||
-          entries.any((e) =>
-              readNoMatchFlag(e) ||
-              readNoMatchFlag(e['data']) ||
-              readNoMatchFlag(e['plan']) ||
-              readNoMatchFlag(e['metadata']));
+      final bool isEventLinkedPlan =
+          (planMap['partyEventId'] ?? planMap['adId'] ?? planMap['upcomingNightId']) != null;
 
-      if (hasNoMatchPrompt && !isCancelled && !isExpired && acceptedJoinerRequest == null) {
+      final bool isSoloConverted = planMap['isSolo'] == true ||
+          (planMap['paymentStatus'] ?? '').toString().toLowerCase().contains('solo') ||
+          (isEventLinkedPlan &&
+              (planMap['lifecycleStatus'] == 'completed' || planMap['status'] == 'completed' || planMap['status'] == 'inactive') &&
+              (planMap['paymentStatus'] ?? '').toString().toLowerCase().contains('converted')) ||
+          (isEventLinkedPlan && (planMap['bookingId'] != null || planMap['booking'] != null));
+
+      if (isSoloConverted && !isCancelled && !isExpired) {
+        accent = const Color(0xFF8B5CF6);
+        badge = 'SOLO TICKET';
+        title = '🎟 Solo Ticket Confirmed';
+        body = formattedDateTime.isNotEmpty
+            ? 'Your solo ticket for $venueName is confirmed • 📅 $formattedDateTime'
+            : 'Your solo ticket for $venueName is confirmed.';
+        statusSummary = 'Solo Entry Confirmed';
+
+        final rawDate = planMap['planDateTime'] ?? planMap['bookingDate'] ?? planMap['date'];
+        final rawTime = planMap['startTime'] ?? planMap['time'];
+        final double paidAmt = planMap['depositAmount'] is num
+            ? (planMap['depositAmount'] as num).toDouble()
+            : (double.tryParse(planMap['depositAmount']?.toString() ?? '') ?? 0.0);
+        final bookingData = planMap['booking'] is Map
+            ? Map<dynamic, dynamic>.from(planMap['booking'])
+            : <dynamic, dynamic>{
+                'id': planMap['bookingId'] ?? planMap['id'],
+                'venueId': planMap['venueId'],
+                'venue': venue,
+                'bookingDate': rawDate?.toString(),
+                'startTime': rawTime?.toString() ?? '20:00',
+                'ticketCode': planMap['ticketCode'] ?? planMap['ticketId'] ?? planMap['bookingId'] ?? planMap['id'],
+                'ticketUrl': planMap['ticketUrl'],
+                'totalAmount': paidAmt,
+                'isUpcomingNight': true,
+                'isSolo': true,
+                'status': 'CONFIRMED',
+              };
+
+        actionsList = [
+          NotificationAction(
+            label: 'View Ticket',
+            icon: Icons.confirmation_number_rounded,
+            isPrimary: true,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DigitalTicketScreen(
+                    venue: venue,
+                    date: rawDate?.toString(),
+                    time: rawTime?.toString() ?? '20:00',
+                    table: 'Solo Entry',
+                    package: 'Solo Entry',
+                    guests: '1',
+                    totalPrice: paidAmt > 0 ? '₹${paidAmt.toStringAsFixed(0)}' : 'FREE (₹0)',
+                    ticketId: (planMap['ticketCode'] ?? planMap['bookingId'] ?? planMap['id'])?.toString(),
+                    ticketUrl: planMap['ticketUrl']?.toString(),
+                    status: 'CONFIRMED',
+                    booking: bookingData,
+                    isUpcomingNight: true,
+                    user: ApiService.cachedCurrentUser,
+                  ),
+                ),
+              );
+            },
+          ),
+          NotificationAction(
+            label: 'Cancel',
+            icon: Icons.cancel_outlined,
+            isPrimary: false,
+            color: Colors.red[50],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PartyPlanDetailScreen(plan: planMap),
+              ),
+            ).then((_) => _loadFeed(showLoader: false)),
+          ),
+        ];
+      } else if (isEventLinkedPlan &&
+          (readNoMatchFlag(planMap) ||
+              entries.any((e) =>
+                  readNoMatchFlag(e) ||
+                  readNoMatchFlag(e['data']) ||
+                  readNoMatchFlag(e['plan']) ||
+                  readNoMatchFlag(e['metadata']))) &&
+          !isCancelled &&
+          !isExpired &&
+          acceptedJoinerRequest == null) {
         // Amounts come from the same authoritative card that raised the prompt,
         // so what the buttons quote is what the server will actually refund.
         double readAmount(String key) {
@@ -10575,16 +10651,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         'status': 'cancelled',
                         'lifecycleStatus': 'cancelled',
                         'isCancelled': true,
+                        'eventNoMatchPrompt': false,
                       }
                     : action == 'solo'
                         ? {
                             'status': 'inactive',
                             'lifecycleStatus': 'completed',
                             'isLive': false,
+                            'isSolo': true,
+                            'paymentStatus': 'Converted to solo ticket',
+                            'bookingId': res['data']?['bookingId'],
+                            'ticketCode': res['data']?['ticketCode'],
+                            'booking': res['data'],
+                            'eventNoMatchPrompt': false,
                           }
-                        : {'eventNoMatchNotifiedAt': null},
+                        : {'eventNoMatchNotifiedAt': null, 'eventNoMatchPrompt': false},
                 isAuthoritative: true,
               );
+              ApiService.notifyFeedNeedsRefresh();
             }
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(

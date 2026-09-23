@@ -128,25 +128,28 @@ export class EventSeatService {
      *
      * Returns the number of seats actually given back.
      */
-    static async releaseForPlan(planId: string): Promise<number> {
+    static async releaseForPlan(planId: string, transaction?: Transaction): Promise<number> {
         if (!planId) return 0;
         const PartyPlan = (await import('../models/PartyPlan')).default;
 
-        try {
-            return await sequelize.transaction(async (t) => {
-                const plan: any = await PartyPlan.findByPk(planId, {
-                    lock: t.LOCK.UPDATE,
-                    transaction: t,
-                });
-                if (!plan || !plan.partyEventId) return 0;
-
-                const held = Number(plan.eventSeatsReserved) || 0;
-                if (held <= 0) return 0;
-
-                await plan.update({ eventSeatsReserved: 0 }, { transaction: t });
-                await EventSeatService.release(plan.partyEventId, held, t);
-                return held;
+        const run = async (t: Transaction) => {
+            const plan: any = await PartyPlan.findByPk(planId, {
+                lock: t.LOCK.UPDATE,
+                transaction: t,
             });
+            if (!plan || !plan.partyEventId) return 0;
+
+            const held = Number(plan.eventSeatsReserved) || 0;
+            if (held <= 0) return 0;
+
+            await plan.update({ eventSeatsReserved: 0 }, { transaction: t });
+            await EventSeatService.release(plan.partyEventId, held, t);
+            return held;
+        };
+
+        try {
+            if (transaction) return await run(transaction);
+            return await sequelize.transaction(run);
         } catch (err: any) {
             logger.error(`[EventSeatService] releaseForPlan failed for plan ${planId}: ${err?.message}`);
             return 0;
@@ -158,25 +161,28 @@ export class EventSeatService {
      * converts an unmatched plan into a solo ticket. Same read-zero-release
      * discipline as `releaseForPlan`, so it cannot release a seat twice.
      */
-    static async releaseOneForPlan(planId: string): Promise<number> {
+    static async releaseOneForPlan(planId: string, transaction?: Transaction): Promise<number> {
         if (!planId) return 0;
         const PartyPlan = (await import('../models/PartyPlan')).default;
 
-        try {
-            return await sequelize.transaction(async (t) => {
-                const plan: any = await PartyPlan.findByPk(planId, {
-                    lock: t.LOCK.UPDATE,
-                    transaction: t,
-                });
-                if (!plan || !plan.partyEventId) return 0;
-
-                const held = Number(plan.eventSeatsReserved) || 0;
-                if (held <= 1) return 0;
-
-                await plan.update({ eventSeatsReserved: held - 1 }, { transaction: t });
-                await EventSeatService.release(plan.partyEventId, 1, t);
-                return 1;
+        const run = async (t: Transaction) => {
+            const plan: any = await PartyPlan.findByPk(planId, {
+                lock: t.LOCK.UPDATE,
+                transaction: t,
             });
+            if (!plan || !plan.partyEventId) return 0;
+
+            const held = Number(plan.eventSeatsReserved) || 0;
+            if (held <= 1) return 0;
+
+            await plan.update({ eventSeatsReserved: held - 1 }, { transaction: t });
+            await EventSeatService.release(plan.partyEventId, 1, t);
+            return 1;
+        };
+
+        try {
+            if (transaction) return await run(transaction);
+            return await sequelize.transaction(run);
         } catch (err: any) {
             logger.error(`[EventSeatService] releaseOneForPlan failed for plan ${planId}: ${err?.message}`);
             return 0;

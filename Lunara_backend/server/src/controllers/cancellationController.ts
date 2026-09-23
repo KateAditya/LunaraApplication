@@ -819,7 +819,7 @@ export const respondToCancellationRequest = async (req: Request, res: Response):
             // seats and this is a no-op for it. Idempotent, so the several
             // routes a plan can be cancelled through cannot double-release.
             if ((lockedPlan as any).partyEventId) {
-                await EventSeatService.releaseForPlan(lockedPlan.id);
+                await EventSeatService.releaseForPlan(lockedPlan.id, t);
             }
 
             // ─────────────────────────────────────────────────────────────────
