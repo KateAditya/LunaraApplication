@@ -2677,6 +2677,20 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
           _isInvitedUser = prevIsInvited;
           _activeRequestId = prevActiveReqId;
         });
+        final msg = res.message.toLowerCase();
+        if (msg.contains('no longer available') ||
+            msg.contains('not active') ||
+            msg.contains('party_plan_not_active') ||
+            msg.contains('another partner')) {
+          ApiService.markPartyPlanAsCancelledLocal(planId);
+          ApiService.invalidateLiveFeedCache();
+          ApiService.notifyFeedNeedsRefresh();
+          setState(() {
+            widget.plan['status'] = 'cancelled';
+            widget.plan['isLive'] = false;
+          });
+        }
+
         if (TimeLockBlockedDialog.isConflictError(res.message) ||
             (res.rawData != null && res.rawData!['allowed'] == false)) {
           TimeLockBlockedDialog.show(
@@ -2702,6 +2716,21 @@ class _PartyPlanDetailScreenState extends State<PartyPlanDetailScreen> {
         _isInvitedUser = prevIsInvited;
         _activeRequestId = prevActiveReqId;
       });
+
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('no longer available') ||
+          errStr.contains('not active') ||
+          errStr.contains('party_plan_not_active') ||
+          errStr.contains('another partner')) {
+        ApiService.markPartyPlanAsCancelledLocal(planId);
+        ApiService.invalidateLiveFeedCache();
+        ApiService.notifyFeedNeedsRefresh();
+        setState(() {
+          widget.plan['status'] = 'cancelled';
+          widget.plan['isLive'] = false;
+        });
+      }
+
       if (TimeLockBlockedDialog.isConflictError(e)) {
         TimeLockBlockedDialog.showWithMessage(context, e.toString());
       } else {

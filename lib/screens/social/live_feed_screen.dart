@@ -8,7 +8,6 @@ import '../../services/api_service.dart';
 import '../../services/realtime_sync_manager.dart';
 import '../../services/optimistic_action_guard.dart';
 import 'party_plan_detail_screen.dart';
-import 'plan_hub_screen.dart';
 import 'post_detail_screen.dart';
 import 'widgets/party_plan_arrival_dialog.dart';
 import '../profile/lunara_wallet_screen.dart';
@@ -9698,6 +9697,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
             planMap['isCancelled'] == true ||
             planMap['cancellationStatus'] == 'approved');
 
+    final bool isMyRequestAcceptedOrMatched = (myRequest != null &&
+            (myRequest['status'] == 'accepted' ||
+                myRequest['status'] == 'payment_pending' ||
+                myRequest['status'] == 'paid' ||
+                myRequest['status'] == 'confirmed')) ||
+        (planMap['partnerId'] != null &&
+            planMap['partnerId'].toString().isNotEmpty &&
+            planMap['partnerId'].toString() == currentUserId) ||
+        (planMap['matchedRequestId'] != null &&
+            myRequest != null &&
+            planMap['matchedRequestId'].toString() == myRequest['id']?.toString());
+
     final String hostReachStatus =
         (planMap['hostReachStatus'] ??
                 (planMap['hostArrivalConfirmed'] == true
@@ -9901,6 +9912,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         !isExpired;
 
     if (isCancelled) {
+      if (!isHost && !isMyRequestAcceptedOrMatched) {
+        return null;
+      }
       accent = const Color(0xFFEF4444);
       badge = 'CANCELLED';
       title = '❌ Party Plan Cancelled';
@@ -9946,6 +9960,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ),
       ];
     } else if (isExpired) {
+      if (!isHost && !isMyRequestAcceptedOrMatched) {
+        return null;
+      }
       accent = const Color(0xFF9CA3AF);
       badge = 'EXPIRED';
       title = 'Party Plan Expired ⌛';
@@ -11103,17 +11120,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
 
-      final bool isMyRequestAcceptedOrMatched = (myRequest != null &&
-              (myRequest['status'] == 'accepted' ||
-                  myRequest['status'] == 'payment_pending' ||
-                  myRequest['status'] == 'paid' ||
-                  myRequest['status'] == 'confirmed')) ||
-          (planMap['partnerId'] != null &&
-              planMap['partnerId'].toString().isNotEmpty &&
-              planMap['partnerId'].toString() == currentUserId) ||
-          (planMap['matchedRequestId'] != null &&
-              myRequest != null &&
-              planMap['matchedRequestId'].toString() == myRequest['id']?.toString());
 
       final bool hasAnotherPartner =
           !isHost &&
@@ -11216,37 +11222,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (hasAnotherPartner) {
-        isExpired = true;
-        title = 'Party Plan Unavailable';
-        badge = 'NO LONGER AVAILABLE';
-        accent = const Color(0xFFEF4444);
-        body =
-            'This Party Plan is no longer available.\n\n$hostName has joined with another partner.\n\nFind another Party Plan or create your own.';
-        statusSummary = 'Unavailable';
-
-        actionsList = [
-          NotificationAction(
-            label: 'Find Another Plan',
-            icon: Icons.explore_rounded,
-            isPrimary: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PlanHubScreen()),
-            ).then((_) => _loadFeed(showLoader: false)),
-          ),
-          NotificationAction(
-            label: 'Create Your Own',
-            icon: Icons.add_circle_outline_rounded,
-            isPrimary: false,
-            color: Colors.grey[200],
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const PlanHubScreen(autoShowCreatePlan: true),
-              ),
-            ).then((_) => _loadFeed(showLoader: false)),
-          ),
-        ];
+        return null;
       } else if ((myRequest?['joinerPaymentStatus'] ?? '')
                   .toString()
                   .toLowerCase() ==
@@ -11409,6 +11385,18 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (myStatus == 'pending') {
+        final bool isPlanOpenAndActive = (planStatus == 'active' || planStatus.isEmpty) &&
+            (lifecycleStatus == 'posted' || lifecycleStatus == 'active' || lifecycleStatus.isEmpty) &&
+            planMap['isLive'] != false &&
+            planMap['isCancelled'] != true &&
+            !isCancelled &&
+            !isExpired &&
+            !hasAnotherPartner;
+
+        if (!isPlanOpenAndActive) {
+          return null;
+        }
+
         final reqId = myRequest?['id']?.toString() ?? '';
         title = '🤝 Request Sent';
         badge = 'REQUEST SENT';
@@ -11429,47 +11417,24 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           ),
         ];
       } else if (myStatus == 'rejected' || myStatus == 'declined') {
-        isExpired = true;
-        title = '❌ Request Declined';
-        badge = 'DECLINED';
-        accent = const Color(0xFF9CA3AF);
-        body =
-            'Your Party Plan request at $venueName was declined by $hostName.';
-        statusSummary = 'Declined';
-        actionsList = [
-          NotificationAction(
-            label: 'Request to Join',
-            icon: Icons.person_add_rounded,
-            isPrimary: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PartyPlanDetailScreen(plan: planMap),
-              ),
-            ).then((_) => _loadFeed(showLoader: false)),
-          ),
-        ];
+        return null;
       } else if (myStatus == 'withdrawn' || myStatus == 'cancelled') {
-        isExpired = true;
-        title = '↩️ Request Cancelled';
-        badge = 'CANCELLED';
-        accent = const Color(0xFF9CA3AF);
-        body = 'You cancelled your request for Party Plan at $venueName.';
-        statusSummary = 'Cancelled';
-        actionsList = [
-          NotificationAction(
-            label: 'Request to Join',
-            icon: Icons.person_add_rounded,
-            isPrimary: true,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PartyPlanDetailScreen(plan: planMap),
-              ),
-            ).then((_) => _loadFeed(showLoader: false)),
-          ),
-        ];
+        return null;
       } else {
+        final bool isPlanOpenAndActive = (planStatus == 'active' || planStatus.isEmpty) &&
+            (lifecycleStatus == 'posted' || lifecycleStatus == 'active' || lifecycleStatus.isEmpty) &&
+            planMap['isLive'] != false &&
+            planMap['isCancelled'] != true &&
+            !isCancelled &&
+            !isExpired &&
+            !hasAnotherPartner &&
+            (planMap['partnerId'] == null || planMap['partnerId'].toString().isEmpty) &&
+            (planMap['matchedRequestId'] == null || planMap['matchedRequestId'].toString().isEmpty);
+
+        if (!isPlanOpenAndActive) {
+          return null;
+        }
+
         final bool superLikedYou = planMap['superLikedYou'] == true;
         final bool iSuperlikedThem = planMap['iSuperlikedThem'] == true;
         title = superLikedYou

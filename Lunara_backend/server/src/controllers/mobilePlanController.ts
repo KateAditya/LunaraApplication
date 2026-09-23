@@ -13,7 +13,7 @@ import User from '../models/User';
 import Venue from '../models/Venue';
 import VenueImage from '../models/VenueImage';
 import UserProfile from '../models/UserProfile';
-import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus } from '../models/PartyPlan';
+import PartyPlan, { PartyPlanStatus, PartyPlanPaymentStatus, PartyPlanLifecycleStatus } from '../models/PartyPlan';
 import PartyPlanRequest, { PartyPlanRequestStatus } from '../models/PartyPlanRequest';
 import UserPhoto from '../models/UserPhoto';
 import StrangersMeetRequest from '../models/StrangersMeetRequest';
@@ -341,12 +341,21 @@ export const getLiveFeed = async (req: Request, res: Response) => {
                 hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                 [Op.or]: [
                     { userId: viewerId as string },
-                    ...(superLikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
-                        : []),
-                    ...(mySuperlikedUserIds.length > 0
-                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public' }]
-                        : [])
+                    {
+                        [Op.and]: [
+                            { lifecycleStatus: { [Op.in]: [PartyPlanLifecycleStatus.POSTED, PartyPlanLifecycleStatus.REQUEST_RECEIVED, PartyPlanLifecycleStatus.HOST_REVIEWING] } },
+                            {
+                                [Op.or]: [
+                                    ...(superLikedUserIds.length > 0
+                                        ? [{ userId: { [Op.in]: superLikedUserIds }, visibility: 'public' }]
+                                        : []),
+                                    ...(mySuperlikedUserIds.length > 0
+                                        ? [{ userId: { [Op.in]: mySuperlikedUserIds }, visibility: 'public' }]
+                                        : [])
+                                ]
+                            }
+                        ]
+                    }
                 ]
             }
             : { id: { [Op.eq]: null } };

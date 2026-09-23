@@ -1852,6 +1852,7 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
                         {
                             hostPaymentStatus: PartyPlanPaymentStatus.PAID,
                             isLive: true,
+                            lifecycleStatus: { [Op.in]: [PartyPlanLifecycleStatus.POSTED, PartyPlanLifecycleStatus.REQUEST_RECEIVED, PartyPlanLifecycleStatus.HOST_REVIEWING] },
                             [Op.or]: [
                                 { visibility: PartyPlanVisibility.PUBLIC },
                                 { visibility: PartyPlanVisibility.BOTH },
@@ -1867,6 +1868,7 @@ export const getAllPartyPlans = async (req: Request, res: Response): Promise<voi
         } else {
             where.hostPaymentStatus = PartyPlanPaymentStatus.PAID;
             where.isLive = true;
+            where.lifecycleStatus = { [Op.in]: [PartyPlanLifecycleStatus.POSTED, PartyPlanLifecycleStatus.REQUEST_RECEIVED, PartyPlanLifecycleStatus.HOST_REVIEWING] };
             where[Op.or] = [
                 { visibility: PartyPlanVisibility.PUBLIC },
                 { visibility: PartyPlanVisibility.BOTH },
