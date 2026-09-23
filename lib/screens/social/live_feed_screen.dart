@@ -1731,16 +1731,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (delId != null && delId.isNotEmpty) {
         final cleanDelId = ApiService.cleanBookingId(delId);
         final currentUid = ApiService.currentUserId ?? '';
+        final hostId = (data['hostId'] ?? data['userId'])?.toString() ?? '';
+        final partnerId = (data['partnerId'] ?? data['winningRequesterId'])?.toString() ?? '';
+
+        // If the current user is the host or winning partner, retain and refresh
+        if (currentUid.isNotEmpty && (currentUid == hostId || currentUid == partnerId)) {
+          _patchEntityInFeed(data);
+          ApiService.invalidateLiveFeedCache();
+          _loadFeed(showLoader: false, forceRefresh: true);
+          return;
+        }
 
         setState(() {
           _feedItems = _feedItems.where((item) {
             final matches = _matchesId(item, delId, cleanTarget: cleanDelId);
             if (!matches) return true;
-            // If the plan is already confirmed for this user, keep it
+            // If the plan is reserved or confirmed for this user, keep it
             final life = (item['lifecycleStatus'] ?? '').toString().toLowerCase();
             final st = (item['status'] ?? '').toString().toLowerCase();
-            final isConf = life == 'match_confirmed' || life == 'chat_enabled' || life == 'plan_completed' || st == 'confirmed';
-            return isConf;
+            final isReservedOrActive = life == 'match_confirmed' ||
+                life == 'chat_enabled' ||
+                life == 'plan_completed' ||
+                life == 'payment_pending' ||
+                life == 'host_payment_completed' ||
+                life == 'guest_payment_completed' ||
+                life == 'user_accepted' ||
+                st == 'confirmed' ||
+                st == 'accepted';
+            return isReservedOrActive;
           }).toList();
           _cachedTimeline = _buildUnifiedTimeline();
         });
@@ -1751,23 +1769,43 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
   void _onPartyPlanRequestAccepted(dynamic data) {
     _patchEntityInFeed(data);
+    ApiService.invalidateLiveFeedCache();
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanMatchSuccess(dynamic data) {
     _patchEntityInFeed(data);
+    ApiService.invalidateLiveFeedCache();
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanHostPaid(dynamic data) {
     _patchEntityInFeed(data);
+    ApiService.invalidateLiveFeedCache();
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPartyPlanJoinerPaid(dynamic data) {
     _patchEntityInFeed(data);
+    ApiService.invalidateLiveFeedCache();
+    _loadFeed(showLoader: false, forceRefresh: true);
   }
 
   void _onPlanUnavailable(dynamic data) {
     if (!mounted || !context.mounted) return;
     if (data is Map) {
+      final currentUid = ApiService.currentUserId ?? '';
+      final hostId = (data['hostId'] ?? data['userId'])?.toString() ?? '';
+      final partnerId = (data['partnerId'] ?? data['winningRequesterId'])?.toString() ?? '';
+
+      // If current user is host or winning partner, DO NOT mark as cancelled or remove!
+      if (currentUid.isNotEmpty && (currentUid == hostId || currentUid == partnerId)) {
+        _patchEntityInFeed(data);
+        ApiService.invalidateLiveFeedCache();
+        _loadFeed(showLoader: false, forceRefresh: true);
+        return;
+      }
+
       final pId = (data['planId'] ?? data['partyPlanId'] ?? data['id'])
           ?.toString();
       if (pId != null && pId.isNotEmpty) {
@@ -9634,11 +9672,31 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       isExpired = true;
     }
 
-    final bool isCancelled =
-        planStatus == 'cancelled' ||
-        lifecycleStatus == 'cancelled' ||
-        planMap['isCancelled'] == true ||
-        planMap['cancellationStatus'] == 'approved';
+    final bool isReservedOrActive = (acceptedJoinerRequest != null &&
+            (acceptedJoinerRequest['status'] == 'accepted' ||
+                acceptedJoinerRequest['status'] == 'payment_pending' ||
+                acceptedJoinerRequest['status'] == 'paid' ||
+                acceptedJoinerRequest['status'] == 'confirmed')) ||
+        (myRequest != null &&
+            (myRequest['status'] == 'accepted' ||
+                myRequest['status'] == 'payment_pending' ||
+                myRequest['status'] == 'paid' ||
+                myRequest['status'] == 'confirmed')) ||
+        lifecycleStatus == 'payment_pending' ||
+        lifecycleStatus == 'host_payment_completed' ||
+        lifecycleStatus == 'guest_payment_completed' ||
+        lifecycleStatus == 'match_confirmed' ||
+        lifecycleStatus == 'chat_enabled' ||
+        lifecycleStatus == 'user_accepted' ||
+        planStatus == 'payment_pending' ||
+        planStatus == 'match_confirmed' ||
+        planStatus == 'confirmed';
+
+    final bool isCancelled = !isReservedOrActive &&
+        (planStatus == 'cancelled' ||
+            lifecycleStatus == 'cancelled' ||
+            planMap['isCancelled'] == true ||
+            planMap['cancellationStatus'] == 'approved');
 
     final String hostReachStatus =
         (planMap['hostReachStatus'] ??
@@ -11045,9 +11103,22 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
       final myStatus = (myRequest?['status'] ?? '').toString().toLowerCase();
 
+      final bool isMyRequestAcceptedOrMatched = (myRequest != null &&
+              (myRequest['status'] == 'accepted' ||
+                  myRequest['status'] == 'payment_pending' ||
+                  myRequest['status'] == 'paid' ||
+                  myRequest['status'] == 'confirmed')) ||
+          (planMap['partnerId'] != null &&
+              planMap['partnerId'].toString().isNotEmpty &&
+              planMap['partnerId'].toString() == currentUserId) ||
+          (planMap['matchedRequestId'] != null &&
+              myRequest != null &&
+              planMap['matchedRequestId'].toString() == myRequest['id']?.toString());
+
       final bool hasAnotherPartner =
           !isHost &&
           !isConfirmed &&
+          !isMyRequestAcceptedOrMatched &&
           ((planMap['matchedRequestId'] != null &&
                   planMap['matchedRequestId'].toString().isNotEmpty &&
                   (myRequest == null ||
@@ -11060,12 +11131,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               myRequest?['reason'] == 'partner_already_selected' ||
               entries.any(
                 (e) =>
-                    e['eventType'] == 'plan_unavailable' ||
-                    e['reason'] == 'partner_already_selected' ||
-                    e['status'] == 'NO_LONGER_AVAILABLE' ||
-                    e['metadata']?['reason'] == 'partner_already_selected' ||
-                    (e['title'] != null &&
-                        e['title'].toString().contains('Unavailable')),
+                    (e['eventType'] == 'plan_unavailable' ||
+                        e['reason'] == 'partner_already_selected' ||
+                        e['status'] == 'NO_LONGER_AVAILABLE' ||
+                        e['metadata']?['reason'] == 'partner_already_selected' ||
+                        (e['title'] != null &&
+                            e['title'].toString().contains('Unavailable'))) &&
+                    (e['recipientId'] == currentUserId ||
+                        e['targetUserId'] == currentUserId ||
+                        e['userId'] == currentUserId ||
+                        e['requesterId'] == currentUserId),
               ));
 
       if (isConfirmed) {
@@ -14522,12 +14597,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           children: [
             InkWell(
               onTap: isCardLoading ? null : () => _onCardTap(item),
-              child: AnimatedSwitcher(
+              child: AnimatedSize(
                 duration: const Duration(milliseconds: 280),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: KeyedSubtree(
-                  key: ValueKey('body_${item.id}_${item.badgeText}_${item.statusSummary}_${item.title}'),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 280),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: KeyedSubtree(
+                    key: ValueKey('body_${item.id}_${item.badgeText}_${item.statusSummary}_${item.title}'),
                   child: IntrinsicHeight(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -14960,6 +15039,7 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                   ),
                 ),
               ),
+            ),
             ),
             if (isCardLoading)
               Positioned.fill(

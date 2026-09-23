@@ -392,9 +392,15 @@ async function invalidateCompetingRequests(
                     planId: plan.id,
                     hostId: plan.userId,
                     partnerId: winningRequesterId,
+                    winningRequesterId,
                     status: 'PARTNER_SELECTED',
                 });
-                io.emit('party_plan_deleted', { planId: plan.id });
+                io.emit('party_plan_deleted', {
+                    partyPlanId: plan.id,
+                    planId: plan.id,
+                    hostId: plan.userId,
+                    partnerId: winningRequesterId,
+                });
             }
 
             await Promise.all(
@@ -3044,7 +3050,12 @@ export const acceptPartyPlanRequest = async (req: Request, res: Response): Promi
                     io.to(`user_${plan.userId}`).emit('party_plan_updated', { planId: plan.id, lifecycleStatus: plan.lifecycleStatus, status: plan.status });
 
                     // Remove from global feeds (plan is reserved) / live feed update
-                    io.emit('party_plan_deleted', { planId: plan.id });
+                    io.emit('party_plan_deleted', {
+                        partyPlanId: plan.id,
+                        planId: plan.id,
+                        hostId: plan.userId,
+                        partnerId: request.requesterId,
+                    });
                     // Private: plan reserved — party_plan_deleted handles public removal
                     io.to(`user_${request.requesterId}`).emit('live_feed_update', { action: 'request_accepted', id: plan.id, planId: plan.id, requestId: request.id });
                     io.to(`user_${plan.userId}`).emit('live_feed_update', { action: 'request_accepted', id: plan.id, planId: plan.id, requestId: request.id });
