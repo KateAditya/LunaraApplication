@@ -808,6 +808,274 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
+  Future<void> _startUpcomingNightMatchPayment({
+    required String matchId,
+    required String venueName,
+    required double amount,
+    required Future<void> Function() onSuccess,
+  }) async {
+    if (_isProcessingPayment) return;
+    setState(() => _isProcessingPayment = true);
+
+    try {
+      final cleanMatchId = matchId
+          .replaceAll('upcoming_night_timeline_', '')
+          .replaceAll('night_partner_', '')
+          .replaceAll('match_', '')
+          .replaceAll('req_', '')
+          .replaceAll('request_', '')
+          .replaceAll('pp_', '')
+          .trim();
+
+      final initRes = await ApiService.initiateMatchPayment(
+        matchId: cleanMatchId,
+      );
+
+      final String razorpayOrderId = (initRes?['razorpayOrder']?['id'] ??
+              initRes?['razorpayOrderId'] ??
+              '')
+          .toString();
+      final String razorpayKey = (initRes?['razorpayKeyId'] ?? 'rzp_test_123').toString();
+      final double amountToPay = (initRes?['amountToPay'] as num?)?.toDouble() ?? amount;
+
+      final isMock = razorpayKey == 'rzp_test_123' ||
+          razorpayKey == 'your_razorpay_key_id' ||
+          razorpayOrderId.startsWith('order_mock_') ||
+          razorpayOrderId.startsWith('mock_') ||
+          razorpayOrderId.isEmpty;
+
+      if (isMock) {
+        final verifyRes = await ApiService.verifyMatchPayment(
+          matchId: cleanMatchId,
+          razorpayOrderId: razorpayOrderId.isNotEmpty ? razorpayOrderId : 'order_mock_match',
+          razorpayPaymentId: 'pay_match_${DateTime.now().millisecondsSinceEpoch}',
+          razorpaySignature: 'mock_signature',
+          paymentMethod: 'razorpay',
+        );
+
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (verifyRes != null && mounted) {
+          await onSuccess();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Payment Confirmed! Ticket & Chat unlocked!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment Verification Failed'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
+      late Razorpay razorpay;
+      razorpay = Razorpay();
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) async {
+        final verifyRes = await ApiService.verifyMatchPayment(
+          matchId: cleanMatchId,
+          razorpayOrderId: response.orderId ?? razorpayOrderId,
+          razorpayPaymentId: response.paymentId ?? '',
+          razorpaySignature: response.signature ?? '',
+          paymentMethod: 'razorpay',
+        );
+
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (verifyRes != null && mounted) {
+          await onSuccess();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Payment Confirmed! Ticket & Chat unlocked!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Payment verification failed. Please check your tickets.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse response) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Payment Failed: ${response.message ?? "Transaction Cancelled"}'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      });
+
+      razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse response) {
+        razorpay.clear();
+        if (mounted) setState(() => _isProcessingPayment = false);
+      });
+
+      final options = <String, dynamic>{
+        'key': razorpayKey,
+        'amount': (amountToPay * 100).round(),
+        'name': 'Lunara Upcoming Night',
+        'description': 'Payment for Upcoming Night at $venueName',
+        if (razorpayOrderId.isNotEmpty) 'order_id': razorpayOrderId,
+        'theme': {'color': '#7C3AED'},
+      };
+
+      razorpay.open(options);
+    } catch (e) {
+      debugPrint('Error in _startUpcomingNightMatchPayment: $e');
+      if (mounted) setState(() => _isProcessingPayment = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment Error: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showCancelUpcomingNightDialog(String targetId, String venueName) async {
+    final TextEditingController reasonCtrl = TextEditingController(text: 'Change of plans');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFE11D48)),
+            SizedBox(width: 8),
+            Text('Cancel Event', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to cancel your Upcoming Night at $venueName?',
+              style: const TextStyle(fontSize: 13.5, color: Color(0xFF334155)),
+            ),
+            const SizedBox(height: 12),
+            const Text('Reason:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            TextField(
+              controller: reasonCtrl,
+              decoration: InputDecoration(
+                hintText: 'Enter reason for cancellation',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Active', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE11D48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final res = await ApiService.cancelUpcomingNight(
+        targetId: targetId,
+        reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Change of plans',
+      );
+      if (mounted) {
+        if (res != null && res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cancellation processed successfully. Refund added to wallet if applicable.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _fetchNotifications();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res?['message']?.toString() ?? 'Failed to cancel event.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _openConfirmedTicket(dynamic item, Map<String, dynamic> data, String venueName, String eventDate) {
+    _markAsRead(item);
+    final bookingData = Map<String, dynamic>.from(data['booking'] is Map ? data['booking'] : data);
+    final venueMap = bookingData['venue'] is Map
+        ? Map<String, dynamic>.from(bookingData['venue'])
+        : {'name': venueName.isNotEmpty ? venueName : (bookingData['venueName'] ?? 'Venue')};
+    final eventTitle = bookingData['partyEvent']?['title'] ??
+        bookingData['eventTitle'] ??
+        bookingData['partySubject'] ??
+        item['eventDetails']?['title'] ??
+        'Upcoming Night Entry';
+    final bannerUrl = bookingData['partyEvent']?['imagePath'] ??
+        bookingData['bannerImageUrl'] ??
+        bookingData['coverImageUrl'] ??
+        item['imageUrl'];
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DigitalTicketScreen(
+          venue: venueMap,
+          date: bookingData['bookingDate']?.toString() ?? bookingData['date']?.toString() ?? eventDate,
+          time: bookingData['startTime']?.toString() ?? bookingData['time']?.toString() ?? '8:00 PM',
+          table: 'Confirmed Entry',
+          guests: (bookingData['numberOfGuests'] ?? bookingData['guestCount'] ?? 2).toString(),
+          package: eventTitle.toString(),
+          totalPrice: bookingData['totalAmount'] != null ? '₹${bookingData['totalAmount']}' : 'PAID',
+          ticketId: (bookingData['ticketCode'] ?? bookingData['bookingId'] ?? bookingData['id'] ?? item['id'])?.toString(),
+          status: 'CONFIRMED',
+          booking: bookingData,
+          user: ApiService.cachedCurrentUser,
+          eventTitle: eventTitle.toString(),
+          bannerImageUrl: bannerUrl?.toString(),
+          isUpcomingNight: true,
+        ),
+      ),
+    );
+  }
+
+  void _openChatWithPartner(Map<String, dynamic> partnerMap) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(user: partnerMap),
+      ),
+    );
+  }
+
   // ── Tab & Category Filter Logic ──────────────────────────────────────────────
   List<dynamic> get _filteredNotifications {
     var rawList = _notifications.where((item) {
@@ -1852,7 +2120,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     } else if (eventType.contains('PARTNER_REQUEST') ||
         type.contains('partner_request') ||
         type.contains('upcoming_night') ||
+        eventType.contains('UPCOMING_NIGHT') ||
+        item['entityType'] == 'night_partner' ||
+        data['entityType'] == 'night_partner' ||
+        (data['nightId'] != null && data['nightId'].toString().isNotEmpty) ||
+        (data['matchId'] != null && data['matchId'].toString().isNotEmpty && !eventType.contains('PARTY_PLAN')) ||
         titleLower.contains('partner request') ||
+        titleLower.contains('upcoming night') ||
+        titleLower.contains('party event') ||
         titleLower.contains('wants to join') ||
         bodyLower.contains('wants to join you for an upcoming night') ||
         bodyLower.contains('invited you to join for upcoming night') ||
@@ -5132,18 +5407,85 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
 
     final actorMap = actor is Map ? Map<String, dynamic>.from(actor) : <String, dynamic>{};
     final actorName = (actorMap['firstName'] ?? data['hostName'] ?? data['otherUserName'] ?? 'A member').toString();
-    final venueName = (data['venueName'] ?? 'Upcoming Night').toString();
-    final eventDate = (data['eventDate'] ?? '').toString();
+    final venueName = (data['venueName'] ?? data['event']?['venueName'] ?? 'Upcoming Night').toString();
+    final eventDate = (data['eventDate'] ?? data['event']?['date'] ?? '').toString();
     final body = item['body']?.toString() ?? '$actorName invited you to join for Upcoming Night at $venueName!';
     final timeStr = _formatTimeAgo(item['createdAt']);
 
-    final actionStatus = (item['metadata']?['status'] ?? data['status'] ?? '').toString().toUpperCase();
-    final actionExecuted = (item['metadata']?['actionExecuted'] ?? data['actionExecuted'] ?? '').toString().toUpperCase();
-    final bool isActioned = actionStatus == 'ACTIONED' || actionStatus == 'ACCEPTED' || actionStatus == 'DECLINED' || actionExecuted.isNotEmpty;
-    final bool isAccepted = actionExecuted == 'ACCEPT' || actionStatus == 'ACCEPTED' || data['statusText'] == 'Accepted' || data['statusText'] == 'Confirmed & Chat Unlocked';
+    final String status = (data['status'] ?? data['stage'] ?? item['metadata']?['status'] ?? item['status'] ?? '')
+        .toString()
+        .toUpperCase();
+    final String eventType = (item['eventType'] ?? data['eventType'] ?? item['type'] ?? data['type'] ?? '')
+        .toString()
+        .toUpperCase();
+    final String statusText = (data['statusText'] ?? item['statusText'] ?? '').toString();
+    final String paymentMode = (data['paymentMode'] ?? item['paymentMode'] ?? 'SELF_PAY').toString().toUpperCase();
+
+    final currentUid = ApiService.currentUserId ?? '';
+    final String hostId = (data['hostId'] ?? item['hostId'] ?? '').toString();
+    final bool isHost = (currentUid.isNotEmpty && hostId.isNotEmpty && currentUid == hostId) ||
+        data['isHost'] == true ||
+        data['userRole'] == 'HOST' ||
+        item['isHost'] == true;
+
+    final bool hostPaid = data['hostPaid'] == true || item['hostPaid'] == true;
+    final bool partnerPaid = data['partnerPaid'] == true || item['partnerPaid'] == true;
+
+    final String targetMatchId = (data['matchId'] ?? item['matchId'] ?? data['nightId'] ?? item['entityId'] ?? data['requestId'] ?? item['id'] ?? '')
+        .toString();
+
+    double amountToPay = 0.0;
+    final dynamic rawAmount = isHost
+        ? (data['hostAmount'] ?? data['totalAmount'] ?? data['amount'] ?? item['amount'])
+        : (data['partnerAmount'] ?? data['amount'] ?? data['totalAmount'] ?? item['amount']);
+    if (rawAmount is num) {
+      amountToPay = rawAmount.toDouble();
+    } else if (rawAmount is String) {
+      amountToPay = double.tryParse(rawAmount) ?? 0.0;
+    }
+    if (amountToPay <= 0) {
+      amountToPay = 500.0;
+    }
+
+    final bool isCancelledOrDeclined = status == 'CANCELLED' ||
+        status == 'DECLINED' ||
+        status == 'EXPIRED' ||
+        eventType.contains('CANCEL') ||
+        eventType.contains('EXPIRED') ||
+        eventType.contains('DECLINED') ||
+        statusText.contains('Declined') ||
+        statusText.contains('Cancelled');
+
+    final bool isConfirmed = status == 'CONFIRMED' ||
+        status == 'COMPLETED' ||
+        eventType.contains('BOOKING_CONFIRMED') ||
+        eventType.contains('MATCH_CONFIRMED') ||
+        statusText.contains('Confirmed') ||
+        (hostPaid && (partnerPaid || paymentMode == 'SELF_PAY'));
+
+    final bool isPaymentPending = !isConfirmed && !isCancelledOrDeclined && (
+        status == 'PAYMENT_PENDING' ||
+        status == 'MATCHED' ||
+        status.contains('PAYMENT') ||
+        eventType.contains('PAYMENT_PENDING') ||
+        eventType.contains('PAYMENT_REQUIRED') ||
+        statusText.contains('Payment Required') ||
+        statusText.contains('Waiting for Host') ||
+        (!hostPaid || (paymentMode == 'SPLIT' && !partnerPaid))
+    );
+
+    final bool isMyPaymentDue = isPaymentPending && (
+        (isHost && !hostPaid) ||
+        (!isHost && !partnerPaid) ||
+        (!hostPaid && !partnerPaid)
+    );
+
+    final cardId = (item['id'] ?? item['entityId'] ?? targetMatchId).toString();
+    final bool isCardLoading = _navigatingCardIds.contains(cardId) || _loadingActionKeys.contains(cardId);
 
     return _buildBaseCardContainer(
       isUnread: isUnread,
+      isLoading: isCardLoading,
       onTap: () => _onNotificationCardTapped(item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5168,9 +5510,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.celebration_rounded,
-                          color: LunaraTheme.electricViolet,
+                        child: Icon(
+                          isConfirmed
+                              ? Icons.check_circle_rounded
+                              : (isMyPaymentDue ? Icons.payment_rounded : Icons.celebration_rounded),
+                          color: isConfirmed ? const Color(0xFF10B981) : LunaraTheme.electricViolet,
                           size: 12,
                         ),
                       ),
@@ -5188,13 +5532,21 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: LunaraTheme.electricViolet.withValues(alpha: 0.12),
+                            color: isConfirmed
+                                ? const Color(0xFFDCFCE7)
+                                : (isMyPaymentDue
+                                    ? const Color(0xFFFEF3C7)
+                                    : LunaraTheme.electricViolet.withValues(alpha: 0.12)),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text(
-                            'PARTNER INVITE',
+                          child: Text(
+                            isConfirmed
+                                ? 'BOOKING CONFIRMED'
+                                : (isMyPaymentDue ? 'PAYMENT REQUIRED' : 'PARTNER INVITE'),
                             style: TextStyle(
-                              color: LunaraTheme.electricViolet,
+                              color: isConfirmed
+                                  ? const Color(0xFF15803D)
+                                  : (isMyPaymentDue ? const Color(0xFFD97706) : LunaraTheme.electricViolet),
                               fontSize: 9,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.0,
@@ -5218,7 +5570,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'New Partner Request! 🎉',
+                      isConfirmed
+                          ? 'Upcoming Night Confirmed! 🎉'
+                          : (isMyPaymentDue
+                              ? 'Payment Required for Match 💳'
+                              : 'New Partner Request! 🎉'),
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontWeight: FontWeight.w900,
@@ -5286,27 +5642,27 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          if (isActioned)
+
+          // ── Action Buttons per State ─────────────────────────────────────
+          if (isCancelledOrDeclined)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
               decoration: BoxDecoration(
-                color: isAccepted ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                color: const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    isAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                    size: 15,
-                    color: isAccepted ? const Color(0xFF15803D) : const Color(0xFF64748B),
-                  ),
+                  const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFF64748B)),
                   const SizedBox(width: 6),
                   Text(
-                    isAccepted ? 'INVITE ACCEPTED ✓' : 'INVITE DECLINED',
-                    style: TextStyle(
-                      color: isAccepted ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                    status == 'EXPIRED'
+                        ? 'INVITATION EXPIRED'
+                        : (status == 'CANCELLED' ? 'EVENT CANCELLED' : 'INVITE DECLINED'),
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.5,
@@ -5314,6 +5670,198 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   ),
                 ],
               ),
+            )
+          else if (isConfirmed)
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openConfirmedTicket(item, data, venueName, eventDate),
+                    icon: const Icon(
+                      Icons.confirmation_number_outlined,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'View Ticket',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(0, 38),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (actorMap.isNotEmpty) ...[
+                  OutlinedButton(
+                    onPressed: () => _openChatWithPartner(actorMap),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 38),
+                    ),
+                    child: const Text(
+                      'Chat',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                OutlinedButton(
+                  onPressed: () => _showCancelUpcomingNightDialog(targetMatchId, venueName),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFFFE4E6)),
+                    backgroundColor: const Color(0xFFFFF1F2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 38),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFFE11D48),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else if (isMyPaymentDue)
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isProcessingPayment
+                        ? null
+                        : () => _startUpcomingNightMatchPayment(
+                              matchId: targetMatchId,
+                              venueName: venueName,
+                              amount: amountToPay,
+                              onSuccess: () async {
+                                await _fetchNotifications();
+                              },
+                            ),
+                    icon: _isProcessingPayment
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.payment_rounded, size: 14, color: Colors.white),
+                    label: Text(
+                      _isProcessingPayment
+                          ? 'Processing...'
+                          : 'Pay ₹${amountToPay > 0 ? amountToPay.toStringAsFixed(0) : '500'}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      minimumSize: const Size(0, 40),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _showCancelUpcomingNightDialog(targetMatchId, venueName),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    backgroundColor: const Color(0xFFF8FAFC),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 40),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else if (isPaymentPending)
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFFD97706)),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Waiting for partner payment...',
+                            style: TextStyle(
+                              color: Color(0xFFD97706),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () => _showCancelUpcomingNightDialog(targetMatchId, venueName),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    backgroundColor: const Color(0xFFF8FAFC),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 38),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
             )
           else
             Row(
