@@ -816,7 +816,7 @@ export class NightPartnerService {
         razorpayPaymentId: string;
         razorpaySignature: string;
         paymentMethod?: 'razorpay' | 'wallet';
-    }): Promise<NightPartnerRequest> {
+    }): Promise<any> {
         const {
             hostId,
             partnerId,
@@ -970,74 +970,93 @@ export class NightPartnerService {
             }
         });
 
-        // Fetch Host Profile info for notification delivery
-        const hostUser = await User.findByPk(hostId, {
-            attributes: ['id', 'firstName', 'lastName', 'isVerified'],
-            include: [
-                { model: UserProfile, as: 'profile' },
-                { model: UserPhoto, as: 'photos' },
-            ],
-        });
-
-        const hostName = hostUser?.firstName || 'A Lunara member';
-        const hostPhotos = (hostUser as any)?.photos || [];
-        const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
-
-        // Send Push & Real-time Socket Notification to each invited Partner
-        for (const req of createdRequests) {
-            const pId = req.partnerId;
-            await this.emitNotification(pId, {
-                type: 'PARTNER_REQUEST_SENT',
-                actorUserId: hostId,
-                title: 'Invite for Party Event 🌙',
-                body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
-                entityId: req.id,
-                data: {
-                    requestId: req.id,
-                    nightId: req.id,
-                    venueId: venue.id,
-                    venueName: venue.name,
-                    eventName: venue.name,
-                    eventDate,
-                    eventTime: normalize12h(eventTime || req.eventTime || '20:00'),
-                    hostId,
-                    hostName,
-                    partnerId: pId,
-                    recipientUserId: pId,
-                    actorUserId: hostId,
-                    isHost: false,
-                    userRole: 'PARTNER',
-                    paymentMode,
-                    status: 'PENDING',
-                    stage: 'INVITE_SENT',
-                    actor: {
-                        id: hostId,
-                        firstName: hostUser?.firstName || 'Host',
-                        lastName: hostUser?.lastName || '',
-                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                        isVerified: !!hostUser?.isVerified,
-                    },
-                    sender: {
-                        id: hostId,
-                        firstName: hostUser?.firstName || 'Host',
-                        lastName: hostUser?.lastName || '',
-                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                        isVerified: !!hostUser?.isVerified,
-                    },
-                    event: {
-                        venueName: venue.name,
-                        name: venue.name,
-                        date: eventDate,
-                        time: eventTime || req.eventTime || '20:00',
-                        coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
-                    },
-                    actions: ['ACCEPT', 'DECLINE'],
-                },
-            });
-        }
-
         this.invalidateUpcomingNightCaches();
-        return createdRequests[0];
+        // NOTE: Notifications are intentionally NOT dispatched here.
+        // The controller calls dispatchInviteNotifications() as fire-and-forget
+        // AFTER res.json() so the partner never receives the socket event
+        // before the host's HTTP response is returned.
+        return { request: createdRequests[0], allRequests: createdRequests, venue, hostId, eventDate, eventTime: eventTime || '20:00', paymentMode };
+    }
+
+    /**
+     * Dispatches PARTNER_REQUEST_SENT notifications for each invitee.
+     * Called fire-and-forget by the controller AFTER res.json() has been sent.
+     */
+    public static async dispatchInviteNotifications(params: {
+        requests: NightPartnerRequest[];
+        hostId: string;
+        venue: Venue;
+        eventDate: string;
+        eventTime: string;
+        paymentMode: 'SELF_PAY' | 'SPLIT';
+    }): Promise<void> {
+        const { requests, hostId, venue, eventDate, eventTime, paymentMode } = params;
+        try {
+            const hostUser = await User.findByPk(hostId, {
+                attributes: ['id', 'firstName', 'lastName', 'isVerified'],
+                include: [
+                    { model: UserProfile, as: 'profile' },
+                    { model: UserPhoto, as: 'photos' },
+                ],
+            });
+            const hostName = hostUser?.firstName || 'A Lunara member';
+            const hostPhotos = (hostUser as any)?.photos || [];
+            const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
+
+            for (const req of requests) {
+                const pId = req.partnerId;
+                await this.emitNotification(pId, {
+                    type: 'PARTNER_REQUEST_SENT',
+                    actorUserId: hostId,
+                    title: 'Invite for Party Event 🌙',
+                    body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
+                    entityId: req.id,
+                    data: {
+                        requestId: req.id,
+                        nightId: req.id,
+                        venueId: venue.id,
+                        venueName: venue.name,
+                        eventName: venue.name,
+                        eventDate,
+                        eventTime: normalize12h(eventTime || req.eventTime || '20:00'),
+                        hostId,
+                        hostName,
+                        partnerId: pId,
+                        recipientUserId: pId,
+                        actorUserId: hostId,
+                        isHost: false,
+                        userRole: 'PARTNER',
+                        paymentMode,
+                        status: 'PENDING',
+                        stage: 'INVITE_SENT',
+                        actor: {
+                            id: hostId,
+                            firstName: hostUser?.firstName || 'Host',
+                            lastName: hostUser?.lastName || '',
+                            profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                            isVerified: !!hostUser?.isVerified,
+                        },
+                        sender: {
+                            id: hostId,
+                            firstName: hostUser?.firstName || 'Host',
+                            lastName: hostUser?.lastName || '',
+                            profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                            isVerified: !!hostUser?.isVerified,
+                        },
+                        event: {
+                            venueName: venue.name,
+                            name: venue.name,
+                            date: eventDate,
+                            time: eventTime || req.eventTime || '20:00',
+                            coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                        },
+                        actions: ['ACCEPT', 'DECLINE'],
+                    },
+                });
+            }
+        } catch (err) {
+            logger.warn(`[NightPartnerService] dispatchInviteNotifications error: ${err}`);
+        }
     }
 
     /**
@@ -1050,7 +1069,7 @@ export class NightPartnerService {
         eventDate: string,
         eventTime?: string,
         paymentMode: 'SELF_PAY' | 'SPLIT' = 'SELF_PAY'
-    ): Promise<NightPartnerRequest> {
+    ): Promise<any> {
         if (hostId === partnerId) {
             throw new Error('CANNOT_REQUEST_SELF');
         }
@@ -1132,75 +1151,94 @@ export class NightPartnerService {
             });
         }
 
-        // Fetch Host Profile info for rich notification delivery
-        const hostUser = await User.findByPk(hostId, {
-            attributes: ['id', 'firstName', 'lastName', 'isVerified'],
-            include: [
-                { model: UserProfile, as: 'profile' },
-                { model: UserPhoto, as: 'photos' },
-            ],
-        });
+        // NOTE: Notifications are intentionally NOT dispatched here.
+        // The controller calls dispatchPartnerRequestNotification() as fire-and-forget
+        // AFTER res.json() so the partner never receives the socket event
+        // before the host's HTTP response is returned.
+        return { request, venue, hostId, partnerId, eventDate, eventTime: eventTime || '20:00' };
+    }
 
-        const hostName = hostUser?.firstName || 'A Lunara member';
-        const hostPhotos = (hostUser as any)?.photos || [];
-        const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
+    /**
+     * Dispatches PARTNER_REQUEST_SENT notification for a single direct invite.
+     * Called fire-and-forget by the controller AFTER res.json() has been sent.
+     */
+    public static async dispatchPartnerRequestNotification(params: {
+        request: NightPartnerRequest;
+        hostId: string;
+        partnerId: string;
+        venue: Venue;
+        eventDate: string;
+        eventTime: string;
+    }): Promise<void> {
+        const { request, hostId, partnerId, venue, eventDate, eventTime } = params;
+        try {
+            const hostUser = await User.findByPk(hostId, {
+                attributes: ['id', 'firstName', 'lastName', 'isVerified'],
+                include: [
+                    { model: UserProfile, as: 'profile' },
+                    { model: UserPhoto, as: 'photos' },
+                ],
+            });
+            const hostName = hostUser?.firstName || 'A Lunara member';
+            const hostPhotos = (hostUser as any)?.photos || [];
+            const hostPrimaryPhoto = hostPhotos.find((p: any) => p.isPrimary) || hostPhotos[0];
 
-        // Send Push & Real-time Socket Notification to Partner
-        await this.emitNotification(partnerId, {
-            type: 'PARTNER_REQUEST_SENT',
-            actorUserId: hostId,
-            title: 'Invite for Party Event 🌙',
-            body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
-            entityId: request.id,
-            data: {
-                requestId: request.id,
-                nightId: request.id,
-                venueId: venue.id,
-                venueName: venue.name,
-                eventName: venue.name,
-                eventDate,
-                eventTime: normalize12h(eventTime || request.eventTime || '20:00'),
-                hostId,
-                hostName,
-                partnerId,
-                recipientUserId: partnerId,
+            await this.emitNotification(partnerId, {
+                type: 'PARTNER_REQUEST_SENT',
                 actorUserId: hostId,
-                isHost: false,
-                userRole: 'PARTNER',
-                status: 'PENDING',
-                stage: 'INVITE_SENT',
-                actor: {
-                    id: hostId,
-                    firstName: hostUser?.firstName || 'Host',
-                    lastName: hostUser?.lastName || '',
-                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                    isVerified: !!hostUser?.isVerified,
-                },
-                sender: {
-                    id: hostId,
-                    firstName: hostUser?.firstName || 'Host',
-                    lastName: hostUser?.lastName || '',
-                    profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
-                    isVerified: !!hostUser?.isVerified,
-                },
-                partner: {
-                    id: hostId,
-                    firstName: hostUser?.firstName || 'Host',
-                    name: hostUser?.firstName || 'Host',
-                    photo: hostPrimaryPhoto?.filePath || null,
-                },
-                event: {
+                title: 'Invite for Party Event 🌙',
+                body: `${hostName} invited you to join for Upcoming Night at ${venue.name}!`,
+                entityId: request.id,
+                data: {
+                    requestId: request.id,
+                    nightId: request.id,
+                    venueId: venue.id,
                     venueName: venue.name,
-                    name: venue.name,
-                    date: eventDate,
-                    time: eventTime || request.eventTime || '20:00',
-                    coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                    eventName: venue.name,
+                    eventDate,
+                    eventTime: normalize12h(eventTime || request.eventTime || '20:00'),
+                    hostId,
+                    hostName,
+                    partnerId,
+                    recipientUserId: partnerId,
+                    actorUserId: hostId,
+                    isHost: false,
+                    userRole: 'PARTNER',
+                    status: 'PENDING',
+                    stage: 'INVITE_SENT',
+                    actor: {
+                        id: hostId,
+                        firstName: hostUser?.firstName || 'Host',
+                        lastName: hostUser?.lastName || '',
+                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                        isVerified: !!hostUser?.isVerified,
+                    },
+                    sender: {
+                        id: hostId,
+                        firstName: hostUser?.firstName || 'Host',
+                        lastName: hostUser?.lastName || '',
+                        profilePhotoUrl: hostPrimaryPhoto?.filePath || null,
+                        isVerified: !!hostUser?.isVerified,
+                    },
+                    partner: {
+                        id: hostId,
+                        firstName: hostUser?.firstName || 'Host',
+                        name: hostUser?.firstName || 'Host',
+                        photo: hostPrimaryPhoto?.filePath || null,
+                    },
+                    event: {
+                        venueName: venue.name,
+                        name: venue.name,
+                        date: eventDate,
+                        time: eventTime || request.eventTime || '20:00',
+                        coverImageUrl: (venue as any).coverImage || (venue as any).primaryPhoto || null,
+                    },
+                    actions: ['ACCEPT', 'DECLINE'],
                 },
-                actions: ['ACCEPT', 'DECLINE'],
-            },
-        });
-
-        return request;
+            });
+        } catch (err) {
+            logger.warn(`[NightPartnerService] dispatchPartnerRequestNotification error: ${err}`);
+        }
     }
 
     private static _acceptSlotQueues: Map<string, Promise<any>> = new Map();

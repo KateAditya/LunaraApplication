@@ -19,6 +19,8 @@ describe('Event Invite, Payment Gating, Concurrency, Cancellation & Refund Maste
         const { EventTimeLockService } = require('../services/EventTimeLockService');
         jest.spyOn(EventTimeLockService, 'validateFourHourGap').mockResolvedValue({ allowed: true, message: 'OK' } as any);
         jest.spyOn(NightPartnerService as any, 'emitNotification').mockResolvedValue(true as any);
+        jest.spyOn(NightPartnerMatch, 'findAll').mockResolvedValue([] as any);
+        jest.spyOn(NightPartnerMatch, 'findOne').mockResolvedValue(null);
     });
 
     describe('1. Payment-Gated Invitation Flow (Self Pay vs Split)', () => {
@@ -72,8 +74,9 @@ describe('Event Invite, Payment Gating, Concurrency, Cancellation & Refund Maste
             });
 
             expect(createdReq).toBeDefined();
-            expect(createdReq.hostPaid).toBe(true);
-            expect(createdReq.status).toBe(NightPartnerRequestStatus.PENDING);
+            const primary = createdReq.request || createdReq;
+            expect(primary.hostPaid).toBe(true);
+            expect(primary.status).toBe(NightPartnerRequestStatus.PENDING);
         });
 
         it('should dispatch invitations to multiple selected partners after verified payment', async () => {

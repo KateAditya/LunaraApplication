@@ -2083,7 +2083,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
           : _buildUnifiedTimeline();
       for (final item in allItems) {
         if (item.badgeText == 'ACTION REQUIRED' ||
-            item.badgeText == 'INVITE' ||
             item.badgeText == 'NEW REQUEST' ||
             item.priority == 'CRITICAL') {
           continue; // Active action required items keep their action badge
@@ -8825,10 +8824,16 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
                         // case threw away an invite that is still pending, and
                         // the forced refresh below already reconciles the real
                         // outcome either way.
+                        final String inviteErrMsg = res['message']?.toString().toLowerCase() ?? '';
                         final bool isUnavailable = res['notAvailable'] == true ||
                             res['code'] == 'MATCH_SLOT_FILLED' ||
                             res['code'] == 'REQUEST_EXPIRED' ||
-                            res['code'] == 'REQUEST_ALREADY_PROCESSED';
+                            res['code'] == 'REQUEST_ALREADY_PROCESSED' ||
+                            res['code'] == 'REQUEST_NOT_FOUND' ||
+                            inviteErrMsg.contains('not find') ||
+                            inviteErrMsg.contains('not found') ||
+                            inviteErrMsg.contains('no longer') ||
+                            inviteErrMsg.contains('invitation') && inviteErrMsg.contains('not');
                         if (isUnavailable) {
                           _optimisticallyRemoveNightPartnerRequest(targetRequestId);
                         }

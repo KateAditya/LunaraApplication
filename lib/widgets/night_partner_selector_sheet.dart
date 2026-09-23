@@ -285,49 +285,8 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     }
 
     if (_isProcessing) return;
-    setState(() => _isProcessing = true);
 
-    // STEP 5: Click "Invite Selected" -> Backend Validation first
-    final validateRes = await ApiService.initiateNightInvitePayment(
-      venueId: widget.venueId,
-      date: widget.date,
-      time: widget.time,
-      paymentMode: 'SELF_PAY',
-      partnerIds: _selectedUserIds.toList(),
-      ticketPrice: _resolveTicketPrice(),
-    );
-
-    if (!mounted) return;
-
-    if (validateRes != null && validateRes['success'] == false) {
-      setState(() => _isProcessing = false);
-      final msg = validateRes['message']?.toString() ?? 'Could not proceed with invitation.';
-      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
-          validateRes['code'] == 'FOUR_HOUR_TIME_LOCK' ||
-          validateRes['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
-          validateRes['code'] == 'USER_ALREADY_HAS_PLAN';
-
-      if (isTimeLock) {
-        TimeLockBlockedDialog.show(
-          context,
-          errorData: validateRes,
-        );
-      } else {
-        final friendlyMsg = msg == 'HOST_ALREADY_HAS_ACTIVE_MATCH'
-            ? 'You already have an active match for this night. Please complete or cancel your existing event before inviting new partners.'
-            : msg;
-        LunaraAlert.showErrorModal(
-          context: context,
-          title: 'Cannot Send Invitation',
-          message: friendlyMsg,
-        );
-      }
-      return;
-    }
-
-    setState(() => _isProcessing = false);
-
-    // STEP 6: Open Self Pay / Split Popup
+    // STEP 5: Open Self Pay / Split Popup
     final selectedPartners = _invitees
         .where((i) => _selectedUserIds.contains(i['userId']?.toString()))
         .toList();
@@ -345,7 +304,7 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
 
     if (selectedMode == null || !mounted) return; // User closed mode selection
 
-    // STEPS 7 & 8: Calculate server-authoritative amount & Open Payment Gateway
+    // STEPS 6 & 7: Calculate server-authoritative amount & Open Payment Gateway
     setState(() => _isProcessing = true);
 
     final orderRes = await ApiService.initiateNightInvitePayment(
@@ -361,12 +320,27 @@ class _NightPartnerSelectorSheetState extends State<NightPartnerSelectorSheet> {
     setState(() => _isProcessing = false);
 
     if (orderRes == null || orderRes['success'] != true) {
-      final err = orderRes?['message']?.toString() ?? 'Unable to prepare payment order. Please try again.';
-      LunaraAlert.showErrorModal(
-        context: context,
-        title: 'Payment Error',
-        message: err,
-      );
+      final msg = orderRes?['message']?.toString() ?? 'Unable to prepare payment order. Please try again.';
+      final isTimeLock = TimeLockBlockedDialog.isConflictError(msg) ||
+          orderRes?['code'] == 'FOUR_HOUR_TIME_LOCK' ||
+          orderRes?['reason'] == 'FOUR_HOUR_TIME_LOCK' ||
+          orderRes?['code'] == 'USER_ALREADY_HAS_PLAN';
+
+      if (isTimeLock) {
+        TimeLockBlockedDialog.show(
+          context,
+          errorData: orderRes ?? <String, dynamic>{},
+        );
+      } else {
+        final friendlyMsg = msg == 'HOST_ALREADY_HAS_ACTIVE_MATCH'
+            ? 'You already have an active match for this night. Please complete or cancel your existing event before inviting new partners.'
+            : msg;
+        LunaraAlert.showErrorModal(
+          context: context,
+          title: 'Cannot Send Invitation',
+          message: friendlyMsg,
+        );
+      }
       return;
     }
 

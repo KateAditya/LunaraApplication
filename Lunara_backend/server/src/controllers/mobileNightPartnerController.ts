@@ -224,7 +224,7 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
             return;
         }
 
-        const partnerRequest = await NightPartnerService.verifyInvitePaymentAndSend({
+        const result = await NightPartnerService.verifyInvitePaymentAndSend({
             hostId,
             partnerId: resolvedPartnerIds[0],
             partnerIds: resolvedPartnerIds,
@@ -241,8 +241,22 @@ export const verifyInvitePaymentAndSend = async (req: Request, res: Response): P
         res.status(201).json({
             success: true,
             message: 'Payment verified and invitation sent successfully! 🎉',
-            data: partnerRequest,
+            data: (result as any).request || result,
         });
+
+        // Fire-and-forget notification dispatch AFTER HTTP response is sent
+        if (result && typeof result === 'object' && 'allRequests' in result) {
+            NightPartnerService.dispatchInviteNotifications({
+                requests: (result as any).allRequests || [(result as any).request],
+                hostId: (result as any).hostId,
+                venue: (result as any).venue,
+                eventDate: (result as any).eventDate,
+                eventTime: (result as any).eventTime,
+                paymentMode: (result as any).paymentMode,
+            }).catch((err) => {
+                logger.error('Failed to dispatch invite notifications:', err);
+            });
+        }
     } catch (err: any) {
         logger.error('verifyInvitePaymentAndSend error:', err);
         const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
@@ -265,7 +279,7 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const partnerRequest = await NightPartnerService.sendPartnerRequest(
+        const result = await NightPartnerService.sendPartnerRequest(
             hostId,
             partnerId,
             venueId,
@@ -273,7 +287,25 @@ export const sendPartnerRequest = async (req: Request, res: Response): Promise<v
             eventTime,
             paymentMode === 'SPLIT' ? 'SPLIT' : 'SELF_PAY'
         );
-        res.status(201).json({ success: true, message: 'Partner request sent successfully', data: partnerRequest });
+        res.status(201).json({
+            success: true,
+            message: 'Partner request sent successfully',
+            data: (result as any).request || result,
+        });
+
+        // Fire-and-forget notification dispatch AFTER HTTP response is sent
+        if (result && typeof result === 'object' && 'request' in result && (result as any).venue) {
+            NightPartnerService.dispatchPartnerRequestNotification({
+                request: (result as any).request,
+                hostId: (result as any).hostId,
+                partnerId: (result as any).partnerId,
+                venue: (result as any).venue,
+                eventDate: (result as any).eventDate,
+                eventTime: (result as any).eventTime,
+            }).catch((err) => {
+                logger.error('Failed to dispatch partner request notification:', err);
+            });
+        }
     } catch (err: any) {
         logger.error('sendPartnerRequest error:', err);
         const code = err.code || (err.timeLock ? 'FOUR_HOUR_TIME_LOCK' : undefined);
