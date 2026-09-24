@@ -357,7 +357,9 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
     if (_syncingPartyPlanIds.contains(rawPlanId) ||
         _syncingPartyPlanIds.contains(cleanPlanId) ||
-        _syncingPartyPlanIds.contains(item.id)) {
+        _syncingPartyPlanIds.contains(item.id) ||
+        _syncingPartyPlanIds.contains('pp_$rawPlanId') ||
+        _syncingPartyPlanIds.contains('pp_$cleanPlanId')) {
       return true;
     }
 
@@ -374,11 +376,35 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       return true;
     }
 
+    final myReqId = (item.rawData['myRequest'] is Map ? item.rawData['myRequest']['id'] : null)?.toString() ?? '';
+    final matchedReqId = item.rawData['matchedRequestId']?.toString() ?? '';
+    final activeReqId = item.rawData['activeRequestId']?.toString() ?? '';
     final entityId = (item.rawData['entityId'] ?? item.rawData['requestId'] ?? '').toString();
-    if (entityId.isNotEmpty &&
-        (_activeActionKeys.any((k) => k.contains(entityId)) ||
-            OptimisticActionGuard.isInFlight(entityId))) {
-      return true;
+
+    final relatedIds = <String>{
+      if (myReqId.isNotEmpty) myReqId,
+      if (matchedReqId.isNotEmpty) matchedReqId,
+      if (activeReqId.isNotEmpty) activeReqId,
+      if (entityId.isNotEmpty) entityId,
+    };
+
+    if (item.rawData['pendingIncomingRequests'] is List) {
+      for (final r in item.rawData['pendingIncomingRequests']) {
+        if (r is Map && r['id'] != null) {
+          relatedIds.add(r['id'].toString());
+        }
+      }
+    }
+
+    for (final rId in relatedIds) {
+      final cleanRId = ApiService.cleanBookingId(rId);
+      if (_syncingPartyPlanIds.contains(rId) ||
+          _syncingPartyPlanIds.contains(cleanRId) ||
+          _activeActionKeys.any((k) => k.contains(rId) || (cleanRId.isNotEmpty && k.contains(cleanRId))) ||
+          OptimisticActionGuard.isInFlight(rId) ||
+          OptimisticActionGuard.isInFlight(cleanRId)) {
+        return true;
+      }
     }
 
     return false;
@@ -2241,160 +2267,6 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     return false;
   }
 
-  void _optimisticallyUpdatePartyPlanRequest(String reqId, String newStatus) {
-    final cleanReq = ApiService.cleanBookingId(reqId);
-    bool changed = false;
-
-    for (int i = 0; i < _feedItems.length; i++) {
-      final f = _feedItems[i];
-      final bool matches = _matchesId(f, reqId, cleanTarget: cleanReq);
-
-      if (matches) {
-        final updated = Map<String, dynamic>.from(f);
-        updated['status'] = newStatus;
-        updated['requestStatus'] = newStatus;
-        if (newStatus == 'cancelled' ||
-            newStatus == 'rejected' ||
-            newStatus == 'withdrawn') {
-          if (newStatus == 'cancelled') {
-            updated['lifecycleStatus'] = 'cancelled';
-            updated['isCancelled'] = true;
-          }
-          final pId = (updated['planId'] ??
-                  updated['partyPlanId'] ??
-                  updated['id'] ??
-                  '')
-              .toString();
-          if (pId.isNotEmpty) {
-            ApiService.markPartyPlanAsCancelledLocal(pId);
-          }
-        } else if (newStatus == 'accepted') {
-          updated['lifecycleStatus'] = 'payment_pending';
-          updated['matchedRequestId'] = reqId;
-          final pId = (updated['planId'] ??
-                  updated['partyPlanId'] ??
-                  updated['id'] ??
-                  '')
-              .toString();
-          if (pId.isNotEmpty) {
-            ApiService.markPartyPlanAsRequestedLocal(pId, {
-              'id': reqId,
-              'planId': pId,
-              'status': 'accepted',
-            });
-          }
-        }
-        if (updated['myRequest'] is Map) {
-          updated['myRequest'] = {
-            ...Map<String, dynamic>.from(updated['myRequest'] as Map),
-            'status': newStatus,
-          };
-        }
-        _feedItems[i] = updated;
-        changed = true;
-      }
-
-      if (f['pendingIncomingRequests'] is List) {
-        final updated = Map<String, dynamic>.from(_feedItems[i]);
-        final reqs = List<Map<String, dynamic>>.from(
-          updated['pendingIncomingRequests'],
-        );
-        Map<String, dynamic>? targetReq;
-        for (final r in reqs) {
-          if (_matchesId(r, reqId, cleanTarget: cleanReq)) {
-            targetReq = Map<String, dynamic>.from(r);
-            break;
-          }
-        }
-        if (targetReq != null) {
-          reqs.removeWhere((r) => _matchesId(r, reqId, cleanTarget: cleanReq));
-          updated['pendingIncomingRequests'] = reqs;
-          if (newStatus == 'accepted') {
-            targetReq['status'] = 'accepted';
-            targetReq['joinerPaymentStatus'] = 'pending';
-            targetReq['paymentStatus'] = 'pending';
-            updated['acceptedJoinerRequest'] = targetReq;
-            updated['acceptedJoinRequest'] = targetReq;
-            updated['matchedRequest'] = targetReq;
-          }
-          _feedItems[i] = updated;
-          changed = true;
-        }
-      }
-    }
-
-    for (int i = 0; i < _notifications.length; i++) {
-      final n = _notifications[i];
-      if (_matchesId(n, reqId, cleanTarget: cleanReq)) {
-        final updatedN = Map<String, dynamic>.from(n);
-        updatedN['status'] = newStatus;
-        updatedN['requestStatus'] = newStatus;
-        if (newStatus == 'accepted') {
-          updatedN['lifecycleStatus'] = 'payment_pending';
-        } else if (newStatus == 'cancelled') {
-          updatedN['lifecycleStatus'] = 'cancelled';
-        }
-        if (updatedN['data'] is Map) {
-          updatedN['data'] = {
-            ...Map<String, dynamic>.from(updatedN['data'] as Map),
-            'status': newStatus,
-          };
-        }
-        _notifications[i] = updatedN;
-        changed = true;
-      }
-    }
-
-    if (changed || true) {
-      _cachedTimeline = _buildUnifiedTimeline();
-      if (mounted) setState(() {});
-      widget.onCountChanged?.call();
-    }
-  }
-
-  void _optimisticallyUpdatePartyPlanInvite(String reqId, String newStatus) {
-    final cleanReq = ApiService.cleanBookingId(reqId);
-    bool changed = false;
-
-    for (int i = 0; i < _feedItems.length; i++) {
-      final f = _feedItems[i];
-      if (_matchesId(f, reqId, cleanTarget: cleanReq)) {
-        final updated = Map<String, dynamic>.from(f);
-        updated['status'] = newStatus;
-        updated['inviteStatus'] = newStatus;
-        if (newStatus == 'accepted') {
-          updated['lifecycleStatus'] = 'payment_pending';
-        }
-        if (updated['myRequest'] is Map) {
-          updated['myRequest'] = {
-            ...Map<String, dynamic>.from(updated['myRequest'] as Map),
-            'status': newStatus,
-          };
-        }
-        _feedItems[i] = updated;
-        changed = true;
-      }
-    }
-    for (int i = 0; i < _notifications.length; i++) {
-      final n = _notifications[i];
-      if (_matchesId(n, reqId, cleanTarget: cleanReq)) {
-        final updatedN = Map<String, dynamic>.from(n);
-        updatedN['status'] = newStatus;
-        updatedN['inviteStatus'] = newStatus;
-        if (newStatus == 'accepted') {
-          updatedN['lifecycleStatus'] = 'payment_pending';
-        }
-        _notifications[i] = updatedN;
-        changed = true;
-      }
-    }
-    if (changed || true) {
-      _cachedTimeline = _buildUnifiedTimeline();
-      if (mounted) setState(() {});
-      widget.onCountChanged?.call();
-    }
-  }
-
   void _optimisticallyUpdateStrangersMeetJoinRequest(
     String meetId,
     String joinerId,
@@ -3428,13 +3300,15 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
     }
   }
 
-  Future<void> _handleAcceptPartyPlan(String reqId) async {
+  Future<bool> _handleAcceptPartyPlan(String reqId) async {
+    final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'accept_party_$reqId';
-    if (_activeActionKeys.contains(actionKey)) return;
-    setState(() => _activeActionKeys.add(actionKey));
-
-    // Optimistically update status to accepted immediately
-    _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
+    if (_activeActionKeys.contains(actionKey)) return false;
+    setState(() {
+      _activeActionKeys.add(actionKey);
+      _syncingPartyPlanIds.add(cleanReqId);
+      _syncingPartyPlanIds.add(reqId);
+    });
 
     try {
       final res = await ApiService.acceptPartyPlanRequest(reqId);
@@ -3460,41 +3334,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.green,
             ),
           );
-          _loadFeed(showLoader: false);
+          await _loadFeed(showLoader: false);
         }
+        return true;
       } else {
-        if (!mounted) return;
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept request.'),
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
+        return false;
       }
     } catch (e) {
       debugPrint('Error accepting request: $e');
       if (mounted) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
       }
+      return false;
     } finally {
-      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      if (mounted) {
+        setState(() {
+          _activeActionKeys.remove(actionKey);
+          _syncingPartyPlanIds.remove(cleanReqId);
+          _syncingPartyPlanIds.remove(reqId);
+        });
+      }
     }
   }
 
-  Future<void> _handleRejectPartyPlan(String reqId) async {
+  Future<bool> _handleRejectPartyPlan(String reqId) async {
     final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'reject_party_$reqId';
-    if (_activeActionKeys.contains(actionKey)) return;
-    setState(() => _activeActionKeys.add(actionKey));
-
-    // Optimistically update status to rejected immediately
-    _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+    if (_activeActionKeys.contains(actionKey)) return false;
+    setState(() {
+      _activeActionKeys.add(actionKey);
+      _syncingPartyPlanIds.add(cleanReqId);
+      _syncingPartyPlanIds.add(reqId);
+    });
 
     try {
       final success = await ApiService.rejectPartyPlanRequest(cleanReqId);
@@ -3508,41 +3390,49 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.grey,
             ),
           );
-          _loadFeed(showLoader: false);
+          await _loadFeed(showLoader: false);
         }
+        return true;
       } else {
-        if (!mounted) return;
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to decline request.'),
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
+        return false;
       }
     } catch (e) {
       debugPrint('Error rejecting request: $e');
       if (mounted) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
       }
+      return false;
     } finally {
-      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      if (mounted) {
+        setState(() {
+          _activeActionKeys.remove(actionKey);
+          _syncingPartyPlanIds.remove(cleanReqId);
+          _syncingPartyPlanIds.remove(reqId);
+        });
+      }
     }
   }
 
-  Future<void> _handleRevokePartyPlan(String reqId) async {
+  Future<bool> _handleRevokePartyPlan(String reqId) async {
     final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'revoke_party_$reqId';
-    if (_activeActionKeys.contains(actionKey)) return;
-    setState(() => _activeActionKeys.add(actionKey));
-
-    // Optimistically revoke/reject immediately
-    _optimisticallyUpdatePartyPlanRequest(reqId, 'rejected');
+    if (_activeActionKeys.contains(actionKey)) return false;
+    setState(() {
+      _activeActionKeys.add(actionKey);
+      _syncingPartyPlanIds.add(cleanReqId);
+      _syncingPartyPlanIds.add(reqId);
+    });
 
     try {
       bool success = await ApiService.revokePartyPlanAcceptance(cleanReqId);
@@ -3559,30 +3449,37 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.grey,
             ),
           );
-          _loadFeed(showLoader: false);
+          await _loadFeed(showLoader: false);
         }
+        return true;
       } else {
-        if (!mounted) return;
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to revoke invitation.'),
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
+        return false;
       }
     } catch (e) {
       debugPrint('Error revoking party plan invite: $e');
       if (mounted) {
-        _optimisticallyUpdatePartyPlanRequest(reqId, 'accepted');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
       }
+      return false;
     } finally {
-      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      if (mounted) {
+        setState(() {
+          _activeActionKeys.remove(actionKey);
+          _syncingPartyPlanIds.remove(cleanReqId);
+          _syncingPartyPlanIds.remove(reqId);
+        });
+      }
     }
   }
 
@@ -3624,300 +3521,451 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
         ? Icons.mark_email_read_rounded
         : Icons.people_alt_rounded;
 
+    final Map<String, String> localStatusMap = {};
+    final Set<String> localLoadingActions = {};
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.85,
-          ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF13131A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
               ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+              decoration: const BoxDecoration(
+                color: Color(0xFF13131A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border(top: BorderSide(color: Color(0xFF2D2D3D), width: 1)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF7C3AED), Color(0xFF9333EA)],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            headerIcon,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        headerIcon,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            titleText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitleText,
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: Colors.white60,
-                      ),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(color: Color(0xFF222230), height: 24),
-              Flexible(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  shrinkWrap: true,
-                  itemCount: requests.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final req = requests[index];
-                    final reqUser = (req['requester'] is Map)
-                        ? req['requester'] as Map<String, dynamic>
-                        : (req['user'] is Map
-                              ? req['user'] as Map<String, dynamic>
-                              : <String, dynamic>{});
-                    final reqUserName =
-                        '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
-                            .trim();
-                    final reqId = req['id']?.toString() ?? '';
-                    final userBio =
-                        reqUser['profile']?['bio']?.toString() ??
-                        reqUser['bio']?.toString() ??
-                        '';
-                    final foodPref =
-                        req['foodPreference']?.toString() ??
-                        reqUser['foodPreference']?.toString();
-                    final drinkPref =
-                        req['drinkPreference']?.toString() ??
-                        reqUser['drinkPreference']?.toString();
-
-                    final bool isInvite = req['requestType'] == 'private_invite' ||
-                        req['isInvite'] == true ||
-                        isPrivatePlan ||
-                        (planMap['selectedUsers'] is List &&
-                            (planMap['selectedUsers'] as List).contains(
-                                reqUser['id']?.toString() ??
-                                    req['requesterId']?.toString() ??
-                                    req['userId']?.toString()));
-
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E2A),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: const Color(0xFF2A2A3C)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              LunaraProfileImage(
-                                userData: reqUser,
-                                radius: 24,
-                                showGradientBorder: true,
+                              Text(
+                                titleText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      reqUserName.isNotEmpty
-                                          ? reqUserName
-                                          : 'Lunara Member',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    if (userBio.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          userBio,
-                                          style: const TextStyle(
-                                            color: Colors.white60,
-                                            fontSize: 12,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    if (foodPref != null || drinkPref != null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
-                                          style: const TextStyle(
-                                            color: Color(0xFFA855F7),
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitleText,
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-                          if (isHost && isInvite)
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _handleCancelMyRequest(reqId);
-                                    },
-                                    icon: const Icon(
-                                      Icons.cancel_outlined,
-                                      size: 16,
-                                      color: Colors.redAccent,
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white60,
+                          ),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Color(0xFF222230), height: 24),
+                  Flexible(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      shrinkWrap: true,
+                      itemCount: requests.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final req = requests[index];
+                        final reqUser = (req['requester'] is Map)
+                            ? req['requester'] as Map<String, dynamic>
+                            : (req['user'] is Map
+                                  ? req['user'] as Map<String, dynamic>
+                                  : <String, dynamic>{});
+                        final reqUserName =
+                            '${reqUser["firstName"] ?? "User"} ${reqUser["lastName"] ?? ""}'
+                                .trim();
+                        final reqId = req['id']?.toString() ?? '';
+                        final userBio =
+                            reqUser['profile']?['bio']?.toString() ??
+                            reqUser['bio']?.toString() ??
+                            '';
+                        final foodPref =
+                            req['foodPreference']?.toString() ??
+                            reqUser['foodPreference']?.toString();
+                        final drinkPref =
+                            req['drinkPreference']?.toString() ??
+                            reqUser['drinkPreference']?.toString();
+
+                        final bool isInvite = req['requestType'] == 'private_invite' ||
+                            req['isInvite'] == true ||
+                            isPrivatePlan ||
+                            (planMap['selectedUsers'] is List &&
+                                (planMap['selectedUsers'] as List).contains(
+                                    reqUser['id']?.toString() ??
+                                        req['requesterId']?.toString() ??
+                                        req['userId']?.toString()));
+
+                        final status = (localStatusMap[reqId] ?? req['status'] ?? 'pending').toString().toLowerCase();
+                        final isAccepted = status == 'accepted' || status == 'approved' || status == 'confirmed';
+                        final isRejected = status == 'rejected' || status == 'declined';
+                        final isCancelled = status == 'cancelled' || status == 'withdrawn';
+
+                        final acceptKey = 'modal_$reqId:accept';
+                        final declineKey = 'modal_$reqId:reject';
+                        final cancelKey = 'modal_$reqId:cancel';
+
+                        final isAccepting = localLoadingActions.contains(acceptKey) || _activeActionKeys.contains('accept_party_$reqId');
+                        final isDeclining = localLoadingActions.contains(declineKey) || _activeActionKeys.contains('reject_party_$reqId');
+                        final isCancelling = localLoadingActions.contains(cancelKey) || _activeActionKeys.contains('FEED_CANCEL_REQ:$reqId');
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E2A),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFF2A2A3C)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  LunaraProfileImage(
+                                    userData: reqUser,
+                                    radius: 24,
+                                    showGradientBorder: true,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          reqUserName.isNotEmpty
+                                              ? reqUserName
+                                              : 'Lunara Member',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (userBio.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              userBio,
+                                              style: const TextStyle(
+                                                color: Colors.white60,
+                                                fontSize: 12,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        if (foodPref != null || drinkPref != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              'Food: ${foodPref ?? "Any"} • Drink: ${drinkPref ?? "Any"}',
+                                              style: const TextStyle(
+                                                color: Color(0xFFA855F7),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                    label: const Text(
-                                      'Cancel Private Request',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              if (isAccepted)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x2010B981),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF10B981)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Approved • Waiting for Safety Deposit',
+                                        style: TextStyle(
+                                          color: Color(0xFF10B981),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isRejected)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x20EF4444),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0x60EF4444)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cancel_rounded, color: Colors.redAccent, size: 16),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Declined',
+                                        style: TextStyle(
+                                          color: Colors.redAccent,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isCancelled)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white10,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'Cancelled',
                                       style: TextStyle(
+                                        color: Colors.white60,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.redAccent,
                                         fontSize: 13,
                                       ),
                                     ),
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(
-                                        color: Color(0x60EF4444),
-                                      ),
-                                      backgroundColor: const Color(0x15EF4444),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                      ),
-                                    ),
                                   ),
+                                )
+                              else if (isHost && isInvite)
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: isCancelling
+                                            ? null
+                                            : () async {
+                                                setModalState(() {
+                                                  localLoadingActions.add(cancelKey);
+                                                });
+                                                final ok = await _handleCancelMyRequest(reqId);
+                                                if (ok) {
+                                                  setModalState(() {
+                                                    localStatusMap[reqId] = 'cancelled';
+                                                  });
+                                                }
+                                                setModalState(() {
+                                                  localLoadingActions.remove(cancelKey);
+                                                });
+                                              },
+                                        icon: isCancelling
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.redAccent,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.cancel_outlined,
+                                                size: 16,
+                                                color: Colors.redAccent,
+                                              ),
+                                        label: Text(
+                                          isCancelling ? 'Cancelling...' : 'Cancel Private Request',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.redAccent,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: Color(0x60EF4444),
+                                          ),
+                                          backgroundColor: const Color(0x15EF4444),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: (isAccepting || isDeclining)
+                                            ? null
+                                            : () async {
+                                                setModalState(() {
+                                                  localLoadingActions.add(acceptKey);
+                                                });
+                                                final ok = await _handleAcceptPartyPlan(reqId);
+                                                if (ok) {
+                                                  setModalState(() {
+                                                    localStatusMap[reqId] = 'accepted';
+                                                  });
+                                                }
+                                                setModalState(() {
+                                                  localLoadingActions.remove(acceptKey);
+                                                });
+                                              },
+                                        icon: isAccepting
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.check_circle_rounded,
+                                                size: 16,
+                                              ),
+                                        label: Text(
+                                          isAccepting ? 'Approving...' : 'Approve',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF7C3AED),
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: (isAccepting || isDeclining)
+                                            ? null
+                                            : () async {
+                                                setModalState(() {
+                                                  localLoadingActions.add(declineKey);
+                                                });
+                                                final ok = await _handleRejectPartyPlan(reqId);
+                                                if (ok) {
+                                                  setModalState(() {
+                                                    localStatusMap[reqId] = 'rejected';
+                                                  });
+                                                }
+                                                setModalState(() {
+                                                  localLoadingActions.remove(declineKey);
+                                                });
+                                              },
+                                        icon: isDeclining
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.redAccent,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.cancel_rounded,
+                                                size: 16,
+                                                color: Colors.redAccent,
+                                              ),
+                                        label: Text(
+                                          isDeclining ? 'Declining...' : 'Decline',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: Color(0x40EF4444),
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            )
-                          else
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _handleAcceptPartyPlan(reqId);
-                                    },
-                                    icon: const Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 16,
-                                    ),
-                                    label: const Text(
-                                      'Approve',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF7C3AED),
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 10,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () {
-                                      Navigator.pop(ctx);
-                                      _handleRejectPartyPlan(reqId);
-                                    },
-                                    icon: const Icon(
-                                      Icons.cancel_rounded,
-                                      size: 16,
-                                      color: Colors.redAccent,
-                                    ),
-                                    label: const Text(
-                                      'Decline',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.redAccent,
-                                      ),
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(
-                                        color: Color(0x40EF4444),
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 10,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -4337,20 +4385,17 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
   }
 
   /// Cancels the CURRENT USER's own pending join request (joiner cancels their own request).
-  Future<void> _handleCancelMyRequest(String reqId) async {
+  Future<bool> _handleCancelMyRequest(String reqId) async {
+    final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'FEED_CANCEL_REQ:$reqId';
-    if (!OptimisticActionGuard.start(actionKey)) return;
-    if (mounted) setState(() => _activeActionKeys.add(actionKey));
-
-    final prevFeedItems = List<Map<String, dynamic>>.from(_feedItems);
-    _optimisticallyUpdatePartyPlanRequest(reqId, 'cancelled');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Request cancelled successfully.'),
-        backgroundColor: Colors.grey,
-      ),
-    );
+    if (!OptimisticActionGuard.start(actionKey)) return false;
+    if (mounted) {
+      setState(() {
+        _activeActionKeys.add(actionKey);
+        _syncingPartyPlanIds.add(cleanReqId);
+        _syncingPartyPlanIds.add(reqId);
+      });
+    }
 
     try {
       bool success = await ApiService.cancelPartyPlanRequest(reqId);
@@ -4360,46 +4405,59 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
       if (success) {
         ApiService.clearBookingCache();
         ApiService.notifyFeedNeedsRefresh();
-        _loadFeed(showLoader: false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request cancelled successfully.'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          await _loadFeed(showLoader: false);
+        }
+        return true;
       } else {
         if (mounted) {
-          setState(() {
-            _feedItems = prevFeedItems;
-            _cachedTimeline = _buildUnifiedTimeline();
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Failed to cancel request. Please try again.'),
               backgroundColor: Colors.red,
             ),
           );
+          await _loadFeed(showLoader: false);
         }
+        return false;
       }
     } catch (e) {
       debugPrint('Error cancelling request: $e');
       if (mounted) {
-        setState(() {
-          _feedItems = prevFeedItems;
-          _cachedTimeline = _buildUnifiedTimeline();
-        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
+        await _loadFeed(showLoader: false);
       }
+      return false;
     } finally {
-      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      if (mounted) {
+        setState(() {
+          _activeActionKeys.remove(actionKey);
+          _syncingPartyPlanIds.remove(cleanReqId);
+          _syncingPartyPlanIds.remove(reqId);
+        });
+      }
       OptimisticActionGuard.end(actionKey);
     }
   }
 
   /// Accept a private invite sent by the host (calls accept-invite endpoint)
   Future<void> _handleAcceptPartyPlanInvite(String reqId) async {
+    final cleanReqId = ApiService.cleanBookingId(reqId);
     final actionKey = 'accept_invite_$reqId';
     if (_activeActionKeys.contains(actionKey)) return;
-    setState(() => _activeActionKeys.add(actionKey));
-
-    // Optimistically update invite to accepted immediately
-    _optimisticallyUpdatePartyPlanInvite(reqId, 'accepted');
+    setState(() {
+      _activeActionKeys.add(actionKey);
+      _syncingPartyPlanIds.add(cleanReqId);
+      _syncingPartyPlanIds.add(reqId);
+    });
 
     try {
       final res = await ApiService.acceptPartyPlanInvite(reqId);
@@ -4411,30 +4469,34 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
               backgroundColor: Colors.green,
             ),
           );
-          _loadFeed(showLoader: false);
+          await _loadFeed(showLoader: false);
         }
       } else {
         if (!mounted) return;
-        _optimisticallyUpdatePartyPlanInvite(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to accept invite. Try again.'),
             backgroundColor: Colors.red,
           ),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
       }
     } catch (e) {
       debugPrint('Error accepting invite: $e');
       if (mounted) {
-        _optimisticallyUpdatePartyPlanInvite(reqId, 'pending');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
-        _loadFeed(showLoader: false);
+        await _loadFeed(showLoader: false);
       }
     } finally {
-      if (mounted) setState(() => _activeActionKeys.remove(actionKey));
+      if (mounted) {
+        setState(() {
+          _activeActionKeys.remove(actionKey);
+          _syncingPartyPlanIds.remove(cleanReqId);
+          _syncingPartyPlanIds.remove(reqId);
+        });
+      }
     }
   }
 
@@ -6530,11 +6592,11 @@ class LiveFeedScreenState extends State<LiveFeedScreen>
 
         if (isMasked) {
           badge = 'NEW LIKE';
-          actionText = 'Upgrade to See';
+          actionText = 'See Who Liked You';
           actionTap = () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const VIPMembershipScreen(initialTabIndex: 0),
+              builder: (_) => const PeopleWhoLikedYouScreen(),
             ),
           );
         } else {

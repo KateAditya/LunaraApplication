@@ -120,13 +120,14 @@ export class EventTimeLockService {
                     for (const plan of hostPlans) {
                         if (excludeEventId && plan.id === excludeEventId) continue;
                         const p = plan as any;
-                        const hostPaidStr = (plan.hostPaymentStatus || '').toString().toLowerCase();
+                        const hostPaidStr = (plan.hostPaymentStatus || (plan as any).paymentStatus || '').toString().toLowerCase();
+                        const isHostPaid = hostPaidStr === 'paid';
                         const hasAcceptedRequest = p.requests?.some((r: any) =>
-                            ['accepted', 'payment_pending', 'confirmed', 'paid'].includes(r.status) && !r.cancelledAt
-                        ) || hostPaidStr === 'paid' || plan.matchedRequestId;
+                            ['accepted', 'payment_pending', 'confirmed', 'paid'].includes((r.status || '').toLowerCase()) && !r.cancelledAt
+                        ) || isHostPaid || Boolean(plan.matchedRequestId);
 
-                        const isHostUnpaidDraft = hostPaidStr === 'unpaid' && !hasAcceptedRequest && !plan.isLive;
-                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || plan.status === 'active')) {
+                        const isHostUnpaidDraft = !isHostPaid && !hasAcceptedRequest && !plan.isLive;
+                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || (isHostPaid && plan.status === 'active'))) {
                             const venueName = (plan as any).venue?.name;
                             activeEvents.push({
                                 id: plan.id,
@@ -333,12 +334,9 @@ export class EventTimeLockService {
                         const isPending = b.status === BookingStatus.PENDING;
                         const isPaid = b.paymentStatus === PaymentStatus.PAID || b.paymentStatus === PaymentStatus.PARTIALLY_PAID;
 
-                        // Ignore stale abandoned unpaid small bookings (> 30 mins old)
+                        // Ignore unpaid pending bookings (drafts)
                         if (isPending && !isPaid && !isLargeParty) {
-                            const createdAtMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                            if (Date.now() - createdAtMs > 30 * 60 * 1000) {
-                                continue;
-                            }
+                            continue;
                         }
 
                         const bookingDateTime = parseBookingDateTime(b.bookingDate, b.startTime);
@@ -529,13 +527,14 @@ export class EventTimeLockService {
 
                     for (const plan of hostPlans) {
                         const p = plan as any;
-                        const hostPaidStr = (plan.hostPaymentStatus || '').toString().toLowerCase();
+                        const hostPaidStr = (plan.hostPaymentStatus || (plan as any).paymentStatus || '').toString().toLowerCase();
+                        const isHostPaid = hostPaidStr === 'paid';
                         const hasAcceptedRequest = p.requests?.some((r: any) =>
-                            ['accepted', 'payment_pending', 'confirmed', 'paid'].includes(r.status) && !r.cancelledAt
-                        ) || hostPaidStr === 'paid' || plan.matchedRequestId;
+                            ['accepted', 'payment_pending', 'confirmed', 'paid'].includes((r.status || '').toLowerCase()) && !r.cancelledAt
+                        ) || isHostPaid || Boolean(plan.matchedRequestId);
 
-                        const isHostUnpaidDraft = hostPaidStr === 'unpaid' && !hasAcceptedRequest && !plan.isLive;
-                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || plan.status === 'active')) {
+                        const isHostUnpaidDraft = !isHostPaid && !hasAcceptedRequest && !plan.isLive;
+                        if (!isHostUnpaidDraft && (hasAcceptedRequest || plan.isLive || (isHostPaid && plan.status === 'active'))) {
                             const venueName = (plan as any).venue?.name;
                             const events = userEventsMap.get(plan.userId);
                             if (events) {
@@ -729,10 +728,7 @@ export class EventTimeLockService {
                         const isLargeParty = b.goingMode === 'party_request' || (b as any).isLargePartyRequest;
                         const isPending = b.status === BookingStatus.PENDING;
                         const isPaid = b.paymentStatus === PaymentStatus.PAID || b.paymentStatus === PaymentStatus.PARTIALLY_PAID;
-                        if (isPending && !isPaid && !isLargeParty) {
-                            const createdAtMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                            if (Date.now() - createdAtMs > 30 * 60 * 1000) continue;
-                        }
+                        if (isPending && !isPaid && !isLargeParty) continue;
                         const bookingDateTime = parseBookingDateTime(b.bookingDate, b.startTime);
                         const bType = isLargeParty ? 'LARGE_PARTY' : 'SOLO_BOOKING';
                         const venueName = (b as any).venue?.name;

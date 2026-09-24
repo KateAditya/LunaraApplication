@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../services/api_service.dart';
 import '../../widgets/night_partner_selector_sheet.dart';
@@ -7,7 +8,9 @@ import '../../utils/lunara_date_formatter.dart';
 import '../../widgets/lunara_cached_image.dart';
 
 class EventPostsScreen extends StatefulWidget {
-  const EventPostsScreen({super.key});
+  final List<Map<String, dynamic>>? initialEvents;
+
+  const EventPostsScreen({super.key, this.initialEvents});
 
   @override
   State<EventPostsScreen> createState() => _EventPostsScreenState();
@@ -22,15 +25,116 @@ class _EventPostsScreenState extends State<EventPostsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialEvents != null && widget.initialEvents!.isNotEmpty) {
+      _eventPosts = List<Map<String, dynamic>>.from(widget.initialEvents!);
+      _isLoading = false;
+      for (final p in _eventPosts) {
+        if (p['isInterested'] == true) {
+          _interestedEventIds.add(p['id']?.toString() ?? p['venueId']?.toString() ?? '');
+        }
+      }
+    }
     _loadEventPosts();
   }
 
   Future<void> _loadEventPosts() async {
-    setState(() => _isLoading = true);
-    final posts = await ApiService.fetchEventPosts();
+    if (_eventPosts.isEmpty) {
+      setState(() => _isLoading = true);
+    }
+    List<Map<String, dynamic>> posts = await ApiService.fetchEventPosts();
+
+    // Fallback to active party ads if event-posts endpoint is empty
+    if (posts.isEmpty) {
+      try {
+        final dynamicPartyAds = await ApiService.fetchActiveAds(
+          city: ApiService.selectedCity,
+          type: 'Party',
+        );
+        if (dynamicPartyAds.isNotEmpty) {
+          posts = dynamicPartyAds.map((ad) {
+            final venue = ad['venue'] as Map<String, dynamic>? ?? {};
+            final imageUrl = ad['imagePath'] != null
+                ? (ad['imagePath'].toString().startsWith('http')
+                      ? ad['imagePath'].toString()
+                      : '${ApiService.baseUrl}${ad['imagePath']}')
+                : '';
+
+            String dateStr = ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'] ?? '';
+            if (dateStr.isNotEmpty) {
+              try {
+                final dt = DateTime.parse(dateStr).toLocal();
+                dateStr = DateFormat('EEEE, MMM dd').format(dt);
+              } catch (_) {}
+            } else {
+              dateStr = 'Upcoming';
+            }
+
+            final bool isUnlimited = ad['isUnlimited'] == true;
+            final int seatLimit = ad['seatLimit'] is num
+                ? (ad['seatLimit'] as num).toInt()
+                : (int.tryParse(ad['seatLimit']?.toString() ?? '0') ?? 0);
+            final int filledSeats = ad['filledSeats'] is num
+                ? (ad['filledSeats'] as num).toInt()
+                : (int.tryParse(ad['filledSeats']?.toString() ?? '0') ?? 0);
+            final int remainingSeats = isUnlimited ? 999999 : (seatLimit - filledSeats);
+            final double entryPrice = ad['entryPrice'] is num
+                ? (ad['entryPrice'] as num).toDouble()
+                : (double.tryParse(ad['entryPrice']?.toString() ?? '0') ?? 0.0);
+
+            final vName = venue['name'] ?? ad['venueName'] ?? ad['title'] ?? 'Venue';
+            final loc = '${venue['area'] ?? venue['addressLine1'] ?? ad['area'] ?? ''}${venue['city'] != null ? ', ${venue['city']}' : (ad['city'] != null ? ', ${ad['city']}' : '')}'.trim();
+
+            return {
+              'id': ad['id'] != null ? 'ad_event_${ad['id']}' : 'party_${DateTime.now().millisecondsSinceEpoch}',
+              'adId': ad['id'],
+              'eventId': ad['id'],
+              'upcomingNightId': ad['id'],
+              'title': ad['title'] ?? ad['description'] ?? 'Special Event',
+              'name': ad['title'] ?? ad['description'] ?? 'Special Event',
+              'venue': vName,
+              'venueName': vName,
+              'date': dateStr,
+              'rawDate': ad['eventDate'] ?? ad['toDate'] ?? ad['fromDate'],
+              'time': LunaraDateFormatter.normalizeTimeTo12Hour(ad['time']?.toString() ?? '8:00 PM'),
+              'location': loc,
+              'aboutEvent': ad['aboutEvent'] ?? '',
+              'image': imageUrl,
+              'coverImageUrl': imageUrl,
+              'interestedCount': ad['interestedCount'] ?? 0,
+              'price': entryPrice > 0 ? entryPrice : null,
+              'entryPrice': entryPrice > 0 ? entryPrice : null,
+              'isUnlimited': isUnlimited,
+              'seatLimit': seatLimit,
+              'filledSeats': filledSeats,
+              'remainingSeats': remainingSeats > 0 ? remainingSeats : 0,
+              'venueId': ad['venueId'] ?? venue['id'],
+              'venueMap': venue.isNotEmpty ? venue : null,
+              'isInterested': ad['isInterested'] == true,
+            };
+          }).where((night) {
+            if (night['rawDate'] != null) {
+              try {
+                final dt = DateTime.parse(night['rawDate'].toString()).toLocal();
+                if (dt.isBefore(DateTime.now().subtract(const Duration(days: 1)))) {
+                  return false;
+                }
+              } catch (_) {}
+            }
+            return true;
+          }).toList();
+        }
+      } catch (e) {
+        debugPrint('Fallback fetchActiveAds error: $e');
+      }
+    }
+
     if (!mounted) return;
     setState(() {
-      _eventPosts = posts;
+      if (posts.isNotEmpty) {
+        _eventPosts = posts;
+      } else if (widget.initialEvents != null && widget.initialEvents!.isNotEmpty) {
+        _eventPosts = List<Map<String, dynamic>>.from(widget.initialEvents!);
+      }
       _isLoading = false;
       for (final p in _eventPosts) {
         if (p['isInterested'] == true) {

@@ -1629,6 +1629,7 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
       );
     }
 
+    final isSearching = _inviteeSearchController.text.trim().isNotEmpty;
     final interestedList = _candidateInvitees.where((u) => u['isInterested'] == true).toList();
     final recommendedList = _candidateInvitees.where((u) => u['isInterested'] != true).toList();
 
@@ -1648,19 +1649,25 @@ class _UpcomingNightPostPartnerSheetState extends State<UpcomingNightPostPartner
           padding: const EdgeInsets.all(8),
           physics: const BouncingScrollPhysics(),
           children: [
-            if (interestedList.isNotEmpty) ...[
-              _buildSectionHeader('INTERESTED IN THIS NIGHT', isHighlight: true),
+            if (isSearching) ...[
+              _buildSectionHeader('SEARCH RESULTS (${_candidateInvitees.length})', isHighlight: false),
               const SizedBox(height: 6),
-              ...interestedList.map((u) => _buildInviteeCard(u, isDark)),
-              const SizedBox(height: 8),
-            ],
-            if (recommendedList.isNotEmpty) ...[
-              _buildSectionHeader(
-                interestedList.isNotEmpty ? 'RECOMMENDED GUESTS' : 'AVAILABLE GUESTS',
-                isHighlight: false,
-              ),
-              const SizedBox(height: 6),
-              ...recommendedList.map((u) => _buildInviteeCard(u, isDark)),
+              ..._candidateInvitees.map((u) => _buildInviteeCard(u, isDark)),
+            ] else ...[
+              if (interestedList.isNotEmpty) ...[
+                _buildSectionHeader('INTERESTED IN THIS NIGHT', isHighlight: true),
+                const SizedBox(height: 6),
+                ...interestedList.map((u) => _buildInviteeCard(u, isDark)),
+                const SizedBox(height: 8),
+              ],
+              if (recommendedList.isNotEmpty) ...[
+                _buildSectionHeader(
+                  interestedList.isNotEmpty ? 'RECOMMENDED GUESTS' : 'AVAILABLE GUESTS',
+                  isHighlight: false,
+                ),
+                const SizedBox(height: 6),
+                ...recommendedList.map((u) => _buildInviteeCard(u, isDark)),
+              ],
             ],
           ],
         ),

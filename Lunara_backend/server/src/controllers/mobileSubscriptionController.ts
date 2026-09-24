@@ -269,7 +269,7 @@ export const createSubscriptionOrder = async (req: Request, res: Response): Prom
 export const purchaseSubscription = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = (req as any).user.id;
-        const { packageId, gatewayOrderId, gatewayPaymentId, razorpay_signature, paymentMethod } = req.body;
+        const { packageId, gatewayOrderId, gatewayPaymentId, razorpay_signature, paymentMethod, forceUpgrade } = req.body;
 
         const pkg = await SubscriptionPackage.findByPk(packageId);
         if (!pkg || !pkg.isActive) {
@@ -342,17 +342,31 @@ export const purchaseSubscription = async (req: Request, res: Response): Promise
             include: [{ model: SubscriptionPackage, as: 'package', where: { tier: { [Op.ne]: PackageTier.FREE } }, required: true }],
         });
 
-        const startDate = new Date();
-        if (lastUpcoming && lastUpcoming.endDate > startDate) {
-            startDate.setTime(lastUpcoming.endDate.getTime());
-        } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
-            startDate.setTime(activeSubForDate.endDate.getTime());
+        const shouldForceUpgrade = forceUpgrade === true || forceUpgrade === 'true' || req.body.forceUpgradeNow === true;
+
+        let startDate = new Date();
+        let newStatus = SubscriptionStatus.ACTIVE;
+
+        if (shouldForceUpgrade) {
+            if (activeSubForDate) {
+                await activeSubForDate.update({
+                    status: SubscriptionStatus.EXPIRED,
+                    endDate: new Date(),
+                });
+            }
+            startDate = new Date();
+            newStatus = SubscriptionStatus.ACTIVE;
+        } else {
+            if (lastUpcoming && lastUpcoming.endDate > startDate) {
+                startDate.setTime(lastUpcoming.endDate.getTime());
+            } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
+                startDate.setTime(activeSubForDate.endDate.getTime());
+            }
+            newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
         }
 
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + pkg.durationDays);
-
-        const newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
 
         const newSub = await UserSubscription.create({
             userId,
@@ -481,17 +495,30 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
             }),
         ]);
 
-        const startDate = new Date();
-        if (lastUpcoming) {
-            startDate.setTime(lastUpcoming.endDate.getTime());
-        } else if (activeSubForDate) {
-            startDate.setTime(activeSubForDate.endDate.getTime());
+        const shouldForceUpgrade = req.body.forceUpgrade === true || req.body.forceUpgrade === 'true' || req.body.forceUpgradeNow === true;
+        let startDate = new Date();
+        let newStatus = SubscriptionStatus.ACTIVE;
+
+        if (shouldForceUpgrade) {
+            if (activeSubForDate) {
+                await activeSubForDate.update({
+                    status: SubscriptionStatus.EXPIRED,
+                    endDate: new Date(),
+                });
+            }
+            startDate = new Date();
+            newStatus = SubscriptionStatus.ACTIVE;
+        } else {
+            if (lastUpcoming) {
+                startDate.setTime(lastUpcoming.endDate.getTime());
+            } else if (activeSubForDate) {
+                startDate.setTime(activeSubForDate.endDate.getTime());
+            }
+            newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
         }
 
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + pkg.durationDays);
-
-        const newStatus = startDate > new Date() ? SubscriptionStatus.UPCOMING : SubscriptionStatus.ACTIVE;
 
         const subscription = await UserSubscription.create({
             userId,
@@ -547,6 +574,83 @@ export const renewSubscription = async (req: Request, res: Response): Promise<vo
     } catch (error: any) {
         logger.error('Error renewing subscription:', error);
         res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─── Force Activate Upcoming Plan ─────────────────────────────────────────────
+
+// @route POST /api/mobile/subscriptions/force-activate
+export const forceActivateUpcoming = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = (req as any).user.id;
+        const { subscriptionId } = req.body;
+
+        const whereClause: any = {
+            userId,
+            status: SubscriptionStatus.UPCOMING,
+        };
+        if (subscriptionId) {
+            whereClause.id = subscriptionId;
+        }
+
+        const upcomingSub = await UserSubscription.findOne({
+            where: whereClause,
+            include: [{ model: SubscriptionPackage, as: 'package' }],
+            order: [['createdAt', 'DESC']],
+        });
+
+        if (!upcomingSub) {
+            res.status(404).json({ success: false, message: 'No upcoming subscription found to activate.' });
+            return;
+        }
+
+        const pkg = (upcomingSub as any).package;
+        const durationDays = pkg?.durationDays || 30;
+        const now = new Date();
+        const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+
+        // Expire any currently active subscriptions for this user
+        await UserSubscription.update(
+            { status: SubscriptionStatus.EXPIRED, endDate: now },
+            {
+                where: {
+                    userId,
+                    status: SubscriptionStatus.ACTIVE,
+                },
+            }
+        );
+
+        // Activate the upcoming subscription now
+        await upcomingSub.update({
+            status: SubscriptionStatus.ACTIVE,
+            startDate: now,
+            endDate,
+            superlikesRemaining: pkg?.superlikesPerCycle ?? upcomingSub.superlikesRemaining,
+            boostsRemaining: pkg?.boostsPerCycle ?? upcomingSub.boostsRemaining,
+        });
+
+        SubscriptionService.invalidateCache(userId);
+        await clearStaleExpirationNotifications(userId);
+
+        try {
+            const { io } = require('../server');
+            if (io) {
+                io.to(`user_${userId}`).emit('subscription_updated', {
+                    subscriptionId: upcomingSub.id,
+                    status: upcomingSub.status,
+                    tier: pkg?.tier,
+                });
+            }
+        } catch (_) {}
+
+        res.status(200).json({
+            success: true,
+            message: `Successfully upgraded to ${pkg?.name || 'VIP'} immediately!`,
+            data: upcomingSub,
+        });
+    } catch (err: any) {
+        logger.error('forceActivateUpcoming error:', err);
+        res.status(500).json({ success: false, message: err.message || 'Failed to activate upcoming subscription' });
     }
 };
 

@@ -1008,7 +1008,7 @@ export const createPartyPlan = async (req: Request, res: Response): Promise<void
             prefetchedTargetIds.length === 0;
 
         const [timeLockCheck, prefetchedTargetUsers] = await Promise.all([
-            EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan'),
+            EventTimeLockService.validateFourHourGap(userId, planDateTime, 'party_plan', rawEventId || undefined, { excludeVenueId: isUpcomingNight ? venueId : undefined }),
             prefetchedTargetIds.length > 0
                 ? User.findAll({
                     where: { id: { [Op.in]: prefetchedTargetIds } },

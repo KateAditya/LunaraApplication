@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../services/subscription_provider.dart';
 import '../../widgets/subscription_limit_dialog.dart';
 import '../profile/profile_detail_view.dart';
+import '../profile/vip_membership_screen.dart';
 import '../../widgets/lunara_cached_image.dart';
 
 class PeopleWhoLikedYouScreen extends StatefulWidget {
@@ -62,14 +63,17 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
       if (!mounted) return;
 
       if (res['locked'] == true) {
+        final pagination = res['pagination'] as Map<String, dynamic>?;
+        final total = pagination?['total'] ?? 0;
         setState(() {
           _isVipLocked = true;
+          _totalCount = total is int ? total : int.tryParse(total.toString()) ?? 0;
           _isLoading = false;
         });
         return;
       }
 
-      final List<dynamic> usersRaw = res['users'] ?? [];
+      final List<dynamic> usersRaw = res['users'] ?? res['data'] ?? [];
       final List<Map<String, dynamic>> loaded = [];
       for (var u in usersRaw) {
         if (u is Map<String, dynamic>) {
@@ -86,6 +90,7 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
         _profiles.addAll(loaded);
         _totalCount = total is int ? total : int.tryParse(total.toString()) ?? loaded.length;
         _hasMore = _page < (totalPages is int ? totalPages : 1);
+        _isVipLocked = false;
         _isLoading = false;
       });
     } catch (e) {
@@ -105,7 +110,7 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
       final res = await ApiService.fetchPeopleWhoLikedMe(page: nextPage, limit: 20);
       if (!mounted) return;
 
-      final List<dynamic> usersRaw = res['users'] ?? [];
+      final List<dynamic> usersRaw = res['users'] ?? res['data'] ?? [];
       final List<Map<String, dynamic>> loaded = [];
       for (var u in usersRaw) {
         if (u is Map<String, dynamic>) {
@@ -192,6 +197,9 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
   }
 
   void _showMatchDialog(Map<String, dynamic> item) {
+    final photoUrl = item['profilePhoto']?.toString() ?? item['image']?.toString() ?? '';
+    final formattedPhoto = ApiService.formatImageUrl(photoUrl) ?? photoUrl;
+
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -247,8 +255,8 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
                 // Profile Avatar
                 CircleAvatar(
                   radius: 46,
-                  backgroundImage: item['profilePhoto'] != null && item['profilePhoto'].toString().isNotEmpty
-                      ? NetworkImage(item['profilePhoto'].toString())
+                  backgroundImage: formattedPhoto.isNotEmpty
+                      ? NetworkImage(formattedPhoto)
                       : const NetworkImage('https://picsum.photos/200'),
                 ),
                 const SizedBox(height: 24),
@@ -284,7 +292,7 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF090414),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFF0F0826),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
@@ -310,27 +318,36 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
           ],
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFB703), Color(0xFFFF8800)],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.workspace_premium, color: Colors.black, size: 14),
-                SizedBox(width: 4),
-                Text(
-                  'VIP',
-                  style: TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 22),
+            tooltip: 'Refresh',
+            onPressed: () {
+              SubscriptionProvider.instance.refresh();
+              _loadLikes();
+            },
           ),
+          if (!_isVipLocked)
+            Container(
+              margin: const EdgeInsets.only(right: 14, top: 12, bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFB703), Color(0xFFFF8800)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.workspace_premium, color: Colors.black, size: 14),
+                  SizedBox(width: 4),
+                  Text(
+                    'VIP',
+                    style: TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
       body: _buildBody(),
@@ -340,7 +357,17 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(color: LunaraTheme.accentVivid),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: LunaraTheme.accentVivid),
+            SizedBox(height: 16),
+            Text(
+              'Loading who liked you...',
+              style: TextStyle(color: Colors.white60, fontSize: 13),
+            ),
+          ],
+        ),
       );
     }
 
@@ -355,9 +382,13 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
     return RefreshIndicator(
       color: LunaraTheme.accentVivid,
       backgroundColor: const Color(0xFF161622),
-      onRefresh: _loadLikes,
+      onRefresh: () async {
+        await SubscriptionProvider.instance.refresh();
+        await _loadLikes();
+      },
       child: GridView.builder(
         controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -383,19 +414,39 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
   }
 
   Widget _buildProfileCard(Map<String, dynamic> item) {
-    final isSuperLike = item['isSuperLike'] == true || item['matchReason'] == 'superlike';
-    final photoUrl = item['profilePhoto']?.toString() ?? '';
-    final name = (item['fullName']?.toString() ?? 'LUNARA USER').toUpperCase();
+    final isSuperLike = item['isSuperLike'] == true || item['matchReason'] == 'superlike' || item['actionType'] == 'superlike';
+    final rawPhoto = item['profilePhoto']?.toString() ?? item['image']?.toString() ?? '';
+    final photoUrl = ApiService.formatImageUrl(rawPhoto) ?? rawPhoto;
+    final name = (item['fullName']?.toString() ?? item['name'] ?? 'LUNARA USER').toUpperCase();
     final age = item['age'] != null ? ', ${item['age']}' : '';
     final city = item['city']?.toString() ?? '';
     final targetUserId = item['id']?.toString() ?? '';
     final isProcessing = _processingIds.contains(targetUserId);
-    final isMatched = _matchedIds.contains(targetUserId);
+    final isMatched = _matchedIds.contains(targetUserId) || item['isMutualMatch'] == true;
 
     return GestureDetector(
       onTap: () {
         try {
-          final userObj = User.fromJson(item);
+          final List<dynamic> rawInterests = item['interests'] is List ? item['interests'] : [];
+          final List<String> interestsList = rawInterests.map((e) => e.toString()).toList();
+
+          final userObj = User(
+            id: targetUserId,
+            firstName: (item['firstName'] ?? item['name'] ?? item['fullName'] ?? 'User').toString(),
+            lastName: (item['lastName'] ?? '').toString(),
+            email: '',
+            phone: '',
+            profilePhoto: photoUrl,
+            photos: photoUrl.isNotEmpty ? [photoUrl] : [],
+            photoDetails: photoUrl.isNotEmpty ? [{'url': photoUrl}] : [],
+            age: item['age'] is int ? item['age'] : int.tryParse(item['age']?.toString() ?? ''),
+            city: item['city']?.toString(),
+            occupation: item['occupation']?.toString() ?? item['vibe']?.toString(),
+            bio: item['bio']?.toString(),
+            interests: interestsList,
+            isSuperLiked: isSuperLike,
+          );
+
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -408,7 +459,9 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
               ),
             ),
           );
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('Error opening profile: $e');
+        }
       },
       child: Container(
         decoration: BoxDecoration(
@@ -468,6 +521,13 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
                         colors: [Color(0xFF00E5FF), Color(0xFF7F00FF)],
                       ),
                       borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.4),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -704,65 +764,145 @@ class _PeopleWhoLikedYouScreenState extends State<PeopleWhoLikedYouScreen> {
   }
 
   Widget _buildVipLockBanner() {
+    final countText = _totalCount > 0
+        ? '$_totalCount ${_totalCount == 1 ? "person has" : "people have"} liked your profile!'
+        : 'People are waiting to connect with you!';
+
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 100,
-              height: 100,
+              width: 96,
+              height: 96,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
                   colors: [Color(0xFF7F00FF), Color(0xFFFF007F)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF7F00FF).withValues(alpha: 0.4),
-                    blurRadius: 25,
+                    color: const Color(0xFFFF007F).withValues(alpha: 0.35),
+                    blurRadius: 28,
                     spreadRadius: 2,
                   ),
                 ],
               ),
-              child: const Icon(Icons.lock_outline, color: Colors.white, size: 48),
+              child: const Icon(Icons.lock_rounded, color: Colors.white, size: 46),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             const Text(
-              'VIP Feature Locked',
+              'SEE WHO LIKES YOU',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 1,
+                letterSpacing: 1.5,
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Unlock VIP Membership to see exactly who liked your profile and match with them instantly!',
+            Text(
+              countText,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+              style: const TextStyle(
+                color: Color(0xFF00E5FF),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 6),
+            const Text(
+              'Unlock VIP Membership to instantly see unblurred photos, full profiles, and match without waiting!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+            ),
+            const SizedBox(height: 24),
+            // Benefits container
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: const Column(
+                children: [
+                  _VipBenefitRow(icon: Icons.visibility_rounded, text: 'See all likers and their full photos'),
+                  SizedBox(height: 10),
+                  _VipBenefitRow(icon: Icons.favorite_rounded, text: 'Match & chat immediately'),
+                  SizedBox(height: 10),
+                  _VipBenefitRow(icon: Icons.all_inclusive_rounded, text: 'Unlimited likes & daily super likes'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 26),
             ElevatedButton(
-              onPressed: () {
-                showSubscriptionLimitDialog(context, feature: SubLimitFeature.whoLikedMe);
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                );
+                if (mounted) {
+                  await SubscriptionProvider.instance.refresh();
+                  _loadLikes();
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: LunaraTheme.accentVivid,
                 foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 6,
               ),
-              child: const Text(
-                'UNLOCK WITH VIP',
-                style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.workspace_premium_rounded, size: 20, color: Colors.black),
+                  SizedBox(width: 8),
+                  Text(
+                    'UNLOCK WITH VIP',
+                    style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 14),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _VipBenefitRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _VipBenefitRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: LunaraTheme.accentVivid.withValues(alpha: 0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: LunaraTheme.accentVivid, size: 14),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
     );
   }
 }

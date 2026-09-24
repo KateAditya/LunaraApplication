@@ -15,6 +15,7 @@ import 'live_feed_screen.dart';
 import 'chat_screen.dart';
 import 'party_plan_ticket_screen.dart';
 import 'party_plan_detail_screen.dart';
+import 'people_who_liked_you_screen.dart';
 import 'strangers_meet_ticket_screen.dart';
 import 'strangers_meet_payment_screen.dart';
 import '../../models/strangers_meet_request.dart';
@@ -7563,7 +7564,6 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         : (item['body'] ?? 'Liked your profile ❤️').toString();
     final String timeStr = _formatTimeAgo(item['createdAt']);
 
-    final String senderName = (actorMap['firstName'] ?? data['senderName'] ?? 'Someone').toString();
     final String? senderPhoto = (actorMap['profileImageUrl'] ?? actorMap['profilePhotoUrl'] ?? data['senderImage'])?.toString();
 
     return _buildBaseCardContainer(
@@ -7571,17 +7571,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       isLoading: isCardLoading,
       onTap: () {
         _markAsRead(item);
-        if (isActorMasked) {
-          setState(() => _navigatingCardIds.add(cardId));
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-          ).then((_) {
-            if (mounted) setState(() => _navigatingCardIds.remove(cardId));
-          });
-        } else if (actorId.isNotEmpty) {
-          _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
-        }
+        setState(() => _navigatingCardIds.add(cardId));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PeopleWhoLikedYouScreen()),
+        ).then((_) {
+          if (mounted) {
+            setState(() => _navigatingCardIds.remove(cardId));
+            _fetchNotifications();
+          }
+        });
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -7590,17 +7589,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             children: [
               GestureDetector(
                 onTap: () {
-                  if (isActorMasked) {
-                    setState(() => _navigatingCardIds.add(cardId));
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
-                    ).then((_) {
-                      if (mounted) setState(() => _navigatingCardIds.remove(cardId));
-                    });
-                  } else if (actorId.isNotEmpty) {
-                    _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
-                  }
+                  _markAsRead(item);
+                  setState(() => _navigatingCardIds.add(cardId));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PeopleWhoLikedYouScreen()),
+                  ).then((_) {
+                    if (mounted) {
+                      setState(() => _navigatingCardIds.remove(cardId));
+                      _fetchNotifications();
+                    }
+                  });
                 },
                 child: Container(
                   width: 44,
@@ -7720,14 +7719,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       setState(() => _navigatingCardIds.add(cardId));
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const VIPMembershipScreen()),
+                        MaterialPageRoute(builder: (_) => const PeopleWhoLikedYouScreen()),
                       ).then((_) {
                         if (mounted) setState(() => _navigatingCardIds.remove(cardId));
                       });
                     },
-                    icon: const Icon(Icons.workspace_premium_rounded, size: 16, color: Colors.white),
+                    icon: const Icon(Icons.favorite_rounded, size: 16, color: Colors.white),
                     label: const Text(
-                      'Upgrade to VIP',
+                      'See Who Liked You',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -7744,13 +7743,17 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                 : OutlinedButton.icon(
                     onPressed: () {
                       _markAsRead(item);
-                      if (actorId.isNotEmpty) {
-                        _openUserProfile({'id': actorId, 'firstName': senderName, 'profileImageUrl': senderPhoto}, cardId);
-                      }
+                      setState(() => _navigatingCardIds.add(cardId));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PeopleWhoLikedYouScreen()),
+                      ).then((_) {
+                        if (mounted) setState(() => _navigatingCardIds.remove(cardId));
+                      });
                     },
-                    icon: const Icon(Icons.person_rounded, size: 14, color: LunaraTheme.hotPink),
+                    icon: const Icon(Icons.favorite_rounded, size: 14, color: LunaraTheme.hotPink),
                     label: const Text(
-                      'View Profile',
+                      'See Who Liked You',
                       style: TextStyle(
                         color: LunaraTheme.hotPink,
                         fontSize: 12,

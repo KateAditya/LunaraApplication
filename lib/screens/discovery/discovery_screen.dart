@@ -1271,7 +1271,11 @@ class _DiscoveryScreenState extends State<DiscoveryScreen> {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => const EventPostsScreen()),
+                                MaterialPageRoute(
+                                  builder: (_) => EventPostsScreen(
+                                    initialEvents: _upcomingNights,
+                                  ),
+                                ),
                               );
                             },
                             child: const Text(

@@ -206,6 +206,8 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     return pkgs[durationIndex];
   }
 
+  bool _pendingForceUpgrade = true;
+
   void _handleRazorpaySuccess(PaymentSuccessResponse response) {
     debugPrint('[VIP] Razorpay payment success');
     debugPrint('[VIP] Payment ID received: ${response.paymentId}');
@@ -236,6 +238,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           response.paymentId ??
               'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           response.signature ?? 'mock_signature',
+          forceUpgrade: _pendingForceUpgrade,
         );
       }
     }
@@ -262,24 +265,26 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     });
   }
 
-  Future<void> _initiatePurchase() async {
+  Future<void> _initiatePurchase({bool forceUpgrade = true}) async {
     final pkg = _selectedPackage;
     if (pkg == null) return;
+
+    _pendingForceUpgrade = forceUpgrade;
 
     final int currentRank = _getTierRank(_activePackageTier);
     final int selectedRank = _getTierRank(pkg['tier']);
 
-    if (currentRank >= 0 && selectedRank <= currentRank) {
+    if (currentRank >= 0 && selectedRank <= currentRank && selectedRank != currentRank) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('You already have a higher or equal VIP plan active.'),
+          content: Text('You already have a higher VIP plan active.'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    debugPrint('[VIP] Selected plan: ${pkg['name']}');
+    debugPrint('[VIP] Selected plan: ${pkg['name']} (forceUpgrade: $forceUpgrade)');
     debugPrint('[VIP] Creating Razorpay order/subscription');
 
     setState(() {
@@ -333,6 +338,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           orderId,
           'pay_mock_${DateTime.now().millisecondsSinceEpoch}',
           'mock_signature',
+          forceUpgrade: forceUpgrade,
         );
       });
     }
@@ -353,6 +359,142 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     dynamic pkg,
     double price,
   ) async {
+    bool forceUpgradeChoice = true;
+
+    // If user already has an active paid subscription, offer the choice
+    if (_activeRemainingDays > 0 &&
+        _activePackageTier != null &&
+        _activePackageTier != 'FREE') {
+      final choice = await showModalBottomSheet<bool>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1E2A) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.bolt_rounded, color: LunaraTheme.electricViolet, size: 28),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Upgrade Activation',
+                      style: TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(ctx).colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'You currently have $_activeRemainingDays days remaining on your $_activePackageTier plan. How would you like your new ${pkg['name'] ?? pkg['tier']} plan to activate?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Option 1: Force Upgrade Now (Recommended)
+                InkWell(
+                  onTap: () => Navigator.pop(ctx, true),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          LunaraTheme.electricViolet.withValues(alpha: 0.15),
+                          LunaraTheme.electricViolet.withValues(alpha: 0.05),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: LunaraTheme.electricViolet, width: 1.5),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.flash_on_rounded, color: LunaraTheme.electricViolet, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Force Upgrade Now (Recommended)',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: LunaraTheme.electricViolet),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Activate immediately & unlock Who Liked You, unlimited likes, and all VIP perks right now',
+                                style: TextStyle(fontSize: 11.5, color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.check_circle_rounded, color: LunaraTheme.electricViolet, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Option 2: Keep Existing Plan (Queue)
+                InkWell(
+                  onTap: () => Navigator.pop(ctx, false),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.schedule_rounded, color: Colors.grey, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Keep Existing & Queue on Expiry',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Theme.of(ctx).colorScheme.onSurface),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Start new plan after current $_activeRemainingDays days expire',
+                                style: TextStyle(fontSize: 11.5, color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        },
+      );
+      if (choice == null) return; // User dismissed
+      forceUpgradeChoice = choice;
+    }
+
+    _pendingForceUpgrade = forceUpgradeChoice;
+
+    if (!mounted) return;
     final success = await SmartCheckoutSheet.show(
       context: context,
       title: 'Lunara VIP - ${pkg['name'] ?? pkg['tier']}',
@@ -363,6 +505,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
           packageId: pkg['id'] ?? '',
           tier: pkg['tier'] ?? 'PRO',
           price: price,
+          forceUpgrade: forceUpgradeChoice,
         );
         if (res != null && res['success'] == true) {
           return true;
@@ -379,7 +522,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
         }
       },
       onDirectPayment: () async {
-        await _initiatePurchase();
+        await _initiatePurchase(forceUpgrade: forceUpgradeChoice);
       },
       onHybridPayment: (shortfallAmount) async {
         final orderData = await ApiService.createWalletRechargeOrder(
@@ -404,10 +547,12 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
 
     if (success == true && mounted) {
       await SubscriptionProvider.instance.refreshAfterPurchase();
-      await _loadData();
+      await _loadData(forceRefresh: true);
       _showSuccessDialog(
         'Subscription Activated! 🎉',
-        'You have successfully upgraded to ${pkg['name'] ?? pkg['tier']}.',
+        forceUpgradeChoice
+            ? 'You have successfully upgraded to ${pkg['name'] ?? pkg['tier']} with immediate activation.'
+            : 'You have queued ${pkg['name'] ?? pkg['tier']} to activate after your current plan expires.',
         itemName: pkg['name'] ?? pkg['tier'],
         icon: Icons.workspace_premium_rounded,
         iconColor: const Color(0xFF7C3AED),
@@ -420,9 +565,10 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
     String packageId,
     String orderId,
     String paymentId,
-    String signature,
-  ) async {
-    debugPrint('[VIP] Calling payment verification API');
+    String signature, {
+    bool forceUpgrade = true,
+  }) async {
+    debugPrint('[VIP] Calling payment verification API (forceUpgrade: $forceUpgrade)');
     setState(() => _isProcessing = true);
 
     final response = await ApiService.purchaseSubscription(
@@ -430,6 +576,7 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       gatewayOrderId: orderId,
       gatewayPaymentId: paymentId,
       razorpaySignature: signature,
+      forceUpgrade: forceUpgrade,
     );
 
     setState(() => _isProcessing = false);
@@ -439,12 +586,14 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       debugPrint('[VIP] Refreshing subscription');
       debugPrint('[VIP] Subscription ACTIVE');
 
-      SubscriptionProvider.instance.refreshAfterPurchase();
+      await Future.wait([
+        SubscriptionProvider.instance.refreshAfterPurchase(),
+        _loadData(forceRefresh: true),
+      ]);
       _showSuccessDialog(
         'Subscription Activated!',
         response['message'] ?? 'You have successfully upgraded your tier.',
       );
-      _loadData();
     } else {
       debugPrint('[VIP] Payment verification failed');
       debugPrint('[VIP] HTTP status: ${response['statusCode']}');
@@ -465,6 +614,194 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
         ),
       );
     }
+  }
+
+  Future<void> _forceActivatePlan(dynamic upcomingSub) async {
+    final subId = upcomingSub['id']?.toString();
+    final pkg = upcomingSub['package'];
+    final planName = pkg != null ? (pkg['name'] ?? pkg['tier'] ?? 'VIP') : 'VIP';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.bolt_rounded, color: LunaraTheme.electricViolet, size: 24),
+            const SizedBox(width: 8),
+            const Text('Force Upgrade Now', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Do you want to activate $planName immediately? Your new VIP privileges (including who liked you, unlimited likes, and badges) will start right now.',
+          style: const TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Queued', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: LunaraTheme.electricViolet,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Activate Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isProcessing = true);
+    final res = await ApiService.forceActivateUpcomingSubscription(subscriptionId: subId);
+    setState(() => _isProcessing = false);
+
+    if (res['success'] == true && mounted) {
+      await Future.wait([
+        SubscriptionProvider.instance.refreshAfterPurchase(),
+        _loadData(forceRefresh: true),
+      ]);
+      if (mounted) {
+        _showSuccessDialog(
+          'Upgraded Immediately! 🎉',
+          'Your $planName is now ACTIVE. You can now see who liked your profile and enjoy all VIP benefits!',
+          itemName: planName,
+          icon: Icons.workspace_premium_rounded,
+          iconColor: LunaraTheme.electricViolet,
+        );
+      }
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message'] ?? 'Failed to activate plan'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Widget _buildUpcomingActivationBanner(dynamic upcomingSub) {
+    final pkg = upcomingSub['package'];
+    final planName = pkg != null ? (pkg['name'] ?? pkg['tier'] ?? 'VIP Plan') : 'Upgraded Plan';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF2A1B4E), const Color(0xFF1E1035)]
+              : [const Color(0xFFF3E8FF), const Color(0xFFEDE9FE)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: LunaraTheme.electricViolet.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: LunaraTheme.electricViolet.withValues(alpha: 0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: LunaraTheme.electricViolet.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.bolt_rounded,
+                  color: LunaraTheme.electricViolet,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'UPCOMING PLAN READY',
+                      style: TextStyle(
+                        fontFamily: 'AllroundGothic',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.0,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$planName is queued on your account',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: LunaraTheme.electricViolet,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Your upgraded $planName package is currently queued. Activate it right now to instantly unlock Who Liked You, unlimited likes, profile badges, and all VIP perks!',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: _isProcessing ? null : () => _forceActivatePlan(upcomingSub),
+                    icon: const Icon(Icons.flash_on_rounded, size: 18, color: Colors.white),
+                    label: const Text(
+                      'FORCE UPGRADE NOW',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: LunaraTheme.electricViolet,
+                      elevation: 4,
+                      shadowColor: LunaraTheme.electricViolet.withValues(alpha: 0.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
 
@@ -819,11 +1156,21 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
       }
     }
 
+    final upcomingSub = _userSubscriptions.cast<dynamic>().firstWhere(
+      (s) => s['status'] == 'UPCOMING',
+      orElse: () => null,
+    );
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (upcomingSub != null) ...[
+            _buildUpcomingActivationBanner(upcomingSub),
+            const SizedBox(height: 16),
+          ],
+
           // Plan Selector Pills
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -2225,6 +2572,31 @@ class _VIPMembershipScreenState extends State<VIPMembershipScreen>
                   isFree ? null : endDate,
                   fallbackText: isFree ? 'Lifetime / Free Tier' : 'N/A',
                 ),
+                if (status == 'UPCOMING') ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 42,
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : () => _forceActivatePlan(sub),
+                      icon: const Icon(Icons.flash_on_rounded, size: 16, color: Colors.white),
+                      label: const Text(
+                        'FORCE UPGRADE NOW',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                          color: Colors.white,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: LunaraTheme.electricViolet,
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );

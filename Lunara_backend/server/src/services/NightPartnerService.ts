@@ -563,15 +563,28 @@ export class NightPartnerService {
             : [];
         const pendingInvitePartnerIds = new Set<string>(existingRequests.map(r => r.partnerId));
 
-        // 4. Fetch candidate users (Ensuring ALL interested users are ALWAYS loaded)
+        // 4. Fetch candidate users (Ensuring interested users matching search or all if no search are loaded)
         const interestedUserList = Array.from(interestedUserIds);
+        const interestedUserWhere: any = {
+            id: { [Op.in]: interestedUserList, ...(hostId ? { [Op.ne]: hostId } : {}) },
+            [Op.or]: [{ isDeleted: false }, { isDeleted: { [Op.is]: null } }],
+        };
+        if (search && search.trim().length > 0) {
+            const cleanSearch = `%${search.trim()}%`;
+            interestedUserWhere[Op.and] = [
+                {
+                    [Op.or]: [
+                        { firstName: { [Op.iLike]: cleanSearch } },
+                        { lastName: { [Op.iLike]: cleanSearch } },
+                    ]
+                }
+            ];
+        }
+
         const [interestedUsers, candidateUsers] = await Promise.all([
             interestedUserList.length > 0
                 ? User.findAll({
-                    where: {
-                        id: { [Op.in]: interestedUserList, ...(hostId ? { [Op.ne]: hostId } : {}) },
-                        [Op.or]: [{ isDeleted: false }, { isDeleted: { [Op.is]: null } }],
-                    } as any,
+                    where: interestedUserWhere as any,
                     attributes: ['id', 'firstName', 'lastName', 'dateOfBirth', 'isVerified', 'createdAt'],
                     include: [
                         { model: UserProfile, as: 'profile' },
@@ -2505,12 +2518,14 @@ export class NightPartnerService {
 
         for (const ad of activeAds) {
             const v = (ad as any).venue;
-            if (!v) continue;
-            seenVenueIds.add(v.id);
+            if (v && v.id) {
+                seenVenueIds.add(v.id);
+            }
 
-            const interestedCount = countMap.get(v.id) || 0;
-            const isInterested = userInterestVenueSet.has(v.id);
-            const hasActiveMatch = userMatchVenueSet.has(v.id);
+            const venueId = v?.id || ad.venueId || ad.id;
+            const interestedCount = countMap.get(venueId) || 0;
+            const isInterested = userInterestVenueSet.has(venueId);
+            const hasActiveMatch = userMatchVenueSet.has(venueId);
 
             let adImage = ad.imagePath || '';
             if (adImage && !adImage.startsWith('http') && !adImage.startsWith('/')) {
@@ -2518,25 +2533,27 @@ export class NightPartnerService {
             }
 
             const eventDateStr = ad.eventDate ? ad.eventDate.toISOString().split('T')[0] : (ad.toDate ? ad.toDate.toISOString().split('T')[0] : todayStr);
+            const venueName = v?.name || ad.title || 'Venue';
+            const locationStr = v ? `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim() : `${ad.area || ''}${ad.city ? ', ' + ad.city : ''}`.trim();
 
             eventPosts.push({
                 id: `ad_event_${ad.id}`,
                 adId: ad.id,
                 upcomingNightId: ad.id,
-                venueId: v.id,
-                title: ad.title || `${v.name} Weekend Night`,
-                name: ad.title || `${v.name} Weekend Night`,
-                venue: v.name,
-                venueName: v.name,
-                image: adImage || (v as any).coverImage || (v as any).primaryPhoto || '',
-                coverImageUrl: adImage || (v as any).coverImage || (v as any).primaryPhoto || '',
+                venueId: venueId,
+                title: ad.title || `${venueName} Special Night`,
+                name: ad.title || `${venueName} Special Night`,
+                venue: venueName,
+                venueName: venueName,
+                image: adImage || (v as any)?.coverImage || (v as any)?.primaryPhoto || '',
+                coverImageUrl: adImage || (v as any)?.coverImage || (v as any)?.primaryPhoto || '',
                 date: eventDateStr,
                 rawDate: eventDateStr,
                 bannerFromDate: ad.fromDate,
                 bannerToDate: ad.toDate,
-                time: normalize12h(v.openingTime || '20:00'),
-                location: `${v.area || v.addressLine1 || ''}${v.city ? ', ' + v.city : ''}`.trim(),
-                aboutEvent: ad.aboutEvent || `Experience the pulse of the nightlife at ${v.name}. Great music, vibrant party vibes, and curated partner matches.`,
+                time: normalize12h(v?.openingTime || '20:00'),
+                location: locationStr,
+                aboutEvent: ad.aboutEvent || `Experience the pulse of the nightlife at ${venueName}. Great music, vibrant party vibes, and curated partner matches.`,
                 interestedCount,
                 seatLimit: ad.seatLimit,
                 filledSeats: ad.filledSeats || 0,
@@ -2544,15 +2561,11 @@ export class NightPartnerService {
                 remainingSeats: ad.isUnlimited
                     ? null
                     : Math.max(0, (ad.seatLimit || 0) - (ad.filledSeats || 0)),
-                // The admin's own ticket price, unsubstituted. `price` below
-                // keeps its venue fallbacks for the display strip, but that
-                // fallback must not reach anything that quotes a charge: the
-                // server bills `entryPrice`, so the client has to show it.
                 entryPrice: ad.entryPrice != null ? Number(ad.entryPrice) : null,
-                price: ad.entryPrice || v.coupleEntryFee || v.tableBookingCharges || (v as any).coverChargeMale || 1000,
+                price: ad.entryPrice || v?.coupleEntryFee || v?.tableBookingCharges || (v as any)?.coverChargeMale || 1000,
                 isInterested,
                 hasActiveMatch,
-                venueMap: v.toJSON(),
+                venueMap: v ? (typeof v.toJSON === 'function' ? v.toJSON() : v) : null,
             });
         }
 
@@ -2560,7 +2573,10 @@ export class NightPartnerService {
         if (eventPosts.length < 5) {
             const venues = await Venue.findAll({
                 where: {
-                    status: 'live',
+                    [Op.or]: [
+                        { status: { [Op.in]: ['live', 'approved', 'active'] } },
+                        { isActive: true },
+                    ],
                     id: { [Op.notIn]: Array.from(seenVenueIds) },
                 },
                 attributes: ['id', 'name', 'addressLine1', 'city', 'area', 'primaryPhoto', 'coverImage', 'pricePerCouple', 'entryFee', 'openingTime', 'closingTime'],

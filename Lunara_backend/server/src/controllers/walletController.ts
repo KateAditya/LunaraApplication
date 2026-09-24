@@ -1265,17 +1265,32 @@ export const payVipWithWallet = async (req: Request, res: Response): Promise<voi
             }),
         ]);
 
-        const startDate = new Date();
-        if (lastUpcoming && lastUpcoming.endDate > startDate) {
-            startDate.setTime(lastUpcoming.endDate.getTime());
-        } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
-            startDate.setTime(activeSubForDate.endDate.getTime());
+        const { forceUpgrade } = req.body;
+        const shouldForceUpgrade = forceUpgrade === true || forceUpgrade === 'true' || req.body.forceUpgradeNow === true;
+
+        let startDate = new Date();
+        let newStatus = SubscriptionStatusEnum.ACTIVE;
+
+        if (shouldForceUpgrade) {
+            if (activeSubForDate) {
+                await activeSubForDate.update({
+                    status: SubscriptionStatusEnum.EXPIRED,
+                    endDate: new Date(),
+                });
+            }
+            startDate = new Date();
+            newStatus = SubscriptionStatusEnum.ACTIVE;
+        } else {
+            if (lastUpcoming && lastUpcoming.endDate > startDate) {
+                startDate.setTime(lastUpcoming.endDate.getTime());
+            } else if (activeSubForDate && activeSubForDate.endDate > startDate) {
+                startDate.setTime(activeSubForDate.endDate.getTime());
+            }
+            newStatus = startDate > new Date() ? SubscriptionStatusEnum.UPCOMING : SubscriptionStatusEnum.ACTIVE;
         }
 
         const validUntil = new Date(startDate);
         validUntil.setDate(validUntil.getDate() + durationDays);
-
-        const newStatus = startDate > new Date() ? SubscriptionStatusEnum.UPCOMING : SubscriptionStatusEnum.ACTIVE;
 
         const sub = await UserSubscriptionModel.create({
             userId,

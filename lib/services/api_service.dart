@@ -2288,6 +2288,7 @@ class ApiService {
     required String packageId,
     required String tier,
     required double price,
+    bool forceUpgrade = true,
   }) async {
     final userId = currentUserId;
     if (userId == null) return null;
@@ -2299,6 +2300,7 @@ class ApiService {
           'packageId': packageId,
           'tier': tier,
           'price': price,
+          'forceUpgrade': forceUpgrade,
         },
       );
       if (response.statusCode == 200) {
@@ -6186,6 +6188,7 @@ class ApiService {
     required String gatewayPaymentId,
     required String razorpaySignature,
     String paymentMethod = 'razorpay',
+    bool forceUpgrade = true,
   }) async {
     try {
       final response = await post(
@@ -6196,6 +6199,7 @@ class ApiService {
           'gatewayPaymentId': gatewayPaymentId,
           'razorpay_signature': razorpaySignature,
           'paymentMethod': paymentMethod,
+          'forceUpgrade': forceUpgrade,
         },
       );
 
@@ -6214,6 +6218,31 @@ class ApiService {
         'success': false,
         'message': 'Network error occurred while verifying payment: $e',
         'statusCode': 500,
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> forceActivateUpcomingSubscription({
+    String? subscriptionId,
+  }) async {
+    try {
+      final response = await post(
+        '/api/mobile/subscriptions/force-activate',
+        body: {
+          'subscriptionId': ?subscriptionId,
+        },
+      );
+      final data = jsonDecode(response.body);
+      return {
+        'success': response.statusCode == 200,
+        'message': data['message'] ?? (response.statusCode == 200 ? 'Successfully upgraded immediately!' : 'Failed to activate upcoming plan.'),
+        'data': data['data'] ?? data,
+      };
+    } catch (e) {
+      debugPrint('forceActivateUpcomingSubscription error: $e');
+      return {
+        'success': false,
+        'message': 'Error activating plan: $e',
       };
     }
   }

@@ -20,6 +20,7 @@ router.use(authenticate);
 router.post('/create-order', ctrl.createSubscriptionOrder);
 router.post('/purchase', ctrl.purchaseSubscription);
 router.post('/renew', ctrl.renewSubscription);
+router.post('/force-activate', ctrl.forceActivateUpcoming);
 router.post('/cancel', ctrl.cancelSubscription);
 
 // ── Boost Purchase ─────────────────────────────────────────────────────────────
